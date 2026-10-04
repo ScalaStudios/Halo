@@ -13,7 +13,7 @@ Halo is in early development and has not published a release. Until version 1.0,
 
 ## Report a vulnerability
 
-Report vulnerabilities privately through the repository host's private vulnerability reporting: open the Halo repository, go to **Security**, and choose **Report a vulnerability**. Only you and the maintainers can read the report.
+Report vulnerabilities privately through GitHub's private vulnerability reporting: open the Halo repository, go to **Security**, and choose **Report a vulnerability**, or go straight to [the report form](https://github.com/scalagg/halo/security/advisories/new). Only you and the maintainers can read the report.
 
 Do not report a vulnerability in a public issue, pull request, discussion or chat. If you are unsure whether something is a security problem, report it privately anyway.
 
@@ -46,8 +46,8 @@ You receive updates in the private report until the advisory is published.
 The [security model](documentation/security-model.md) documents these in detail.
 
 - **No passwords.** People sign in with passkeys and security keys (WebAuthn) first, with authenticator-app codes (TOTP), single-use recovery codes, or emailed single-use magic links as alternatives. Passkeys are bound to the hostname of `HALO_PUBLIC_URL`. A passkey whose signature counter goes backwards is rejected as possibly cloned. After 5 failed authenticator or recovery codes within 15 minutes, Halo refuses further codes for that account until the window passes.
-- **Secrets are hashed.** Session tokens, client secrets, API keys, refresh tokens, invite, reset and magic link tokens, and recovery codes are stored only as SHA-256 hashes and compared in constant time. Client secrets and API keys are shown once, when they are created.
-- **Keys are sealed with `HALO_SECRET_KEY`.** OpenID Connect and SAML signing keys, authenticator-app seeds, provisioning tokens and queued email are encrypted with AES-256-GCM under `HALO_SECRET_KEY`, and opaque access tokens and authorization codes are encrypted with a key derived from it. Keep the key secret and back it up: Halo cannot rotate it yet.
+- **Secrets are hashed.** Session tokens, client secrets, API keys, refresh tokens, and invite, reset and magic link tokens are stored only as SHA-256 hashes and compared in constant time. Recovery codes are stored as HMAC-SHA256 with a key derived from `HALO_SECRET_KEY`. Client secrets and API keys are shown once, when they are created.
+- **Keys are sealed with `HALO_SECRET_KEY`.** OpenID Connect and SAML signing keys, authenticator-app seeds, SCIM provisioning tokens, identity provider client secrets, webhook signing secrets, the SSH certificate authority and queued email are encrypted with AES-256-GCM under `HALO_SECRET_KEY`, and opaque access tokens and authorization codes are encrypted with a key derived from it. Keep the key secret and back it up. `halo rotate-secret-key` replaces it, as [Rotate HALO_SECRET_KEY](deploy/README.md#rotate-halo_secret_key) describes.
 - **Same-origin protection.** Every request to `/api/` that changes state (any method other than GET, HEAD and OPTIONS) must come from Halo's own pages. A browser request passes when `Sec-Fetch-Site` is `same-origin` or `none`. Without that header, the request passes only when `Origin` is absent or equals the origin of `HALO_PUBLIC_URL`. Anything else fails with `ERR_CROSS_SITE`.
 - **Sessions.** The `halo_session` cookie is HttpOnly, SameSite=Lax and Secure, and lasts 12 hours. Signing out or revoking a session ends it on the server and revokes the OpenID Connect tokens issued under it.
 - **HTTPS outside development.** Halo refuses to start when `HALO_PUBLIC_URL` does not use https, unless `HALO_DEV=1`. Never set `HALO_DEV` in production: it also drops the Secure flag from cookies and allows plain http.

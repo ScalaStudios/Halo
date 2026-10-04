@@ -85,14 +85,14 @@ cd web && bun run build
 
 `go test ./...` creates a throwaway database for each test on the development PostgreSQL and drops it afterwards. To use another server, set `HALO_TEST_DATABASE_URL`, for example `postgres://halo:halo@localhost:5436/halo`; the user needs permission to create databases. When PostgreSQL is unreachable, the database tests are skipped rather than failed, so check the output for `SKIP`.
 
-The end-to-end test enrolls a passkey with a virtual authenticator in Chromium, signs in to [`examples/go-web-client`](examples/go-web-client) through Halo, and checks the ID token claims and the sign-in log:
+The end-to-end tests use a virtual authenticator in Chromium to enroll passkeys and sign in through Halo to [`examples/go-web-client`](examples/go-web-client) over OpenID Connect and [`examples/go-saml-sp`](examples/go-saml-sp) over SAML. They also cover magic links, access requests, access policies, and every console page at desktop and phone widths:
 
 ```bash
 cd web && bunx playwright install chromium
 cd web && bun run e2e
 ```
 
-It needs both servers running with the demo data loaded (it signs in as `luna@example.com` through `dev-session` with the repository's `.env`) and port 9000 free, because it starts the example application there. Set `HALO_URL` to test an address other than http://localhost:3200.
+They need both servers running with the demo data loaded (they sign in as `luna@example.com` through `dev-session` with the repository's `.env`), and ports 9000 and 9100 free, because they start the example applications there. Set `HALO_URL` to test an address other than http://localhost:3200.
 
 ## Code style
 
