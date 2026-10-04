@@ -1,0 +1,3 @@
+{$HALO_DOMAIN} {
+	reverse_proxy halo-web:3200
+}

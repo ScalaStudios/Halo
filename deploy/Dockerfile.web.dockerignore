@@ -1,0 +1,11 @@
+*
+!web
+web/node_modules
+web/.next
+web/.next-*
+web/e2e
+web/playwright.config.ts
+web/test-results
+web/playwright-report
+web/next-env.d.ts
+web/tsconfig.tsbuildinfo
