@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    container: node:22-bookworm
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: halo
+          POSTGRES_PASSWORD: halo
+          POSTGRES_DB: halo
+        options: >-
+          --health-cmd "pg_isready -U halo -d halo"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
+    env:
+      HALO_TEST_DATABASE_URL: postgres://halo:halo@postgres:5432/halo
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: npx tsc --noEmit
+      - run: bun run build
