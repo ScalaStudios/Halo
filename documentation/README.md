@@ -1,6 +1,6 @@
 # Halo documentation
 
-Halo is a free and open-source identity platform: single sign-on, passkeys, access governance and zero-trust access policies that you host yourself. It has not published a release yet; [CHANGELOG.md](../CHANGELOG.md) lists what works today.
+Halo is an open-source identity and access management (IAM) platform that you host yourself: single sign-on over OpenID Connect and SAML, passkeys, SCIM provisioning, conditional access policies and access governance. It has not published a release yet; [CHANGELOG.md](../CHANGELOG.md) lists what works today.
 
 ## Start here
 

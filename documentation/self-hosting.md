@@ -21,6 +21,7 @@ Only Caddy is reachable from outside. The images are built from the repository: 
 
 - **The domain.** Halo's address is the OpenID Connect issuer that every application stores, and passkeys only work on the hostname they were created for. Moving Halo to a new hostname later means reconfiguring every application and giving everyone a new setup link. Pick a name you intend to keep, such as `auth.example.com`.
 - **The secret key.** `HALO_SECRET_KEY` encrypts the token signing keys, authenticator-app secrets and other stored secrets, and a database backup is useless without the key that was in use when it was taken. Store it in your password manager when you create it. To replace it, stop Halo and run `halo rotate-secret-key` as described in [Rotate HALO_SECRET_KEY](../deploy/README.md#rotate-halo_secret_key); recovery codes do not survive a rotation, so the people who had them generate new ones.
+- **One server.** Run a single `halo-server`. Email and webhook delivery coordinate through the database, but other background jobs, such as outbound SCIM, access expiry and lifecycle rules, run in every server process without coordinating with other processes.
 - **Email.** Halo works without email: invite and reset links are shown to the administrator who creates them, to pass on. With an SMTP server in the `HALO_SMTP_*` variables, Halo also emails those links and people can sign in with magic links.
 
 ## Other ways to run Halo
