@@ -2,7 +2,7 @@
 
 Halo runs on your own infrastructure with no external services: a Go server, a Next.js web interface, PostgreSQL, and a reverse proxy that terminates TLS. The repository ships everything needed to run it on one host with Docker Compose.
 
-**Follow [deploy/README.md](../deploy/README.md) for the step-by-step guide.** It covers DNS, the environment file, starting the services, creating the first administrator, backups, upgrades, health checks and rotating `HALO_SECRET_KEY`.
+**Follow [deploy/README.md](../deploy/README.md) for the step-by-step guide.** It covers DNS, the environment file, starting the services, creating the first administrator, backups, upgrades, health checks and rotating `HALO_SECRET_KEY`. On a fresh host, `curl -fsSL https://halo.scala.gg/install.sh | sh` runs the setup steps for you; see [Install with the script](../deploy/README.md#install-with-the-script).
 
 ## What runs
 

@@ -43,6 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - An example Go web application that signs in with Halo, in `examples/go-web-client`.
 - End-to-end tests with a virtual authenticator for passkey sign-in to the OpenID Connect and SAML examples, magic links, access requests, access policies, and every console page at desktop and phone widths.
 - Docker images for the server and the web interface, and a Docker Compose deployment with PostgreSQL and Caddy, in `deploy/`.
+- An install script, `deploy/install.sh`, behind `curl -fsSL https://halo.scala.gg/install.sh | sh`, that sets up the Docker Compose deployment on a fresh host.
 - User and operator documentation in `documentation/`, with guides for email, policies, governance, federation, provisioning, webhooks, API resources and infrastructure access, and integration guides for Grafana, Forgejo, Nextcloud, Kubernetes, Proxmox VE, Outline, Headscale, AWS IAM Identity Center and Slack.
 - Continuous integration for `go vet`, `go test`, type checking and the web build.
 - Contributing guide, security policy and code of conduct.

@@ -20,7 +20,17 @@ Only Caddy publishes ports. The other services are reachable only on the interna
 - A Linux host with Docker Engine and the Docker Compose plugin. These files were tested with Docker 29.8 and Docker Compose 5.5.
 - A domain name for Halo, such as `auth.example.com`. Halo's address becomes the OpenID Connect issuer and the passkey domain, so choose one you intend to keep: passkeys only work on the hostname they were created for.
 - Ports 80 and 443 on the host reachable from the internet, so Caddy can obtain and renew the certificate.
-- A copy of the Halo repository on the host. The Compose file builds the Halo images from it.
+- A copy of the Halo repository on the host. The Compose file builds the Halo images from it. The install script clones it for you.
+
+## Install with the script
+
+The install script performs steps 2 to 5 below: it clones the repository, writes `.env` with a new database password and `HALO_SECRET_KEY`, and builds and starts Halo. It needs `git` and `openssl` as well as Docker. Point your domain at the host first, as in step 1, then run:
+
+```bash
+curl -fsSL https://halo.scala.gg/install.sh | sh
+```
+
+It asks for your domain and organization name, or reads them from `HALO_DOMAIN` and `HALO_ORGANIZATION`. It installs into `/opt/halo` when run as root and `~/halo` otherwise; set `HALO_DIR` to choose another directory, and `HALO_REF` to install a branch or tag other than `main`. The script is [install.sh](install.sh) in this directory. When it finishes, continue with step 6.
 
 ## Install
 
