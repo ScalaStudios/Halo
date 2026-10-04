@@ -1,9 +1,9 @@
 #!/bin/sh
 set -eu
 
-repo=${HALO_REPO:-https://github.com/scalagg/halo.git}
+repo=${HALO_REPO:-https://github.com/ScalaStudios/Halo.git}
 ref=${HALO_REF:-main}
-guide=https://github.com/scalagg/halo/blob/main/deploy/README.md
+guide=https://github.com/ScalaStudios/Halo/blob/main/deploy/README.md
 if [ "$(id -u)" -eq 0 ]; then dir=${HALO_DIR:-/opt/halo}; else dir=${HALO_DIR:-$HOME/halo}; fi
 
 fail() {

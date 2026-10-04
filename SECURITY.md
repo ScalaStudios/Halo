@@ -13,7 +13,7 @@ Halo is in early development and has not published a release. Until version 1.0,
 
 ## Report a vulnerability
 
-Report vulnerabilities privately through GitHub's private vulnerability reporting: open the Halo repository, go to **Security**, and choose **Report a vulnerability**, or go straight to [the report form](https://github.com/scalagg/halo/security/advisories/new). Only you and the maintainers can read the report.
+Report vulnerabilities privately through GitHub's private vulnerability reporting: open the Halo repository, go to **Security**, and choose **Report a vulnerability**, or go straight to [the report form](https://github.com/ScalaStudios/Halo/security/advisories/new). Only you and the maintainers can read the report.
 
 Do not report a vulnerability in a public issue, pull request, discussion or chat. If you are unsure whether something is a security problem, report it privately anyway.
 

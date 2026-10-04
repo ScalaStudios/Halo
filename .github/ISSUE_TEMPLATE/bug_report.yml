@@ -4,7 +4,7 @@ labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: Report security vulnerabilities privately, as [SECURITY.md](https://github.com/scalagg/halo/blob/main/SECURITY.md) describes, and not in an issue.
+      value: Report security vulnerabilities privately, as [SECURITY.md](https://github.com/ScalaStudios/Halo/blob/main/SECURITY.md) describes, and not in an issue.
   - type: textarea
     id: what-happened
     attributes:

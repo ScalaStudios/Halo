@@ -1,6 +1,6 @@
 <h1><img src=".github/assets/banner.png" alt="Halo: open-source identity and access management" width="100%"></h1>
 
-[![CI](https://img.shields.io/github/actions/workflow/status/scalagg/halo/ci.yml?branch=main&style=flat&label=ci&labelColor=2a2724)](https://github.com/scalagg/halo/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/ScalaStudios/Halo/ci.yml?branch=main&style=flat&label=ci&labelColor=2a2724)](https://github.com/ScalaStudios/Halo/actions/workflows/ci.yml)
 [![Status: pre-release](https://img.shields.io/badge/status-pre--release-fa7e26?style=flat&labelColor=2a2724)](CHANGELOG.md)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-57534d?style=flat&labelColor=2a2724)](LICENSE)
 
@@ -86,7 +86,7 @@ Open the link it prints and register a passkey. The console is at `https://auth.
 To work on Halo or try it on your own computer, you need Go 1.27, [Bun](https://bun.sh) 1.3 or Node.js 22, and Docker.
 
 ```bash
-git clone https://github.com/scalagg/halo.git && cd halo
+git clone https://github.com/ScalaStudios/Halo.git && cd halo
 docker compose -f compose.dev.yml up -d
 cp .env.example .env
 ```
@@ -233,11 +233,11 @@ Known limitations today:
 
 ## Contributing
 
-Bug reports, fixes, documentation and features are welcome. Report bugs and propose features in [GitHub issues](https://github.com/scalagg/halo/issues), and open an issue before starting anything large, such as a new feature, a new dependency or a schema change. [CONTRIBUTING.md](CONTRIBUTING.md) covers the development setup, the checks CI runs and the code style, and [Architecture](documentation/architecture.md) maps the code. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+Bug reports, fixes, documentation and features are welcome. Report bugs and propose features in [GitHub issues](https://github.com/ScalaStudios/Halo/issues), and open an issue before starting anything large, such as a new feature, a new dependency or a schema change. [CONTRIBUTING.md](CONTRIBUTING.md) covers the development setup, the checks CI runs and the code style, and [Architecture](documentation/architecture.md) maps the code. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Security
 
-Report vulnerabilities privately through [GitHub's private vulnerability reporting](https://github.com/scalagg/halo/security/advisories/new), never in a public issue. [SECURITY.md](SECURITY.md) lists what to include and the response times to expect.
+Report vulnerabilities privately through [GitHub's private vulnerability reporting](https://github.com/ScalaStudios/Halo/security/advisories/new), never in a public issue. [SECURITY.md](SECURITY.md) lists what to include and the response times to expect.
 
 Halo stores session tokens, client secrets, API keys and refresh tokens only as SHA-256 hashes, encrypts signing keys and other stored secrets with AES-256-GCM, writes every administrative change to the audit log in the same transaction, and refuses to start without HTTPS outside development. The [security model](documentation/security-model.md) explains each of these and lists the known limitations.
 
