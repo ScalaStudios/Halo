@@ -1,0 +1,51 @@
+name: Bug report
+description: Something in Halo does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Report security vulnerabilities privately, as [SECURITY.md](https://github.com/scalagg/halo/blob/main/SECURITY.md) describes, and not in an issue.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what Halo did instead. Include any error code, such as `ERR_CROSS_SITE`.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Choose …
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit
+      description: The commit you run, from `git rev-parse --short HEAD` in your Halo checkout.
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How you run Halo
+      options:
+        - Docker Compose from deploy/
+        - From source, with go run and bun run dev
+        - Something else, described below
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: For interface problems, the browser and operating system. For server problems, the reverse proxy, the PostgreSQL version and the relevant HALO_ settings. Leave out secrets.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant lines from `docker compose logs halo-server halo-web`. Remove tokens, cookies and email addresses first.
+      render: text

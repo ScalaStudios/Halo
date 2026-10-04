@@ -46,7 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - An install script, `deploy/install.sh`, behind `curl -fsSL https://halo.scala.gg/install.sh | sh`, that sets up the Docker Compose deployment on a fresh host.
 - User and operator documentation in `documentation/`, with guides for email, policies, governance, federation, provisioning, webhooks, API resources and infrastructure access, and integration guides for Grafana, Forgejo, Nextcloud, Kubernetes, Proxmox VE, Outline, Headscale, AWS IAM Identity Center and Slack.
 - Continuous integration for `go vet`, `go test`, type checking and the web build.
-- Contributing guide, security policy and code of conduct.
+- Contributing guide, security policy, code of conduct, and issue and pull request templates.
 
 ### Changed
 
