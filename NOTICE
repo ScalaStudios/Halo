@@ -1,0 +1,28 @@
+Halo
+Copyright 2026 Scala Studios
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+-------------------------------------------------------------------------------
+Third-party components
+-------------------------------------------------------------------------------
+
+React Bits
+  Files:   web/src/components/reactbits/CodeSlots.tsx
+           web/src/components/reactbits/HoldButton.tsx
+  Source:  https://github.com/DavidHDev/react-bits
+  License: MIT + Commons Clause License Condition v1.0
+           (web/src/components/reactbits/LICENSE.md)
+  Changes: CodeSlots uses Lucide icons instead of Hugeicons. HoldButton uses
+           Halo's button heights, font weight and focus ring.
+
+  These two files are NOT covered by the Apache License 2.0. Their license
+  permits distributing them as part of an application or product, and its
+  Commons Clause condition forbids selling, sublicensing or redistributing
+  the components themselves, alone or in a bundle. Redistributors that need
+  a fully OSI-licensed tree can replace them: Halo uses them only through
+  web/src/components/ui/code-input.tsx and hold-to-confirm.tsx.
+
+Fonts (installed from npm, not vendored)
+  Archivo, Inter and JetBrains Mono via @fontsource-variable packages,
+  licensed under the SIL Open Font License 1.1.
