@@ -1,0 +1,4498 @@
+openapi: 3.1.0
+info:
+  title: Halo management API
+  version: 0.1.0
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  description: |
+    The JSON API behind the Halo console and account portal. Anything the web interface does, a script can do with the same requests.
+
+    **Authentication.** Send either the `halo_session` cookie of a signed-in person, or an API key of a service account as `Authorization: Bearer hlk_…`. API keys work only when they have the `api` scope, act with the roles of their service account, and are ignored on the personal routes under `/me` and on the sign-in routes under `/auth`. The personal routes under `/me/` (with a trailing segment, not `/me` itself) also accept an access token that `halo login` obtained for the built-in Halo CLI application.
+
+    **Roles.** Each operation states the roles it requires. A global administrator passes every role check. "Any administrator" means security, user, helpdesk or application administrator, or auditor.
+
+    **Errors.** Every error is `{"error": {"code": "ERR_…", "message": "…"}}`. Match on `code`; show `message` to people. Besides the codes listed per operation, any request can fail with `500` and `ERR_INTERNAL`, and unknown routes answer `404` with `ERR_NO_ROUTE`. Requests with a method other than GET, HEAD or OPTIONS that come from another website get `403` with `ERR_CROSS_SITE`.
+
+    **Conventions.** Bodies are JSON with camelCase names, at most 1 MiB, and unknown fields are rejected. Times are RFC 3339. Ids are a prefix and a 26-character ULID, such as `usr_01J9Z…`.
+servers:
+  - url: /api/v1
+security:
+  - session: []
+  - apiKey: []
+tags:
+  - name: Organization
+    description: Public information about the organization.
+  - name: Sign-in
+    description: Passkey, code, magic link, federated and enrollment sign-in. These routes work without a session unless noted, and ignore API keys.
+  - name: Device sign-in
+    description: The confirmation page of the device flow that `halo login` uses.
+  - name: Account
+    description: The signed-in person's own profile, sign-in methods, sessions, access and certificates. API keys cannot use these routes.
+  - name: Users
+    description: Invitations, profiles, suspension, sign-in methods and roles of the people in the directory.
+  - name: Groups
+    description: Assigned and rule-based groups and their members.
+  - name: Applications
+    description: OpenID Connect, OAuth and SAML applications, their secrets and group assignments.
+  - name: Activity
+    description: Sessions, the sign-in log, the audit log and the overview.
+  - name: Access packages
+    description: Bundles of groups that people can request.
+  - name: Access requests
+    description: Requests for access packages and the grants they create.
+  - name: Access reviews
+    description: Periodic reviews of who stays in an assigned group.
+  - name: Lifecycle
+    description: Joiner, mover and leaver rules.
+  - name: Policies
+    description: Conditional access policies, network zones, sign-in methods, devices and risk events.
+  - name: Service accounts
+    description: Non-human accounts and their API keys.
+  - name: Provisioning
+    description: Outbound SCIM provisioning to applications.
+  - name: Identity providers
+    description: Google, Microsoft Entra, GitHub and generic OpenID Connect providers people sign in with.
+  - name: Settings
+    description: Organization settings, branding, domains and data export.
+  - name: Webhooks
+    description: Signed HTTP delivery of audit and sign-in events.
+  - name: API resources
+    description: Your own APIs, their scopes, and which applications may request them.
+  - name: SSH
+    description: The SSH certificate authority, principal mappings and issued certificates.
+  - name: Development
+    description: Routes that exist only with HALO_DEV=1.
+paths:
+  /organization:
+    get:
+      tags: [Organization]
+      operationId: getOrganization
+      summary: Get the organization name, issuer and branding
+      security: []
+      responses:
+        '200':
+          description: The organization.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Organization'}
+  /openapi.yaml:
+    get:
+      tags: [Organization]
+      operationId: getOpenAPI
+      summary: Get this OpenAPI document
+      security: []
+      responses:
+        '200':
+          description: The OpenAPI document.
+          content:
+            application/yaml:
+              schema: {type: string}
+  /branding/logo:
+    get:
+      tags: [Organization]
+      operationId: getLogo
+      summary: Get the sign-in logo
+      security: []
+      responses:
+        '200':
+          description: The logo image. Cached for 5 minutes.
+          content:
+            image/png:
+              schema: {type: string, contentMediaType: image/png}
+            image/jpeg:
+              schema: {type: string, contentMediaType: image/jpeg}
+            image/webp:
+              schema: {type: string, contentMediaType: image/webp}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Settings]
+      operationId: uploadLogo
+      summary: Upload the sign-in logo
+      description: 'Roles: global administrator. Send the image bytes as the body: PNG, JPEG or WebP, at most 256 KB. Halo detects the type from the content.'
+      requestBody:
+        required: true
+        content:
+          image/png:
+            schema: {type: string, contentMediaType: image/png}
+          image/jpeg:
+            schema: {type: string, contentMediaType: image/jpeg}
+          image/webp:
+            schema: {type: string, contentMediaType: image/webp}
+      responses:
+        '200':
+          description: The organization with its new `logoUrl`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Organization'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '413':
+          description: '`ERR_TOO_LARGE`: the image is larger than 256 KB.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Settings]
+      operationId: deleteLogo
+      summary: Remove the sign-in logo
+      description: 'Roles: global administrator.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /auth/methods:
+    get:
+      tags: [Sign-in]
+      operationId: listEnabledMethods
+      summary: List the sign-in methods that are turned on
+      security: []
+      responses:
+        '200':
+          description: The enabled methods.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [methods]
+                properties:
+                  methods:
+                    type: array
+                    items: {$ref: '#/components/schemas/MethodKind'}
+  /auth/providers:
+    get:
+      tags: [Sign-in]
+      operationId: listSignInProviders
+      summary: List the identity providers shown on the sign-in page
+      description: Only providers that are enabled and set to show on the sign-in page.
+      security: []
+      responses:
+        '200':
+          description: The providers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, name, kind]
+                  properties:
+                    id: {type: string, examples: [idp_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+                    name: {type: string, examples: [Google]}
+                    kind: {$ref: '#/components/schemas/ProviderKind'}
+  /auth/request/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Sign-in]
+      operationId: getAuthRequest
+      summary: Get the application behind a sign-in request
+      security: []
+      responses:
+        '200':
+          description: The application's name and homepage.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [application]
+                properties:
+                  application:
+                    type: object
+                    required: [name, homepage]
+                    properties:
+                      name: {type: string}
+                      homepage: {type: string}
+        '404': {$ref: '#/components/responses/AuthRequestExpired'}
+  /auth/passkey/begin:
+    post:
+      tags: [Sign-in]
+      operationId: beginPasskeySignIn
+      summary: Start a passkey sign-in
+      security: []
+      responses:
+        '200': {$ref: '#/components/responses/Ceremony'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+  /auth/passkey/finish:
+    post:
+      tags: [Sign-in]
+      operationId: finishPasskeySignIn
+      summary: Complete a passkey sign-in
+      description: Sets the `halo_session` cookie on success.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ceremony, credential]
+              properties:
+                ceremony: {type: string, description: The ceremony id from the begin step.}
+                credential: {type: object, description: 'The browser''s PublicKeyCredential response, as JSON.'}
+                authRequest: {$ref: '#/components/schemas/AuthRequestId'}
+      responses:
+        '200': {$ref: '#/components/responses/SignedIn'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401':
+          description: '`ERR_PASSKEY_REJECTED`: the prompt expired, the passkey is not registered, its signature did not verify, or its counter went backwards.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403': {$ref: '#/components/responses/SignInRefused'}
+        '404': {$ref: '#/components/responses/AuthRequestExpired'}
+  /auth/identify:
+    post:
+      tags: [Sign-in]
+      operationId: identify
+      summary: List the methods to offer for an email address
+      description: Answers `["passkey", "totp"]` for addresses without an account, so the response does not reveal whether an account exists.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: {type: string, format: email}
+      responses:
+        '200':
+          description: The methods the person has, out of passkey, security-key, totp and recovery-codes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [methods]
+                properties:
+                  methods:
+                    type: array
+                    items: {$ref: '#/components/schemas/MethodKind'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+  /auth/totp:
+    post:
+      tags: [Sign-in]
+      operationId: signInWithTOTP
+      summary: Sign in with an authenticator code
+      security: []
+      requestBody: {$ref: '#/components/requestBodies/CodeSignIn'}
+      responses:
+        '200': {$ref: '#/components/responses/SignedIn'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/CodeMismatch'}
+        '403': {$ref: '#/components/responses/SignInRefused'}
+        '404': {$ref: '#/components/responses/AuthRequestExpired'}
+        '429': {$ref: '#/components/responses/TooManyAttempts'}
+  /auth/recovery:
+    post:
+      tags: [Sign-in]
+      operationId: signInWithRecoveryCode
+      summary: Sign in with a recovery code
+      description: Uses up the code. Case, dashes and spaces are ignored.
+      security: []
+      requestBody: {$ref: '#/components/requestBodies/CodeSignIn'}
+      responses:
+        '200': {$ref: '#/components/responses/SignedIn'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/CodeMismatch'}
+        '403': {$ref: '#/components/responses/SignInRefused'}
+        '404': {$ref: '#/components/responses/AuthRequestExpired'}
+        '429': {$ref: '#/components/responses/TooManyAttempts'}
+  /auth/magic-link:
+    post:
+      tags: [Sign-in]
+      operationId: requestMagicLink
+      summary: Email a sign-in link
+      description: Emails a link that works once for 10 minutes, to active accounts only, at most 5 times per person in 15 minutes, and only while magic links are turned on under `/methods`. Answers `202` the same way whether or not the account exists or magic links are on.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: {type: string, format: email}
+                authRequest: {$ref: '#/components/schemas/AuthRequestId'}
+      responses:
+        '202':
+          description: Accepted. The body is an empty object.
+          content:
+            application/json:
+              schema: {type: object}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '404': {$ref: '#/components/responses/AuthRequestExpired'}
+  /auth/magic-link/redeem:
+    post:
+      tags: [Sign-in]
+      operationId: redeemMagicLink
+      summary: Sign in with an emailed link
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: {type: string, description: The token query parameter of the link.}
+      responses:
+        '200': {$ref: '#/components/responses/SignedIn'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '403': {$ref: '#/components/responses/SignInRefused'}
+        '404':
+          description: '`ERR_LINK_EXPIRED`: the link expired or was already used. `ERR_AUTH_REQUEST_EXPIRED`: the application''s sign-in request expired.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /auth/continue:
+    post:
+      tags: [Sign-in]
+      operationId: continueAuthRequest
+      summary: Continue an application's sign-in request with the current session
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [authRequest]
+              properties:
+                authRequest: {$ref: '#/components/schemas/AuthRequestId'}
+      responses:
+        '200': {$ref: '#/components/responses/SignedIn'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401':
+          description: '`ERR_UNAUTHENTICATED`: no session. `ERR_REAUTH_REQUIRED`: the application sent `prompt=login`, or a `max_age` shorter than the session''s age.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403': {$ref: '#/components/responses/SignInRefused'}
+        '404': {$ref: '#/components/responses/AuthRequestExpired'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /auth/enroll:
+    get:
+      tags: [Sign-in]
+      operationId: getEnrollment
+      summary: Get the person an invite or reset link belongs to
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: The person and the link's purpose.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user, purpose]
+                properties:
+                  user:
+                    type: object
+                    required: [name, email]
+                    properties:
+                      name: {type: string}
+                      email: {type: string}
+                  purpose: {type: string, enum: [invite, reset]}
+        '403': {$ref: '#/components/responses/Suspended'}
+        '404': {$ref: '#/components/responses/LinkExpired'}
+  /auth/enroll/begin:
+    post:
+      tags: [Sign-in]
+      operationId: beginEnrollment
+      summary: Start registering the first passkey or security key
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: {type: string}
+      responses:
+        '200': {$ref: '#/components/responses/Ceremony'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '403': {$ref: '#/components/responses/Suspended'}
+        '404': {$ref: '#/components/responses/LinkExpired'}
+  /auth/enroll/finish:
+    post:
+      tags: [Sign-in]
+      operationId: finishEnrollment
+      summary: Save the first credential and sign in
+      description: Uses up the link in the same transaction that saves the credential, and sets the `halo_session` cookie.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, ceremony, credential]
+              properties:
+                token: {type: string}
+                ceremony: {type: string}
+                credential: {type: object, description: 'The browser''s PublicKeyCredential creation response, as JSON.'}
+                label: {type: string, description: 'Defaults to the kind, browser and operating system, such as "Passkey · Chrome on macOS".'}
+      responses:
+        '200': {$ref: '#/components/responses/SignedIn'}
+        '400': {$ref: '#/components/responses/RegistrationFailed'}
+        '403': {$ref: '#/components/responses/SignInRefused'}
+        '404': {$ref: '#/components/responses/LinkExpired'}
+  /auth/sign-out:
+    post:
+      tags: [Sign-in]
+      operationId: signOut
+      summary: End the current session
+      description: Ends the session, if there is one, and clears the cookie.
+      security: []
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+  /auth/federated/{id}/start:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Sign-in]
+      operationId: startFederatedSignIn
+      summary: Redirect to an identity provider
+      description: A browser navigation, not a JSON call. On failure Halo redirects to `/sign-in?error=CODE` with `ERR_PROVIDER_UNAVAILABLE`, `ERR_PROVIDER_UNREACHABLE` or `ERR_AUTH_REQUEST_EXPIRED`.
+      security: []
+      parameters:
+        - name: authRequest
+          in: query
+          schema: {$ref: '#/components/schemas/AuthRequestId'}
+        - name: next
+          in: query
+          description: A local path to open after signing in, when there is no `authRequest`.
+          schema: {type: string, examples: [/account/security]}
+      responses:
+        '302':
+          description: Redirect to the provider's authorization endpoint, or to the sign-in page with an error.
+  /auth/federated/callback:
+    get:
+      tags: [Sign-in]
+      operationId: federatedCallback
+      summary: Receive the identity provider's response
+      description: The redirect URI to register at the provider. On success Halo sets the `halo_session` cookie and redirects to the application, `next` or `/account`. On failure it redirects to `/sign-in?error=CODE` with `ERR_FEDERATION_STATE`, `ERR_PROVIDER_UNAVAILABLE`, `ERR_FEDERATION_CANCELLED`, `ERR_FEDERATION_FAILED`, `ERR_FEDERATION_EMAIL`, `ERR_FEDERATION_DOMAIN`, `ERR_FEDERATION_NO_ACCOUNT`, or one of the codes that refuse any sign-in.
+      security: []
+      parameters:
+        - {name: state, in: query, schema: {type: string}}
+        - {name: code, in: query, schema: {type: string}}
+        - {name: error, in: query, schema: {type: string}}
+      responses:
+        '302':
+          description: Redirect after the sign-in or its failure.
+  /device/{code}:
+    parameters:
+      - {$ref: '#/components/parameters/DeviceCode'}
+    get:
+      tags: [Device sign-in]
+      operationId: getDeviceAuthorization
+      summary: Show a pending device sign-in
+      security:
+        - session: []
+      responses:
+        '200':
+          description: The pending request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeviceAuthorization'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/DeviceCode'}
+  /device/{code}/approve:
+    parameters:
+      - {$ref: '#/components/parameters/DeviceCode'}
+    post:
+      tags: [Device sign-in]
+      operationId: approveDeviceAuthorization
+      summary: Approve a device sign-in
+      description: Checks application assignment and the access policies against the current session, records a sign-in event, and lets the waiting device collect its tokens.
+      security:
+        - session: []
+      responses:
+        '200': {$ref: '#/components/responses/DeviceDecision'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403':
+          description: '`ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED` or `ERR_CROSS_SITE`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404': {$ref: '#/components/responses/DeviceCode'}
+  /device/{code}/deny:
+    parameters:
+      - {$ref: '#/components/parameters/DeviceCode'}
+    post:
+      tags: [Device sign-in]
+      operationId: denyDeviceAuthorization
+      summary: Deny a device sign-in
+      security:
+        - session: []
+      responses:
+        '200': {$ref: '#/components/responses/DeviceDecision'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+        '404': {$ref: '#/components/responses/DeviceCode'}
+  /me:
+    get:
+      tags: [Account]
+      operationId: getMe
+      summary: Get your profile, sign-in methods, roles, groups and applications
+      security:
+        - session: []
+      responses:
+        '200':
+          description: You.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/passkeys/begin:
+    post:
+      tags: [Account]
+      operationId: beginAddPasskey
+      summary: Start registering another passkey or security key
+      security: &personal
+        - session: []
+        - cliAccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind: {type: string, enum: [passkey, security-key]}
+      responses:
+        '200': {$ref: '#/components/responses/Ceremony'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /me/passkeys/finish:
+    post:
+      tags: [Account]
+      operationId: finishAddPasskey
+      summary: Save the new passkey or security key
+      security: *personal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ceremony, credential]
+              properties:
+                ceremony: {type: string}
+                credential: {type: object}
+                label: {type: string}
+      responses:
+        '200':
+          description: The new sign-in method.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Method'}
+        '400': {$ref: '#/components/responses/RegistrationFailed'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+  /me/methods/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    delete:
+      tags: [Account]
+      operationId: removeMyMethod
+      summary: Remove one of your sign-in methods
+      description: The id `recovery-codes` removes your recovery codes.
+      security: *personal
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/LastMethod'}
+  /me/totp/begin:
+    post:
+      tags: [Account]
+      operationId: beginTOTP
+      summary: Start adding an authenticator app
+      security: *personal
+      responses:
+        '200':
+          description: The ceremony, the shared secret and an otpauth URI for a QR code.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ceremony, secret, uri]
+                properties:
+                  ceremony: {type: string}
+                  secret: {type: string, description: Base32 secret.}
+                  uri: {type: string, examples: ['otpauth://totp/Halo:sam@example.com?issuer=Halo&secret=…']}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+  /me/totp/confirm:
+    post:
+      tags: [Account]
+      operationId: confirmTOTP
+      summary: Confirm the authenticator app with a current code
+      security: *personal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ceremony, code]
+              properties:
+                ceremony: {type: string}
+                code: {type: string, examples: ['123456']}
+                label: {type: string, default: Authenticator app}
+      responses:
+        '200':
+          description: The new sign-in method.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Method'}
+        '400':
+          description: '`ERR_CEREMONY_EXPIRED` or `ERR_INVALID_JSON`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '401':
+          description: '`ERR_UNAUTHENTICATED`, or `ERR_CODE_MISMATCH` when the code did not match.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+  /me/recovery-codes:
+    post:
+      tags: [Account]
+      operationId: createRecoveryCodes
+      summary: Create new recovery codes
+      description: Replaces every earlier code. Halo shows the codes only in this response.
+      security: *personal
+      responses:
+        '200':
+          description: The new codes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [codes]
+                properties:
+                  codes:
+                    type: array
+                    items: {type: string}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+  /me/sessions:
+    get:
+      tags: [Account]
+      operationId: listMySessions
+      summary: List your active sessions
+      security: *personal
+      responses:
+        '200':
+          description: Your sessions. `current` marks the one making the request.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Session'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/sessions/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    delete:
+      tags: [Account]
+      operationId: revokeMySession
+      summary: End one of your sessions
+      description: Ending the current session also clears its cookie.
+      security: *personal
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /me/sessions/revoke-others:
+    post:
+      tags: [Account]
+      operationId: revokeMyOtherSessions
+      summary: End every session except the current one
+      security: *personal
+      responses:
+        '200': {$ref: '#/components/responses/Revoked'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+  /me/applications:
+    get:
+      tags: [Account]
+      operationId: listMyApplications
+      summary: List the active applications you can sign in to
+      security: *personal
+      responses:
+        '200':
+          description: Your applications.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/MyApplication'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/groups:
+    get:
+      tags: [Account]
+      operationId: listMyGroups
+      summary: List the groups you belong to
+      security: *personal
+      responses:
+        '200':
+          description: Your groups.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Group'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/sign-ins:
+    get:
+      tags: [Account]
+      operationId: listMySignIns
+      summary: List your 100 most recent sign-in events
+      security: *personal
+      responses:
+        '200':
+          description: Your sign-in events, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/SignInEvent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/identities:
+    get:
+      tags: [Account]
+      operationId: listMyIdentities
+      summary: List the identity provider accounts linked to you
+      security: *personal
+      responses:
+        '200':
+          description: Your linked accounts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/FederatedIdentity'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/identities/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    delete:
+      tags: [Account]
+      operationId: unlinkMyIdentity
+      summary: Unlink an identity provider account
+      description: Refused when it is your last way to sign in. Recovery codes do not count.
+      security: *personal
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/LastMethod'}
+  /me/devices:
+    get:
+      tags: [Account]
+      operationId: listMyDevices
+      summary: List the browsers and devices you signed in from
+      security: *personal
+      responses:
+        '200':
+          description: Your devices. `current` marks the browser making the request.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Device'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/ssh/certificates:
+    post:
+      tags: [Account, SSH]
+      operationId: issueSSHCertificate
+      summary: Get an SSH user certificate for a public key
+      description: Signs the key with Halo's SSH certificate authority for every principal mapped to your groups, valid for the configured lifetime. `halo ssh-cert` calls this route.
+      security: *personal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [publicKey]
+              properties:
+                publicKey: {type: string, description: An OpenSSH public key. RSA keys need at least 2048 bits., examples: ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI… sam@laptop']}
+      responses:
+        '201':
+          description: The certificate.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SSHCertificateIssued'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403':
+          description: '`ERR_NO_PRINCIPALS`: none of your groups maps to a server account. Also `ERR_CROSS_SITE`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /me/access-packages:
+    get:
+      tags: [Account, Access requests]
+      operationId: listRequestablePackages
+      summary: List the access packages you can request
+      description: Every package that is not archived.
+      security: *personal
+      responses:
+        '200':
+          description: The packages.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AccessPackage'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/access-requests:
+    get:
+      tags: [Account, Access requests]
+      operationId: listMyRequests
+      summary: List your access requests
+      security: *personal
+      responses:
+        '200':
+          description: Your requests, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AccessRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      tags: [Account, Access requests]
+      operationId: createAccessRequest
+      summary: Request an access package
+      description: Emails the package's approvers. Approvers cannot decide their own requests.
+      security: *personal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [packageId]
+              properties:
+                packageId: {type: string}
+                durationDays:
+                  type: [integer, 'null']
+                  minimum: 1
+                  maximum: 365
+                  description: How long you need access. Required, and at most the package's `maxDays`, when the package sets one. `null` asks for access until it is revoked.
+                justification: {type: string, maxLength: 2000, description: 'Required when the package sets `requireJustification`.'}
+      responses:
+        '201':
+          description: The pending request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessRequest'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+        '409':
+          description: '`ERR_CONFLICT`: the package is archived, or you already have a pending request for it.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /me/access-requests/{id}/cancel:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Account, Access requests]
+      operationId: cancelAccessRequest
+      summary: Cancel your pending request
+      security: *personal
+      responses:
+        '200':
+          description: The cancelled request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /me/access-grants:
+    get:
+      tags: [Account, Access requests]
+      operationId: listMyGrants
+      summary: List your active access grants
+      description: Approved requests that have not expired or been revoked.
+      security: *personal
+      responses:
+        '200':
+          description: Your grants.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AccessRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/approvals:
+    get:
+      tags: [Account, Access requests]
+      operationId: listMyApprovals
+      summary: List the pending requests you can decide
+      security: *personal
+      responses:
+        '200':
+          description: Pending requests where you are an approver and not the requester, or every pending request for a global administrator.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AccessRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/reviews:
+    get:
+      tags: [Account, Access reviews]
+      operationId: listMyReviews
+      summary: List the open access reviews you are a reviewer of
+      security: *personal
+      responses:
+        '200':
+          description: Your open reviews, without their items.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AccessReview'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /users:
+    get:
+      tags: [Users]
+      operationId: listUsers
+      summary: List every person
+      description: 'Roles: any administrator. Service accounts are not included.'
+      responses:
+        '200':
+          description: Every person, sorted by name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/User'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Users]
+      operationId: inviteUser
+      summary: Invite a person
+      description: 'Roles: user administrator. Creates the account with status `invited` and a setup link, and emails the link when SMTP is configured.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, name]
+              properties:
+                email: {type: string, format: email, maxLength: 254}
+                name: {type: string, maxLength: 200}
+                title: {type: string, maxLength: 200}
+                department: {type: string, maxLength: 200}
+                location: {type: string, maxLength: 200}
+                managerId: {type: string, description: Id of another person.}
+                groupIds:
+                  type: array
+                  description: Assigned groups only.
+                  items: {type: string}
+      responses:
+        '201':
+          description: The new person and their setup link.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user, enrollUrl, expiresAt, emailed]
+                properties:
+                  user: {$ref: '#/components/schemas/User'}
+                  enrollUrl: {type: string, format: uri}
+                  expiresAt: {type: string, format: date-time}
+                  emailed: {type: boolean, description: True when Halo also emailed the link.}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /users/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Users]
+      operationId: getUser
+      summary: Get one person
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The person.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [Users]
+      operationId: updateUser
+      summary: Change a person's profile
+      description: 'Roles: user or helpdesk administrator. Helpdesk administrators can change title, department and location only. Only a global administrator can change a person who holds an administrator role. Send only the fields to change; an empty `managerId` removes the manager.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: {type: string, format: email}
+                name: {type: string, maxLength: 200}
+                title: {type: string, maxLength: 200}
+                department: {type: string, maxLength: 200}
+                location: {type: string, maxLength: 200}
+                managerId: {type: string}
+      responses:
+        '200':
+          description: The updated person.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /users/{id}/sessions:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Users]
+      operationId: listUserSessions
+      summary: List a person's active sessions
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The sessions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Session'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /users/{id}/sign-ins:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Users]
+      operationId: listUserSignIns
+      summary: List a person's sign-in events
+      description: 'Roles: any administrator. The 500 most recent.'
+      responses:
+        '200':
+          description: The events, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/SignInEvent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /users/{id}/suspend:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Users]
+      operationId: suspendUser
+      summary: Suspend a person and end their sessions
+      description: 'Roles: user or security administrator. Refused for your own account and for the last active global administrator.'
+      responses:
+        '200': {$ref: '#/components/responses/UserResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /users/{id}/restore:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Users]
+      operationId: restoreUser
+      summary: Restore a suspended person
+      description: 'Roles: user administrator. The person becomes `active`, or `invited` when they never signed in and have no sign-in method.'
+      responses:
+        '200': {$ref: '#/components/responses/UserResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /users/{id}/revoke-sessions:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Users]
+      operationId: revokeUserSessions
+      summary: End a person's sessions
+      description: 'Roles: user, helpdesk or security administrator. When you target yourself, your current session stays.'
+      responses:
+        '200': {$ref: '#/components/responses/Revoked'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /users/{id}/reset-authentication:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Users]
+      operationId: resetAuthentication
+      summary: Remove every sign-in method and create a new setup link
+      description: 'Roles: user or helpdesk administrator. Also ends every session and emails the link when SMTP is configured.'
+      responses:
+        '200':
+          description: The new setup link.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enrollUrl, expiresAt, emailed]
+                properties:
+                  enrollUrl: {type: string, format: uri}
+                  expiresAt: {type: string, format: date-time}
+                  emailed: {type: boolean}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /users/{id}/methods/{methodId}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+      - name: methodId
+        in: path
+        required: true
+        schema: {type: string}
+    delete:
+      tags: [Users]
+      operationId: deleteUserMethod
+      summary: Remove one of a person's sign-in methods
+      description: 'Roles: user or helpdesk administrator.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /users/{id}/roles:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Users]
+      operationId: setUserRoles
+      summary: Replace a person's administrator roles
+      description: 'Roles: global administrator. Send the complete list; an empty list removes every role. You cannot remove your own global administrator role.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roles]
+              properties:
+                roles:
+                  type: array
+                  items: {$ref: '#/components/schemas/RoleKey'}
+      responses:
+        '200': {$ref: '#/components/responses/UserResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /groups:
+    get:
+      tags: [Groups]
+      operationId: listGroups
+      summary: List every group with its member count
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The groups.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Group'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Groups]
+      operationId: createGroup
+      summary: Create a group
+      description: 'Roles: user administrator.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, kind]
+              properties:
+                name: {type: string, maxLength: 200}
+                description: {type: string, maxLength: 2000}
+                kind: {type: string, enum: [assigned, dynamic]}
+                rule: {type: string, description: Required for dynamic groups., examples: ['user.department == "Engineering"']}
+      responses:
+        '201':
+          description: The group.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Group'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /groups/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Groups]
+      operationId: getGroup
+      summary: Get one group
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The group.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Group'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [Groups]
+      operationId: updateGroup
+      summary: Rename a group, or change its description or rule
+      description: 'Roles: user administrator. The kind cannot change.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string, maxLength: 200}
+                description: {type: string, maxLength: 2000}
+                kind: {type: string, enum: [assigned, dynamic], description: Accepted only when it equals the current kind.}
+                rule: {type: string, description: Dynamic groups only.}
+      responses:
+        '200':
+          description: The updated group.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Group'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Groups]
+      operationId: deleteGroup
+      summary: Delete a group
+      description: 'Roles: user administrator. Refused with `409`, naming each one, while an application, access package, policy, identity provider (for accounts created on first sign-in), open access review or lifecycle rule still uses the group. Completed access reviews are kept with the group''s name.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /groups/{id}/members:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Groups]
+      operationId: listGroupMembers
+      summary: List a group's members, or preview a rule
+      description: 'Roles: any administrator. Deprovisioned people are left out.'
+      parameters:
+        - name: rule
+          in: query
+          description: Dynamic groups only. Returns who would match this rule instead of the saved one.
+          schema: {type: string}
+      responses:
+        '200':
+          description: The members.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/User'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    post:
+      tags: [Groups]
+      operationId: addGroupMember
+      summary: Add a person to an assigned group
+      description: 'Roles: user administrator. Adding someone who is already a member succeeds.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId: {type: string}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DynamicGroup'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /groups/{id}/members/{userId}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+      - {$ref: '#/components/parameters/UserId'}
+    delete:
+      tags: [Groups]
+      operationId: removeGroupMember
+      summary: Remove a person from an assigned group
+      description: 'Roles: user administrator.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DynamicGroup'}
+  /applications:
+    get:
+      tags: [Applications]
+      operationId: listApplications
+      summary: List every application
+      description: 'Roles: any administrator. Includes credentials without secret values, assigned groups and sign-in statistics.'
+      responses:
+        '200':
+          description: The applications.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Application'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Applications]
+      operationId: createApplication
+      summary: Register an application
+      description: 'Roles: application administrator. OpenID Connect web applications and services get a client secret, returned once. SAML applications take their settings in `saml` and are always `web`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, protocol, type]
+              properties:
+                name: {type: string, maxLength: 200}
+                description: {type: string, maxLength: 2000}
+                protocol: {type: string, enum: [oidc, oauth, saml]}
+                type: {type: string, enum: [web, spa, native, service]}
+                homepage: {type: string, format: uri}
+                redirectUris:
+                  type: array
+                  description: Required for OpenID Connect applications other than services. https only, except http://localhost and http://127.0.0.1.
+                  items: {type: string, format: uri}
+                postLogoutUris:
+                  type: array
+                  items: {type: string, format: uri}
+                scopes:
+                  type: array
+                  items: {type: string}
+                groupIds:
+                  type: array
+                  items: {type: string}
+                setupGuide: {type: string, enum: [grafana, forgejo, generic-oidc, kubernetes, generic-saml, aws-iam-identity-center, slack]}
+                saml: {$ref: '#/components/schemas/SAMLInput'}
+      responses:
+        '201':
+          description: The application and, for web applications and services, the client secret.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [application, clientSecret]
+                properties:
+                  application: {$ref: '#/components/schemas/Application'}
+                  clientSecret: {type: [string, 'null'], examples: [hls_…]}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /applications/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Applications]
+      operationId: getApplication
+      summary: Get one application
+      description: 'Roles: any administrator. SAML applications include a `saml` object.'
+      responses:
+        '200': {$ref: '#/components/responses/ApplicationResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [Applications]
+      operationId: updateApplication
+      summary: Change an application
+      description: 'Roles: application administrator. Send only the fields to change. SAML applications accept only name, description, homepage and owner. OpenID Connect applications must keep the `openid` scope.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string, maxLength: 200}
+                description: {type: string, maxLength: 2000}
+                homepage: {type: string}
+                redirectUris:
+                  type: array
+                  items: {type: string}
+                postLogoutUris:
+                  type: array
+                  items: {type: string}
+                scopes:
+                  type: array
+                  items: {type: string}
+                tokenPolicy:
+                  type: object
+                  properties:
+                    accessTokenTtl: {type: integer, minimum: 60, maximum: 86400}
+                    idTokenTtl: {type: integer, minimum: 60, maximum: 86400, description: Services may use 0.}
+                    refreshTokenTtl: {type: integer, minimum: 0, maximum: 7776000, description: 0 stops issuing refresh tokens.}
+                    rotation: {type: boolean}
+                owner: {type: string, description: Id of a person. An empty string removes the owner.}
+      responses:
+        '200': {$ref: '#/components/responses/ApplicationResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Applications]
+      operationId: deleteApplication
+      summary: Delete an application with its credentials and group assignments
+      description: 'Roles: application administrator.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: '`ERR_BUILT_IN`: the Halo CLI application cannot be deleted; disable it instead.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /applications/{id}/secrets:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Applications]
+      operationId: rotateClientSecret
+      summary: Create a new client secret
+      description: 'Roles: application administrator. Every older secret stops working 24 hours later. The body is optional.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: {type: string, maxLength: 100}
+      responses:
+        '201':
+          description: The new credential and its secret, shown once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [credential, clientSecret]
+                properties:
+                  credential: {$ref: '#/components/schemas/Credential'}
+                  clientSecret: {type: string}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /applications/{id}/secrets/{credentialId}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+      - name: credentialId
+        in: path
+        required: true
+        schema: {type: string}
+    delete:
+      tags: [Applications]
+      operationId: revokeClientSecret
+      summary: Revoke a client secret immediately
+      description: 'Roles: application administrator.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /applications/{id}/disable:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Applications]
+      operationId: disableApplication
+      summary: Stop sign-in and revoke every token issued to the application
+      description: 'Roles: application administrator.'
+      responses:
+        '200': {$ref: '#/components/responses/ApplicationResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /applications/{id}/enable:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Applications]
+      operationId: enableApplication
+      summary: Allow sign-in again
+      description: 'Roles: application administrator.'
+      responses:
+        '200': {$ref: '#/components/responses/ApplicationResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /applications/{id}/groups:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Applications]
+      operationId: setApplicationGroups
+      summary: Replace the groups assigned to an application
+      description: 'Roles: application administrator. Send the complete list; an empty list removes every assignment.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [groupIds]
+              properties:
+                groupIds:
+                  type: array
+                  items: {type: string}
+      responses:
+        '200': {$ref: '#/components/responses/ApplicationResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /applications/{id}/saml:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Applications]
+      operationId: setApplicationSAML
+      summary: Change a SAML application's settings
+      description: 'Roles: application administrator. Send any of the fields; `metadataXml` imports the entity ID and ACS URLs from the service provider''s metadata.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SAMLInput'}
+      responses:
+        '200': {$ref: '#/components/responses/ApplicationResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /sessions:
+    get:
+      tags: [Activity]
+      operationId: listSessions
+      summary: List every active session
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The sessions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Session'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /sessions/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    delete:
+      tags: [Activity]
+      operationId: revokeSession
+      summary: End a session
+      description: 'Roles: security or user administrator. Refused for the session making the request.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /sign-ins:
+    get:
+      tags: [Activity]
+      operationId: listSignIns
+      summary: List sign-in events
+      description: 'Roles: any administrator.'
+      parameters:
+        - {name: user, in: query, description: Only this person's events., schema: {type: string}}
+        - {name: app, in: query, description: Only this application's events., schema: {type: string}}
+        - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200':
+          description: The events, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/SignInEvent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /audit:
+    get:
+      tags: [Activity]
+      operationId: listAudit
+      summary: List audit events
+      description: 'Roles: any administrator.'
+      parameters:
+        - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200':
+          description: The events, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AuditEvent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /overview:
+    get:
+      tags: [Activity]
+      operationId: getOverview
+      summary: Get the console overview
+      description: 'Roles: any administrator. Counts, administrators without a phishing-resistant method, client secrets expiring within 30 days, high-risk sign-ins from the past 7 days, applications with failed sign-ins and the 8 most recent sign-ins.'
+      responses:
+        '200':
+          description: The overview.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Overview'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /access-packages:
+    get:
+      tags: [Access packages]
+      operationId: listAccessPackages
+      summary: List every access package
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The packages, including archived ones.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AccessPackage'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Access packages]
+      operationId: createAccessPackage
+      summary: Create an access package
+      description: 'Roles: user administrator.'
+      requestBody: {$ref: '#/components/requestBodies/AccessPackageInput'}
+      responses:
+        '201': {$ref: '#/components/responses/AccessPackageResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /access-packages/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Access packages]
+      operationId: updateAccessPackage
+      summary: Replace an access package's settings
+      description: 'Roles: user administrator. Send every field; omitted fields take their empty value. `archived: true` stops new requests.'
+      requestBody: {$ref: '#/components/requestBodies/AccessPackageInput'}
+      responses:
+        '200': {$ref: '#/components/responses/AccessPackageResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Access packages]
+      operationId: deleteAccessPackage
+      summary: Delete an access package
+      description: 'Roles: user administrator. Refused with `409` once the package has request history; archive it instead.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /access-requests:
+    get:
+      tags: [Access requests]
+      operationId: listAccessRequests
+      summary: List access requests
+      description: 'Roles: any administrator. `canDecide` says whether you may approve or deny each one.'
+      parameters:
+        - name: status
+          in: query
+          description: A status or a comma-separated list, such as `approved,denied`.
+          schema: {type: string, examples: [pending]}
+      responses:
+        '200':
+          description: The 500 most recent matching requests, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AccessRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /access-requests/{id}/approve:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Access requests]
+      operationId: approveAccessRequest
+      summary: Approve a pending request
+      description: 'Roles: an approver of the package or a global administrator, who is not the requester. Adds the requester to the package''s groups, starts the expiry clock and emails the requester. The body is optional.'
+      requestBody: {$ref: '#/components/requestBodies/DecisionNote'}
+      responses:
+        '200': {$ref: '#/components/responses/AccessRequestResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/DecisionForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /access-requests/{id}/deny:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Access requests]
+      operationId: denyAccessRequest
+      summary: Deny a pending request
+      description: 'Roles: an approver of the package or a global administrator, who is not the requester. Emails the requester. The body is optional.'
+      requestBody: {$ref: '#/components/requestBodies/DecisionNote'}
+      responses:
+        '200': {$ref: '#/components/responses/AccessRequestResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/DecisionForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /access-requests/{id}/revoke:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Access requests]
+      operationId: revokeAccessGrant
+      summary: End an active grant early
+      description: 'Roles: user administrator. Removes the group memberships the grant added, unless another active grant still covers them.'
+      responses:
+        '200': {$ref: '#/components/responses/AccessRequestResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /access-reviews:
+    get:
+      tags: [Access reviews]
+      operationId: listAccessReviews
+      summary: List every access review
+      description: 'Roles: any administrator. Items are left out; get a single review for them.'
+      responses:
+        '200':
+          description: The reviews.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AccessReview'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Access reviews]
+      operationId: createAccessReview
+      summary: Start an access review of an assigned group
+      description: 'Roles: user administrator. Every current member who is not deprovisioned becomes an item.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, groupId, reviewerIds, dueAt]
+              properties:
+                name: {type: string, maxLength: 200}
+                groupId: {type: string, description: An assigned group with at least one member.}
+                reviewerIds:
+                  type: array
+                  minItems: 1
+                  items: {type: string}
+                dueAt: {type: string, format: date-time, description: In the future and within one year.}
+                autoApply: {type: boolean, description: Remove people marked for removal when the review is completed.}
+      responses:
+        '201': {$ref: '#/components/responses/AccessReviewResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /access-reviews/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Access reviews]
+      operationId: getAccessReview
+      summary: Get a review with its items
+      description: 'Roles: a reviewer of this review, or any administrator. Others get `404`.'
+      security: &signedIn
+        - session: []
+        - apiKey: []
+      responses:
+        '200': {$ref: '#/components/responses/AccessReviewResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /access-reviews/{id}/decisions/{userId}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+      - {$ref: '#/components/parameters/UserId'}
+    put:
+      tags: [Access reviews]
+      operationId: decideReviewItem
+      summary: Record whether a member keeps access
+      description: 'Roles: a reviewer of this review, or a global administrator. A decision can change until the review is completed.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: {type: string, enum: [keep, remove]}
+                note: {type: string, maxLength: 2000}
+      responses:
+        '200': {$ref: '#/components/responses/AccessReviewResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /access-reviews/{id}/complete:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Access reviews]
+      operationId: completeAccessReview
+      summary: Complete a review
+      description: 'Roles: a reviewer of this review, or a user administrator. With `autoApply`, removes the people marked for removal from the group. Members without a decision keep access.'
+      responses:
+        '200': {$ref: '#/components/responses/AccessReviewResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /lifecycle/rules:
+    get:
+      tags: [Lifecycle]
+      operationId: listLifecycleRules
+      summary: List lifecycle rules
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The rules.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/LifecycleRule'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Lifecycle]
+      operationId: createLifecycleRule
+      summary: Create a lifecycle rule
+      description: 'Roles: user administrator.'
+      requestBody: {$ref: '#/components/requestBodies/LifecycleRuleInput'}
+      responses:
+        '201': {$ref: '#/components/responses/LifecycleRuleResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /lifecycle/rules/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Lifecycle]
+      operationId: updateLifecycleRule
+      summary: Replace a lifecycle rule
+      description: 'Roles: user administrator. Set `enabled` to false to pause a rule and keep its history.'
+      requestBody: {$ref: '#/components/requestBodies/LifecycleRuleInput'}
+      responses:
+        '200': {$ref: '#/components/responses/LifecycleRuleResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Lifecycle]
+      operationId: deleteLifecycleRule
+      summary: Delete a lifecycle rule
+      description: 'Roles: user administrator. Also removes the rule''s runs from the run history; the audit log keeps an event for each run. Writes an audit event.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /lifecycle/runs:
+    get:
+      tags: [Lifecycle]
+      operationId: listLifecycleRuns
+      summary: List the 500 most recent lifecycle runs
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The runs, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/LifecycleRun'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /policies:
+    get:
+      tags: [Policies]
+      operationId: listPolicies
+      summary: List access policies with their activity in the past 24 hours
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The policies in their saved order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Policy'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Policies]
+      operationId: createPolicy
+      summary: Create an access policy
+      description: 'Roles: security administrator.'
+      requestBody: {$ref: '#/components/requestBodies/PolicyInput'}
+      responses:
+        '201': {$ref: '#/components/responses/PolicyResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /policies/order:
+    put:
+      tags: [Policies]
+      operationId: reorderPolicies
+      summary: Change the order of the policies
+      description: 'Roles: security administrator. Send every policy id exactly once.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items: {type: string}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /policies/simulate:
+    post:
+      tags: [Policies]
+      operationId: simulatePolicies
+      summary: Show what the policies would decide for a sign-in
+      description: 'Roles: any administrator. Records nothing.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, appId, ip, method, deviceTrust]
+              properties:
+                userId: {type: string}
+                appId: {type: string, description: 'An application id, or `halo` for the console and account portal.'}
+                ip: {type: string, examples: [203.0.113.7]}
+                method: {$ref: '#/components/schemas/MethodKind'}
+                deviceTrust: {type: string, enum: [unknown, trusted, blocked]}
+      responses:
+        '200':
+          description: The decision, the risk signals and each policy's result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Simulation'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /policies/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Policies]
+      operationId: getPolicy
+      summary: Get one access policy
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The policy, without activity.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessPolicy'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Policies]
+      operationId: updatePolicy
+      summary: Replace an access policy
+      description: 'Roles: security administrator.'
+      requestBody: {$ref: '#/components/requestBodies/PolicyInput'}
+      responses:
+        '200': {$ref: '#/components/responses/PolicyResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Policies]
+      operationId: deletePolicy
+      summary: Delete an access policy
+      description: 'Roles: security administrator.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /network-zones:
+    get:
+      tags: [Policies]
+      operationId: listNetworkZones
+      summary: List network zones
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The zones.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/NetworkZone'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Policies]
+      operationId: createNetworkZone
+      summary: Create a network zone
+      description: 'Roles: security administrator.'
+      requestBody: {$ref: '#/components/requestBodies/NetworkZoneInput'}
+      responses:
+        '201': {$ref: '#/components/responses/NetworkZoneResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /network-zones/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Policies]
+      operationId: updateNetworkZone
+      summary: Replace a network zone
+      description: 'Roles: security administrator.'
+      requestBody: {$ref: '#/components/requestBodies/NetworkZoneInput'}
+      responses:
+        '200': {$ref: '#/components/responses/NetworkZoneResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Policies]
+      operationId: deleteNetworkZone
+      summary: Delete a network zone
+      description: 'Roles: security administrator. Refused with `409` while a policy uses the zone.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /methods:
+    get:
+      tags: [Policies]
+      operationId: listMethodSettings
+      summary: List sign-in methods with usage counts
+      description: 'Roles: any administrator. `users` counts active people who have the method; `exclusive` counts those for whom it is the only enabled primary method.'
+      responses:
+        '200':
+          description: The methods.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/MethodSetting'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /methods/{method}:
+    parameters:
+      - name: method
+        in: path
+        required: true
+        schema: {type: string, enum: [passkey, security-key, totp, magic-link, recovery-codes]}
+    put:
+      tags: [Policies]
+      operationId: setMethodEnabled
+      summary: Turn a sign-in method on or off
+      description: 'Roles: security administrator. At least one of passkey, security-key, totp and magic-link must stay on. Federated sign-in has no switch here; turn identity providers on or off with `/identity-providers/{id}/enable` and `/disable`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422':
+          description: '`ERR_INVALID`: `federated` was sent; federated sign-in is controlled per identity provider.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /devices:
+    get:
+      tags: [Policies]
+      operationId: listDevices
+      summary: List devices
+      description: 'Roles: any administrator.'
+      parameters:
+        - {name: user, in: query, description: Only this person's devices., schema: {type: string}}
+      responses:
+        '200':
+          description: The devices, most recently seen first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Device'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /devices/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Policies]
+      operationId: setDeviceTrust
+      summary: Set a device's trust
+      description: 'Roles: security administrator. `blocked` refuses every sign-in from the device and ends the owner''s sessions that started on it, with their access and refresh tokens. The audit event says how many sessions ended.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [trust]
+              properties:
+                trust: {type: string, enum: [unknown, trusted, blocked]}
+      responses:
+        '200':
+          description: The device.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Device'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /risk-events:
+    get:
+      tags: [Policies]
+      operationId: listRiskEvents
+      summary: List the 1,000 most recent risk events
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The events, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/RiskEvent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /risk-events/{id}/resolve:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Policies]
+      operationId: resolveRiskEvent
+      summary: Mark a risk event as resolved
+      description: 'Roles: security administrator.'
+      responses:
+        '200': {$ref: '#/components/responses/RiskEventResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /risk-events/{id}/dismiss:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Policies]
+      operationId: dismissRiskEvent
+      summary: Dismiss a risk event
+      description: 'Roles: security administrator.'
+      responses:
+        '200': {$ref: '#/components/responses/RiskEventResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /service-accounts:
+    get:
+      tags: [Service accounts]
+      operationId: listServiceAccounts
+      summary: List service accounts with their keys
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The service accounts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ServiceAccount'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Service accounts]
+      operationId: createServiceAccount
+      summary: Create a service account
+      description: 'Roles: security administrator. You can give it only roles you hold yourself; everyone may give `auditor`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, maxLength: 200, examples: [Terraform]}
+                description: {type: string, maxLength: 2000}
+                ownerId: {type: string, description: Id of the person responsible for it.}
+                roles:
+                  type: array
+                  items: {$ref: '#/components/schemas/RoleKey'}
+      responses:
+        '201': {$ref: '#/components/responses/ServiceAccountResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /service-accounts/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Service accounts]
+      operationId: getServiceAccount
+      summary: Get one service account
+      description: 'Roles: any administrator.'
+      responses:
+        '200': {$ref: '#/components/responses/ServiceAccountResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [Service accounts]
+      operationId: updateServiceAccount
+      summary: Rename, re-own, disable or enable a service account
+      description: 'Roles: security administrator. Disabling stops every key of the account. Any change other than disabling requires that you hold every role of the account.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string, maxLength: 200}
+                description: {type: string, maxLength: 2000}
+                ownerId: {type: string}
+                disabled: {type: boolean}
+      responses:
+        '200': {$ref: '#/components/responses/ServiceAccountResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /service-accounts/{id}/roles:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Service accounts]
+      operationId: setServiceAccountRoles
+      summary: Replace a service account's roles
+      description: 'Roles: security administrator, holding every current and requested role.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roles]
+              properties:
+                roles:
+                  type: array
+                  items: {$ref: '#/components/schemas/RoleKey'}
+      responses:
+        '200': {$ref: '#/components/responses/ServiceAccountResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /service-accounts/{id}/keys:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Service accounts]
+      operationId: createApiKey
+      summary: Create an API key
+      description: 'Roles: security administrator, holding every role of the account. The key value is returned once.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label, scopes]
+              properties:
+                label: {type: string, maxLength: 100, examples: [Production CI]}
+                scopes:
+                  type: array
+                  minItems: 1
+                  items: {type: string, enum: [api, scim]}
+                expiresAt: {type: [string, 'null'], format: date-time, description: Omit or send null for a key that does not expire.}
+      responses:
+        '201':
+          description: The key and its value.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key, secret]
+                properties:
+                  key: {$ref: '#/components/schemas/ApiKey'}
+                  secret: {type: string, examples: [hlk_…]}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /api-keys:
+    get:
+      tags: [Service accounts]
+      operationId: listApiKeys
+      summary: List every API key
+      description: 'Roles: any administrator. Revoked and expired keys are included.'
+      responses:
+        '200':
+          description: The keys.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ApiKey'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /api-keys/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    delete:
+      tags: [Service accounts]
+      operationId: revokeApiKey
+      summary: Revoke an API key
+      description: 'Roles: security administrator. Revoking a revoked key succeeds.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /provisioning/applications:
+    get:
+      tags: [Provisioning]
+      operationId: listProvisioning
+      summary: List the applications with outbound SCIM provisioning
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The provisioning configurations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AppProvisioning'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /provisioning/applications/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Provisioning]
+      operationId: configureProvisioning
+      summary: Set an application's SCIM endpoint and token
+      description: 'Roles: application administrator. OpenID Connect and SAML applications that people sign in to only. The token is required the first time; omit it later to keep the saved one.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [baseUrl]
+              properties:
+                baseUrl: {type: string, format: uri, examples: [https://app.example.com/scim/v2]}
+                token: {type: string, maxLength: 4096}
+                enabled: {type: boolean}
+      responses:
+        '200': {$ref: '#/components/responses/AppProvisioningResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /provisioning/applications/{id}/test:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Provisioning]
+      operationId: testProvisioning
+      summary: Test the connection to the SCIM endpoint
+      description: 'Roles: application administrator. Reads `/ServiceProviderConfig` with the saved token.'
+      responses:
+        '200':
+          description: The endpoint answered.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: {type: boolean, const: true}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotConfigured'}
+        '422':
+          description: '`ERR_TOKEN_UNREADABLE`: the saved token cannot be decrypted with the current `HALO_SECRET_KEY`. `ERR_INVALID`: the application cannot be provisioned.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '502':
+          description: '`ERR_SCIM_CONNECTION`: the endpoint could not be reached or answered with an error.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /provisioning/applications/{id}/sync:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Provisioning]
+      operationId: syncProvisioning
+      summary: Push the assigned people now
+      description: 'Roles: application administrator. Runs even when provisioning is paused. Failures are reported in `lastError` with status 200.'
+      responses:
+        '200': {$ref: '#/components/responses/AppProvisioningResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotConfigured'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /identity-providers:
+    get:
+      tags: [Identity providers]
+      operationId: listIdentityProviders
+      summary: List identity providers and the callback URL to register with them
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The providers.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [callbackUrl, providers]
+                properties:
+                  callbackUrl: {type: string, format: uri, examples: [https://auth.example.com/api/v1/auth/federated/callback]}
+                  providers:
+                    type: array
+                    items: {$ref: '#/components/schemas/IdentityProvider'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Identity providers]
+      operationId: createIdentityProvider
+      summary: Add an identity provider
+      description: 'Roles: security administrator.'
+      requestBody: {$ref: '#/components/requestBodies/IdentityProviderInput'}
+      responses:
+        '201': {$ref: '#/components/responses/IdentityProviderResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /identity-providers/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Identity providers]
+      operationId: updateIdentityProvider
+      summary: Replace an identity provider's settings
+      description: 'Roles: security administrator. The kind cannot change. Omit `clientSecret` to keep the saved one.'
+      requestBody: {$ref: '#/components/requestBodies/IdentityProviderInput'}
+      responses:
+        '200': {$ref: '#/components/responses/IdentityProviderResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Identity providers]
+      operationId: deleteIdentityProvider
+      summary: Delete an identity provider and unlink its accounts
+      description: 'Roles: security administrator.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /identity-providers/{id}/enable:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Identity providers]
+      operationId: enableIdentityProvider
+      summary: Turn on sign-in with a provider
+      description: 'Roles: security administrator.'
+      responses:
+        '200': {$ref: '#/components/responses/IdentityProviderResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /identity-providers/{id}/disable:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Identity providers]
+      operationId: disableIdentityProvider
+      summary: Turn off sign-in with a provider
+      description: 'Roles: security administrator. Linked accounts stay linked.'
+      responses:
+        '200': {$ref: '#/components/responses/IdentityProviderResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /settings:
+    get:
+      tags: [Settings]
+      operationId: getSettings
+      summary: Get the organization settings
+      description: 'Roles: any administrator.'
+      responses:
+        '200': {$ref: '#/components/responses/SettingsResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    patch:
+      tags: [Settings]
+      operationId: updateSettings
+      summary: Change organization settings
+      description: 'Roles: security administrator. Only a global administrator can change `organizationName`, `contactEmail` and `signInMessage`. Send only the fields to change. Token lifetimes apply to applications created afterwards.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Settings'}
+      responses:
+        '200': {$ref: '#/components/responses/SettingsResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /domains:
+    get:
+      tags: [Settings]
+      operationId: listDomains
+      summary: List domains and their verification state
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The domains.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Domain'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Settings]
+      operationId: addDomain
+      summary: Add a domain to verify
+      description: 'Roles: global administrator. Publish `halo-verification=<token>` as a TXT record on the domain, then verify it.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, examples: [example.com]}
+      responses:
+        '201':
+          description: The domain with its verification token.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Domain'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /domains/{id}/verify:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Settings]
+      operationId: verifyDomain
+      summary: Check the domain's TXT record
+      description: 'Roles: global administrator.'
+      responses:
+        '200':
+          description: The verified domain.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Domain'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422':
+          description: '`ERR_NOT_VERIFIED`: no TXT record with the token was found.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /domains/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    delete:
+      tags: [Settings]
+      operationId: deleteDomain
+      summary: Remove a domain
+      description: 'Roles: global administrator.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /export:
+    get:
+      tags: [Settings]
+      operationId: exportOrganization
+      summary: Download the organization as JSON
+      description: 'Roles: global administrator. Streams the organization, settings, users, groups, memberships, roles, applications, policies, access packages and access reviews as one JSON document, without secrets. Writes an audit event.'
+      responses:
+        '200':
+          description: A JSON attachment named `halo-export-YYYY-MM-DD.json`.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exportedAt: {type: string, format: date-time}
+                  organization: {$ref: '#/components/schemas/Organization'}
+                  settings: {$ref: '#/components/schemas/Settings'}
+                  users: {type: array, items: {type: object}}
+                  groups: {type: array, items: {type: object}}
+                  memberships: {type: array, items: {type: object}}
+                  roles: {type: array, items: {type: object}}
+                  applications: {type: array, items: {type: object}}
+                  policies: {type: array, items: {type: object}}
+                  accessPackages: {type: array, items: {type: object}}
+                  accessReviews: {type: array, items: {type: object}}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /signing-keys:
+    get:
+      tags: [Settings]
+      operationId: listSigningKeys
+      summary: List the OpenID Connect signing keys and SAML certificates
+      description: 'Roles: any administrator.'
+      responses:
+        '200': {$ref: '#/components/responses/SigningKeysResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /signing-keys/rotate:
+    post:
+      tags: [Settings]
+      operationId: rotateSigningKey
+      summary: Create a new OpenID Connect signing key
+      description: 'Roles: global administrator. The new RS256 key signs tokens from now on. Previous keys stay in the JWKS for 7 days so tokens they signed still verify, then an hourly job retires them. Writes an audit event.'
+      responses:
+        '200': {$ref: '#/components/responses/SigningKeysResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /saml/certificate/rotate:
+    post:
+      tags: [Settings]
+      operationId: rotateSAMLCertificate
+      summary: Create a new SAML signing certificate
+      description: 'Roles: global administrator. The new key and certificate sign SAML responses from now on, and the previous certificate is listed with `retiredAt` until you remove it. Update every SAML application with the new certificate. Writes an audit event.'
+      responses:
+        '200': {$ref: '#/components/responses/SigningKeysResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /saml/certificates/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    delete:
+      tags: [Settings]
+      operationId: deleteSAMLCertificate
+      summary: Remove a previous SAML certificate
+      description: 'Roles: global administrator. Only certificates replaced by a rotation can be removed; the current one answers `404`. Writes an audit event.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /webhooks:
+    get:
+      tags: [Webhooks]
+      operationId: listWebhooks
+      summary: List webhook endpoints
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The endpoints.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Webhook'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Webhooks]
+      operationId: createWebhook
+      summary: Add a webhook endpoint
+      description: 'Roles: security administrator. The signing secret is returned once.'
+      requestBody: {$ref: '#/components/requestBodies/WebhookInput'}
+      responses:
+        '201':
+          description: The endpoint and its signing secret.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [webhook, secret]
+                properties:
+                  webhook: {$ref: '#/components/schemas/Webhook'}
+                  secret: {type: string, examples: [whsec_…]}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /webhooks/event-types:
+    get:
+      tags: [Webhooks]
+      operationId: listWebhookEventTypes
+      summary: List the event families you can subscribe to
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: Patterns such as `user.*` and `sign_in.*`.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {type: string}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /webhooks/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Webhooks]
+      operationId: getWebhook
+      summary: Get an endpoint with its 50 most recent deliveries
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The endpoint and its deliveries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [webhook, deliveries]
+                properties:
+                  webhook: {$ref: '#/components/schemas/Webhook'}
+                  deliveries:
+                    type: array
+                    items: {$ref: '#/components/schemas/WebhookDelivery'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Webhooks]
+      operationId: updateWebhook
+      summary: Replace an endpoint's settings
+      description: 'Roles: security administrator. Omitting `enabled` turns the endpoint on. The secret does not change.'
+      requestBody: {$ref: '#/components/requestBodies/WebhookInput'}
+      responses:
+        '200':
+          description: The endpoint.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Webhook'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Webhooks]
+      operationId: deleteWebhook
+      summary: Delete an endpoint and its delivery log
+      description: 'Roles: security administrator.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /webhooks/{id}/test:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Webhooks]
+      operationId: testWebhook
+      summary: Send a `webhook.test` event now
+      description: 'Roles: security administrator. Answers with the delivery after the first attempt; a failed attempt is retried like any other delivery.'
+      responses:
+        '200':
+          description: The delivery.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WebhookDelivery'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api-resources:
+    get:
+      tags: [API resources]
+      operationId: listApiResources
+      summary: List API resources
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The resources with their scopes and grants.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ApiResource'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [API resources]
+      operationId: createApiResource
+      summary: Add an API resource
+      description: 'Roles: application administrator.'
+      requestBody: {$ref: '#/components/requestBodies/ApiResourceInput'}
+      responses:
+        '201': {$ref: '#/components/responses/ApiResourceResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /api-resources/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [API resources]
+      operationId: getApiResource
+      summary: Get one API resource
+      description: 'Roles: any administrator.'
+      responses:
+        '200': {$ref: '#/components/responses/ApiResourceResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [API resources]
+      operationId: updateApiResource
+      summary: Replace an API resource
+      description: 'Roles: application administrator.'
+      requestBody: {$ref: '#/components/requestBodies/ApiResourceInput'}
+      responses:
+        '200': {$ref: '#/components/responses/ApiResourceResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [API resources]
+      operationId: deleteApiResource
+      summary: Delete an API resource and its grants
+      description: 'Roles: application administrator.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api-resources/{id}/grants/{appId}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+      - name: appId
+        in: path
+        required: true
+        schema: {type: string}
+    put:
+      tags: [API resources]
+      operationId: setApiResourceGrant
+      summary: Replace the scopes an application may request on an API
+      description: 'Roles: application administrator. OpenID Connect and OAuth applications only. Send the complete list; an empty list removes the grant.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scopes]
+              properties:
+                scopes:
+                  type: array
+                  items: {type: string, examples: ['billing:read']}
+      responses:
+        '200': {$ref: '#/components/responses/ApiResourceResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /ssh/ca.pub:
+    get:
+      tags: [SSH]
+      operationId: getSSHCAPublicKey
+      summary: Get the SSH certificate authority's public key
+      description: The line to put in sshd's `TrustedUserCAKeys` file. Halo creates the authority the first time it is needed.
+      security: []
+      responses:
+        '200':
+          description: One OpenSSH public key line.
+          content:
+            text/plain:
+              schema: {type: string, examples: ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI…']}
+  /ssh/authority:
+    get:
+      tags: [SSH]
+      operationId: getSSHAuthority
+      summary: Get the SSH certificate authority
+      description: 'Roles: any administrator.'
+      responses:
+        '200': {$ref: '#/components/responses/SSHAuthorityResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    put:
+      tags: [SSH]
+      operationId: setSSHCertificateLifetime
+      summary: Set how long certificates last
+      description: 'Roles: security administrator.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [certificateLifetime]
+              properties:
+                certificateLifetime: {type: integer, minimum: 300, maximum: 86400, description: Seconds.}
+      responses:
+        '200': {$ref: '#/components/responses/SSHAuthorityResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /ssh/principal-mappings:
+    get:
+      tags: [SSH]
+      operationId: listSSHPrincipalMappings
+      summary: List group to principal mappings
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The mappings.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/SSHPrincipalMapping'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [SSH]
+      operationId: createSSHPrincipalMapping
+      summary: Map a group to unix account names
+      description: 'Roles: security administrator. One mapping per group.'
+      requestBody: {$ref: '#/components/requestBodies/SSHPrincipalMappingInput'}
+      responses:
+        '201': {$ref: '#/components/responses/SSHPrincipalMappingResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /ssh/principal-mappings/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [SSH]
+      operationId: updateSSHPrincipalMapping
+      summary: Replace a mapping
+      description: 'Roles: security administrator.'
+      requestBody: {$ref: '#/components/requestBodies/SSHPrincipalMappingInput'}
+      responses:
+        '200': {$ref: '#/components/responses/SSHPrincipalMappingResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [SSH]
+      operationId: deleteSSHPrincipalMapping
+      summary: Remove a mapping
+      description: 'Roles: security administrator. Certificates already issued stay valid until they expire.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /ssh/certificates:
+    get:
+      tags: [SSH]
+      operationId: listSSHCertificates
+      summary: List the 200 most recently issued certificates
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The certificates, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/SSHCertificate'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /dev/outbox:
+    get:
+      tags: [Development]
+      operationId: listOutbox
+      summary: List the 50 most recent emails in the outbox
+      description: 'Roles: global administrator. Exists only when the server runs with `HALO_DEV=1`.'
+      responses:
+        '200':
+          description: The messages, newest first, with their decrypted text.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/OutboxMessage'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: halo_session
+      description: The session cookie Halo sets when a person signs in.
+    apiKey:
+      type: http
+      scheme: bearer
+      description: An API key of a service account, starting with `hlk_`, with the `api` scope. Requests act with the service account's roles.
+    cliAccessToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: An access token that `halo login` obtained for the built-in Halo CLI application. Accepted only on routes under `/me/`.
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: {type: string, examples: [usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+    DeviceCode:
+      name: code
+      in: path
+      required: true
+      description: The user code shown by the device, such as `BCDF-GHJK`. Case, spaces and the dash are ignored.
+      schema: {type: string}
+    Limit:
+      name: limit
+      in: query
+      description: How many events to return, 1 to 1000. Defaults to 500.
+      schema: {type: integer, minimum: 1, maximum: 1000, default: 500}
+  requestBodies:
+    CodeSignIn:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [email, code]
+            properties:
+              email: {type: string, format: email}
+              code: {type: string}
+              authRequest: {$ref: '#/components/schemas/AuthRequestId'}
+    DecisionNote:
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              note: {type: string, maxLength: 2000, description: Shown to the requester.}
+    AccessPackageInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name, groupIds]
+            properties:
+              name: {type: string, maxLength: 200}
+              description: {type: string, maxLength: 2000}
+              ownerId: {type: [string, 'null']}
+              groupIds:
+                type: array
+                minItems: 1
+                description: Assigned groups only.
+                items: {type: string}
+              approverIds:
+                type: array
+                description: Without approvers, only a global administrator can decide requests.
+                items: {type: string}
+              maxDays:
+                type: [integer, 'null']
+                minimum: 1
+                maximum: 365
+                description: The longest duration people can request. `null` allows access until it is revoked.
+              requireJustification: {type: boolean}
+              archived: {type: boolean}
+    LifecycleRuleInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name, trigger, actions]
+            properties:
+              name: {type: string, maxLength: 200}
+              trigger: {type: string, enum: [joiner, mover, leaver]}
+              condition:
+                type: [string, 'null']
+                description: A group rule the person must match. Empty or null matches everyone.
+                examples: ['user.department == "Engineering"']
+              actions:
+                type: array
+                minItems: 1
+                maxItems: 10
+                items: {$ref: '#/components/schemas/LifecycleAction'}
+              enabled: {type: boolean}
+    PolicyInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name, mode, effect, conditions]
+            properties:
+              name: {type: string, maxLength: 200}
+              description: {type: string, maxLength: 2000}
+              enabled: {type: boolean}
+              mode: {type: string, enum: [enforce, report]}
+              effect: {type: string, enum: [allow, require-phishing-resistant, block]}
+              conditions: {$ref: '#/components/schemas/PolicyConditions'}
+    NetworkZoneInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name, kind, cidrs]
+            properties:
+              name: {type: string, maxLength: 200}
+              kind: {type: string, enum: [trusted, risky]}
+              cidrs:
+                type: array
+                minItems: 1
+                maxItems: 500
+                description: IPv4 or IPv6 ranges or single addresses. Halo normalizes them to CIDR notation.
+                items: {type: string, examples: [203.0.113.0/24]}
+    IdentityProviderInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [kind, name, clientId]
+            properties:
+              kind: {$ref: '#/components/schemas/ProviderKind'}
+              name: {type: string, maxLength: 100, description: 'Shown on the button, as in "Continue with Google".'}
+              issuer:
+                type: string
+                description: 'Ignored for Google. For Microsoft, `https://login.microsoftonline.com/<tenant id>/v2.0`. For GitHub, the GitHub Enterprise address, defaulting to https://github.com. For generic OpenID Connect, the issuer with discovery.'
+              clientId: {type: string}
+              clientSecret: {type: string, description: Required except for generic OpenID Connect providers. Omit on update to keep the saved secret.}
+              scopes:
+                type: array
+                description: Defaults to openid, email and profile; read:user and user:email for GitHub. Halo adds openid for every kind except GitHub.
+                items: {type: string}
+              enabled: {type: boolean}
+              showOnSignIn: {type: boolean}
+              allowedDomains:
+                type: array
+                description: Email domains allowed to sign in with this provider. Empty allows every domain.
+                items: {type: string, examples: [example.com]}
+              jit: {type: boolean, description: Create an account on first sign-in. Requires at least one allowed domain.}
+              jitGroupIds:
+                type: array
+                description: Assigned groups that accounts created on first sign-in join.
+                items: {type: string}
+    WebhookInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [url, events]
+            properties:
+              url: {type: string, format: uri, maxLength: 2048, description: 'https, or http for localhost while you test.'}
+              description: {type: string, maxLength: 200}
+              events:
+                type: array
+                minItems: 1
+                maxItems: 50
+                description: Event types such as `user.invite`, families such as `user.*`, or `*` for every event.
+                items: {type: string}
+              enabled: {type: boolean, default: true}
+    ApiResourceInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name, identifier, accessTokenTtl, scopes]
+            properties:
+              name: {type: string, maxLength: 200}
+              identifier: {type: string, format: uri, maxLength: 300, description: 'The audience access tokens carry in `aud`.', examples: [https://billing.example.com]}
+              description: {type: string, maxLength: 500}
+              accessTokenTtl: {type: integer, minimum: 60, maximum: 86400}
+              scopes:
+                type: array
+                minItems: 1
+                maxItems: 100
+                items: {$ref: '#/components/schemas/ApiScope'}
+    SSHPrincipalMappingInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [groupId, principals]
+            properties:
+              groupId: {type: string}
+              principals:
+                type: array
+                minItems: 1
+                maxItems: 32
+                items: {type: string, pattern: '^[a-z_][a-z0-9_.-]{0,31}$', examples: [ops]}
+  responses:
+    NoContent:
+      description: Done. No body.
+    BadJSON:
+      description: '`ERR_INVALID_JSON`: the body is not valid JSON, is larger than 1 MiB, or has an unknown field.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Unauthenticated:
+      description: '`ERR_UNAUTHENTICATED`: no valid session or key.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Forbidden:
+      description: '`ERR_FORBIDDEN`: your roles do not allow this. `ERR_CROSS_SITE` on changes from another website.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    CrossSite:
+      description: '`ERR_CROSS_SITE`: the request came from another website.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    NotFound:
+      description: '`ERR_NOT_FOUND`: the item does not exist.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Conflict:
+      description: '`ERR_CONFLICT`: the change conflicts with the current state, such as a name that is already used.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    DynamicGroup:
+      description: '`ERR_CONFLICT`: the group is dynamic, so its members come from its rule.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Invalid:
+      description: '`ERR_INVALID`: a field is missing or invalid. The message names it.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    NotConfigured:
+      description: '`ERR_NOT_CONFIGURED`: provisioning is not set up for the application. `ERR_NOT_FOUND`: the application does not exist.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    LastMethod:
+      description: '`ERR_LAST_METHOD`: it is your last way to sign in. Recovery codes do not count.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    AuthRequestExpired:
+      description: '`ERR_AUTH_REQUEST_EXPIRED`: the application''s sign-in request expired or was already used.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    LinkExpired:
+      description: '`ERR_LINK_EXPIRED`: the invite or reset link expired, was used, or was replaced by a newer one.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Suspended:
+      description: '`ERR_ACCOUNT_SUSPENDED`: the account is suspended or deprovisioned. Also `ERR_CROSS_SITE`.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    SignInRefused:
+      description: '`ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED` (not in a group assigned to the application), `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED` (a policy requires a passkey or security key), or `ERR_CROSS_SITE`. Refused sign-ins are recorded in the sign-in log.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    CodeMismatch:
+      description: '`ERR_CODE_MISMATCH`: the code did not match, was already used, or no account uses the address.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    TooManyAttempts:
+      description: '`ERR_TOO_MANY_ATTEMPTS`: too many failed codes for this address within the lockout window.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    RegistrationFailed:
+      description: '`ERR_CEREMONY_EXPIRED`: the setup step expired; start again. `ERR_REGISTRATION_FAILED`: Halo could not verify the new credential. `ERR_INVALID_JSON`.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    DecisionForbidden:
+      description: '`ERR_SELF_APPROVAL`: you made the request yourself, which global administrators cannot decide either; the message names who can. `ERR_FORBIDDEN`: you are not an approver of the package. `ERR_CROSS_SITE`.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    DeviceCode:
+      description: '`ERR_DEVICE_CODE`: the code is wrong, expired or already used.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    SignedIn:
+      description: Signed in. Sets the `halo_session` cookie when a new session starts. `redirect` is the application's callback when the sign-in came from an application, otherwise `/account`.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [redirect]
+            properties:
+              redirect: {type: string, examples: [/account, '/oauth2/authorize/callback?id=…']}
+    Ceremony:
+      description: A WebAuthn ceremony. Pass `options` to the browser's WebAuthn API and send the result with `ceremony` to the matching finish route within 5 minutes.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ceremony, options]
+            properties:
+              ceremony: {type: string}
+              options: {type: object, description: WebAuthn credential request or creation options.}
+    DeviceDecision:
+      description: The decision was recorded.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [approved, application]
+            properties:
+              approved: {type: boolean}
+              application: {type: string, examples: [Halo CLI]}
+    Revoked:
+      description: The number of sessions ended.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [revoked]
+            properties:
+              revoked: {type: integer}
+    UserResponse:
+      description: The person.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/User'}
+    ApplicationResponse:
+      description: The application.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Application'}
+    AccessPackageResponse:
+      description: The package.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AccessPackage'}
+    AccessRequestResponse:
+      description: The request.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AccessRequest'}
+    AccessReviewResponse:
+      description: The review with its items.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AccessReview'}
+    LifecycleRuleResponse:
+      description: The rule.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/LifecycleRule'}
+    PolicyResponse:
+      description: The policy. `activity` is zero in this response.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Policy'}
+    NetworkZoneResponse:
+      description: The zone.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/NetworkZone'}
+    RiskEventResponse:
+      description: The risk event.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/RiskEvent'}
+    ServiceAccountResponse:
+      description: The service account.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ServiceAccount'}
+    AppProvisioningResponse:
+      description: The provisioning configuration and the result of the last run.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AppProvisioning'}
+    IdentityProviderResponse:
+      description: The identity provider.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/IdentityProvider'}
+    SettingsResponse:
+      description: The settings, the organization name from `HALO_ORGANIZATION` and the issuer.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [settings, defaultOrganizationName, issuer]
+            properties:
+              settings: {$ref: '#/components/schemas/Settings'}
+              defaultOrganizationName: {type: string}
+              issuer: {type: string, format: uri}
+    ApiResourceResponse:
+      description: The API resource.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiResource'}
+    SSHAuthorityResponse:
+      description: The certificate authority.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SSHAuthority'}
+    SSHPrincipalMappingResponse:
+      description: The mapping.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SSHPrincipalMapping'}
+    SigningKeysResponse:
+      description: The OpenID Connect signing keys, newest first, and the SAML certificates, current first.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [oidc, saml]
+            properties:
+              oidc:
+                type: array
+                items: {$ref: '#/components/schemas/SigningKey'}
+              saml:
+                type: array
+                items: {$ref: '#/components/schemas/SAMLCertificate'}
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string, examples: [ERR_NOT_FOUND]}
+            message: {type: string, examples: [This user was not found. It may have been deleted.]}
+    AuthRequestId:
+      type: string
+      description: The id of an application's sign-in request, from the `authRequest` query parameter of the sign-in page. Omit it to sign in to Halo itself.
+    MethodKind:
+      type: string
+      enum: [passkey, security-key, totp, magic-link, recovery-codes, federated]
+    RoleKey:
+      type: string
+      enum: [global_admin, security_admin, user_admin, helpdesk_admin, app_admin, auditor]
+    ProviderKind:
+      type: string
+      enum: [google, microsoft, github, oidc]
+    NamedRef:
+      type: object
+      required: [id, name]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        email: {type: string}
+    Organization:
+      type: object
+      required: [name, issuer, contactEmail, signInMessage, logoUrl]
+      properties:
+        name: {type: string, examples: [Fernway Systems]}
+        issuer: {type: string, format: uri, examples: [https://auth.example.com]}
+        contactEmail: {type: string}
+        signInMessage: {type: string}
+        logoUrl: {type: [string, 'null'], examples: ['/api/v1/branding/logo?v=1791100000']}
+    Method:
+      type: object
+      required: [id, kind, label, addedAt, lastUsedAt]
+      properties:
+        id: {type: string, description: '`recovery-codes` for the set of recovery codes.'}
+        kind: {type: string, enum: [passkey, security-key, totp, recovery-codes]}
+        label: {type: string, examples: [Passkey · Safari on iOS]}
+        addedAt: {type: string, format: date-time}
+        lastUsedAt: {type: [string, 'null'], format: date-time}
+        detail: {type: string, examples: [8 of 10 remaining]}
+    User:
+      type: object
+      required: [id, email, emailVerified, name, title, department, location, status, strength, methods, roles, groupIds, appIds, managerId, source, createdAt, lastSignInAt]
+      properties:
+        id: {type: string, examples: [usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        email: {type: string, format: email}
+        emailVerified: {type: boolean, description: 'True once the person redeemed a magic link, finished setup from a link Halo emailed, or signed in through an identity provider that verified the same address. Changing the email clears it. With the `email` scope, ID tokens and userinfo carry it as `email_verified`.'}
+        name: {type: string}
+        title: {type: string}
+        department: {type: string}
+        location: {type: string}
+        status: {type: string, enum: [invited, active, suspended, deprovisioned]}
+        strength: {type: string, enum: [phishing-resistant, multi-factor, single-factor]}
+        methods:
+          type: array
+          items: {$ref: '#/components/schemas/Method'}
+        roles:
+          type: array
+          description: Role names, such as `Global administrator`. Assign roles with their keys.
+          items: {type: string}
+        groupIds:
+          type: array
+          description: Assigned and rule-based groups.
+          items: {type: string}
+        appIds:
+          type: array
+          description: Applications the person is assigned to through their groups.
+          items: {type: string}
+        managerId: {type: [string, 'null']}
+        source: {type: string, examples: [Halo, 'SCIM · Okta', Google]}
+        createdAt: {type: string, format: date-time}
+        lastSignInAt: {type: [string, 'null'], format: date-time}
+    Group:
+      type: object
+      required: [id, name, description, kind, memberCount, source, createdAt]
+      properties:
+        id: {type: string, examples: [grp_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        name: {type: string}
+        description: {type: string}
+        kind: {type: string, enum: [assigned, dynamic]}
+        rule: {type: string, description: Dynamic groups only., examples: ['user.department == "Engineering"']}
+        memberCount: {type: integer}
+        source: {type: string}
+        createdAt: {type: string, format: date-time}
+    Credential:
+      type: object
+      required: [id, kind, label, hint, createdAt, expiresAt, lastUsedAt]
+      properties:
+        id: {type: string}
+        kind: {type: string, examples: [secret]}
+        label: {type: string}
+        hint: {type: string, description: The last characters of the secret.}
+        createdAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        lastUsedAt: {type: [string, 'null'], format: date-time}
+    TokenPolicy:
+      type: object
+      required: [accessTokenTtl, refreshTokenTtl, idTokenTtl, rotation]
+      properties:
+        accessTokenTtl: {type: integer, description: Seconds.}
+        refreshTokenTtl: {type: integer, description: Seconds. 0 means no refresh tokens.}
+        idTokenTtl: {type: integer, description: Seconds.}
+        rotation: {type: boolean, description: Replace the refresh token on every use.}
+    Claim:
+      type: object
+      required: [name, source]
+      properties:
+        name: {type: string}
+        source: {type: string}
+    Application:
+      type: object
+      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, setupGuide]
+      properties:
+        id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        name: {type: string}
+        description: {type: string}
+        protocol: {type: string, enum: [oidc, oauth, saml]}
+        type: {type: string, enum: [web, spa, native, service]}
+        status: {type: string, enum: [active, disabled]}
+        clientId: {type: string, description: 'The client ID, such as `hl_…`, or the entity ID for SAML applications.'}
+        homepage: {type: string}
+        redirectUris:
+          type: array
+          description: For SAML applications, the ACS URLs.
+          items: {type: string}
+        postLogoutUris:
+          type: array
+          items: {type: string}
+        scopes:
+          type: array
+          items: {type: string}
+        claims:
+          type: array
+          items: {$ref: '#/components/schemas/Claim'}
+        groupIds:
+          type: array
+          items: {type: string}
+        userCount: {type: integer}
+        credentials:
+          type: array
+          items: {$ref: '#/components/schemas/Credential'}
+        owner: {type: [string, 'null'], description: Id of the person responsible.}
+        createdAt: {type: string, format: date-time}
+        signIns7d: {type: integer}
+        failureRate7d: {type: number, description: Percentage of failed sign-ins in the past 7 days.}
+        tokenPolicy: {$ref: '#/components/schemas/TokenPolicy'}
+        setupGuide: {type: string}
+        saml: {$ref: '#/components/schemas/SAMLView'}
+    SAMLAttributes:
+      type: object
+      description: The attribute name Halo sends each value under. An empty name stops sending it.
+      properties:
+        email: {type: string, default: email}
+        name: {type: string, default: name}
+        givenName: {type: string, default: given_name}
+        familyName: {type: string, default: family_name}
+        groups: {type: string, default: groups}
+    SAMLInput:
+      type: object
+      properties:
+        entityId: {type: string, maxLength: 1024}
+        acsUrls:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: {type: string, format: uri}
+        nameIdFormat: {type: string, enum: [email, persistent, unspecified]}
+        signResponse: {type: boolean, description: Sign the whole response as well as the assertion.}
+        attributes: {$ref: '#/components/schemas/SAMLAttributes'}
+        metadataXml: {type: string, description: The service provider's metadata. Halo reads the entity ID and ACS URLs from it.}
+    SAMLView:
+      type: object
+      description: SAML applications only.
+      properties:
+        entityId: {type: string}
+        acsUrls:
+          type: array
+          items: {type: string}
+        nameIdFormat: {type: string}
+        signResponse: {type: boolean}
+        attributes: {$ref: '#/components/schemas/SAMLAttributes'}
+        metadataXml: {type: string}
+        idp:
+          type: object
+          description: What to enter in the service provider.
+          properties:
+            entityId: {type: string}
+            metadataUrl: {type: string, format: uri}
+            ssoUrl: {type: string, format: uri}
+            certificateUrl: {type: string, format: uri}
+            certificateFingerprint: {type: string}
+            certificateExpiresAt: {type: string, format: date-time}
+    MyApplication:
+      type: object
+      required: [id, name, description, homepage, launchUrl]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        description: {type: string}
+        homepage: {type: string}
+        launchUrl: {type: string, description: 'The homepage, or `/saml/launch/{id}` for SAML applications.'}
+    Session:
+      type: object
+      required: [id, userId, device, os, browser, ip, location, method, createdAt, lastActiveAt]
+      properties:
+        id: {type: string, examples: [ses_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        userId: {type: string}
+        device: {type: string}
+        os: {type: string}
+        browser: {type: string}
+        ip: {type: string}
+        location: {type: string}
+        method: {$ref: '#/components/schemas/MethodKind'}
+        createdAt: {type: string, format: date-time}
+        lastActiveAt: {type: string, format: date-time}
+        current: {type: boolean, description: Present and true for the session making the request.}
+        client: {type: string, enum: [halo-cli], description: 'Present for sessions that `halo login` started through the device flow. Ending such a session, or all of a person''s sessions, also revokes its access and refresh tokens.'}
+    SignInEvent:
+      type: object
+      required: [id, time, userId, email, appId, result, method, ip, location, device, risk]
+      properties:
+        id: {type: string, examples: [evt_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        time: {type: string, format: date-time}
+        userId: {type: [string, 'null']}
+        email: {type: string}
+        appId: {type: [string, 'null'], description: Null for sign-ins to Halo itself.}
+        result: {type: string, enum: [success, failure, interrupted]}
+        method: {type: string}
+        ip: {type: string}
+        location: {type: string}
+        device: {type: string, examples: [Chrome 130 · macOS]}
+        risk: {type: string, enum: [none, low, medium, high]}
+        reason: {type: string, description: Why the sign-in failed.}
+    AuditEvent:
+      type: object
+      required: [id, time, actorId, action, summary, targetType, targetId, target, ip]
+      properties:
+        id: {type: string, examples: [aud_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        time: {type: string, format: date-time}
+        actorId: {type: [string, 'null'], description: 'Null for changes Halo made itself, such as lifecycle rules and expiring grants.'}
+        action: {type: string, examples: [user.invite]}
+        summary: {type: string}
+        targetType: {type: string, examples: [user]}
+        targetId: {type: string}
+        target: {type: string, description: The target's name when the change happened.}
+        ip: {type: string}
+    Overview:
+      type: object
+      required: [weakAdmins, expiringCredentials, highRiskSignIns, recentSignIns, failureRates, counts]
+      properties:
+        weakAdmins:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              name: {type: string}
+        expiringCredentials:
+          type: array
+          items:
+            type: object
+            properties:
+              appId: {type: string}
+              appName: {type: string}
+              credentialId: {type: string}
+              label: {type: string}
+              expiresAt: {type: string, format: date-time}
+              lastUsedAt: {type: [string, 'null'], format: date-time}
+              daysLeft: {type: integer}
+        highRiskSignIns:
+          type: array
+          items: {$ref: '#/components/schemas/SignInEvent'}
+        recentSignIns:
+          type: array
+          items: {$ref: '#/components/schemas/SignInEvent'}
+        failureRates:
+          type: array
+          items:
+            type: object
+            properties:
+              appId: {type: string}
+              appName: {type: string}
+              failureRate7d: {type: number}
+        counts:
+          type: object
+          properties:
+            users: {type: integer}
+            activeUsers: {type: integer}
+            applications: {type: integer}
+            activeApplications: {type: integer}
+    AccessPackage:
+      type: object
+      required: [id, name, description, owner, groups, approvers, maxDays, requireJustification, archived, pendingRequests, activeGrants, createdAt]
+      properties:
+        id: {type: string, examples: [pkg_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        name: {type: string}
+        description: {type: string}
+        owner:
+          oneOf:
+            - {$ref: '#/components/schemas/NamedRef'}
+            - {type: 'null'}
+        groups:
+          type: array
+          items: {$ref: '#/components/schemas/NamedRef'}
+        approvers:
+          type: array
+          items: {$ref: '#/components/schemas/NamedRef'}
+        maxDays: {type: [integer, 'null']}
+        requireJustification: {type: boolean}
+        archived: {type: boolean}
+        pendingRequests: {type: integer}
+        activeGrants: {type: integer}
+        createdAt: {type: string, format: date-time}
+    AccessRequest:
+      type: object
+      required: [id, package, requester, justification, durationDays, status, decidedBy, decidedAt, decisionNote, expiresAt, endedAt, endReason, groups, approvers, createdAt, canDecide]
+      properties:
+        id: {type: string, examples: [req_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        package: {$ref: '#/components/schemas/NamedRef'}
+        requester: {$ref: '#/components/schemas/NamedRef'}
+        justification: {type: string}
+        durationDays: {type: [integer, 'null']}
+        status: {type: string, enum: [pending, approved, denied, cancelled]}
+        decidedBy:
+          oneOf:
+            - {$ref: '#/components/schemas/NamedRef'}
+            - {type: 'null'}
+        decidedAt: {type: [string, 'null'], format: date-time}
+        decisionNote: {type: string}
+        expiresAt: {type: [string, 'null'], format: date-time, description: When an approved grant ends. Null for grants that last until revoked.}
+        endedAt: {type: [string, 'null'], format: date-time}
+        endReason: {type: [string, 'null'], enum: [expired, revoked, null]}
+        groups:
+          type: array
+          items: {$ref: '#/components/schemas/NamedRef'}
+        approvers:
+          type: array
+          items: {$ref: '#/components/schemas/NamedRef'}
+        createdAt: {type: string, format: date-time}
+        canDecide: {type: boolean}
+    ReviewItem:
+      type: object
+      required: [user, title, decision, note, decidedBy, decidedAt, outcome]
+      properties:
+        user: {$ref: '#/components/schemas/NamedRef'}
+        title: {type: string}
+        decision: {type: [string, 'null'], enum: [keep, remove, null]}
+        note: {type: string}
+        decidedBy:
+          oneOf:
+            - {$ref: '#/components/schemas/NamedRef'}
+            - {type: 'null'}
+        decidedAt: {type: [string, 'null'], format: date-time}
+        outcome: {type: [string, 'null'], enum: [kept, removed, not-removed, no-decision, null], description: Set when the review is completed.}
+    AccessReview:
+      type: object
+      required: [id, name, group, reviewers, dueAt, autoApply, status, total, decided, removals, createdBy, createdAt, completedBy, completedAt, canDecide, canComplete]
+      properties:
+        id: {type: string, examples: [rev_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        name: {type: string}
+        group:
+          allOf:
+            - {$ref: '#/components/schemas/NamedRef'}
+          description: For a completed review whose group was deleted, `id` is empty and `name` is the group's name at deletion.
+        reviewers:
+          type: array
+          items: {$ref: '#/components/schemas/NamedRef'}
+        dueAt: {type: string, format: date-time}
+        autoApply: {type: boolean}
+        status: {type: string, enum: [in-progress, overdue, completed]}
+        total: {type: integer}
+        decided: {type: integer}
+        removals: {type: integer}
+        createdBy:
+          oneOf:
+            - {$ref: '#/components/schemas/NamedRef'}
+            - {type: 'null'}
+        createdAt: {type: string, format: date-time}
+        completedBy:
+          oneOf:
+            - {$ref: '#/components/schemas/NamedRef'}
+            - {type: 'null'}
+        completedAt: {type: [string, 'null'], format: date-time}
+        items:
+          type: array
+          description: Present when you get a single review.
+          items: {$ref: '#/components/schemas/ReviewItem'}
+        canDecide: {type: boolean}
+        canComplete: {type: boolean}
+    LifecycleAction:
+      type: object
+      required: [type]
+      properties:
+        type: {type: string, enum: [add-to-group, remove-from-group, revoke-sessions, suspend]}
+        groupId: {type: string, description: Required for add-to-group and remove-from-group. Assigned groups only.}
+    LifecycleRule:
+      type: object
+      required: [id, name, trigger, condition, actions, enabled, runs, lastRunAt, createdAt]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        trigger: {type: string, enum: [joiner, mover, leaver]}
+        condition: {type: [string, 'null']}
+        actions:
+          type: array
+          items: {$ref: '#/components/schemas/LifecycleAction'}
+        enabled: {type: boolean}
+        runs: {type: integer}
+        lastRunAt: {type: [string, 'null'], format: date-time}
+        createdAt: {type: string, format: date-time}
+    LifecycleRun:
+      type: object
+      required: [id, rule, user, trigger, change, steps, result, createdAt]
+      properties:
+        id: {type: string}
+        rule: {$ref: '#/components/schemas/NamedRef'}
+        user: {$ref: '#/components/schemas/NamedRef'}
+        trigger: {type: string, enum: [joiner, mover, leaver]}
+        change: {type: string, examples: [Department changed from Sales to Engineering]}
+        steps:
+          type: array
+          items: {type: string, examples: [Added to Engineering]}
+        result: {type: string, enum: [succeeded, failed]}
+        createdAt: {type: string, format: date-time}
+    PolicyConditions:
+      type: object
+      properties:
+        allUsers: {type: boolean}
+        groupIds:
+          type: array
+          items: {type: string}
+        userIds:
+          type: array
+          items: {type: string}
+        excludeGroupIds:
+          type: array
+          items: {type: string}
+        excludeUserIds:
+          type: array
+          items: {type: string}
+        allApps: {type: boolean}
+        appIds:
+          type: array
+          description: Application ids, or `halo` for the console and account portal.
+          items: {type: string}
+        network: {type: string, enum: ['', any, in, not-in]}
+        zoneIds:
+          type: array
+          items: {type: string}
+        device: {type: string, enum: ['', any, trusted, untrusted]}
+        risk:
+          type: array
+          description: Match only these risk levels. Empty matches every level.
+          items: {type: string, enum: [none, low, medium, high]}
+        methods:
+          type: array
+          description: Match only these sign-in methods. Empty matches every method.
+          items: {$ref: '#/components/schemas/MethodKind'}
+    AccessPolicy:
+      type: object
+      required: [id, name, description, priority, enabled, mode, effect, conditions, createdAt, updatedAt]
+      properties:
+        id: {type: string, examples: [pol_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        name: {type: string}
+        description: {type: string}
+        priority: {type: integer, description: Position in the saved order.}
+        enabled: {type: boolean}
+        mode: {type: string, enum: [enforce, report]}
+        effect: {type: string, enum: [allow, require-phishing-resistant, block]}
+        conditions: {$ref: '#/components/schemas/PolicyConditions'}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    Policy:
+      allOf:
+        - {$ref: '#/components/schemas/AccessPolicy'}
+        - type: object
+          required: [activity]
+          properties:
+            activity:
+              type: object
+              required: [matched, stopped]
+              properties:
+                matched: {type: integer, description: Sign-ins the policy matched in the past 24 hours.}
+                stopped: {type: integer, description: 'Matched sign-ins it blocked or would have blocked, or that needed a stronger method.'}
+    Simulation:
+      type: object
+      required: [effect, outcome, policy, reason, risk, signals, policies]
+      properties:
+        effect: {type: string, enum: [allow, require-phishing-resistant, block]}
+        outcome: {type: string, enum: [allow, require, block], description: '`require` when the effect requires a passkey or security key and the simulated method is neither.'}
+        policy: {type: string, description: 'The name of the deciding policy, if any.'}
+        reason: {type: string}
+        risk: {type: string, enum: [none, low, medium, high]}
+        signals:
+          type: array
+          items:
+            type: object
+            properties:
+              type: {type: string, enum: [risky-network, failed-sign-ins, new-device, new-network]}
+              level: {type: string, enum: [low, medium, high]}
+              detail: {type: string}
+        policies:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              name: {type: string}
+              mode: {type: string, enum: [enforce, report]}
+              effect: {type: string}
+              matched: {type: boolean}
+              outcome: {type: string, enum: ['', allow, require, block]}
+              detail: {type: string, description: Why it matched or did not.}
+    NetworkZone:
+      type: object
+      required: [id, name, kind, cidrs, createdAt, updatedAt]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        kind: {type: string, enum: [trusted, risky]}
+        cidrs:
+          type: array
+          items: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    MethodSetting:
+      type: object
+      required: [method, enabled, updatedAt, users, exclusive]
+      properties:
+        method: {$ref: '#/components/schemas/MethodKind'}
+        enabled: {type: boolean}
+        updatedAt: {type: string, format: date-time}
+        users: {type: integer}
+        exclusive: {type: integer}
+    Device:
+      type: object
+      required: [id, userId, name, os, browser, trust, firstSeenAt, lastSeenAt, lastIp, signIns]
+      properties:
+        id: {type: string, examples: [dev_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        userId: {type: string}
+        name: {type: string}
+        os: {type: string}
+        browser: {type: string}
+        trust: {type: string, enum: [unknown, trusted, blocked]}
+        firstSeenAt: {type: string, format: date-time}
+        lastSeenAt: {type: string, format: date-time}
+        lastIp: {type: string}
+        signIns: {type: integer}
+        current: {type: boolean}
+    RiskEvent:
+      type: object
+      required: [id, time, type, level, status, userId, ip, deviceId, device, signInId, detail, resolvedBy, resolvedAt]
+      properties:
+        id: {type: string}
+        time: {type: string, format: date-time}
+        type: {type: string, enum: [risky-network, failed-sign-ins, new-device]}
+        level: {type: string, enum: [medium, high]}
+        status: {type: string, enum: [open, resolved, dismissed]}
+        userId: {type: [string, 'null']}
+        ip: {type: string}
+        deviceId: {type: [string, 'null']}
+        device: {type: string}
+        signInId: {type: [string, 'null']}
+        detail: {type: string}
+        resolvedBy: {type: [string, 'null']}
+        resolvedAt: {type: [string, 'null'], format: date-time}
+    ApiKey:
+      type: object
+      required: [id, serviceAccountId, serviceAccountName, label, prefix, scopes, createdBy, createdAt, expiresAt, lastUsedAt, revokedAt]
+      properties:
+        id: {type: string, examples: [key_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        serviceAccountId: {type: string}
+        serviceAccountName: {type: string}
+        label: {type: string}
+        prefix: {type: string, description: The first 12 characters of the key.}
+        scopes:
+          type: array
+          items: {type: string, enum: [api, scim]}
+        createdBy: {type: [string, 'null']}
+        createdAt: {type: string, format: date-time}
+        expiresAt: {type: [string, 'null'], format: date-time}
+        lastUsedAt: {type: [string, 'null'], format: date-time}
+        revokedAt: {type: [string, 'null'], format: date-time}
+    ServiceAccount:
+      type: object
+      required: [id, name, email, description, ownerId, status, roles, keys, createdBy, createdAt]
+      properties:
+        id: {type: string, examples: [usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        name: {type: string}
+        email: {type: string, examples: [terraform@service.halo.invalid]}
+        description: {type: string}
+        ownerId: {type: [string, 'null']}
+        status: {type: string, enum: [active, suspended], description: '`suspended` when disabled.'}
+        roles:
+          type: array
+          items: {$ref: '#/components/schemas/RoleKey'}
+        keys:
+          type: array
+          items: {$ref: '#/components/schemas/ApiKey'}
+        createdBy: {type: [string, 'null']}
+        createdAt: {type: string, format: date-time}
+    AppProvisioning:
+      type: object
+      required: [appId, baseUrl, enabled, lastSyncAt, lastError, created, updated, deactivated, provisioned, updatedAt]
+      properties:
+        appId: {type: string}
+        baseUrl: {type: string, format: uri}
+        enabled: {type: boolean}
+        lastSyncAt: {type: [string, 'null'], format: date-time}
+        lastError: {type: string}
+        created: {type: integer, description: Users created in the last run.}
+        updated: {type: integer}
+        deactivated: {type: integer}
+        provisioned: {type: integer, description: Users currently active in the application.}
+        updatedAt: {type: string, format: date-time}
+    IdentityProvider:
+      type: object
+      required: [id, kind, name, issuer, clientId, hasSecret, scopes, enabled, showOnSignIn, allowedDomains, jit, jitGroupIds, linkedCount, createdAt, updatedAt]
+      properties:
+        id: {type: string, examples: [idp_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        kind: {$ref: '#/components/schemas/ProviderKind'}
+        name: {type: string}
+        issuer: {type: string}
+        clientId: {type: string}
+        hasSecret: {type: boolean}
+        scopes:
+          type: array
+          items: {type: string}
+        enabled: {type: boolean}
+        showOnSignIn: {type: boolean}
+        allowedDomains:
+          type: array
+          items: {type: string}
+        jit: {type: boolean}
+        jitGroupIds:
+          type: array
+          items: {type: string}
+        linkedCount: {type: integer}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    FederatedIdentity:
+      type: object
+      required: [id, providerId, providerName, providerKind, email, createdAt, lastUsedAt]
+      properties:
+        id: {type: string}
+        providerId: {type: string}
+        providerName: {type: string}
+        providerKind: {$ref: '#/components/schemas/ProviderKind'}
+        email: {type: string}
+        createdAt: {type: string, format: date-time}
+        lastUsedAt: {type: [string, 'null'], format: date-time}
+    Settings:
+      type: object
+      properties:
+        organizationName: {type: string, maxLength: 100, description: 'Empty uses `HALO_ORGANIZATION`.'}
+        contactEmail: {type: string}
+        signInMessage: {type: string, maxLength: 500}
+        sessionHours: {type: integer, minimum: 1, maximum: 72, default: 12}
+        lockoutThreshold: {type: integer, minimum: 3, maximum: 20, default: 5}
+        lockoutMinutes: {type: integer, minimum: 5, maximum: 1440, default: 15}
+        inviteDays: {type: integer, minimum: 1, maximum: 30, default: 7}
+        accessTokenMinutes: {type: integer, minimum: 5, maximum: 1440, default: 15}
+        idTokenMinutes: {type: integer, minimum: 5, maximum: 1440, default: 15}
+        refreshTokenHours: {type: integer, minimum: 1, maximum: 2160, default: 8}
+    Domain:
+      type: object
+      required: [id, name, token, createdAt, verifiedAt]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        token: {type: string, description: 'Publish `halo-verification=<token>` as a TXT record.'}
+        createdAt: {type: string, format: date-time}
+        verifiedAt: {type: [string, 'null'], format: date-time}
+    Webhook:
+      type: object
+      required: [id, url, description, events, enabled, createdAt, updatedAt, lastStatus, lastDeliveryAt]
+      properties:
+        id: {type: string, examples: [whk_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        url: {type: string, format: uri}
+        description: {type: string}
+        events:
+          type: array
+          items: {type: string}
+        enabled: {type: boolean}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        lastStatus: {type: [string, 'null'], enum: [pending, delivered, failed, null]}
+        lastDeliveryAt: {type: [string, 'null'], format: date-time}
+    WebhookDelivery:
+      type: object
+      required: [id, endpointId, eventId, eventType, body, status, attempts, nextAttemptAt, lastAttemptAt, responseStatus, error, createdAt]
+      properties:
+        id: {type: string, examples: [whd_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        endpointId: {type: string}
+        eventId: {type: string}
+        eventType: {type: string}
+        body: {type: string, description: The exact JSON body Halo sends.}
+        status: {type: string, enum: [pending, delivered, failed]}
+        attempts: {type: integer}
+        nextAttemptAt: {type: string, format: date-time}
+        lastAttemptAt: {type: [string, 'null'], format: date-time}
+        responseStatus: {type: [integer, 'null']}
+        error: {type: string}
+        createdAt: {type: string, format: date-time}
+    ApiScope:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string, pattern: '^[a-z0-9][a-z0-9:._/-]{0,99}$', examples: ['billing:read']}
+        description: {type: string, maxLength: 200}
+    ApiResource:
+      type: object
+      required: [id, name, identifier, description, accessTokenTtl, scopes, grants, createdAt, updatedAt]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        identifier: {type: string, format: uri}
+        description: {type: string}
+        accessTokenTtl: {type: integer}
+        scopes:
+          type: array
+          items: {$ref: '#/components/schemas/ApiScope'}
+        grants:
+          type: array
+          items:
+            type: object
+            required: [appId, scopes]
+            properties:
+              appId: {type: string}
+              scopes:
+                type: array
+                items: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    SSHAuthority:
+      type: object
+      required: [publicKey, fingerprint, createdAt, certificateLifetime]
+      properties:
+        publicKey: {type: string}
+        fingerprint: {type: string, examples: ['SHA256:…']}
+        createdAt: {type: string, format: date-time}
+        certificateLifetime: {type: integer, description: Seconds. Defaults to 28800 (8 hours).}
+    SSHPrincipalMapping:
+      type: object
+      required: [id, groupId, principals, createdAt, updatedAt]
+      properties:
+        id: {type: string}
+        groupId: {type: string}
+        principals:
+          type: array
+          items: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    SSHCertificate:
+      type: object
+      required: [serial, keyId, userId, userName, principals, fingerprint, keyType, ip, validAfter, validBefore, createdAt]
+      properties:
+        serial: {type: integer}
+        keyId: {type: string, examples: ['halo:usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9:42']}
+        userId: {type: [string, 'null']}
+        userName: {type: string}
+        principals:
+          type: array
+          items: {type: string}
+        fingerprint: {type: string}
+        keyType: {type: string, examples: [ssh-ed25519]}
+        ip: {type: string}
+        validAfter: {type: string, format: date-time}
+        validBefore: {type: string, format: date-time}
+        createdAt: {type: string, format: date-time}
+    SSHCertificateIssued:
+      type: object
+      required: [certificate, serial, keyId, principals, fingerprint, validAfter, validBefore]
+      properties:
+        certificate: {type: string, description: 'One line in OpenSSH format. Save it next to the key as `<key>-cert.pub`.'}
+        serial: {type: integer}
+        keyId: {type: string}
+        principals:
+          type: array
+          items: {type: string}
+        fingerprint: {type: string}
+        validAfter: {type: string, format: date-time, description: '5 minutes before issue, to allow for clock skew.'}
+        validBefore: {type: string, format: date-time}
+    DeviceAuthorization:
+      type: object
+      required: [userCode, application, clientId, scopes, ip, userAgent, requestedAt, expiresAt]
+      properties:
+        userCode: {type: string, examples: [BCDF-GHJK]}
+        application: {type: string}
+        clientId: {type: string, examples: [halo-cli]}
+        scopes:
+          type: array
+          items: {type: string}
+        ip: {type: string, description: The address the device requested the code from.}
+        userAgent: {type: string}
+        requestedAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+    OutboxMessage:
+      type: object
+      required: [id, to, subject, text, attempts, lastError, createdAt, sentAt]
+      properties:
+        id: {type: string, examples: [msg_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        to: {type: string}
+        subject: {type: string}
+        text: {type: string}
+        attempts: {type: integer}
+        lastError: {type: string}
+        createdAt: {type: string, format: date-time}
+        sentAt: {type: [string, 'null'], format: date-time}
+    SigningKey:
+      type: object
+      required: [kid, algorithm, active, createdAt, retiresAt, retiredAt]
+      properties:
+        kid: {type: string, description: The key id in the JWKS and in the `kid` header of tokens.}
+        algorithm: {type: string, examples: [RS256]}
+        active: {type: boolean, description: True for the key that signs new tokens.}
+        createdAt: {type: string, format: date-time}
+        retiresAt: {type: [string, 'null'], format: date-time, description: 'For a replaced key, when it leaves the JWKS: 7 days after the next key was created.'}
+        retiredAt: {type: [string, 'null'], format: date-time, description: When the key left the JWKS.}
+    SAMLCertificate:
+      type: object
+      required: [id, fingerprint, notAfter, createdAt, retiredAt]
+      properties:
+        id: {type: string, examples: [key_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        fingerprint: {type: string, description: SHA-256 of the certificate as colon-separated uppercase hex.}
+        notAfter: {type: string, format: date-time}
+        createdAt: {type: string, format: date-time}
+        retiredAt: {type: [string, 'null'], format: date-time, description: Set when a rotation replaced the certificate. Null for the current one.}
