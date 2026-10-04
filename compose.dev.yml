@@ -1,0 +1,21 @@
+name: halo-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: halo
+      POSTGRES_PASSWORD: halo
+      POSTGRES_DB: halo
+    ports:
+      - "127.0.0.1:5436:5432"
+    volumes:
+      - halo-dev-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U halo -d halo"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+volumes:
+  halo-dev-postgres:
