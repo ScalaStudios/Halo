@@ -8,7 +8,7 @@
 
 In identity terms, Halo is an identity provider (IdP) for single sign-on (SSO) over OpenID Connect (OIDC) and SAML 2.0, with passwordless sign-in through passkeys, SCIM 2.0 provisioning, conditional access policies and identity governance. It comes with its own directory, admin console and account portal: it is not an authentication library or a proxy in front of your applications.
 
-[Website](https://halo.scala.gg) · [Quick start](#quick-start) · [Documentation](documentation/README.md) · [Integrations](#connect-your-first-application) · [Security](SECURITY.md)
+[Website](https://halo.scala.gg) · [Quick start](#quick-start) · [Documentation](https://halo.scala.gg/docs) · [Integrations](#connect-your-first-application) · [Security](SECURITY.md)
 
 > [!NOTE]
 > Halo is pre-release. The features below work on `main`, but there is no tagged release yet, and the API and configuration may change before 1.0. [CHANGELOG.md](CHANGELOG.md) lists what is included.
@@ -64,22 +64,21 @@ Not built yet: LDAP directory sync and pushing groups over outbound SCIM. See th
 
 ### Install on a server
 
-You need a Linux server with Docker Engine, the Docker Compose plugin, `git` and `openssl`, a domain name such as `auth.example.com` that points at the server, and ports 80 and 443 open to the internet.
+You need a Linux server with `curl` and `openssl`, a domain name such as `auth.example.com` that points at the server, and ports 80 and 443 open to the internet. Run the script as root and it installs Docker if the server doesn't have it.
 
 ```bash
 curl -fsSL https://halo.scala.gg/install.sh | sh
 ```
 
-The script asks for your domain and organization name, downloads Halo to `/opt/halo` (or `~/halo` when you are not root), generates a database password and `HALO_SECRET_KEY`, then downloads and starts PostgreSQL, Halo and Caddy, which obtains a TLS certificate for your domain. [Read the script](deploy/install.sh) before you run it if you prefer.
+The script asks for your domain and organization name, sets Halo up in `/opt/halo` (or `~/halo` when you are not root), generates a database password and `HALO_SECRET_KEY`, then downloads and starts PostgreSQL, Halo and Caddy, which obtains a TLS certificate for your domain. [Read the script](deploy/install.sh) before you run it if you prefer.
 
 When it finishes, create the first administrator with the command it prints:
 
 ```bash
-cd /opt/halo/deploy
-docker compose exec halo-server halo bootstrap --email you@example.com --name "Your Name"
+/opt/halo/halo.sh admin you@example.com "Your Name"
 ```
 
-Open the link it prints and register a passkey. The console is at `https://auth.example.com/admin`. To install step by step instead, and for backups, upgrades and email, follow [deploy/README.md](deploy/README.md).
+Open the link it prints and register a passkey. The console is at `https://auth.example.com/admin`. To install step by step instead, and for backups, upgrades and email, follow the [self-hosting guide](https://halo.scala.gg/docs/self-hosting).
 
 ### Run from source
 
@@ -105,7 +104,7 @@ Start the web interface in a second terminal:
 cd web && bun install && bun run dev
 ```
 
-Open the setup link that `bootstrap` printed to register your passkey. Halo runs at http://localhost:3200. To explore a populated organization instead, `go run ./cmd/halo seed-demo` loads Fernway Systems, a demo company with 68 people; [Get started](documentation/getting-started.md#explore-with-demo-data) explains how to sign in to it.
+Open the setup link that `bootstrap` printed to register your passkey. Halo runs at http://localhost:3200. To explore a populated organization instead, `go run ./cmd/halo seed-demo` loads Fernway Systems, a demo company with 68 people; [Get started](https://halo.scala.gg/docs/getting-started#explore-with-demo-data) explains how to sign in to it.
 
 ## Connect your first application
 
@@ -132,7 +131,7 @@ groups_attribute_path = groups
 role_attribute_path = contains(groups[*], 'Grafana editors') && 'Editor' || 'Viewer'
 ```
 
-Step-by-step guides cover [Grafana](documentation/integrations/grafana.md), [Forgejo](documentation/integrations/forgejo.md), [Nextcloud](documentation/integrations/nextcloud.md), [Kubernetes with kubelogin](documentation/integrations/kubernetes.md), [Proxmox VE](documentation/integrations/proxmox.md), [Outline](documentation/integrations/outline.md) and [Headscale](documentation/integrations/headscale.md) over OpenID Connect, and [AWS IAM Identity Center](documentation/integrations/aws-iam-identity-center.md) and [Slack](documentation/integrations/slack.md) over SAML. For anything else that supports OpenID Connect or SAML 2.0, start from the [generic OpenID Connect](documentation/integrations/generic-oidc.md) or [generic SAML](documentation/integrations/generic-saml.md) guide. [`examples/`](examples) has small Go applications that sign in with Halo over each protocol.
+Step-by-step guides cover [Grafana](https://halo.scala.gg/docs/integrations/grafana), [Forgejo](https://halo.scala.gg/docs/integrations/forgejo), [Nextcloud](https://halo.scala.gg/docs/integrations/nextcloud), [Kubernetes with kubelogin](https://halo.scala.gg/docs/integrations/kubernetes), [Proxmox VE](https://halo.scala.gg/docs/integrations/proxmox), [Outline](https://halo.scala.gg/docs/integrations/outline) and [Headscale](https://halo.scala.gg/docs/integrations/headscale) over OpenID Connect, and [AWS IAM Identity Center](https://halo.scala.gg/docs/integrations/aws-iam-identity-center) and [Slack](https://halo.scala.gg/docs/integrations/slack) over SAML. For anything else that supports OpenID Connect or SAML 2.0, start from the [generic OpenID Connect](https://halo.scala.gg/docs/integrations/generic-oidc) or [generic SAML](https://halo.scala.gg/docs/integrations/generic-saml) guide. [`examples/`](examples) has small Go applications that sign in with Halo over each protocol.
 
 To automate Halo itself, create a service account with the user administrator role and an API key, and call the API. This invites a person and returns their setup link:
 
@@ -143,7 +142,7 @@ curl -X POST https://auth.example.com/api/v1/users \
   -d '{"email": "sam@example.com", "name": "Sam Lee", "department": "Engineering"}'
 ```
 
-Every route is described in the OpenAPI document at `/api/v1/openapi.yaml`; the [API guide](documentation/api.md) covers authentication, roles and errors.
+Every route is described in the OpenAPI document at `/api/v1/openapi.yaml`; the [API guide](https://halo.scala.gg/docs/api) covers authentication, roles and errors.
 
 ## Screenshots
 
@@ -183,18 +182,18 @@ The web interface is the only public entry point. It serves the console, the acc
 | `/saml/*` | The SAML 2.0 identity provider |
 | `/scim/v2/*` | The SCIM 2.0 server |
 
-[Architecture](documentation/architecture.md) covers the Go packages and how a sign-in flows through them.
+[Architecture](https://halo.scala.gg/docs/architecture) covers the Go packages and how a sign-in flows through them.
 
 ## Self-hosting
 
-Self-hosted Halo runs on your own infrastructure and needs no external service. A production installation is four containers: PostgreSQL 17, the Halo server, the web interface, and Caddy for TLS. [deploy/README.md](deploy/README.md) is the step-by-step guide.
+Self-hosted Halo runs on your own infrastructure and needs no external service. A production installation is four containers: PostgreSQL 17, the Halo server, the web interface, and Caddy for TLS. The [self-hosting guide](https://halo.scala.gg/docs/self-hosting) walks through it step by step.
 
-- **Requirements.** A Linux host with Docker Engine and the Compose plugin, a domain name, and ports 80 and 443 reachable from the internet. Images are published for `linux/amd64` and `linux/arm64`. On a test machine, the four running containers used about 200 MB of memory at idle.
+- **Requirements.** A Linux host with Docker Engine and the Compose plugin, which the install script installs when you run it as root, a domain name, and ports 80 and 443 reachable from the internet. Images are published for `linux/amd64` and `linux/arm64`. On a test machine, the four running containers used about 200 MB of memory at idle.
 - **Choose a domain you will keep.** Halo's address is the OpenID Connect issuer that every application stores, and passkeys only work on the domain they were created for.
 - **Back up two things.** The database, and `HALO_SECRET_KEY`, which encrypts signing keys and other stored secrets. A backup cannot be restored without the key that was in use when it was taken.
 - **Run one Halo server.** Some background jobs, such as outbound SCIM, access expiry and lifecycle rules, run in every server process without coordinating with other processes.
 - **Email is optional.** Without an SMTP server, administrators pass invite and reset links on themselves. With one, Halo emails them, and people can sign in with magic links.
-- **Kubernetes.** There is no Helm chart yet. [Self-hosting](documentation/self-hosting.md#other-ways-to-run-halo) lists what any other deployment needs.
+- **Kubernetes.** There is no Helm chart yet. [Self-hosting](https://halo.scala.gg/docs/self-hosting#other-ways-to-run-halo) lists what any other deployment needs.
 
 ## Halo Cloud
 
@@ -221,25 +220,27 @@ Known limitations today:
 
 ## Documentation
 
-- [Get started](documentation/getting-started.md): run Halo locally and sign in to an example application through it.
-- [Concepts](documentation/concepts.md): users, groups, roles, applications, sessions and sign-in methods.
-- [Configuration](documentation/configuration.md): every environment variable and console setting.
-- [Access policies](documentation/policies.md) and [governance](documentation/governance.md): who gets in, under which conditions, and for how long.
-- [Federation](documentation/federation.md): sign-in with Google, Microsoft Entra ID, GitHub or another OpenID Connect provider.
-- [Provisioning](documentation/provisioning.md): SCIM in both directions, service accounts and API keys.
-- [Webhooks](documentation/webhooks.md) and the [API](documentation/api.md): automate Halo and react to its events.
-- [Infrastructure access](documentation/infrastructure-access.md): SSH certificates with `halo login` and `halo ssh-cert`.
-- [Security model](documentation/security-model.md): how Halo protects sessions, secrets and tokens, and its known limitations.
+The documentation lives at [halo.scala.gg/docs](https://halo.scala.gg/docs).
+
+- [Get started](https://halo.scala.gg/docs/getting-started): run Halo locally and sign in to an example application through it.
+- [Concepts](https://halo.scala.gg/docs/concepts): users, groups, roles, applications, sessions and sign-in methods.
+- [Configuration](https://halo.scala.gg/docs/configuration): every environment variable and console setting.
+- [Access policies](https://halo.scala.gg/docs/policies) and [governance](https://halo.scala.gg/docs/governance): who gets in, under which conditions, and for how long.
+- [Federation](https://halo.scala.gg/docs/federation): sign-in with Google, Microsoft Entra ID, GitHub or another OpenID Connect provider.
+- [Provisioning](https://halo.scala.gg/docs/provisioning): SCIM in both directions, service accounts and API keys.
+- [Webhooks](https://halo.scala.gg/docs/webhooks) and the [API](https://halo.scala.gg/docs/api): automate Halo and react to its events.
+- [Infrastructure access](https://halo.scala.gg/docs/infrastructure-access): SSH certificates with `halo login` and `halo ssh-cert`.
+- [Security model](https://halo.scala.gg/docs/security-model): how Halo protects sessions, secrets and tokens, and its known limitations.
 
 ## Contributing
 
-Bug reports, fixes, documentation and features are welcome. Report bugs and propose features in [GitHub issues](https://github.com/ScalaStudios/Halo/issues), and open an issue before starting anything large, such as a new feature, a new dependency or a schema change. [CONTRIBUTING.md](CONTRIBUTING.md) covers the development setup, the checks CI runs and the code style, and [Architecture](documentation/architecture.md) maps the code. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+Bug reports, fixes, documentation and features are welcome. Report bugs and propose features in [GitHub issues](https://github.com/ScalaStudios/Halo/issues), and open an issue before starting anything large, such as a new feature, a new dependency or a schema change. [CONTRIBUTING.md](CONTRIBUTING.md) covers the development setup, the checks CI runs and the code style, and [Architecture](https://halo.scala.gg/docs/architecture) maps the code. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Security
 
 Report vulnerabilities privately through [GitHub's private vulnerability reporting](https://github.com/ScalaStudios/Halo/security/advisories/new), never in a public issue. [SECURITY.md](SECURITY.md) lists what to include and the response times to expect.
 
-Halo stores session tokens, client secrets, API keys and refresh tokens only as SHA-256 hashes, encrypts signing keys and other stored secrets with AES-256-GCM, writes every administrative change to the audit log in the same transaction, and refuses to start without HTTPS outside development. The [security model](documentation/security-model.md) explains each of these and lists the known limitations.
+Halo stores session tokens, client secrets, API keys and refresh tokens only as SHA-256 hashes, encrypts signing keys and other stored secrets with AES-256-GCM, writes every administrative change to the audit log in the same transaction, and refuses to start without HTTPS outside development. The [security model](https://halo.scala.gg/docs/security-model) explains each of these and lists the known limitations.
 
 ## License
 

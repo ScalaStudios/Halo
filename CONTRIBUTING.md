@@ -128,7 +128,7 @@ These rules apply everywhere:
 1. Open or find the issue for anything large and agree on the approach there.
 2. Branch from `main` and keep each pull request to one change.
 3. Add or update tests for any change in behaviour.
-4. Update [`documentation/`](documentation) when something users or operators see changes, and add a line under **Unreleased** in [`CHANGELOG.md`](CHANGELOG.md).
+4. When something users or operators see changes, add a line under **Unreleased** in [`CHANGELOG.md`](CHANGELOG.md), and name the pages of the [documentation](https://halo.scala.gg/docs) that need updating in the pull request.
 5. Run the checks above.
 6. In the pull request, explain what changed, why, and how you verified it. Include screenshots for interface changes.
 

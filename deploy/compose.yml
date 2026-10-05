@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: halo
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: halo
     volumes:
       - postgres:/var/lib/postgresql/data
@@ -18,7 +18,7 @@ services:
     networks: [halo]
 
   halo-server:
-    image: ghcr.io/scalastudios/halo-server:0.1.0
+    image: ghcr.io/scalastudios/halo-server:0.1.1
     restart: unless-stopped
     env_file: .env
     environment:
@@ -31,7 +31,7 @@ services:
     networks: [halo]
 
   halo-web:
-    image: ghcr.io/scalastudios/halo-web:0.1.0
+    image: ghcr.io/scalastudios/halo-web:0.1.1
     restart: unless-stopped
     environment:
       HALO_API_URL: http://halo-server:8080
@@ -48,7 +48,7 @@ services:
     image: caddy:2
     restart: unless-stopped
     environment:
-      HALO_DOMAIN: ${HALO_DOMAIN:?set HALO_DOMAIN in deploy/.env}
+      HALO_DOMAIN: ${HALO_DOMAIN:?set HALO_DOMAIN in .env}
     ports:
       - "80:80"
       - "443:443"
