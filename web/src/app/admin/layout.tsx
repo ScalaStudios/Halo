@@ -13,7 +13,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   const [me, org] = await Promise.all([apiGet<User>("/me"), apiGet<Organization>("/organization")]);
   if (me.roles.length === 0) redirect("/account");
   return (
-    <ConsoleShell user={{ name: me.name, email: me.email }} orgName={org.name}>
+    <ConsoleShell user={{ name: me.name, email: me.email, avatarUrl: me.avatarUrl }} orgName={org.name}>
       {children}
     </ConsoleShell>
   );

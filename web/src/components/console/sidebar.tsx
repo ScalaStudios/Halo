@@ -115,7 +115,7 @@ export function Sidebar({ orgName, onSearch, onNavigate }: { orgName: string; on
       </nav>
 
       <div className="flex h-12 shrink-0 items-center justify-between border-t border-border px-4 text-caption text-fg-3">
-        <span className="font-mono">v0.1.0</span>
+        <span className="font-mono">v0.1.1</span>
         <Link href={`${BASE}/developers`} onClick={onNavigate} className="transition-colors duration-fast hover:text-fg">
           Documentation
         </Link>

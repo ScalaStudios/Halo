@@ -29,6 +29,7 @@ export type User = {
   source: string;
   createdAt: string;
   lastSignInAt: string | null;
+  avatarUrl: string | null;
 };
 
 export type Group = {

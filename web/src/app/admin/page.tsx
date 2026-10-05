@@ -1,8 +1,12 @@
 import Link from "next/link";
-import { ArrowRight, ClipboardCheck, FileKey, Inbox, LogIn, ShieldAlert, ShieldCheck, TriangleAlert, type LucideIcon } from "lucide-react";
+import { AppWindow, ArrowRight, ClipboardCheck, FileKey, Inbox, Laptop, LogIn, ShieldAlert, ShieldCheck, TriangleAlert, UserRound, UsersRound, type LucideIcon } from "lucide-react";
+import { OrgLogo } from "@/components/console/org-logo";
+import { hasRole } from "@/components/settings/roles";
+import { Avatar } from "@/components/ui/avatar";
 import { Badge, StatusDot } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { CopyButton } from "@/components/ui/copy-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { PendingRequests } from "@/components/governance/requests";
@@ -12,8 +16,9 @@ import { cn } from "@/lib/cn";
 import { formatRelative, pluralize } from "@/lib/format";
 import { RESULT, signInApp, signInUser } from "@/lib/labels";
 import type { AccessRequest, AccessReview } from "@/lib/governance-types";
-import type { PolicyWithActivity, RiskEvent } from "@/lib/policy-types";
-import type { Application, Organization, Overview, User } from "@/lib/types";
+import type { Device, PolicyWithActivity, RiskEvent } from "@/lib/policy-types";
+import type { OrganizationProfile } from "@/lib/settings-types";
+import type { Application, Group, Overview, User } from "@/lib/types";
 
 export const metadata = { title: { absolute: "Halo administration" } };
 
@@ -22,15 +27,18 @@ function names(list: string[]) {
 }
 
 export default async function OverviewPage() {
-  const [overview, users, applications, org, pending, reviews, risks, policies] = await Promise.all([
+  const [overview, users, applications, org, pending, reviews, risks, policies, me, groups, devices] = await Promise.all([
     apiGet<Overview>("/overview"),
     apiGet<User[]>("/users"),
     apiGet<Application[]>("/applications"),
-    apiGet<Organization>("/organization"),
+    apiGet<OrganizationProfile>("/organization"),
     apiGet<AccessRequest[]>("/access-requests?status=pending"),
     apiGet<AccessReview[]>("/access-reviews"),
     apiGet<RiskEvent[]>("/risk-events"),
     apiGet<PolicyWithActivity[]>("/policies"),
+    apiGet<User>("/me"),
+    apiGet<Group[]>("/groups"),
+    apiGet<Device[]>("/devices"),
   ]);
   const userNames = Object.fromEntries(users.map((u) => [u.id, u.name]));
   const appNames = Object.fromEntries(applications.map((a) => [a.id, a.name]));
@@ -38,6 +46,27 @@ export default async function OverviewPage() {
   const invited = users.filter((u) => u.status === "invited");
   const overdue = reviews.filter((review) => review.status === "overdue");
   const openRisks = risks.filter((event) => event.status === "open");
+
+  const directory: { value: number; label: string; action: string; href: string; icon: LucideIcon }[] = [
+    { value: users.length, label: "Users", action: "View users", href: "/admin/users", icon: UserRound },
+    { value: groups.length, label: "Groups", action: "View groups", href: "/admin/groups", icon: UsersRound },
+    { value: devices.length, label: "Devices", action: "View devices", href: "/admin/devices", icon: Laptop },
+    { value: applications.length, label: "Applications", action: "View apps", href: "/admin/applications", icon: AppWindow },
+  ];
+
+  const shortcuts = [
+    { label: "Invite a user", href: "/admin/users?invite=1" },
+    { label: "Sign-in logs", href: "/admin/sign-ins" },
+    { label: "Audit log", href: "/admin/audit" },
+    { label: "Sign-in methods", href: "/admin/methods" },
+    { label: "Suspended users", href: "/admin/users?view=suspended" },
+    { label: "Access policies", href: "/admin/policies" },
+    { label: "Network zones", href: "/admin/policies?tab=networks" },
+    { label: "Risk events", href: "/admin/risk" },
+    { label: "Sessions", href: "/admin/sessions" },
+    { label: "Domains", href: "/admin/settings/domains" },
+    { label: "Roles", href: "/admin/roles" },
+  ];
 
   const posture: { value: number; label: string; href: string; icon: LucideIcon }[] = [
     { value: weakAdmins.length, label: "Admins without phishing-resistant authentication", href: "/admin/users?view=weak-admins", icon: ShieldAlert },
@@ -100,6 +129,115 @@ export default async function OverviewPage() {
   return (
     <div className="flex animate-page flex-col gap-8">
       <PageHeader title="Overview" description={`What needs attention in ${org.name} right now.`} />
+
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 min-[1400px]:grid-cols-3">
+        <Card className="flex flex-col">
+          <div className="px-6 pt-6">
+            <OrgLogo name={org.name} logoUrl={org.logoUrl} canEdit={hasRole(me)} />
+          </div>
+          <div className="flex min-w-0 items-center gap-2 px-6 pt-4 text-body-sm">
+            <span className="shrink-0 font-semibold text-fg">Issuer</span>
+            <span className="min-w-0 truncate font-mono text-code-sm text-fg-2">{org.issuer}</span>
+            <CopyButton value={org.issuer} label="Copy" className="ml-auto" />
+          </div>
+          <ul className="mx-6 mt-4 mb-6 grid grid-cols-2 gap-x-4 gap-y-6 border-t border-border pt-6">
+            {directory.map((item) => {
+              const Icon = item.icon;
+              return (
+                <li key={item.label} className="flex items-start gap-3">
+                  <Icon aria-hidden="true" size={24} strokeWidth={1.5} className="mt-1 shrink-0 text-fg-3" />
+                  <div className="flex min-w-0 flex-col items-start gap-2">
+                    <span className="tnum font-display text-h2 text-fg">
+                      {item.value}
+                      <span className="sr-only"> {item.label}</span>
+                    </span>
+                    <Link href={item.href} className={buttonClasses("secondary", "sm")}>
+                      {item.action}
+                    </Link>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+
+        <Card className="flex flex-col">
+          <div className="flex items-center gap-4 px-6 pt-6">
+            <Avatar name={me.name} src={me.avatarUrl} size="lg" />
+            <div className="flex min-w-0 flex-col items-start gap-1">
+              <h2 className="max-w-full truncate text-h3 text-fg">{me.name}</h2>
+              {me.roles[0] ? <Badge tone="ember">{me.roles[0]}</Badge> : null}
+            </div>
+          </div>
+          <div className="flex min-w-0 items-center gap-2 px-6 pt-4 text-body-sm">
+            <span className="shrink-0 font-semibold text-fg">User ID</span>
+            <span className="min-w-0 truncate font-mono text-code-sm text-fg-2">{me.id}</span>
+            <CopyButton value={me.id} label="Copy" className="ml-auto" />
+          </div>
+          <div className="px-6 pt-1">
+            <Link href="/account" className={buttonClasses("quiet", "sm", "-ml-2")}>
+              Your account
+              <ArrowRight aria-hidden="true" size={16} strokeWidth={1.75} />
+            </Link>
+          </div>
+          <div className="mx-6 mt-4 flex flex-1 flex-col gap-3 border-t border-border pt-6 pb-6">
+            <h3 className="text-body font-semibold text-fg">Your roles</h3>
+            <ul className="flex flex-wrap gap-2">
+              {me.roles.map((role) => (
+                <li key={role}>
+                  <Badge>{role}</Badge>
+                </li>
+              ))}
+            </ul>
+            <Link href="/admin/roles" className={buttonClasses("secondary", "sm", "mt-auto self-start")}>
+              Manage roles
+            </Link>
+          </div>
+        </Card>
+
+        <Card className="flex flex-col lg:col-span-2 min-[1400px]:col-span-1">
+          <CardHeader title="Sign-ins at risk" description={openRisks.length ? pluralize(openRisks.length, "open risk event") : undefined} />
+          <div className="flex flex-1 flex-col px-6 pb-6">
+            {openRisks.length === 0 ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-center">
+                <ShieldCheck aria-hidden="true" size={24} strokeWidth={1.75} className="text-success" />
+                <p className="text-body font-semibold text-fg">No open risk events</p>
+                <p className="max-w-[32ch] text-body-sm text-fg-3">No medium- or high-risk sign-in is waiting for a security administrator.</p>
+              </div>
+            ) : (
+              <ul className="flex flex-1 flex-col">
+                {openRisks.slice(0, 4).map((event) => (
+                  <li key={event.id} className="flex items-start gap-3 border-b border-border py-3 last:border-b-0">
+                    <StatusDot tone={event.level === "high" ? "danger" : "warning"} className="mt-2" />
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate text-body-sm font-medium text-fg">{event.userId ? (userNames[event.userId] ?? "Unknown user") : "Unknown user"}</span>
+                      <span className="truncate text-caption text-fg-3">
+                        {event.detail} · {formatRelative(event.time)}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <Link href="/admin/risk" className={buttonClasses("secondary", "sm", "mt-4 self-start")}>
+              View risk events
+            </Link>
+          </div>
+        </Card>
+      </div>
+
+      <section className="flex flex-col gap-4">
+        <h2 className="text-h4 text-fg">Shortcuts</h2>
+        <ul className="flex flex-wrap gap-2">
+          {shortcuts.map((shortcut) => (
+            <li key={shortcut.label}>
+              <Link href={shortcut.href} className={buttonClasses("secondary", "sm")}>
+                {shortcut.label}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <Card className="overflow-hidden">
         <h2 className="sr-only">Security posture</h2>

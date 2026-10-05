@@ -20,6 +20,7 @@ type storage struct {
 	st     *store.Store
 	dev    bool
 	policy access.Engine
+	issuer string
 }
 
 type authRequest struct {
@@ -212,6 +213,9 @@ func (s *storage) userinfo(ctx context.Context, info *oidc.UserInfo, u store.Use
 	}
 	if slices.Contains(scopes, oidc.ScopeProfile) {
 		info.Name, info.PreferredUsername = u.Name, u.Email
+		if u.AvatarURL != nil && s.issuer != "" {
+			info.Picture = s.issuer + *u.AvatarURL
+		}
 	}
 	if !slices.Contains(scopes, groupsScope) {
 		return nil

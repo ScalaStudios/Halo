@@ -10,5 +10,5 @@ export const metadata: Metadata = {
 
 export default async function AccountLayout({ children }: { children: ReactNode }) {
   const user = await apiGet<User>("/me");
-  return <AccountShell user={{ name: user.name, email: user.email, roles: user.roles }}>{children}</AccountShell>;
+  return <AccountShell user={{ name: user.name, email: user.email, roles: user.roles, avatarUrl: user.avatarUrl }}>{children}</AccountShell>;
 }

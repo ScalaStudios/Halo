@@ -29,7 +29,7 @@ func (u User) HasRole(keys ...string) bool {
 	return false
 }
 
-const userColumns = `id, email, name, title, department, location, status, manager_id, source, created_at, last_sign_in_at, kind, email_verified`
+const userColumns = `id, email, name, title, department, location, status, manager_id, source, created_at, last_sign_in_at, kind, email_verified, avatar_updated_at`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -37,7 +37,12 @@ type rowScanner interface {
 
 func scanUser(row rowScanner) (User, error) {
 	var u User
-	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Title, &u.Department, &u.Location, &u.Status, &u.ManagerID, &u.Source, &u.CreatedAt, &u.LastSignInAt, &u.Kind, &u.EmailVerified)
+	var avatar *time.Time
+	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Title, &u.Department, &u.Location, &u.Status, &u.ManagerID, &u.Source, &u.CreatedAt, &u.LastSignInAt, &u.Kind, &u.EmailVerified, &avatar)
+	if avatar != nil {
+		path := AvatarPath(u.ID, *avatar)
+		u.AvatarURL = &path
+	}
 	return u, err
 }
 

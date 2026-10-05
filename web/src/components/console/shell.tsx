@@ -12,7 +12,7 @@ import { findItem, nav } from "./nav";
 import { Sidebar } from "./sidebar";
 import { useMutation } from "./use-mutation";
 
-export function ConsoleShell({ user, orgName, children }: { user: { name: string; email: string }; orgName: string; children: ReactNode }) {
+export function ConsoleShell({ user, orgName, children }: { user: { name: string; email: string; avatarUrl: string | null }; orgName: string; children: ReactNode }) {
   const pathname = usePathname();
   const { run, router } = useMutation();
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -85,7 +85,7 @@ export function ConsoleShell({ user, orgName, children }: { user: { name: string
                 aria-label="Account menu"
                 className="flex h-10 items-center gap-2 rounded-md px-2 text-body-sm text-fg-2 transition-colors duration-fast hover:bg-hover hover:text-fg data-[state=open]:bg-press"
               >
-                <Avatar name={user.name} size="sm" />
+                <Avatar name={user.name} src={user.avatarUrl} size="sm" />
                 <span className="hidden sm:inline">{user.name}</span>
               </MenuTrigger>
               <MenuContent className="w-64">

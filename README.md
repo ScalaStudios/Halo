@@ -11,9 +11,9 @@ In identity terms, Halo is an identity provider (IdP) for single sign-on (SSO) o
 [Website](https://halo.scala.gg) · [Quick start](#quick-start) · [Documentation](https://halo.scala.gg/docs) · [Integrations](#connect-your-first-application) · [Security](SECURITY.md)
 
 > [!NOTE]
-> Halo is pre-release. The features below work on `main`, but there is no tagged release yet, and the API and configuration may change before 1.0. [CHANGELOG.md](CHANGELOG.md) lists what is included.
+> Halo is pre-release. The current release is 0.1.1, which the install script installs, and the API and configuration may change before 1.0. [CHANGELOG.md](CHANGELOG.md) lists what is included.
 
-![The Halo console overview, listing administrators without phishing-resistant sign-in, expiring application secrets, pending access requests and an overdue access review](.github/assets/console-overview.png)
+![The Halo console home page, with the organization's users, groups, devices and applications, the signed-in administrator's roles, open risk events and shortcuts](.github/assets/console-overview.png)
 
 ## Why Halo
 
@@ -37,7 +37,7 @@ Halo works in the same space as hosted services such as Microsoft Entra ID, Okta
 | **Governance** | Access packages that people request, with approvers, justifications and time limits; access reviews that can remove access automatically when they complete; and joiner, mover and leaver rules. |
 | **Infrastructure access** | An SSH certificate authority that issues short-lived certificates to people in mapped groups, through `halo login` and `halo ssh-cert`. |
 | **Monitoring** | A sign-in log, an audit log of every administrative change, risk events for risky networks, repeated failures, new devices and new networks, and signed webhooks for audit and sign-in events. |
-| **Administration** | An admin console and a self-service account portal, organization branding, sign-in methods you can switch off, email over SMTP with retries, JSON export, and rotation of client secrets, signing keys and `HALO_SECRET_KEY`. |
+| **Administration** | An admin console whose home page shows the directory, your roles, open risk events and shortcuts, a self-service account portal with profile pictures, organization branding, sign-in methods you can switch off, email over SMTP with retries, JSON export, and rotation of client secrets, signing keys and `HALO_SECRET_KEY`. |
 | **Developers** | A REST API described by an OpenAPI 3.1 document, API keys for service accounts, API resources with their own scopes and JWT access tokens, and setup guides with ready-made configuration for common applications. |
 
 Not built yet: LDAP directory sync and pushing groups over outbound SCIM. See the [roadmap](#roadmap).
@@ -58,7 +58,7 @@ Not built yet: LDAP directory sync and pushing groups over outbound SCIM. See th
 | TOTP (RFC 6238) | Implemented | Six-digit codes from authenticator apps |
 | LDAP | Not implemented | Planned |
 
-"Implemented" means the feature works on `main`. Halo has not been through OpenID Foundation conformance testing or any other certification.
+"Implemented" means the feature works in the current release. Halo has not been through OpenID Foundation conformance testing or any other certification.
 
 ## Quick start
 
@@ -203,7 +203,6 @@ A hosted version of Halo is planned for teams that would rather not run it thems
 
 Planned:
 
-- A first tagged release; until then, `main` and its images are the only supported version
 - Halo Cloud, the hosted version
 - LDAP directory sync
 - Pushing groups over outbound SCIM

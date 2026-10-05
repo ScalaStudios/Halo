@@ -27,7 +27,7 @@ export const userColumns: ColumnDef<User, any>[] = [
     meta: { label: "Name", hideable: false },
     cell: ({ row }) => (
       <span className="flex min-w-56 items-center gap-3">
-        <Avatar name={row.original.name} size="md" />
+        <Avatar name={row.original.name} src={row.original.avatarUrl} size="md" />
         <span className="flex min-w-0 flex-col">
           <span className="truncate font-medium text-fg">{row.original.name}</span>
           <span className="truncate text-caption text-fg-3">{row.original.email}</span>

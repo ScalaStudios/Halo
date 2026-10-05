@@ -437,6 +437,13 @@ func (f *flow) attributes(ctx context.Context) ([]saml.Attribute, error) {
 		}
 		out = append(out, attr)
 	}
+	if f.user.AvatarURL != nil && f.cfg.PublicURL != nil {
+		out = append(out, saml.Attribute{
+			Name:       "picture",
+			NameFormat: "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
+			Values:     []saml.AttributeValue{{Type: "xs:string", Value: f.cfg.Issuer() + *f.user.AvatarURL}},
+		})
+	}
 	return out, nil
 }
 

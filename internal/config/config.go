@@ -13,6 +13,7 @@ type Config struct {
 	Organization   string
 	DatabaseURL    string
 	SMTP           SMTP
+	S3             S3
 	TrustedProxies []string
 	PublicURL      *url.URL
 	Listen         string
@@ -30,6 +31,18 @@ type SMTP struct {
 
 func (s SMTP) Configured() bool {
 	return s.Host != ""
+}
+
+type S3 struct {
+	Endpoint        *url.URL
+	Region          string
+	Bucket          string
+	AccessKeyID     string
+	SecretAccessKey string
+}
+
+func (s S3) Configured() bool {
+	return s.Endpoint != nil && s.Endpoint.Host != "" && s.Bucket != ""
 }
 
 func Load() (Config, error) {
@@ -74,6 +87,30 @@ func Load() (Config, error) {
 	}
 	if cfg.SMTP.Configured() && cfg.SMTP.From == "" {
 		problems = append(problems, "HALO_SMTP_FROM is required when HALO_SMTP_HOST is set, for example: Halo <halo@example.com>")
+	}
+
+	s3 := map[string]string{}
+	for _, name := range []string{"HALO_S3_ENDPOINT", "HALO_S3_BUCKET", "HALO_S3_ACCESS_KEY_ID", "HALO_S3_SECRET_ACCESS_KEY"} {
+		s3[name] = os.Getenv(name)
+	}
+	if s3["HALO_S3_ENDPOINT"] != "" || s3["HALO_S3_BUCKET"] != "" {
+		for name, value := range s3 {
+			if value == "" {
+				problems = append(problems, name+" is required when storing profile pictures in an S3-compatible bucket")
+			}
+		}
+		endpoint := strings.TrimRight(s3["HALO_S3_ENDPOINT"], "/")
+		u, err := url.Parse(endpoint)
+		if endpoint == "" || err != nil || u.Scheme != "https" && u.Scheme != "http" || u.Host == "" || u.Path != "" && u.Path != "/" {
+			problems = append(problems, "HALO_S3_ENDPOINT must be the endpoint address without the bucket, such as https://<account>.r2.cloudflarestorage.com, https://s3.us-west-004.backblazeb2.com, https://s3.us-east-1.idrivee2.com or http://minio:9000")
+		} else if s3["HALO_S3_BUCKET"] != "" && s3["HALO_S3_ACCESS_KEY_ID"] != "" && s3["HALO_S3_SECRET_ACCESS_KEY"] != "" {
+			region := os.Getenv("HALO_S3_REGION")
+			if region == "" {
+				region = "auto"
+			}
+			u.Path = ""
+			cfg.S3 = S3{Endpoint: u, Region: region, Bucket: s3["HALO_S3_BUCKET"], AccessKeyID: s3["HALO_S3_ACCESS_KEY_ID"], SecretAccessKey: s3["HALO_S3_SECRET_ACCESS_KEY"]}
+		}
 	}
 
 	cfg.TrustedProxies = []string{"127.0.0.1/32", "::1/128"}

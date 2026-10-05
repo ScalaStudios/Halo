@@ -622,6 +622,58 @@ paths:
         '403': {$ref: '#/components/responses/CrossSite'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/LastMethod'}
+  /me/avatar:
+    put:
+      tags: [Account]
+      operationId: uploadMyAvatar
+      summary: Set your profile picture
+      description: Send the image bytes as the body, PNG, JPEG or WebP, at most 512 KB. Halo detects the type from the content. Applications that request the `profile` scope receive the picture's URL as the `picture` claim, and SAML assertions include it as a `picture` attribute.
+      security: *personal
+      requestBody:
+        required: true
+        content:
+          image/png:
+            schema: {type: string, contentMediaType: image/png}
+          image/jpeg:
+            schema: {type: string, contentMediaType: image/jpeg}
+          image/webp:
+            schema: {type: string, contentMediaType: image/webp}
+      responses:
+        '200':
+          description: The picture URL, including a version so caches fetch the new image.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [avatarUrl]
+                properties:
+                  avatarUrl: {type: string, examples: ['/api/v1/users/usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9/avatar?v=1790000000']}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+        '413':
+          description: '`ERR_TOO_LARGE`: the image is larger than 512 KB.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Account]
+      operationId: removeMyAvatar
+      summary: Remove your profile picture
+      security: *personal
+      responses:
+        '200':
+          description: The picture was removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [avatarUrl]
+                properties:
+                  avatarUrl: {type: 'null'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /me/totp/begin:
     post:
       tags: [Account]
@@ -1091,6 +1143,77 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /users/{id}/avatar:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Users]
+      operationId: getUserAvatar
+      summary: Get a person's profile picture
+      description: No authentication. This is the URL in the OpenID Connect `picture` claim and the SAML `picture` attribute. The `v` query is a cache version.
+      security: []
+      responses:
+        '200':
+          description: The picture. Cached for one day.
+          content:
+            image/png:
+              schema: {type: string, contentMediaType: image/png}
+            image/jpeg:
+              schema: {type: string, contentMediaType: image/jpeg}
+            image/webp:
+              schema: {type: string, contentMediaType: image/webp}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Users]
+      operationId: uploadUserAvatar
+      summary: Set a person's profile picture
+      description: 'Roles: user or helpdesk administrator. Only a global administrator can change the picture of a person who holds an administrator role. Send the image bytes as the body: PNG, JPEG or WebP, at most 512 KB.'
+      requestBody:
+        required: true
+        content:
+          image/png:
+            schema: {type: string, contentMediaType: image/png}
+          image/jpeg:
+            schema: {type: string, contentMediaType: image/jpeg}
+          image/webp:
+            schema: {type: string, contentMediaType: image/webp}
+      responses:
+        '200':
+          description: The picture URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [avatarUrl]
+                properties:
+                  avatarUrl: {type: string}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413':
+          description: '`ERR_TOO_LARGE`: the image is larger than 512 KB.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Users]
+      operationId: removeUserAvatar
+      summary: Remove a person's profile picture
+      description: 'Roles: user or helpdesk administrator. Only a global administrator can remove the picture of a person who holds an administrator role.'
+      responses:
+        '200':
+          description: The picture was removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [avatarUrl]
+                properties:
+                  avatarUrl: {type: 'null'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /users/{id}/sessions:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -3740,6 +3863,7 @@ components:
         source: {type: string, examples: [Halo, 'SCIM · Okta', Google]}
         createdAt: {type: string, format: date-time}
         lastSignInAt: {type: [string, 'null'], format: date-time}
+        avatarUrl: {type: [string, 'null'], description: 'Path of the profile picture, or null. With the `profile` scope, ID tokens and userinfo carry the absolute URL as `picture`.', examples: ['/api/v1/users/usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9/avatar?v=1790000000']}
     Group:
       type: object
       required: [id, name, description, kind, memberCount, source, createdAt]

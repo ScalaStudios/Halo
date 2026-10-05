@@ -23,7 +23,7 @@ const nav = [
   { label: "Activity", href: "/account/activity", icon: History },
 ];
 
-export function AccountShell({ user, children }: { user: Pick<User, "name" | "email" | "roles">; children: ReactNode }) {
+export function AccountShell({ user, children }: { user: Pick<User, "name" | "email" | "roles" | "avatarUrl">; children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const toast = useToast();
@@ -53,7 +53,7 @@ export function AccountShell({ user, children }: { user: Pick<User, "name" | "em
               aria-label="Account menu"
               className="ml-auto flex h-10 items-center gap-2 rounded-md px-2 text-body-sm text-fg-2 transition-colors duration-fast ease-brand hover:bg-hover hover:text-fg data-[state=open]:bg-press"
             >
-              <Avatar name={user.name} size="sm" />
+              <Avatar name={user.name} src={user.avatarUrl} size="sm" />
               <span className="hidden sm:inline">{user.name}</span>
             </MenuTrigger>
             <MenuContent className="w-64">

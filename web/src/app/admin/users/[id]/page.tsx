@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { ArrowLeft, Laptop, ShieldAlert, ShieldCheck, ShieldX, UsersRound } from "lucide-react";
+import { AvatarEditor } from "@/components/account/avatar-editor";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, StatusDot, Tag } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
@@ -77,16 +78,16 @@ export default async function UserPage({ params, searchParams }: { params: Promi
           Users
         </Link>
         <header className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex min-w-0 items-center gap-4">
-            <Avatar name={user.name} size="xl" />
-            <div className="flex min-w-0 flex-col gap-1">
-              <h1 className="truncate text-h2 text-fg">{user.name}</h1>
-              <p className="flex min-w-0 items-center gap-2 text-body text-fg-3">
-                <span className="truncate">{user.email}</span>
-                <Badge tone={user.emailVerified ? "success" : "neutral"}>{user.emailVerified ? "Verified" : "Not verified"}</Badge>
-              </p>
+          {edit ? (
+            <AvatarEditor name={user.name} avatarUrl={user.avatarUrl} endpoint={`/api/v1${path}/avatar`} size="xl">
+              <ProfileHeading user={user} />
+            </AvatarEditor>
+          ) : (
+            <div className="flex min-w-0 items-center gap-4">
+              <Avatar name={user.name} src={user.avatarUrl} size="xl" />
+              <ProfileHeading user={user} />
             </div>
-          </div>
+          )}
           <UserActions id={user.id} name={user.name} suspended={user.status === "suspended"} edit={edit} />
         </header>
         <dl className="grid grid-cols-2 gap-x-8 gap-y-4 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 xl:grid-cols-6">
@@ -340,6 +341,18 @@ export default async function UserPage({ params, searchParams }: { params: Promi
       </div>
     );
   }
+}
+
+function ProfileHeading({ user }: { user: User }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <h1 className="truncate text-h2 text-fg">{user.name}</h1>
+      <p className="flex min-w-0 items-center gap-2 text-body text-fg-3">
+        <span className="truncate">{user.email}</span>
+        <Badge tone={user.emailVerified ? "success" : "neutral"}>{user.emailVerified ? "Verified" : "Not verified"}</Badge>
+      </p>
+    </div>
+  );
 }
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {

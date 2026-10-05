@@ -44,6 +44,8 @@ func TestAuthorizationCodeFlow(t *testing.T) {
 	must(err)
 	user, err := st.CreateUser(ctx, store.NewUser{Email: "ada@example.com", Name: "Ada Lovelace", Status: "active", GroupIDs: []string{group.ID}})
 	must(err)
+	avatarAt := time.Unix(1790000000, 0)
+	must(st.SetAvatarUpdated(ctx, user.ID, &avatarAt))
 	must(st.MarkEmailVerified(ctx, user.ID))
 	const redirect = "https://grafana.example.com/login/generic_oauth"
 	web, err := st.CreateApplication(ctx, store.NewApplication{Name: "Grafana", Protocol: "oidc", Type: "web", RedirectURIs: []string{redirect}, GroupIDs: []string{group.ID}})
@@ -174,7 +176,7 @@ func TestAuthorizationCodeFlow(t *testing.T) {
 	}
 
 	info := send(http.MethodGet, "/oauth2/userinfo", nil, bearer(accessToken))
-	if info.status != http.StatusOK || info.body["sub"] != user.ID || info.body["email"] != user.Email || info.body["preferred_username"] != user.Email || fmt.Sprint(info.body["groups"]) != "[Engineering]" {
+	if info.status != http.StatusOK || info.body["sub"] != user.ID || info.body["email"] != user.Email || info.body["preferred_username"] != user.Email || info.body["picture"] != srv.URL+"/api/v1/users/"+user.ID+"/avatar?v=1790000000" || fmt.Sprint(info.body["groups"]) != "[Engineering]" {
 		t.Fatalf("userinfo: %d %v", info.status, info.body)
 	}
 	introspection := send(http.MethodPost, "/oauth2/introspect", url.Values{"token": {accessToken}}, basic(web.ClientID, secret))

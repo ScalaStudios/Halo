@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ChevronRight, LayoutGrid, MonitorSmartphone, ShieldCheck } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
-import { Avatar } from "@/components/ui/avatar";
+import { AvatarEditor } from "@/components/account/avatar-editor";
 import { Card } from "@/components/ui/card";
 import { DescriptionList } from "@/components/ui/description-list";
 import { apiGet } from "@/lib/api/server";
@@ -33,13 +33,12 @@ export default async function AccountPage() {
 
       <div className="flex flex-col gap-8">
         <Card className="flex flex-col gap-6 p-6">
-          <div className="flex min-w-0 items-center gap-4">
-            <Avatar name={user.name} size="lg" />
+          <AvatarEditor name={user.name} avatarUrl={user.avatarUrl} endpoint="/api/v1/me/avatar">
             <div className="flex min-w-0 flex-col gap-1">
               <h2 className="truncate text-h3 text-fg">{user.name}</h2>
               <p className="truncate text-body-sm text-fg-3">{user.email}</p>
             </div>
-          </div>
+          </AvatarEditor>
           <DescriptionList
             columns={2}
             items={[

@@ -8,6 +8,7 @@ import (
 	"halo/internal/api"
 	"halo/internal/apikeys"
 	"halo/internal/auth"
+	"halo/internal/avatars"
 	"halo/internal/config"
 	"halo/internal/governance"
 	"halo/internal/httpx"
@@ -37,7 +38,7 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 	scheduler.Every("purge expired records", time.Hour, func(ctx context.Context) error { return st.Purge(ctx) })
 
 	apiMux := http.NewServeMux()
-	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, governance.Register, policy.Register, apikeys.Register, provisioning.Register, settings.Register, webhooks.Register, oidc.Register, sshca.Register} {
+	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, governance.Register, policy.Register, apikeys.Register, provisioning.Register, settings.Register, webhooks.Register, oidc.Register, sshca.Register, avatars.Register} {
 		if err := register(apiMux, deps); err != nil {
 			return nil, err
 		}

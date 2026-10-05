@@ -31,6 +31,7 @@ type User struct {
 	Kind          string     `json:"-"`
 	CreatedAt     time.Time  `json:"createdAt"`
 	LastSignInAt  *time.Time `json:"lastSignInAt"`
+	AvatarURL     *string    `json:"avatarUrl"`
 }
 
 type Group struct {

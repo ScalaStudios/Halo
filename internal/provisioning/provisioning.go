@@ -26,11 +26,12 @@ var readers = []string{"security_admin", "user_admin", "helpdesk_admin", "app_ad
 type handlers struct {
 	st     *store.Store
 	client *http.Client
+	issuer string
 	mu     sync.Mutex
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
-	h := &handlers{st: d.Store, client: &http.Client{Timeout: 15 * time.Second}}
+	h := &handlers{st: d.Store, client: &http.Client{Timeout: 15 * time.Second}, issuer: d.Config.Issuer()}
 	if d.Jobs != nil {
 		d.Jobs.Every("push assigned people to applications over SCIM", 2*time.Minute, h.syncDue)
 	}
@@ -260,6 +261,9 @@ func (h *handlers) sync(ctx context.Context, c store.AppProvisioning, users []st
 		desired[u.ID] = true
 		resource := scim.NewUser(u.Email, u.Name, u.Title, u.Department, true)
 		resource.ExternalID = u.ID
+		if u.AvatarURL != nil {
+			resource.Photos = []scim.Photo{{Value: h.issuer + *u.AvatarURL, Type: "photo", Primary: true}}
+		}
 		encoded, _ := json.Marshal(resource)
 		sum := sha256.Sum256(encoded)
 		hash := hex.EncodeToString(sum[:])

@@ -16,13 +16,18 @@ export function initials(name: string): string {
 
 export function Avatar({
   name,
+  src,
   size = "md",
   className,
 }: {
   name: string;
+  src?: string | null;
   size?: keyof typeof sizes;
   className?: string;
 }) {
+  if (src) {
+    return <img src={src} alt="" aria-hidden="true" className={cn("shrink-0 rounded-full border border-border-strong bg-n800 object-cover", sizes[size], className)} />;
+  }
   return (
     <span
       aria-hidden="true"
