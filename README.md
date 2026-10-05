@@ -86,7 +86,7 @@ Open the link it prints and register a passkey. The console is at `https://auth.
 To work on Halo or try it on your own computer, you need Go 1.27, [Bun](https://bun.sh) 1.3 or Node.js 22, and Docker.
 
 ```bash
-git clone https://github.com/ScalaStudios/Halo.git && cd halo
+git clone https://github.com/ScalaStudios/Halo.git && cd Halo
 docker compose -f compose.dev.yml up -d
 cp .env.example .env
 ```
