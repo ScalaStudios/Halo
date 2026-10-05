@@ -9,8 +9,8 @@ internet ──► caddy :80 :443 ──► halo-web :3200 ──► halo-server
 | Service | Image | What it does |
 | --- | --- | --- |
 | `postgres` | `postgres:17-alpine` | Stores everything in the `postgres` volume. |
-| `halo-server` | Built from `Dockerfile.server` | Runs `halo serve`: applies database migrations on every start, then serves the API and the OpenID Connect endpoints. |
-| `halo-web` | Built from `Dockerfile.web` | Serves the console, sign-in pages and account portal, and forwards `/api`, `/oauth2`, `/.well-known`, `/saml` and `/scim` to `halo-server`. |
+| `halo-server` | `ghcr.io/scalastudios/halo-server` | Runs `halo serve`: applies database migrations on every start, then serves the API and the OpenID Connect endpoints. |
+| `halo-web` | `ghcr.io/scalastudios/halo-web` | Serves the console, sign-in pages and account portal, and forwards `/api`, `/oauth2`, `/.well-known`, `/saml` and `/scim` to `halo-server`. |
 | `caddy` | `caddy:2` | Terminates TLS for `HALO_DOMAIN` and sends every request to `halo-web`. |
 
 Only Caddy publishes ports. The other services are reachable only on the internal `halo` network.
@@ -20,11 +20,11 @@ Only Caddy publishes ports. The other services are reachable only on the interna
 - A Linux host with Docker Engine and the Docker Compose plugin. These files were tested with Docker 29.8 and Docker Compose 5.5.
 - A domain name for Halo, such as `auth.example.com`. Halo's address becomes the OpenID Connect issuer and the passkey domain, so choose one you intend to keep: passkeys only work on the hostname they were created for.
 - Ports 80 and 443 on the host reachable from the internet, so Caddy can obtain and renew the certificate.
-- A copy of the Halo repository on the host. The Compose file builds the Halo images from it. The install script clones it for you.
+- A copy of the Halo repository on the host, for the Compose file and the Caddyfile. The install script clones it for you. The Halo images are published for `linux/amd64` and `linux/arm64`, so nothing is built on the host.
 
 ## Install with the script
 
-The install script performs steps 2 to 5 below: it clones the repository, writes `.env` with a new database password and `HALO_SECRET_KEY`, and builds and starts Halo. It needs `git` and `openssl` as well as Docker. Point your domain at the host first, as in step 1, then run:
+The install script performs steps 2 to 5 below: it clones the repository, writes `.env` with a new database password and `HALO_SECRET_KEY`, and downloads and starts Halo. It needs `git` and `openssl` as well as Docker. Point your domain at the host first, as in step 1, then run:
 
 ```bash
 curl -fsSL https://halo.scala.gg/install.sh | sh
@@ -54,10 +54,10 @@ It asks for your domain and organization name, or reads them from `HALO_DOMAIN` 
 
    Leave `HALO_PUBLIC_URL` and `HALO_DATABASE_URL` as they are: Compose fills them in from `HALO_DOMAIN` and `POSTGRES_PASSWORD`. Leave `HALO_DEV` empty. To have Halo email invite, reset and magic sign-in links, fill in the `HALO_SMTP_*` variables. [Configuration](../documentation/configuration.md) describes every variable.
 
-4. Build the images and start Halo:
+4. Download the images and start Halo:
 
    ```bash
-   docker compose up -d --build
+   docker compose up -d
    ```
 
 5. Check that every service is running:
@@ -104,18 +104,17 @@ Caddy keeps its certificates in the `caddy-data` volume. If you lose it, Caddy r
 
 ## Upgrade
 
-Take a backup first. Migrations only run forward: to go back to an older version, restore the backup you took before upgrading, then check out and rebuild that version.
+Take a backup first. Migrations only run forward: to go back to an older version, restore the backup you took before upgrading, then start that version again.
+
+`HALO_VERSION` in `.env` picks the image tag: `main` follows the latest commit, and a release such as `0.1.0` stays on that release. To upgrade, change `HALO_VERSION` if you pinned a release, then:
 
 ```bash
 git pull
-docker compose pull --ignore-buildable
-docker compose build --pull
+docker compose pull
 docker compose up -d
 ```
 
-`pull` updates PostgreSQL and Caddy within their pinned versions, `build --pull` rebuilds Halo on updated base images, and `halo-server` applies any new migrations when it starts.
-
-Always build after you update the repository. Compose reuses an existing `halo-server:local` or `halo-web:local` image instead of rebuilding it, so `docker compose up -d` without a build keeps running the old version.
+`pull` downloads the new Halo images and updates PostgreSQL and Caddy within their pinned versions, and `halo-server` applies any new migrations when it starts.
 
 ## Rotate HALO_SECRET_KEY
 
@@ -173,7 +172,13 @@ Halo records the client's IP address on every sign-in, session and audit event. 
 
 ## Build the images yourself
 
-The Compose file builds both images from the repository root. To build them without Compose:
+To run images built from your checkout instead of the published ones, add `compose.build.yml`:
+
+```bash
+docker compose -f compose.yml -f compose.build.yml up -d --build
+```
+
+To build them without Compose:
 
 ```bash
 docker build -f deploy/Dockerfile.server -t halo-server .

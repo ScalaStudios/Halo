@@ -1,0 +1,14 @@
+services:
+  halo-server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    image: halo-server:local
+
+  halo-web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+      args:
+        HALO_API_URL: http://halo-server:8080
+    image: halo-web:local

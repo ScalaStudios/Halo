@@ -54,8 +54,9 @@ cd "$dir/deploy"
     .env.example >.env
 )
 
-printf 'Building and starting Halo. The first build takes several minutes.\n'
-docker compose up --build --wait --wait-timeout 900
+printf 'Downloading and starting Halo.\n'
+docker compose pull --quiet
+docker compose up --wait --wait-timeout 600
 
 cat <<EOF
 

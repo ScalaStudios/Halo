@@ -18,10 +18,7 @@ services:
     networks: [halo]
 
   halo-server:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.server
-    image: halo-server:local
+    image: ghcr.io/scalastudios/halo-server:${HALO_VERSION:-main}
     restart: unless-stopped
     env_file: .env
     depends_on:
@@ -30,12 +27,7 @@ services:
     networks: [halo]
 
   halo-web:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.web
-      args:
-        HALO_API_URL: http://halo-server:8080
-    image: halo-web:local
+    image: ghcr.io/scalastudios/halo-web:${HALO_VERSION:-main}
     restart: unless-stopped
     environment:
       HALO_API_URL: http://halo-server:8080

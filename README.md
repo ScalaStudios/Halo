@@ -70,7 +70,7 @@ You need a Linux server with Docker Engine, the Docker Compose plugin, `git` and
 curl -fsSL https://halo.scala.gg/install.sh | sh
 ```
 
-The script asks for your domain and organization name, downloads Halo to `/opt/halo` (or `~/halo` when you are not root), generates a database password and `HALO_SECRET_KEY`, then builds and starts PostgreSQL, Halo and Caddy, which obtains a TLS certificate for your domain. [Read the script](deploy/install.sh) before you run it if you prefer.
+The script asks for your domain and organization name, downloads Halo to `/opt/halo` (or `~/halo` when you are not root), generates a database password and `HALO_SECRET_KEY`, then downloads and starts PostgreSQL, Halo and Caddy, which obtains a TLS certificate for your domain. [Read the script](deploy/install.sh) before you run it if you prefer.
 
 When it finishes, create the first administrator with the command it prints:
 
@@ -189,7 +189,7 @@ The web interface is the only public entry point. It serves the console, the acc
 
 Self-hosted Halo runs on your own infrastructure and needs no external service. A production installation is four containers: PostgreSQL 17, the Halo server, the web interface, and Caddy for TLS. [deploy/README.md](deploy/README.md) is the step-by-step guide.
 
-- **Requirements.** A Linux host with Docker Engine and the Compose plugin, a domain name, and ports 80 and 443 reachable from the internet. On a test machine, building the web interface used about 2.5 GB of memory at its peak, and the four running containers used about 200 MB at idle.
+- **Requirements.** A Linux host with Docker Engine and the Compose plugin, a domain name, and ports 80 and 443 reachable from the internet. Images are published for `linux/amd64` and `linux/arm64`. On a test machine, the four running containers used about 200 MB of memory at idle.
 - **Choose a domain you will keep.** Halo's address is the OpenID Connect issuer that every application stores, and passkeys only work on the domain they were created for.
 - **Back up two things.** The database, and `HALO_SECRET_KEY`, which encrypts signing keys and other stored secrets. A backup cannot be restored without the key that was in use when it was taken.
 - **Run one Halo server.** Some background jobs, such as outbound SCIM, access expiry and lifecycle rules, run in every server process without coordinating with other processes.
@@ -204,7 +204,7 @@ A hosted version of Halo is planned for teams that would rather not run it thems
 
 Planned:
 
-- A first tagged release; until then, `main` is the only supported version
+- A first tagged release; until then, `main` and its images are the only supported version
 - Halo Cloud, the hosted version
 - LDAP directory sync
 - Pushing groups over outbound SCIM
@@ -213,7 +213,7 @@ Known limitations today:
 
 - One organization per installation.
 - Run a single Halo server; see [Self-hosting](#self-hosting).
-- Installing builds the container images from source. There are no published images or Helm chart yet.
+- There is no Helm chart yet.
 - No metrics endpoint; the server logs requests and errors as structured text.
 - Halo has not been through OpenID Connect conformance testing or an independent security audit.
 

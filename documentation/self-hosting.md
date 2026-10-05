@@ -15,7 +15,7 @@ internet ──► caddy :80 :443 ──► halo-web :3200 ──► halo-server
 - **halo-server** runs `halo serve`. It applies database migrations every time it starts.
 - **PostgreSQL 17** stores all data.
 
-Only Caddy is reachable from outside. The images are built from the repository: `deploy/Dockerfile.server` produces a static Go binary on a distroless base that runs as a non-root user, and `deploy/Dockerfile.web` produces a Next.js standalone server on Node.js 22.
+Only Caddy is reachable from outside. The images are published to `ghcr.io/scalastudios` for `linux/amd64` and `linux/arm64`: `halo-server` is a static Go binary on a distroless base that runs as a non-root user, and `halo-web` is a Next.js standalone server on Node.js 22. Both are built from `deploy/Dockerfile.server` and `deploy/Dockerfile.web`.
 
 ## Decide before you install
 
@@ -28,7 +28,7 @@ Only Caddy is reachable from outside. The images are built from the repository: 
 
 The Compose files are one way to run the same three programs. To run them another way, such as on Kubernetes:
 
-- Build the two images with the commands in [deploy/README.md](../deploy/README.md#build-the-images-yourself), and pass the Go server's address as `HALO_API_URL` both when you build the web image and when you run it.
+- Use the published images, whose web image forwards to `http://halo-server:8080`. To use another address for the Go server, build the images with the commands in [deploy/README.md](../deploy/README.md#build-the-images-yourself), and pass that address as `HALO_API_URL` both when you build the web image and when you run it.
 - Expose only the web interface, behind a proxy that terminates TLS and sets `X-Forwarded-For`.
 - Point liveness and readiness probes at port 8080, path `/healthz`, on the Go server. It answers `200` when the database responds.
 - Give the Go server the variables in [Configuration](configuration.md), with `HALO_PUBLIC_URL` set to the public https address.
