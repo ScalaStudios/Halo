@@ -99,7 +99,7 @@ The Next.js web interface reads these variables.
 
 ## Docker Compose deployment
 
-`deploy/.env` holds the server variables above plus two that only the Compose files use:
+`deploy/.env` holds the values you choose. `compose.yml` sets `HALO_PUBLIC_URL`, `HALO_DATABASE_URL` and `HALO_TRUSTED_PROXIES` from them, and the other server variables above keep their defaults unless you add them to `.env`. Two variables are used only by the Compose files:
 
 | Variable | Purpose |
 | --- | --- |

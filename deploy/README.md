@@ -52,7 +52,7 @@ It asks for your domain and organization name, or reads them from `HALO_DOMAIN` 
    | `HALO_SECRET_KEY` | The output of `openssl rand -base64 32`. Store a copy outside the host, for example in your password manager. |
    | `HALO_ORGANIZATION` | Your organization's name, shown in the console. |
 
-   Leave `HALO_PUBLIC_URL` and `HALO_DATABASE_URL` as they are: Compose fills them in from `HALO_DOMAIN` and `POSTGRES_PASSWORD`. Leave `HALO_DEV` empty. To have Halo email invite, reset and magic sign-in links, fill in the `HALO_SMTP_*` variables. [Configuration](../documentation/configuration.md) describes every variable.
+   `compose.yml` builds `HALO_PUBLIC_URL` and `HALO_DATABASE_URL` from these. To have Halo email invite, reset and magic sign-in links, fill in the `HALO_SMTP_*` variables. [Configuration](../documentation/configuration.md) describes every variable.
 
 4. Download the images and start Halo:
 
@@ -106,7 +106,7 @@ Caddy keeps its certificates in the `caddy-data` volume. If you lose it, Caddy r
 
 Take a backup first. Migrations only run forward: to go back to an older version, restore the backup you took before upgrading, then start that version again.
 
-`HALO_VERSION` in `.env` picks the image tag: `main` follows the latest commit, and a release such as `0.1.0` stays on that release. To upgrade, change `HALO_VERSION` if you pinned a release, then:
+`compose.yml` pins the Halo images to a release, and each release updates it. To upgrade to the latest release:
 
 ```bash
 git pull
@@ -168,7 +168,7 @@ wget -q -O /dev/null http://halo-server:8080/healthz
 
 Halo records the client's IP address on every sign-in, session and audit event. Caddy sets `X-Forwarded-For` to the client's address and ignores any value the client sent, and `halo-web` passes the header through unchanged. `halo-server` reads the header only from addresses in `HALO_TRUSTED_PROXIES`, and uses the right-most address in it that is not itself a trusted proxy.
 
-`HALO_TRUSTED_PROXIES` in `.env` is set to `172.31.250.0/24`, the subnet that `compose.yml` assigns to the `halo` network. Without it, Halo records the address of the `halo-web` container for everyone. If that subnet overlaps a network that already exists on your host, `docker compose up` fails with a "Pool overlaps" error: pick another private `/24` and change it in both `compose.yml` and `.env`.
+`HALO_TRUSTED_PROXIES` in `compose.yml` is set to `172.31.250.0/24`, the subnet that `compose.yml` assigns to the `halo` network. Without it, Halo records the address of the `halo-web` container for everyone. If that subnet overlaps a network that already exists on your host, `docker compose up` fails with a "Pool overlaps" error: pick another private `/24` and change both places it appears in `compose.yml`.
 
 ## Build the images yourself
 
