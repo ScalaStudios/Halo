@@ -14,35 +14,45 @@ type OutboxMessage struct {
 	To        string     `json:"to"`
 	Subject   string     `json:"subject"`
 	Text      string     `json:"text"`
+	HTML      string     `json:"html"`
 	Attempts  int        `json:"attempts"`
 	LastError string     `json:"lastError"`
 	CreatedAt time.Time  `json:"createdAt"`
 	SentAt    *time.Time `json:"sentAt"`
 }
 
-const outboxColumns = `id, recipient, subject, body_sealed, attempts, last_error, created_at, sent_at`
+const outboxColumns = `id, recipient, subject, body_sealed, html_sealed, attempts, last_error, created_at, sent_at`
 
 func (s *Store) scanOutbox(rows pgx.Rows) ([]OutboxMessage, error) {
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (OutboxMessage, error) {
 		var m OutboxMessage
-		var sealed []byte
-		if err := row.Scan(&m.ID, &m.To, &m.Subject, &sealed, &m.Attempts, &m.LastError, &m.CreatedAt, &m.SentAt); err != nil {
+		var sealed, sealedHTML []byte
+		if err := row.Scan(&m.ID, &m.To, &m.Subject, &sealed, &sealedHTML, &m.Attempts, &m.LastError, &m.CreatedAt, &m.SentAt); err != nil {
 			return m, err
 		}
 		text, err := s.Sealer.Open(sealed)
 		m.Text = string(text)
+		if err != nil || sealedHTML == nil {
+			return m, err
+		}
+		html, err := s.Sealer.Open(sealedHTML)
+		m.HTML = string(html)
 		return m, err
 	})
 }
 
-func (s *Store) QueueMail(ctx context.Context, to, subject, text string, claim bool) (OutboxMessage, error) {
-	m := OutboxMessage{ID: id.New("msg"), To: to, Subject: subject, Text: text, CreatedAt: time.Now()}
+func (s *Store) QueueMail(ctx context.Context, to, subject, text, html string, claim bool) (OutboxMessage, error) {
+	m := OutboxMessage{ID: id.New("msg"), To: to, Subject: subject, Text: text, HTML: html, CreatedAt: time.Now()}
+	var sealedHTML []byte
+	if html != "" {
+		sealedHTML = s.Sealer.Seal([]byte(html))
+	}
 	next := m.CreatedAt
 	if claim {
 		m.Attempts, next = 1, next.Add(time.Minute)
 	}
-	_, err := s.db.Exec(ctx, `insert into mail_outbox (id, recipient, subject, body_sealed, attempts, created_at, next_attempt_at) values ($1, $2, $3, $4, $5, $6, $7)`,
-		m.ID, to, subject, s.Sealer.Seal([]byte(text)), m.Attempts, m.CreatedAt, next)
+	_, err := s.db.Exec(ctx, `insert into mail_outbox (id, recipient, subject, body_sealed, html_sealed, attempts, created_at, next_attempt_at) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		m.ID, to, subject, s.Sealer.Seal([]byte(text)), sealedHTML, m.Attempts, m.CreatedAt, next)
 	return m, err
 }
 

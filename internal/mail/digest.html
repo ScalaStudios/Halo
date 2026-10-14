@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>Weekly security digest</title>
+<style>
+@media (max-width: 480px) {
+  .pad { padding-left: 24px !important; padding-right: 24px !important; }
+  .tile { display: block !important; width: auto !important; margin-bottom: 12px; }
+  .gap { display: none !important; }
+}
+</style>
+</head>
+<body style="margin:0;padding:0;background:#f5f4f2;-webkit-font-smoothing:antialiased;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f5f4f2;">{{.Preheader}}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f5f4f2" style="background:#f5f4f2;">
+<tr><td align="center" style="padding:40px 16px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;font-family:Inter,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+
+<tr><td class="pad" bgcolor="#111111" style="background:#111111;border-radius:16px 16px 0 0;padding:32px 40px 40px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+      <td style="vertical-align:middle;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+          <td style="vertical-align:middle;font-size:0;line-height:0;"><span style="display:inline-block;width:12px;height:12px;border:4px solid #fa7e26;border-radius:50%;"></span></td>
+          <td style="padding-left:10px;font-family:Archivo,'Helvetica Neue',Arial,sans-serif;font-size:20px;font-weight:800;letter-spacing:-0.02em;color:#ffffff;">Halo</td>
+        </tr></table>
+      </td>
+      <td align="right" style="vertical-align:middle;font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#a8a29b;">Weekly digest</td>
+    </tr>
+  </table>
+  <p style="margin:40px 0 8px;font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#fdb07c;">{{.Range}}</p>
+  <h1 style="margin:0;font-family:Archivo,'Helvetica Neue',Arial,sans-serif;font-size:32px;line-height:1.12;font-weight:800;letter-spacing:-0.02em;color:#ffffff;">{{.Headline}}</h1>
+  <p style="margin:12px 0 0;font-size:15px;line-height:1.6;color:#d3d0cc;">Hi {{.Name}}, here is what happened in {{.Organization}} this week.</p>
+</td></tr>
+
+<tr><td height="4" bgcolor="#fa7e26" style="height:4px;font-size:0;line-height:0;background:#fa7e26;background-image:linear-gradient(90deg,#fc4f1b,#fa7e26,#f7ad31);">&nbsp;</td></tr>
+
+<tr><td class="pad" bgcolor="#ffffff" style="background:#ffffff;padding:40px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+      <td style="font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#78716a;">Identity protection</td>
+      <td align="right"><a href="{{.RisksURL}}" style="font-size:13px;font-weight:600;color:#b85110;text-decoration:none;">Risk events &rarr;</a></td>
+    </tr>
+  </table>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;">
+    {{range $i, $row := .Tiles}}{{if $i}}<tr class="gap"><td colspan="3" height="12" style="height:12px;font-size:0;line-height:0;">&nbsp;</td></tr>{{end}}
+    <tr>
+      {{range $j, $t := $row}}{{if $j}}<td class="gap" width="4%" style="width:4%;font-size:0;">&nbsp;</td>{{end}}
+      <td class="tile" width="48%" valign="top" bgcolor="#fafaf9" style="width:48%;background:#fafaf9;border:1px solid #e7e5e2;border-radius:12px;padding:20px;">
+        <p style="margin:0;font-size:13px;font-weight:500;color:#57534d;">{{$t.Label}}</p>
+        <p style="margin:8px 0 12px;font-family:Archivo,'Helvetica Neue',Arial,sans-serif;font-size:40px;line-height:1;font-weight:800;letter-spacing:-0.02em;color:#111111;">{{$t.Value}}</p>
+        <span style="display:inline-block;padding:4px 10px;border-radius:999px;background:{{$t.Tone.Background}};color:{{$t.Tone.Text}};font-size:12px;font-weight:600;white-space:nowrap;">&#9679;&nbsp; {{$t.Note}}</span>
+      </td>{{end}}
+    </tr>{{end}}
+  </table>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:40px;">
+    <tr>
+      <td style="font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#78716a;">Privileged roles</td>
+      <td align="right"><a href="{{.RolesURL}}" style="font-size:13px;font-weight:600;color:#b85110;text-decoration:none;">Roles &rarr;</a></td>
+    </tr>
+  </table>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;border:1px solid #e7e5e2;border-radius:12px;">
+    <tr><td colspan="3" style="padding:16px 20px;border-bottom:1px solid #e7e5e2;font-size:14px;color:#57534d;">
+      <strong style="color:#111111;">{{.RolesAssigned}}</strong> {{.RolesAssignedLabel}} this week
+    </td></tr>
+    {{range .Roles}}
+    <tr>
+      <td style="padding:14px 0 14px 20px;font-size:14px;font-weight:500;color:#111111;white-space:nowrap;">{{.Label}}</td>
+      <td width="45%" style="width:45%;padding:14px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+          <td width="{{.Width}}%" height="6" bgcolor="#fa7e26" style="height:6px;font-size:0;line-height:0;background:#fa7e26;border-radius:3px;">&nbsp;</td>
+          {{if lt .Width 100}}<td height="6" style="height:6px;font-size:0;line-height:0;">&nbsp;</td>{{end}}
+        </tr></table>
+      </td>
+      <td align="right" style="padding:14px 20px 14px 0;font-size:14px;font-weight:700;color:#111111;">{{.Members}}</td>
+    </tr>{{else}}
+    <tr><td colspan="3" style="padding:16px 20px;font-size:14px;color:#78716a;">Nobody holds an administrative role.</td></tr>
+    {{end}}
+  </table>
+
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:40px;"><tr>
+    <td bgcolor="#fa7e26" style="background:#fa7e26;border-radius:8px;">
+      <a href="{{.ConsoleURL}}" style="display:inline-block;padding:14px 24px;font-size:15px;font-weight:700;color:#111111;text-decoration:none;">Open the console</a>
+    </td>
+  </tr></table>
+</td></tr>
+
+<tr><td class="pad" bgcolor="#fafaf9" style="background:#fafaf9;border-top:1px solid #e7e5e2;border-radius:0 0 16px 16px;padding:24px 40px;font-size:12px;line-height:1.6;color:#78716a;">
+  Halo · {{.Organization}}<br>
+  You get this email because you are a Global or Security administrator.
+</td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>

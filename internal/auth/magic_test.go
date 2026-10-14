@@ -193,7 +193,7 @@ func TestMagicLink(t *testing.T) {
 func TestDevOutbox(t *testing.T) {
 	e, _ := newMagicEnv(t, nil)
 	ctx := context.Background()
-	if _, err := e.st.QueueMail(ctx, "ada@example.com", "Your Halo sign-in link", "Open http://localhost:3200/sign-in/magic?token=abc", false); err != nil {
+	if _, err := e.st.QueueMail(ctx, "ada@example.com", "Your Halo sign-in link", "Open http://localhost:3200/sign-in/magic?token=abc", "", false); err != nil {
 		t.Fatal(err)
 	}
 	session := func(roles ...string) *http.Client {

@@ -92,6 +92,7 @@ var sealedColumns = []struct{ table, key, column string }{
 	{"totp_secrets", "id", "secret_sealed"},
 	{"signing_keys", "id", "private_key_sealed"},
 	{"mail_outbox", "id", "body_sealed"},
+	{"mail_outbox", "id", "html_sealed"},
 	{"saml_keys", "id", "private_key_sealed"},
 	{"app_provisioning", "app_id", "token_sealed"},
 	{"identity_providers", "id", "client_secret_sealed"},

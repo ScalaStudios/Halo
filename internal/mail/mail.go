@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"log/slog"
 	"mime"
+	"mime/multipart"
 	"mime/quotedprintable"
 	"net"
 	"net/mail"
 	"net/smtp"
+	"net/textproto"
 	"strings"
 	"time"
 
@@ -23,6 +25,7 @@ type Message struct {
 	To      string
 	Subject string
 	Text    string
+	HTML    string
 }
 
 type Mailer interface {
@@ -56,12 +59,15 @@ func (o *Outbox) Configured() bool {
 	return o.cfg.SMTP.Configured()
 }
 
-func (o *Outbox) Send(ctx context.Context, m Message) error {
-	organization := o.cfg.Organization
-	if settings, err := o.st.Settings(ctx); err == nil && settings.OrganizationName != "" {
-		organization = settings.OrganizationName
+func organization(ctx context.Context, cfg config.Config, st *store.Store) string {
+	if settings, err := st.Settings(ctx); err == nil && settings.OrganizationName != "" {
+		return settings.OrganizationName
 	}
-	msg, err := o.st.QueueMail(ctx, m.To, m.Subject, m.Text+"\n\nHalo · "+organization+"\n", o.Configured())
+	return cfg.Organization
+}
+
+func (o *Outbox) Send(ctx context.Context, m Message) error {
+	msg, err := o.st.QueueMail(ctx, m.To, m.Subject, m.Text+"\n\nHalo · "+organization(ctx, o.cfg, o.st)+"\n", m.HTML, o.Configured())
 	if err != nil {
 		return err
 	}
@@ -166,14 +172,24 @@ func compose(from *mail.Address, msg store.OutboxMessage) []byte {
 		{"Date", msg.CreatedAt.Format(time.RFC1123Z)},
 		{"Message-ID", "<" + msg.ID + "@" + from.Address[strings.LastIndex(from.Address, "@")+1:] + ">"},
 		{"MIME-Version", "1.0"},
-		{"Content-Type", "text/plain; charset=utf-8"},
-		{"Content-Transfer-Encoding", "quoted-printable"},
 	} {
 		b.WriteString(h[0] + ": " + h[1] + "\r\n")
 	}
-	b.WriteString("\r\n")
-	body := quotedprintable.NewWriter(&b)
-	body.Write([]byte(msg.Text))
-	body.Close()
+	if msg.HTML == "" {
+		b.WriteString("Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n")
+		body := quotedprintable.NewWriter(&b)
+		body.Write([]byte(msg.Text))
+		body.Close()
+		return b.Bytes()
+	}
+	parts := multipart.NewWriter(&b)
+	b.WriteString("Content-Type: multipart/alternative; boundary=" + parts.Boundary() + "\r\n\r\n")
+	for _, p := range [][2]string{{"text/plain", msg.Text}, {"text/html", msg.HTML}} {
+		w, _ := parts.CreatePart(textproto.MIMEHeader{"Content-Type": {p[0] + "; charset=utf-8"}, "Content-Transfer-Encoding": {"quoted-printable"}})
+		body := quotedprintable.NewWriter(w)
+		body.Write([]byte(p[1]))
+		body.Close()
+	}
+	parts.Close()
 	return b.Bytes()
 }

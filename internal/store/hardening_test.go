@@ -29,7 +29,7 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	_, err = st.CreateSigningKey(ctx, "RS256", []byte("oidc-key"))
 	must(err)
-	_, err = st.QueueMail(ctx, "ada@example.com", "Hello", "mail body", false)
+	_, err = st.QueueMail(ctx, "ada@example.com", "Hello", "mail body", "<p>mail body</p>", false)
 	must(err)
 	must(st.CreateSAMLKey(ctx, []byte("saml-key"), []byte("saml-cert")))
 	must(st.SaveAppProvisioning(ctx, app.ID, "https://wiki.example.com/scim", st.Sealer.Seal([]byte("scim-token")), true))
@@ -46,7 +46,7 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	rotation, err := st.RotateSecretKey(ctx, next)
 	must(err)
-	if len(rotation.Resealed) != 8 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
+	if len(rotation.Resealed) != 9 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
 		t.Fatalf("resealed: %+v", rotation.Resealed)
 	}
 	if !slices.Equal(rotation.RecoveryCodeUsers, []string{"ada@example.com"}) {

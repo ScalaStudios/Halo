@@ -36,6 +36,9 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 	httpx.TrustProxies(cfg.TrustedProxies)
 	deps := httpx.Deps{Config: cfg, Store: st, Auth: authn, Policy: policy.NewEngine(st), Mailer: mail.New(cfg, st), Jobs: scheduler}
 	scheduler.Every("purge expired records", time.Hour, func(ctx context.Context) error { return st.Purge(ctx) })
+	scheduler.Every("weekly security digest", time.Hour, func(ctx context.Context) error {
+		return mail.SendWeeklyDigest(ctx, deps.Mailer, cfg, st)
+	})
 
 	apiMux := http.NewServeMux()
 	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, governance.Register, policy.Register, apikeys.Register, provisioning.Register, settings.Register, webhooks.Register, oidc.Register, sshca.Register, avatars.Register} {

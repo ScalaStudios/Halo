@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"io"
+	"mime"
+	"mime/multipart"
 	"mime/quotedprintable"
 	"net"
 	"net/mail"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +22,7 @@ import (
 
 func outbox(t *testing.T, smtp *mailtest.Server) (*Outbox, *store.Store) {
 	st := testdb.New(t)
-	cfg := config.Config{Organization: "Fernway Systems"}
+	cfg := config.Config{Organization: "Fernway Systems", PublicURL: &url.URL{Scheme: "https", Host: "auth.example.com"}}
 	if smtp != nil {
 		host, port, _ := net.SplitHostPort(smtp.Addr)
 		cfg.SMTP = config.SMTP{Host: host, Port: port, Username: "halo", Password: "s3cret", From: "Halo <halo@fernway.example>"}
@@ -145,5 +148,59 @@ func TestOutboxWithoutSMTP(t *testing.T) {
 	m := latest(t, st)
 	if m.Attempts != 0 || m.SentAt != nil || m.Subject != "Reset how you sign in to Halo" || !strings.Contains(m.Text, "https://auth.example.com/enroll?token=r") {
 		t.Fatalf("queued message: %+v", m)
+	}
+}
+
+func TestWeeklyDigestGoesToSecurityAdminsOncePerWeek(t *testing.T) {
+	server := mailtest.Start(t, 0)
+	o, st := outbox(t, server)
+	ctx := context.Background()
+	admin, err := st.CreateUser(ctx, store.NewUser{Email: "uma@example.com", Name: "Uma Patel", Status: "active", Roles: []string{"global_admin"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateUser(ctx, store.NewUser{Email: "sam@example.com", Name: "Sam Lee", Status: "active"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordRiskEvent(ctx, store.RiskEvent{Type: "risky-network", Level: "high", UserID: &admin.ID}); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := SendWeeklyDigest(ctx, o, o.cfg, st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := server.Deliveries()
+	if len(got) != 1 || got[0].To != "TO:<uma@example.com>" {
+		t.Fatalf("deliveries: %+v", got)
+	}
+	msg, err := mail.ReadMessage(strings.NewReader(got[0].Data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mediaType, params, err := mime.ParseMediaType(msg.Header.Get("Content-Type"))
+	if err != nil || mediaType != "multipart/alternative" {
+		t.Fatalf("Content-Type: %q %v", msg.Header.Get("Content-Type"), err)
+	}
+	parts := map[string]string{}
+	reader := multipart.NewReader(msg.Body, params["boundary"])
+	for {
+		p, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(p)
+		parts[strings.Split(p.Header.Get("Content-Type"), ";")[0]] = string(body)
+	}
+	if !strings.Contains(parts["text/plain"], "High-risk events             1") {
+		t.Fatalf("text part:\n%s", parts["text/plain"])
+	}
+	for _, want := range []string{"1 risk event needs review", "Hi Uma,", "Fernway Systems", "1 high risk", "Global administrator", "https://auth.example.com/admin/risk"} {
+		if !strings.Contains(parts["text/html"], want) {
+			t.Fatalf("html part missing %q:\n%s", want, parts["text/html"])
+		}
 	}
 }
