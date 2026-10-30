@@ -8,6 +8,7 @@ import { cn } from "@/lib/cn";
 export function Dialog({
   open,
   onOpenChange,
+  trigger,
   title,
   description,
   width = "default",
@@ -16,6 +17,7 @@ export function Dialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  trigger?: ReactNode;
   title: string;
   description?: ReactNode;
   width?: "default" | "wide";
@@ -24,6 +26,7 @@ export function Dialog({
 }) {
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
+      {trigger ? <D.Trigger asChild>{trigger}</D.Trigger> : null}
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-40 bg-ink/80 data-[state=open]:animate-[halo-fade_220ms_var(--ease-brand)]" />
         <D.Content

@@ -31,7 +31,8 @@ test.beforeEach(async ({ context }) => useSession(context, cookie));
 
 test("assign group searches and assigns several groups at once from the keyboard", async ({ page }) => {
   await page.goto(`/admin/applications/${appId}?tab=users`);
-  await page.getByRole("button", { name: "Assign group" }).click();
+  const trigger = page.getByRole("button", { name: "Assign group" });
+  await trigger.click();
   const dialog = page.getByRole("dialog", { name: `Assign groups to ${appName}` });
   await expect(dialog.getByRole("combobox")).toBeFocused();
   await page.keyboard.type(`e2e ${stamp}`);
@@ -41,15 +42,19 @@ test("assign group searches and assigns several groups at once from the keyboard
   await page.keyboard.press("Enter");
   await dialog.getByRole("button", { name: "Assign 2 groups" }).click();
   await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
   const table = page.getByRole("table", { name: "Assigned groups" });
   await expect(table.getByText(`E2E Alpha ${stamp}`)).toBeVisible();
   await expect(table.getByText(`E2E Beta ${stamp}`)).toBeVisible();
 
-  await page.getByRole("button", { name: "Assign group" }).click();
+  await trigger.click();
   await expect(dialog.getByRole("combobox")).toBeFocused();
   await page.keyboard.type(String(stamp));
   await expect(dialog.getByRole("option", option("Alpha"))).toBeDisabled();
   await expect(dialog.getByRole("option", option("Rule"))).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
 });
 
 test("add to group on a user page leaves rule-based groups out of reach", async ({ page }) => {
