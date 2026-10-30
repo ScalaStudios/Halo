@@ -307,7 +307,7 @@ paths:
       tags: [Sign-in]
       operationId: signInWithPassword
       summary: Sign in with a password
-      description: Works only while passwords are turned on under `/methods` and, when `passwordGroupIds` is set, for members of those groups. When `passwordSecondFactor` is on, send the code from the person's authenticator app as `code`. A temporary password set by an administrator must be replaced by sending `newPassword`. Every request checks the password again, and failed passwords and codes count toward the lockout shared with `/auth/totp` and `/auth/recovery`.
+      description: Works only while passwords are turned on under `/methods` and, when `passwordGroupIds` is set, for members of those groups. When `passwordSecondFactor` is on, send the code from the person's authenticator app as `code`. A temporary password set by an administrator must be replaced by sending `newPassword`. Every request checks the password again, and failed passwords and codes count toward the lockout shared with `/auth/totp` and `/auth/recovery`. Passwords from a client IP address are also refused with `ERR_TOO_MANY_ATTEMPTS` once it has 4 times the lockout threshold of failed passwords within the lockout window, across all accounts.
       security: []
       requestBody:
         required: true
@@ -3816,7 +3816,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     TooManyAttempts:
-      description: '`ERR_TOO_MANY_ATTEMPTS`: too many failed passwords or codes for this address within the lockout window.'
+      description: '`ERR_TOO_MANY_ATTEMPTS`: too many failed passwords or codes for this address, or failed passwords from this IP address, within the lockout window.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}

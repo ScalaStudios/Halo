@@ -21,6 +21,8 @@ var (
 	dummyPassword        = sync.OnceValue(func() string { return secret.HashPassword(secret.Token(16)) })
 )
 
+const addressLockoutFactor = 4
+
 func (h *handler) passwordAllowed(r *http.Request, u store.User) (bool, store.Settings, error) {
 	settings, err := h.st.Settings(r.Context())
 	if err != nil {
@@ -59,6 +61,13 @@ func (h *handler) passwordSignIn(w http.ResponseWriter, r *http.Request) error {
 	}
 	if err := h.lockout(r, a, settings, "passwords"); err != nil {
 		return err
+	}
+	sprayed, err := h.st.RecentFailuresFromIP(ctx, httpx.ClientIP(r), "password", lockoutStart(settings))
+	if err != nil {
+		return err
+	}
+	if sprayed >= addressLockoutFactor*settings.LockoutThreshold {
+		return h.reject(r, a, "Too many failed passwords from this IP address.", tooManyAttempts("passwords", settings))
 	}
 	if enabled, err := h.st.MethodEnabled(ctx, "password"); err != nil {
 		return err

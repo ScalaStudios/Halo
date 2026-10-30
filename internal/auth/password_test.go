@@ -3,6 +3,7 @@ package auth_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/descope/virtualwebauthn"
 	"github.com/pquerna/otp/totp"
 
+	"halo/internal/httpx"
 	"halo/internal/secret"
 	"halo/internal/store"
 )
@@ -190,6 +192,51 @@ func TestPasswordFailuresCountTowardLockout(t *testing.T) {
 		e.expect(client(), "POST", "/api/v1/auth/password", map[string]any{"email": "ghost@example.com", "password": "guess number whatever"}, http.StatusUnauthorized, "ERR_PASSWORD_MISMATCH")
 	}
 	e.expect(client(), "POST", "/api/v1/auth/password", map[string]any{"email": "ghost@example.com", "password": "guess number whatever"}, http.StatusTooManyRequests, "ERR_TOO_MANY_ATTEMPTS")
+}
+
+type forwardedFor string
+
+func (f forwardedFor) RoundTrip(r *http.Request) (*http.Response, error) {
+	r.Header.Set("X-Forwarded-For", string(f))
+	return http.DefaultTransport.RoundTrip(r)
+}
+
+func from(ip string) *http.Client {
+	return &http.Client{Transport: forwardedFor(ip)}
+}
+
+func TestPasswordSprayFromOneAddress(t *testing.T) {
+	e := newEnv(t)
+	e.withPassword("ada@example.com", "correct horse battery staple", false)
+	e.allowPasswords(false)
+	httpx.TrustProxies([]string{"127.0.0.1/32", "::1/128"})
+	t.Cleanup(func() { httpx.TrustProxies(nil) })
+
+	spray := func(c *http.Client, n int, status int, code string) {
+		t.Helper()
+		for i := range n {
+			e.expect(c, "POST", "/api/v1/auth/password", map[string]any{"email": fmt.Sprintf("victim%d@example.com", i), "password": "Summer2026!Summer2026!"}, status, code)
+		}
+	}
+	spray(from("203.0.113.7"), 20, http.StatusUnauthorized, "ERR_PASSWORD_MISMATCH")
+	spray(from("203.0.113.7"), 1, http.StatusTooManyRequests, "ERR_TOO_MANY_ATTEMPTS")
+	e.expect(from("203.0.113.7"), "POST", "/api/v1/auth/password", map[string]any{"email": "ada@example.com", "password": "correct horse battery staple"}, http.StatusTooManyRequests, "ERR_TOO_MANY_ATTEMPTS")
+	e.expect(from("6.6.6.6, 203.0.113.7"), "POST", "/api/v1/auth/password", map[string]any{"email": "ada@example.com", "password": "correct horse battery staple"}, http.StatusTooManyRequests, "ERR_TOO_MANY_ATTEMPTS")
+
+	if status := e.do(from("198.51.100.4"), "POST", "/api/v1/auth/password", map[string]any{"email": "ada@example.com", "password": "correct horse battery staple"}, nil); status != http.StatusOK {
+		t.Fatalf("a different address must not be throttled: %d", status)
+	}
+	events, err := e.st.ListSignIns(context.Background(), store.SignInFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i := slices.IndexFunc(events, func(ev store.SignInEvent) bool { return ev.Reason == "Too many failed passwords from this IP address." }); i < 0 || events[i].IP != "203.0.113.7" || events[i].Result != "failure" {
+		t.Fatalf("throttled attempts are not in the sign-in log: %+v", events)
+	}
+
+	httpx.TrustProxies(nil)
+	spray(from("192.0.2.1"), 20, http.StatusUnauthorized, "ERR_PASSWORD_MISMATCH")
+	spray(from("192.0.2.2"), 1, http.StatusTooManyRequests, "ERR_TOO_MANY_ATTEMPTS")
 }
 
 func TestTemporaryPasswordMustBeChanged(t *testing.T) {

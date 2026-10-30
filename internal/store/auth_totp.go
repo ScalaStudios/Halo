@@ -53,3 +53,9 @@ func (s *Store) RecentFailures(ctx context.Context, userID, email string, method
 		and (user_id = $1 or (user_id is null and lower(email) = lower($2)))`, userID, email, methods, since).Scan(&n)
 	return n, err
 }
+
+func (s *Store) RecentFailuresFromIP(ctx context.Context, ip, method string, since time.Time) (int, error) {
+	var n int
+	err := s.db.QueryRow(ctx, `select count(*) from sign_in_events where ip = $1 and result = 'failure' and method = $2 and time > $3`, ip, method, since).Scan(&n)
+	return n, err
+}

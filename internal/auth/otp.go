@@ -79,14 +79,22 @@ func (h *handler) lockout(r *http.Request, a attempt, settings store.Settings, g
 	if a.user != nil {
 		userID = a.user.ID
 	}
-	failures, err := h.st.RecentFailures(r.Context(), userID, a.email, []string{"password", "totp", "recovery-codes"}, time.Now().Add(-time.Duration(settings.LockoutMinutes)*time.Minute))
+	failures, err := h.st.RecentFailures(r.Context(), userID, a.email, []string{"password", "totp", "recovery-codes"}, lockoutStart(settings))
 	if err != nil {
 		return err
 	}
 	if failures >= settings.LockoutThreshold {
-		return h.reject(r, a, "Too many failed attempts.", httpx.Fail(http.StatusTooManyRequests, errTooManyAttempts.Code, fmt.Sprintf("Too many incorrect %s. Wait %d minutes, then try again.", guesses, settings.LockoutMinutes)))
+		return h.reject(r, a, "Too many failed attempts.", tooManyAttempts(guesses, settings))
 	}
 	return nil
+}
+
+func lockoutStart(settings store.Settings) time.Time {
+	return time.Now().Add(-time.Duration(settings.LockoutMinutes) * time.Minute)
+}
+
+func tooManyAttempts(guesses string, settings store.Settings) *httpx.Error {
+	return httpx.Fail(http.StatusTooManyRequests, errTooManyAttempts.Code, fmt.Sprintf("Too many incorrect %s. Wait %d minutes, then try again.", guesses, settings.LockoutMinutes))
 }
 
 func (h *handler) useTOTP(ctx context.Context, userID, code string) (string, error) {
