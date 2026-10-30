@@ -10,6 +10,10 @@ import { LinkProgress } from "@/components/ui/navigation-progress";
 import { cn } from "@/lib/cn";
 import { BASE, findItem, nav } from "./nav";
 
+const REPO = "https://github.com/ScalaStudios/Halo";
+const VERSION = process.env.NEXT_PUBLIC_HALO_VERSION || "dev";
+const COMMIT = process.env.NEXT_PUBLIC_HALO_COMMIT;
+
 const STORAGE_KEY = "halo.sidebar.collapsed";
 
 export function Sidebar({ orgName, onSearch, onNavigate }: { orgName: string; onSearch: () => void; onNavigate?: (href: string) => void }) {
@@ -125,7 +129,15 @@ export function Sidebar({ orgName, onSearch, onNavigate }: { orgName: string; on
       </nav>
 
       <div className="flex h-12 shrink-0 items-center justify-between border-t border-border px-4 text-caption text-fg-3">
-        <span className="font-mono">v0.1.1</span>
+        <a
+          href={COMMIT ? `${REPO}/commit/${COMMIT}` : REPO}
+          target="_blank"
+          rel="noreferrer"
+          className="font-mono transition-colors duration-fast hover:text-fg"
+        >
+          {/^\d/.test(VERSION) ? `v${VERSION}` : VERSION}
+          {COMMIT ? ` · ${COMMIT.slice(0, 7)}` : null}
+        </a>
         <Link href={`${BASE}/developers`} onNavigate={navigate(`${BASE}/developers`)} className="transition-colors duration-fast hover:text-fg">
           Documentation
         </Link>

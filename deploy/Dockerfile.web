@@ -9,6 +9,8 @@ ARG HALO_API_URL=http://halo-server:8080
 ENV HALO_API_URL=$HALO_API_URL NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /web/node_modules ./node_modules
 COPY web ./
+ARG HALO_VERSION=dev HALO_COMMIT=
+ENV NEXT_PUBLIC_HALO_VERSION=$HALO_VERSION NEXT_PUBLIC_HALO_COMMIT=$HALO_COMMIT
 RUN node_modules/.bin/next build
 
 FROM node:22-alpine
