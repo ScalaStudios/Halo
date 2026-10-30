@@ -241,18 +241,17 @@ export function DataTable<T>({
   }
 
   async function track(key: string, result: void | Promise<unknown>) {
-    if (!(result instanceof Promise)) return;
+    if (!(result instanceof Promise)) return true;
     setBusy(key);
     try {
-      await result;
+      return (await result) !== false;
     } finally {
       setBusy(null);
     }
   }
 
   async function runBulk(action: BulkAction<T>) {
-    await track(`bulk:${action.label}`, action.onSelect(selected));
-    setRowSelection({});
+    if (await track(`bulk:${action.label}`, action.onSelect(selected))) setRowSelection({});
   }
 
   function clearFilters() {
