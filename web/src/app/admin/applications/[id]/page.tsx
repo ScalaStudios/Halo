@@ -65,7 +65,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
           <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.75} />
           Applications
         </Link>
-        <header className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
+        <header className="flex flex-col gap-6 2xl:flex-row 2xl:items-center 2xl:justify-between">
           <AvatarEditor name={app.name} avatarUrl={app.logoUrl} endpoint={`/api/v1/applications/${app.id}/logo`} size="xl" logo className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-col gap-1">
               <div className="flex flex-wrap items-center gap-3">
