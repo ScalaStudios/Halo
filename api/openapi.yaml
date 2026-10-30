@@ -3031,16 +3031,28 @@ paths:
     get:
       tags: [Webhooks]
       operationId: listWebhookEventTypes
-      summary: List the event families you can subscribe to
+      summary: List the event families and event types you can subscribe to
       description: 'Roles: any administrator.'
       responses:
         '200':
-          description: Patterns such as `user.*` and `sign_in.*`.
+          description: Each family, such as `user.*`, with its event types. A family also covers types added to it in later versions; a single type covers only itself.
           content:
             application/json:
               schema:
                 type: array
-                items: {type: string}
+                items:
+                  type: object
+                  required: [family, types]
+                  properties:
+                    family: {type: string, examples: ['user.*']}
+                    types:
+                      type: array
+                      items:
+                        type: object
+                        required: [type, description]
+                        properties:
+                          type: {type: string, examples: [user.suspend]}
+                          description: {type: string, examples: [A person was suspended]}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
   /webhooks/{id}:

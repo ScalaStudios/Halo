@@ -33,7 +33,6 @@ var (
 	readers      = []string{"security_admin", "user_admin", "helpdesk_admin", "app_admin", "auditor"}
 	writers      = []string{"security_admin"}
 	eventPattern = regexp.MustCompile(`^(\*|[a-z_]+(\.[a-z_]+)*(\.\*)?)$`)
-	families     = []string{"access_package", "access_request", "access_review", "application", "branding", "device", "domain", "group", "lifecycle", "method", "network_zone", "organization", "policy", "provisioning", "role", "scim", "session", "settings", "sign_in", "user", "webhook"}
 )
 
 type handler struct {
@@ -219,20 +218,18 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request, _ store.User) err
 	return httpx.JSON(w, http.StatusOK, endpoints)
 }
 
-func (h *handler) eventTypes(w http.ResponseWriter, r *http.Request, _ store.User) error {
-	seen, err := h.st.WebhookEventFamilies(r.Context())
-	if err != nil {
-		return err
-	}
-	all := slices.Concat(families, seen)
-	slices.Sort(all)
-	types := []string{}
-	for _, family := range slices.Compact(all) {
-		if eventPattern.MatchString(family) {
-			types = append(types, family+".*")
+func (h *handler) eventTypes(w http.ResponseWriter, _ *http.Request, _ store.User) error {
+	families := []eventFamily{}
+	for _, e := range catalog {
+		prefix, _, _ := strings.Cut(e.Type, ".")
+		i := slices.IndexFunc(families, func(f eventFamily) bool { return f.Family == prefix+".*" })
+		if i < 0 {
+			i = len(families)
+			families = append(families, eventFamily{Family: prefix + ".*"})
 		}
+		families[i].Types = append(families[i].Types, e)
 	}
-	return httpx.JSON(w, http.StatusOK, types)
+	return httpx.JSON(w, http.StatusOK, families)
 }
 
 func (h *handler) get(w http.ResponseWriter, r *http.Request, _ store.User) error {

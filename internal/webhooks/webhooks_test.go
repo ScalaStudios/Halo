@@ -97,6 +97,23 @@ func TestWebhookRolesAndValidation(t *testing.T) {
 	if rec := call(t, h, auditor, "POST", "/api/v1/webhooks", valid); rec.Code != 403 {
 		t.Fatalf("auditor create: %d", rec.Code)
 	}
+	rec := call(t, h, auditor, "GET", "/api/v1/webhooks/event-types", nil)
+	var families []eventFamily
+	if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &families) != nil {
+		t.Fatalf("event types: %d %s", rec.Code, rec.Body.String())
+	}
+	var listed []eventType
+	for _, f := range families {
+		for _, e := range f.Types {
+			if !strings.HasPrefix(e.Type, strings.TrimSuffix(f.Family, "*")) {
+				t.Fatalf("%s is listed under %s", e.Type, f.Family)
+			}
+		}
+		listed = append(listed, f.Types...)
+	}
+	if !slices.Equal(listed, catalog) {
+		t.Fatalf("event types do not match the catalog: %s", rec.Body.String())
+	}
 	for _, body := range []map[string]any{
 		{"url": "http://hooks.example.com/halo", "events": []string{"*"}},
 		{"url": "ftp://localhost/halo", "events": []string{"*"}},
@@ -107,7 +124,7 @@ func TestWebhookRolesAndValidation(t *testing.T) {
 			t.Fatalf("invalid %v: %d %s", body, rec.Code, rec.Body.String())
 		}
 	}
-	rec := call(t, h, security, "POST", "/api/v1/webhooks", valid)
+	rec = call(t, h, security, "POST", "/api/v1/webhooks", valid)
 	var created struct {
 		Webhook store.Webhook `json:"webhook"`
 		Secret  string        `json:"secret"`

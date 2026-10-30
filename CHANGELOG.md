@@ -25,7 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Service accounts with roles and owners, and API keys with `api` and `scim` scopes and optional expiry.
 - SCIM 2.0 server under `/scim/v2` for users and assigned groups, tested against the Okta and Microsoft Entra ID request shapes.
 - Outbound SCIM provisioning that creates, updates and deactivates the people assigned to an application every 2 minutes or on demand.
-- Webhooks for audit and sign-in events, signed with HMAC-SHA256, with retries and a delivery log.
+- Webhooks for audit and sign-in events, signed with HMAC-SHA256, with retries and a delivery log. Endpoints receive every event, whole families such as `user.*`, or single event types such as `user.suspend`, chosen from a searchable list that describes each type. `GET /api/v1/webhooks/event-types` returns each family with its event types and their descriptions.
 - SSH certificate authority with group-to-principal mappings and a configurable certificate lifetime.
 - The `halo` client commands `login` (device flow), `whoami`, `ssh-cert` and `logout`, and the built-in Halo CLI application.
 - Organization settings: name, contact email, sign-in message, logo, session lifetime, lockout, setup link lifetime and token lifetime defaults.

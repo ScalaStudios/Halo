@@ -7,7 +7,7 @@ import { DescriptionList } from "@/components/ui/description-list";
 import { SectionTitle } from "@/components/ui/section-title";
 import { apiGet } from "@/lib/api/server";
 import { formatDate, formatRelative, pluralize } from "@/lib/format";
-import type { Webhook, WebhookDelivery } from "@/lib/settings-types";
+import type { Webhook, WebhookDelivery, WebhookEventFamily } from "@/lib/settings-types";
 import type { User } from "@/lib/types";
 
 type Detail = { webhook: Webhook; deliveries: WebhookDelivery[] };
@@ -43,7 +43,7 @@ export default async function WebhookPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const [{ webhook, deliveries }, eventTypes, me] = await Promise.all([
     apiGet<Detail>(`/webhooks/${encodeURIComponent(id)}`),
-    apiGet<string[]>("/webhooks/event-types"),
+    apiGet<WebhookEventFamily[]>("/webhooks/event-types"),
     apiGet<User>("/me"),
   ]);
   const failed = deliveries.filter((d) => d.status === "failed").length;

@@ -181,14 +181,6 @@ func (s *Store) ClaimWebhookDeliveries(ctx context.Context, now time.Time, lease
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[WebhookDelivery])
 }
 
-func (s *Store) WebhookEventFamilies(ctx context.Context) ([]string, error) {
-	rows, err := s.db.Query(ctx, `select distinct split_part(action, '.', 1) from audit_events`)
-	if err != nil {
-		return nil, err
-	}
-	return pgx.CollectRows(rows, pgx.RowTo[string])
-}
-
 func (s *Store) RecordWebhookAttempt(ctx context.Context, deliveryID, status string, responseStatus *int, message string, at, next time.Time) error {
 	_, err := s.db.Exec(ctx, `update webhook_deliveries set status = $2, attempts = attempts + 1, response_status = $3, error = $4, last_attempt_at = $5, next_attempt_at = $6 where id = $1`,
 		deliveryID, status, responseStatus, message, at, next)

@@ -45,6 +45,8 @@ export type Webhook = {
   lastDeliveryAt: string | null;
 };
 
+export type WebhookEventFamily = { family: string; types: { type: string; description: string }[] };
+
 export type DeliveryStatus = "pending" | "delivered" | "failed";
 
 export type WebhookDelivery = {

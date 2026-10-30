@@ -5,6 +5,11 @@ type eventType struct {
 	Description string `json:"description"`
 }
 
+type eventFamily struct {
+	Family string      `json:"family"`
+	Types  []eventType `json:"types"`
+}
+
 var catalog = []eventType{
 	{"access_package.create", "An access package was created"},
 	{"access_package.delete", "An access package was deleted"},

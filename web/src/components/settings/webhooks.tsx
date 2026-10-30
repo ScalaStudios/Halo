@@ -1,8 +1,8 @@
 "use client";
 
-import { MoreHorizontal, Pause, Pencil, Play, Plus, Send, Trash2, Webhook as WebhookIcon } from "lucide-react";
+import { ChevronDown, MoreHorizontal, Pause, Pencil, Play, Plus, Search, Send, Trash2, Webhook as WebhookIcon } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { SecretWarning } from "@/components/applications/shared";
 import { useMutation } from "@/components/console/use-mutation";
 import { Badge, StatusDot, Tag, type Tone } from "@/components/ui/badge";
@@ -16,8 +16,9 @@ import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/compo
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
-import { formatDateTime, formatTime } from "@/lib/format";
-import type { DeliveryStatus, Webhook, WebhookDelivery } from "@/lib/settings-types";
+import { cn } from "@/lib/cn";
+import { formatDateTime, formatTime, pluralize } from "@/lib/format";
+import type { DeliveryStatus, Webhook, WebhookDelivery, WebhookEventFamily } from "@/lib/settings-types";
 
 export const DELIVERY_STATUS: Record<DeliveryStatus, { label: string; tone: Tone }> = {
   delivered: { label: "Delivered", tone: "success" },
@@ -45,7 +46,139 @@ export function EnabledBadge({ enabled }: { enabled: boolean }) {
   );
 }
 
-export function WebhooksTable({ webhooks, eventTypes, canEdit }: { webhooks: Webhook[]; eventTypes: string[]; canEdit: boolean }) {
+function covers(pattern: string, type: string) {
+  return pattern === type || (pattern.endsWith(".*") && type.startsWith(pattern.slice(0, -1)));
+}
+
+function EventPicker({ families, value, onChange }: { families: WebhookEventFamily[]; value: string[]; onChange: (value: string[]) => void }) {
+  const id = useId();
+  const [query, setQuery] = useState("");
+  const covered = (type: string) => value.some((p) => covers(p, type));
+  const [expanded, setExpanded] = useState(() => families.filter((f) => !value.includes(f.family) && f.types.some((t) => covered(t.type))).map((f) => f.family));
+  const [others] = useState(() => value.filter((p) => !families.some((f) => f.family === p || f.types.some((t) => t.type === p))));
+  const term = query.trim().toLowerCase();
+  const matches = (text: string) => text.toLowerCase().includes(term);
+  const shownOthers = others.filter(matches);
+  const empty = !shownOthers.length && !families.some((f) => f.types.some((t) => matches(`${t.type} ${t.description}`)));
+
+  function setFamily(family: string, on: boolean) {
+    onChange([...value.filter((p) => !p.startsWith(family.slice(0, -1))), ...(on ? [family] : [])]);
+  }
+
+  function setType(f: WebhookEventFamily, type: string, on: boolean) {
+    if (on) return onChange([...value, type]);
+    const kept = value.filter((p) => !covers(p, type));
+    onChange([...kept, ...f.types.map((t) => t.type).filter((t) => t !== type && covered(t) && !kept.some((p) => covers(p, t)))]);
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Input
+        size="sm"
+        type="search"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.preventDefault();
+        }}
+        placeholder="Search events"
+        aria-label="Search events"
+        leading={<Search size={16} strokeWidth={1.75} />}
+      />
+      <fieldset>
+        <legend className="sr-only">Events to send</legend>
+        <div className="max-h-80 overflow-y-auto rounded-md border border-border bg-sunken p-2">
+          {empty ? (
+            <p className="px-2 py-4 text-body-sm text-fg-3">No events match “{query.trim()}”.</p>
+          ) : (
+            <ul className="flex flex-col">
+              {families.map((f) => {
+                const visible = f.types.filter((t) => matches(`${t.type} ${t.description}`));
+                if (!visible.length) return null;
+                const whole = value.includes(f.family);
+                const count = f.types.filter((t) => covered(t.type)).length;
+                const open = term !== "" || expanded.includes(f.family);
+                const domId = `${id}-${f.family}`;
+                return (
+                  <li key={f.family} className="flex items-start">
+                    {term ? (
+                      <span className="size-8 shrink-0" />
+                    ) : (
+                      <button
+                        type="button"
+                        aria-label={`Events in ${f.family}`}
+                        aria-expanded={open}
+                        aria-controls={open ? `${domId}-types` : undefined}
+                        onClick={() => setExpanded(open ? expanded.filter((e) => e !== f.family) : [...expanded, f.family])}
+                        className="grid size-8 shrink-0 place-items-center rounded-md text-fg-3 transition-colors duration-fast hover:bg-hover hover:text-fg"
+                      >
+                        <ChevronDown aria-hidden="true" size={16} strokeWidth={1.75} className={cn("transition-transform duration-fast ease-brand", !open && "-rotate-90")} />
+                      </button>
+                    )}
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <Checkbox
+                        id={`${domId}-all`}
+                        aria-describedby={`${domId}-count`}
+                        className="mt-2"
+                        checked={whole}
+                        ref={(el) => {
+                          if (el) el.indeterminate = !whole && count > 0;
+                        }}
+                        onChange={(event) => setFamily(f.family, event.target.checked)}
+                      />
+                      <div className="flex min-w-0 flex-1 flex-col">
+                        <div className="flex h-8 items-center justify-between gap-3">
+                          <label htmlFor={`${domId}-all`} className="cursor-pointer truncate font-mono text-code-sm text-fg">
+                            {f.family}
+                          </label>
+                          <span id={`${domId}-count`} className="shrink-0 tnum text-caption text-fg-3">
+                            {whole ? "All events" : count ? `${count} of ${f.types.length}` : pluralize(f.types.length, "event")}
+                          </span>
+                        </div>
+                        {open ? (
+                          <ul id={`${domId}-types`} className="flex animate-enter flex-col gap-3 pt-1 pb-3">
+                            {visible.map((t) => (
+                              <li key={t.type}>
+                                <label className="flex cursor-pointer items-start gap-3">
+                                  <Checkbox className="mt-0.5" checked={covered(t.type)} onChange={(event) => setType(f, t.type, event.target.checked)} />
+                                  <span className="flex min-w-0 flex-col">
+                                    <span className="font-mono text-code-sm break-all text-fg">{t.type}</span>
+                                    <span className="text-caption text-fg-3">{t.description}</span>
+                                  </span>
+                                </label>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+              {shownOthers.length ? (
+                <li className="flex flex-col gap-3 pt-2 pb-3 pl-8">
+                  <span className="flex h-8 items-center text-label text-fg-3">Other</span>
+                  {shownOthers.map((p) => (
+                    <label key={p} className="flex cursor-pointer items-start gap-3">
+                      <Checkbox className="mt-0.5" checked={value.includes(p)} onChange={(event) => onChange(event.target.checked ? [...value, p] : value.filter((e) => e !== p))} />
+                      <span className="flex min-w-0 flex-col">
+                        <span className="font-mono text-code-sm break-all text-fg">{p}</span>
+                        <span className="text-caption text-fg-3">{p.endsWith(".*") ? `Every ${p.slice(0, -2)} event` : "Not in this version's event list"}</span>
+                      </span>
+                    </label>
+                  ))}
+                </li>
+              ) : null}
+            </ul>
+          )}
+        </div>
+      </fieldset>
+      <p className="text-caption text-fg-3">A ticked family also sends events added to it in later Halo versions. Single events don&apos;t.</p>
+    </div>
+  );
+}
+
+export function WebhooksTable({ webhooks, eventTypes, canEdit }: { webhooks: Webhook[]; eventTypes: WebhookEventFamily[]; canEdit: boolean }) {
   const [creating, setCreating] = useState(false);
   const add = canEdit ? (
     <Button size="sm" variant="primary" onClick={() => setCreating(true)}>
@@ -97,7 +230,7 @@ export function WebhooksTable({ webhooks, eventTypes, canEdit }: { webhooks: Web
   );
 }
 
-function WebhookDialog({ webhook, eventTypes, onClose }: { webhook: Webhook | null; eventTypes: string[]; onClose: () => void }) {
+function WebhookDialog({ webhook, eventTypes, onClose }: { webhook: Webhook | null; eventTypes: WebhookEventFamily[]; onClose: () => void }) {
   const { pending, run, toast, router } = useMutation();
   const [url, setUrl] = useState(webhook?.url ?? "");
   const [description, setDescription] = useState(webhook?.description ?? "");
@@ -106,12 +239,11 @@ function WebhookDialog({ webhook, eventTypes, onClose }: { webhook: Webhook | nu
   const [enabled, setEnabled] = useState(webhook?.enabled ?? true);
   const [errors, setErrors] = useState<{ url?: string; events?: string }>({});
   const [created, setCreated] = useState<{ webhook: Webhook; secret: string } | null>(null);
-  const choices = [...new Set([...eventTypes, ...events])].sort();
 
   function submit() {
     const next = {
       url: /^https:\/\/\S+$|^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/\S*)?$/.test(url.trim()) ? undefined : "Enter an https:// URL. Plain http:// works only for localhost.",
-      events: all || events.length ? undefined : "Choose at least one event family, or send all events.",
+      events: all || events.length ? undefined : "Choose at least one event or family, or send all events.",
     };
     setErrors(next);
     if (next.url || next.events) return;
@@ -188,21 +320,11 @@ function WebhookDialog({ webhook, eventTypes, onClose }: { webhook: Webhook | nu
             {(props) => (
               <Select {...props} value={all ? "all" : "some"} onChange={(event) => setAll(event.target.value === "all")}>
                 <option value="all">All events, including types added in later Halo versions</option>
-                <option value="some">Only the event families I choose</option>
+                <option value="some">Only the events I choose</option>
               </Select>
             )}
           </Field>
-          {all ? null : (
-            <fieldset className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
-              <legend className="sr-only">Event families</legend>
-              {choices.map((type) => (
-                <label key={type} className="flex cursor-pointer items-center gap-2">
-                  <Checkbox checked={events.includes(type)} onChange={(event) => setEvents(event.target.checked ? [...events, type] : events.filter((e) => e !== type))} />
-                  <span className="font-mono text-code-sm text-fg-2">{type}</span>
-                </label>
-              ))}
-            </fieldset>
-          )}
+          {all ? null : <EventPicker families={eventTypes} value={events} onChange={setEvents} />}
         </div>
         <label className="flex cursor-pointer items-start gap-3">
           <Checkbox className="mt-0.5" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
@@ -217,7 +339,7 @@ function WebhookDialog({ webhook, eventTypes, onClose }: { webhook: Webhook | nu
   );
 }
 
-export function WebhookActions({ webhook, eventTypes }: { webhook: Webhook; eventTypes: string[] }) {
+export function WebhookActions({ webhook, eventTypes }: { webhook: Webhook; eventTypes: WebhookEventFamily[] }) {
   const { pending, run, toast, router } = useMutation();
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
