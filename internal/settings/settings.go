@@ -22,12 +22,16 @@ import (
 	"halo/internal/store"
 )
 
-const maxLogoBytes = 256 << 10
+const (
+	maxLogoBytes = 256 << 10
+	maxCustomCSS = 32 << 10
+)
 
 var (
 	readers       = []string{"security_admin", "user_admin", "helpdesk_admin", "app_admin", "auditor"}
 	domainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
 	logoTypes     = []string{"image/png", "image/jpeg", "image/webp"}
+	hexColour     = regexp.MustCompile(`^#[0-9a-f]{6}$`)
 	lookupTXT     = net.DefaultResolver.LookupTXT
 )
 
@@ -38,6 +42,9 @@ var fields = []struct {
 	{"organizationName", "organization name", true},
 	{"contactEmail", "contact email", true},
 	{"signInMessage", "sign-in message", true},
+	{"theme", "colours", true},
+	{"customCss", "custom CSS", true},
+	{"consoleBranding", "branding in the console", true},
 	{"sessionHours", "session lifetime", false},
 	{"lockoutThreshold", "lockout threshold", false},
 	{"lockoutMinutes", "lockout window", false},
@@ -53,11 +60,14 @@ type handler struct {
 }
 
 type Org struct {
-	Name          string  `json:"name"`
-	Issuer        string  `json:"issuer"`
-	ContactEmail  string  `json:"contactEmail"`
-	SignInMessage string  `json:"signInMessage"`
-	LogoURL       *string `json:"logoUrl"`
+	Name            string      `json:"name"`
+	Issuer          string      `json:"issuer"`
+	ContactEmail    string      `json:"contactEmail"`
+	SignInMessage   string      `json:"signInMessage"`
+	LogoURL         *string     `json:"logoUrl"`
+	Theme           store.Theme `json:"theme"`
+	CustomCSS       string      `json:"customCss"`
+	ConsoleBranding bool        `json:"consoleBranding"`
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
@@ -104,9 +114,12 @@ func (h *handler) organization(ctx context.Context) (Org, error) {
 	if err != nil {
 		return Org{}, err
 	}
-	org := Org{Name: s.OrganizationName, Issuer: h.cfg.Issuer(), ContactEmail: s.ContactEmail, SignInMessage: s.SignInMessage}
+	org := Org{Name: s.OrganizationName, Issuer: h.cfg.Issuer(), ContactEmail: s.ContactEmail, SignInMessage: s.SignInMessage, Theme: s.Theme, ConsoleBranding: s.ConsoleBranding}
 	if org.Name == "" {
 		org.Name = h.cfg.Organization
+	}
+	if !h.cfg.NoCustomCSS {
+		org.CustomCSS = s.CustomCSS
 	}
 	updated, err := h.st.LogoUpdatedAt(ctx)
 	if updated != nil {
@@ -127,7 +140,7 @@ func (h *handler) respond(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return httpx.JSON(w, http.StatusOK, map[string]any{"settings": s, "defaultOrganizationName": h.cfg.Organization, "issuer": h.cfg.Issuer()})
+	return httpx.JSON(w, http.StatusOK, map[string]any{"settings": s, "defaultOrganizationName": h.cfg.Organization, "issuer": h.cfg.Issuer(), "customCssDisabled": h.cfg.NoCustomCSS})
 }
 
 func (h *handler) get(w http.ResponseWriter, r *http.Request, _ store.User) error {
@@ -148,6 +161,10 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	next.OrganizationName = strings.TrimSpace(next.OrganizationName)
 	next.ContactEmail = strings.TrimSpace(next.ContactEmail)
 	next.SignInMessage = strings.TrimSpace(next.SignInMessage)
+	next.CustomCSS = strings.TrimSpace(next.CustomCSS)
+	for _, c := range colours(&next.Theme) {
+		*c = strings.ToLower(strings.TrimSpace(*c))
+	}
 	if err := validate(next); err != nil {
 		return err
 	}
@@ -191,6 +208,12 @@ func validate(s store.Settings) error {
 		return httpx.Invalid("Enter the contact email as a plain address, such as it@example.com.")
 	case utf8.RuneCountInString(s.SignInMessage) > 500:
 		return httpx.Invalid("The sign-in message is longer than 500 characters. Shorten it and save again.")
+	case slices.ContainsFunc(colours(&s.Theme), func(c *string) bool { return *c != "" && !hexColour.MatchString(*c) }):
+		return httpx.Invalid("Enter each colour as a six-digit hex value such as #fa7e26, or leave it empty to use Halo's.")
+	case len(s.CustomCSS) > maxCustomCSS:
+		return httpx.Invalid("The custom CSS is larger than 32 KB. Remove rules you don't need and save again.")
+	case strings.Contains(s.CustomCSS, "</"):
+		return httpx.Invalid(`Custom CSS can't contain "</", because it would end the style element. In a CSS string, write \3c/ instead.`)
 	case !between(s.SessionHours, 1, 72):
 		return httpx.Invalid("Session lifetime must be between 1 and 72 hours.")
 	case !between(s.LockoutThreshold, 3, 20):
@@ -207,6 +230,10 @@ func validate(s store.Settings) error {
 		return httpx.Invalid("Refresh tokens must last between 1 and 2,160 hours (90 days).")
 	}
 	return nil
+}
+
+func colours(t *store.Theme) []*string {
+	return []*string{&t.Accent, &t.Background, &t.Surface, &t.Border, &t.Text, &t.Link}
 }
 
 func plainAddress(v string) bool {

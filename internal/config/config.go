@@ -19,6 +19,7 @@ type Config struct {
 	Listen         string
 	SecretKey      []byte
 	Dev            bool
+	NoCustomCSS    bool
 }
 
 type SMTP struct {
@@ -74,6 +75,7 @@ func Load() (Config, error) {
 	}
 
 	cfg.Dev = os.Getenv("HALO_DEV") == "1"
+	cfg.NoCustomCSS = os.Getenv("HALO_DISABLE_CUSTOM_CSS") == "1"
 
 	cfg.SMTP = SMTP{
 		Host:     os.Getenv("HALO_SMTP_HOST"),

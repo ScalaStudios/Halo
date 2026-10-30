@@ -2832,7 +2832,7 @@ paths:
       tags: [Settings]
       operationId: updateSettings
       summary: Change organization settings
-      description: 'Roles: security administrator. Only a global administrator can change `organizationName`, `contactEmail` and `signInMessage`. Send only the fields to change. Token lifetimes apply to applications created afterwards.'
+      description: 'Roles: security administrator. Only a global administrator can change `organizationName`, `contactEmail`, `signInMessage`, `theme`, `customCss` and `consoleBranding`. Send only the fields to change. Token lifetimes apply to applications created afterwards.'
       requestBody:
         required: true
         content:
@@ -3764,11 +3764,12 @@ components:
         application/json:
           schema:
             type: object
-            required: [settings, defaultOrganizationName, issuer]
+            required: [settings, defaultOrganizationName, issuer, customCssDisabled]
             properties:
               settings: {$ref: '#/components/schemas/Settings'}
               defaultOrganizationName: {type: string}
               issuer: {type: string, format: uri}
+              customCssDisabled: {type: boolean, description: '`HALO_DISABLE_CUSTOM_CSS=1` is set, so no page uses `customCss`.'}
     ApiResourceResponse:
       description: The API resource.
       content:
@@ -3830,13 +3831,26 @@ components:
         email: {type: string}
     Organization:
       type: object
-      required: [name, issuer, contactEmail, signInMessage, logoUrl]
+      required: [name, issuer, contactEmail, signInMessage, logoUrl, theme, customCss, consoleBranding]
       properties:
         name: {type: string, examples: [Fernway Systems]}
         issuer: {type: string, format: uri, examples: [https://auth.example.com]}
         contactEmail: {type: string}
         signInMessage: {type: string}
         logoUrl: {type: [string, 'null'], examples: ['/api/v1/branding/logo?v=1791100000']}
+        theme: {$ref: '#/components/schemas/Theme'}
+        customCss: {type: string, description: 'Empty while `HALO_DISABLE_CUSTOM_CSS=1` is set.'}
+        consoleBranding: {type: boolean}
+    Theme:
+      type: object
+      description: Colours for the sign-in, setup and account pages. An empty string keeps Halo's colour.
+      properties:
+        accent: {type: string, pattern: '^(#[0-9a-f]{6})?$', examples: ['#2563eb']}
+        background: {type: string, pattern: '^(#[0-9a-f]{6})?$'}
+        surface: {type: string, pattern: '^(#[0-9a-f]{6})?$'}
+        border: {type: string, pattern: '^(#[0-9a-f]{6})?$'}
+        text: {type: string, pattern: '^(#[0-9a-f]{6})?$'}
+        link: {type: string, pattern: '^(#[0-9a-f]{6})?$'}
     Method:
       type: object
       required: [id, kind, label, addedAt, lastUsedAt]
@@ -4465,6 +4479,9 @@ components:
         organizationName: {type: string, maxLength: 100, description: 'Empty uses `HALO_ORGANIZATION`.'}
         contactEmail: {type: string}
         signInMessage: {type: string, maxLength: 500}
+        theme: {$ref: '#/components/schemas/Theme'}
+        customCss: {type: string, description: 'At most 32 KB, without `</`. Added after Halo''s stylesheet on the sign-in, setup and account pages.'}
+        consoleBranding: {type: boolean, default: false, description: 'Also use `theme` and `customCss` in the admin console.'}
         sessionHours: {type: integer, minimum: 1, maximum: 72, default: 12}
         lockoutThreshold: {type: integer, minimum: 3, maximum: 20, default: 5}
         lockoutMinutes: {type: integer, minimum: 5, maximum: 1440, default: 15}

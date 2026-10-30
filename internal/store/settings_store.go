@@ -13,10 +13,22 @@ import (
 	"halo/internal/secret"
 )
 
+type Theme struct {
+	Accent     string `json:"accent"`
+	Background string `json:"background"`
+	Surface    string `json:"surface"`
+	Border     string `json:"border"`
+	Text       string `json:"text"`
+	Link       string `json:"link"`
+}
+
 type Settings struct {
 	OrganizationName   string `json:"organizationName"`
 	ContactEmail       string `json:"contactEmail"`
 	SignInMessage      string `json:"signInMessage"`
+	Theme              Theme  `json:"theme"`
+	CustomCSS          string `json:"customCss"`
+	ConsoleBranding    bool   `json:"consoleBranding"`
 	SessionHours       int    `json:"sessionHours"`
 	LockoutThreshold   int    `json:"lockoutThreshold"`
 	LockoutMinutes     int    `json:"lockoutMinutes"`

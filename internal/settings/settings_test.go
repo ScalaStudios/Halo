@@ -246,6 +246,48 @@ func TestLogoUpload(t *testing.T) {
 	e.expect(e.call("", "GET", "/api/v1/branding/logo", nil), 404)
 }
 
+func TestThemeAndCustomCSS(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	admin := e.person("gia@example.com", "global_admin")
+	security := e.person("sam@example.com", "security_admin")
+
+	for _, body := range []map[string]any{
+		{"theme": map[string]any{"accent": "red"}}, {"theme": map[string]any{"text": "#fff"}}, {"theme": map[string]any{"link": "#12345g"}},
+		{"theme": map[string]any{"background": "#111111;}body{display:none"}}, {"customCss": "body{}</style><script>alert(1)</script>"}, {"customCss": strings.Repeat("a", 32<<10+1)},
+	} {
+		e.expect(e.call(admin, "PATCH", "/api/v1/settings", body), 422)
+	}
+	for _, body := range []map[string]any{{"theme": map[string]any{"accent": "#2563eb"}}, {"customCss": "body{}"}, {"consoleBranding": true}} {
+		e.expect(e.call(security, "PATCH", "/api/v1/settings", body), 403)
+	}
+
+	css := "@media (width < 600px) { main { padding: 0 } }"
+	got := decode[settingsResponse](t, e.expect(e.call(admin, "PATCH", "/api/v1/settings", map[string]any{"theme": map[string]any{"accent": " #2563EB ", "link": "#93c5fd"}, "customCss": css, "consoleBranding": true}), 200))
+	if got.Settings.Theme != (store.Theme{Accent: "#2563eb", Link: "#93c5fd"}) || got.Settings.CustomCSS != css || !got.Settings.ConsoleBranding {
+		t.Fatalf("saved: %+v", got.Settings)
+	}
+	got = decode[settingsResponse](t, e.expect(e.call(admin, "PATCH", "/api/v1/settings", map[string]any{"theme": map[string]any{"accent": ""}}), 200))
+	if got.Settings.Theme != (store.Theme{Link: "#93c5fd"}) {
+		t.Fatalf("partial theme update: %+v", got.Settings.Theme)
+	}
+	audit, _ := e.st.ListAudit(ctx, 10)
+	if len(audit) != 2 || audit[0].Summary != "Changed the colours" || audit[1].Summary != "Changed the colours, custom CSS, branding in the console" {
+		t.Fatalf("audit: %+v", audit)
+	}
+
+	org := decode[Org](t, e.expect(e.call("", "GET", "/api/v1/organization", nil), 200))
+	if org.Theme.Link != "#93c5fd" || org.CustomCSS != css || !org.ConsoleBranding {
+		t.Fatalf("organization: %+v", org)
+	}
+	public, _ := url.Parse("http://localhost:3200")
+	rec := httptest.NewRecorder()
+	Organization(httpx.Deps{Config: config.Config{PublicURL: public, NoCustomCSS: true}, Store: e.st}).ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/organization", nil))
+	if org = decode[Org](t, rec); org.CustomCSS != "" || org.Theme.Link != "#93c5fd" {
+		t.Fatalf("with HALO_DISABLE_CUSTOM_CSS=1: %+v", org)
+	}
+}
+
 func TestExportExcludesSecrets(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()
