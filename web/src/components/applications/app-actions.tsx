@@ -103,7 +103,7 @@ export function DangerZone({ id, name, disabled, className }: { id: string; name
   }
 
   function remove() {
-    void run(
+    return run(
       "delete",
       () => api(`/applications/${id}`, { method: "DELETE" }),
       () => {

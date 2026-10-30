@@ -236,10 +236,9 @@ export function AddMembers({ group, people }: { group: Group; people: User[] }) 
 
 export function DeleteGroup({ group, appCount }: { group: Group; appCount: number }) {
   const { run, toast, router } = useMutation();
-  const [attempt, setAttempt] = useState(0);
 
-  async function remove() {
-    const deleted = await run(
+  function remove() {
+    return run(
       "delete",
       () => api(`/groups/${group.id}`, { method: "DELETE" }),
       () => {
@@ -247,7 +246,6 @@ export function DeleteGroup({ group, appCount }: { group: Group; appCount: numbe
         router.push("/admin/groups");
       },
     );
-    if (!deleted) setAttempt(attempt + 1);
   }
 
   return (
@@ -261,7 +259,7 @@ export function DeleteGroup({ group, appCount }: { group: Group; appCount: numbe
             Halo keeps the group while an application, access package or policy uses it. Deleting removes memberships, not people.
           </p>
         </div>
-        <HoldToConfirm key={attempt} size="sm" doneLabel="Deleted" className="self-start sm:self-center" onConfirm={() => void remove()}>
+        <HoldToConfirm size="sm" doneLabel="Deleted" className="self-start sm:self-center" onConfirm={remove}>
           Hold to delete
         </HoldToConfirm>
       </div>
@@ -274,7 +272,7 @@ export function GroupMembersTable({ group, members }: { group: Group; members: U
   const departments = [...new Set(members.map((u) => u.department).filter(Boolean))].sort();
 
   function remove(rows: User[]) {
-    void run(
+    return run(
       "remove",
       () => Promise.all(rows.map((u) => api(`/groups/${group.id}/members/${u.id}`, { method: "DELETE" }))),
       () =>

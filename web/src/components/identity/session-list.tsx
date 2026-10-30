@@ -56,8 +56,10 @@ export function SessionList({ sessions, userId }: { sessions: Session[]; userId?
           ? `${revoked} other ${revoked === 1 ? "session was" : "sessions were"} signed out. Only this browser is still signed in.`
           : "Refresh tokens were invalidated. Applications will ask for sign-in within 15 minutes.",
       });
+      return true;
     } catch (error) {
       fail(error);
+      return false;
     }
   }
 

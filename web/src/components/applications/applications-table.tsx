@@ -103,7 +103,7 @@ export function ApplicationsTable({ applications, initialView }: { applications:
       toast({ title: rows.length === 1 ? `${rows[0]?.name} is already disabled` : "Already disabled", description: "Enable an application from its danger zone." });
       return;
     }
-    void run(
+    return run(
       "status",
       () => Promise.all(changing.map((a) => api(`/applications/${a.id}/disable`, { method: "POST" }))),
       () =>

@@ -119,7 +119,7 @@ export function RiskTable({ events, userNames }: { events: RiskEvent[]; userName
   const rows = events.map((e) => ({ ...e, user: (e.userId && userNames[e.userId]) || "Unknown user" }));
 
   function close(selected: Row[], action: "resolve" | "dismiss") {
-    void run(
+    return run(
       action,
       () => Promise.all(selected.map((e) => api(`/risk-events/${e.id}/${action}`, { method: "POST" }))),
       () =>

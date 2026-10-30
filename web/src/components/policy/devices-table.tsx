@@ -118,7 +118,7 @@ export function DevicesTable({ devices, owners }: { devices: Device[]; owners: R
       toast({ title: `${label} ${selected.length === 1 ? "is" : "are"} already ${TRUST[trust].label.toLowerCase()}`, description: "Nothing changed." });
       return;
     }
-    void run(
+    return run(
       "trust",
       () => Promise.all(targets.map((d) => api(`/devices/${d.id}`, { method: "PUT", body: { trust } }))),
       () => toast({ title: `${targets.length === 1 ? targets[0]!.name : pluralize(targets.length, "device")} ${RESULT[trust].title}`, description: RESULT[trust].description }),

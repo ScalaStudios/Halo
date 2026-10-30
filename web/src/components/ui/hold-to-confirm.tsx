@@ -1,7 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import HoldButton from "@/components/reactbits/HoldButton";
+import { Spinner } from "./spinner";
 
 export function HoldToConfirm({
   children,
@@ -15,17 +16,28 @@ export function HoldToConfirm({
   children: ReactNode;
   doneLabel: ReactNode;
   icon?: ReactNode;
-  onConfirm: () => void;
+  onConfirm: () => Promise<boolean>;
   size?: "sm" | "md";
   disabled?: boolean;
   className?: string;
 }) {
+  const [busy, setBusy] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+
+  async function confirm() {
+    setBusy(true);
+    const done = await onConfirm();
+    setBusy(false);
+    if (!done) setAttempt((current) => current + 1);
+  }
+
   return (
     <HoldButton
+      key={attempt}
       size={size}
       icon={icon}
-      doneLabel={doneLabel}
-      onHold={onConfirm}
+      doneLabel={busy ? <Spinner className="text-white" /> : doneLabel}
+      onHold={() => void confirm()}
       disabled={disabled}
       holdTime={1200}
       releaseTime={220}

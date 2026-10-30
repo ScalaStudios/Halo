@@ -86,7 +86,7 @@ export function CredentialList({ appId, appName, credentials, empty }: { appId: 
   if (credentials.length === 0) return <EmptyState icon={KeyRound} title="No credentials" description={empty} />;
 
   function revoke(credential: Credential) {
-    void run(
+    return run(
       `revoke-${credential.id}`,
       () => api(`/applications/${appId}/secrets/${credential.id}`, { method: "DELETE" }),
       () => toast({ title: `“${credential.label}” revoked`, description: `${appName} can no longer use it. Recorded in the audit log.` }),

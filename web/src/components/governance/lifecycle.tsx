@@ -13,6 +13,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api/client";
 import { formatDateTime, pluralize } from "@/lib/format";
 import type { LifecycleAction, LifecycleActionType, LifecycleRule, LifecycleRun, LifecycleTrigger } from "@/lib/governance-types";
@@ -29,23 +30,26 @@ function RuleToggle({ rule }: { rule: LifecycleRule }) {
   const { pending, run, toast } = useMutation();
   return (
     <label className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap" onClick={(event) => event.stopPropagation()}>
-      <Checkbox
-        checked={rule.enabled}
-        disabled={pending === "toggle"}
-        aria-label={`${rule.name} enabled`}
-        onChange={(event) =>
-          run(
-            "toggle",
-            () => api(`/lifecycle/rules/${rule.id}`, { method: "PUT", body: bodyFor(rule, event.target.checked) }),
-            () =>
-              toast(
-                rule.enabled
-                  ? { title: `${rule.name} disabled`, description: "Changes that happen while it's disabled won't run it later." }
-                  : { title: `${rule.name} enabled`, description: "It runs on the next change Halo detects, within a minute." },
-              ),
-          )
-        }
-      />
+      {pending === "toggle" ? (
+        <Spinner />
+      ) : (
+        <Checkbox
+          checked={rule.enabled}
+          aria-label={`${rule.name} enabled`}
+          onChange={(event) =>
+            run(
+              "toggle",
+              () => api(`/lifecycle/rules/${rule.id}`, { method: "PUT", body: bodyFor(rule, event.target.checked) }),
+              () =>
+                toast(
+                  rule.enabled
+                    ? { title: `${rule.name} disabled`, description: "Changes that happen while it's disabled won't run it later." }
+                    : { title: `${rule.name} enabled`, description: "It runs on the next change Halo detects, within a minute." },
+                ),
+            )
+          }
+        />
+      )}
       {rule.enabled ? "Enabled" : "Disabled"}
     </label>
   );

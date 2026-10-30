@@ -138,7 +138,7 @@ export function UsersTable({ users, groups, initialView, inviteOpen, canGrantRol
   const [suspending, setSuspending] = useState<User[]>([]);
 
   function revokeSessions(rows: User[]) {
-    void run(
+    return run(
       "revoke",
       () => Promise.all(rows.map((u) => api<{ revoked: number }>(`/users/${u.id}/revoke-sessions`, { method: "POST" }))),
       (results) =>

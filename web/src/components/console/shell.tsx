@@ -15,7 +15,7 @@ import { useMutation } from "./use-mutation";
 
 export function ConsoleShell({ user, orgName, children }: { user: { name: string; email: string; avatarUrl: string | null }; orgName: string; children: ReactNode }) {
   const pathname = usePathname();
-  const { run, router } = useMutation();
+  const { pending, run, router } = useMutation();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [navigating, startNavigation] = useTransition();
@@ -112,7 +112,7 @@ export function ConsoleShell({ user, orgName, children }: { user: { name: string
       </div>
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-      {navigating ? <NavigationProgress /> : null}
+      {navigating || pending === "sign-out" ? <NavigationProgress /> : null}
     </div>
   );
 }

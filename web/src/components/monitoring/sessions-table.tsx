@@ -90,7 +90,7 @@ export function SessionsTable({ sessions, userNames }: { sessions: Session[]; us
       toast({ title: "This is your current session", description: "Sign out from the account menu instead." });
       return;
     }
-    void run(
+    return run(
       "revoke",
       () => Promise.all(targets.map((s) => api(`/sessions/${s.id}`, { method: "DELETE" }))),
       () =>

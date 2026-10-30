@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { startTransition, useState } from "react";
 import { useToast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api/client";
 
@@ -14,15 +14,18 @@ export function useMutation() {
     setPending(key);
     try {
       const result = await request();
-      onSuccess?.(result);
+      startTransition(() => {
+        onSuccess?.(result);
+        setPending(null);
+        router.refresh();
+      });
       return true;
     } catch (error) {
+      setPending(null);
+      router.refresh();
       if (onError?.(error)) return false;
       toast({ title: "That didn't work", description: error instanceof ApiError ? error.message : "Halo could not reach the server. Try again.", tone: "danger" });
       return false;
-    } finally {
-      setPending(null);
-      router.refresh();
     }
   }
 

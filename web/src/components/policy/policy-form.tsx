@@ -170,9 +170,9 @@ export function PolicyForm({
     );
   }
 
-  function remove() {
-    if (!policy) return;
-    void run("delete", () => api(`/policies/${policy.id}`, { method: "DELETE" }), () => {
+  async function remove() {
+    if (!policy) return false;
+    return run("delete", () => api(`/policies/${policy.id}`, { method: "DELETE" }), () => {
       toast({ title: `${policy.name} deleted`, description: "Halo no longer evaluates it. Recorded in the audit log." });
       router.push("/admin/policies");
     });

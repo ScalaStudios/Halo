@@ -59,8 +59,8 @@ export const facetFilter: FilterFn<any> = (row, columnId, value: string[]) => {
 
 export type Facet = { column: string; label: string; options: { value: string; label: string }[] };
 export type SavedView = { id: string; label: string; filters: ColumnFiltersState; custom?: boolean };
-export type RowAction<T> = { label: string; icon?: LucideIcon; danger?: boolean; separatorBefore?: boolean; onSelect: (row: T) => void };
-export type BulkAction<T> = { label: string; icon?: LucideIcon; danger?: boolean; onSelect: (rows: T[]) => void };
+export type RowAction<T> = { label: string; icon?: LucideIcon; danger?: boolean; separatorBefore?: boolean; onSelect: (row: T) => void | Promise<unknown> };
+export type BulkAction<T> = { label: string; icon?: LucideIcon; danger?: boolean; onSelect: (rows: T[]) => void | Promise<unknown> };
 
 const sameFilters = (a: ColumnFiltersState, b: ColumnFiltersState) => {
   const norm = (f: ColumnFiltersState) =>
@@ -122,6 +122,7 @@ export function DataTable<T>({
   const [naming, setNaming] = useState(false);
   const [viewName, setViewName] = useState("");
   const [opening, startOpening] = useTransition();
+  const [busy, setBusy] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const viewsKey = `halo.views.${storageKey}`;
@@ -179,10 +180,11 @@ export function DataTable<T>({
       enableHiding: false,
       meta: { label: "Actions", className: "w-12", align: "right" },
       header: () => <span className="sr-only">Actions</span>,
-      cell: ({ row }) => (rowActions ? <RowMenu row={row.original} actions={rowActions} /> : null),
+      cell: ({ row }) =>
+        rowActions ? <RowMenu actions={rowActions} loading={busy === row.id} onSelect={(action) => void track(row.id, action.onSelect(row.original))} /> : null,
     };
     return [...(bulkActions ? [select] : []), ...columns, ...(rowActions ? [actions] : [])];
-  }, [columns, bulkActions, rowActions, noun]);
+  }, [columns, bulkActions, rowActions, noun, busy]);
 
   const table = useReactTable({
     data,
@@ -236,6 +238,21 @@ export function DataTable<T>({
     try {
       localStorage.setItem(viewsKey, JSON.stringify(next));
     } catch {}
+  }
+
+  async function track(key: string, result: void | Promise<unknown>) {
+    if (!(result instanceof Promise)) return;
+    setBusy(key);
+    try {
+      await result;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runBulk(action: BulkAction<T>) {
+    await track(`bulk:${action.label}`, action.onSelect(selected));
+    setRowSelection({});
   }
 
   function clearFilters() {
@@ -478,7 +495,7 @@ export function DataTable<T>({
                     <CM.Portal>
                       <CM.Content className="z-50 min-w-48 rounded-md border border-border bg-surface p-1 shadow-md outline-none data-[state=open]:animate-[halo-pop_160ms_var(--ease-brand)]">
                         {rowActions.map((action) => (
-                          <ActionItem key={action.label} kind="context" action={action} row={row.original} />
+                          <ActionItem key={action.label} kind="context" action={action} onSelect={() => void track(row.id, action.onSelect(row.original))} />
                         ))}
                       </CM.Content>
                     </CM.Portal>
@@ -537,10 +554,9 @@ export function DataTable<T>({
                 size="sm"
                 variant={action.danger ? "quiet" : "secondary"}
                 className={action.danger ? "text-danger! hover:text-danger!" : undefined}
-                onClick={() => {
-                  action.onSelect(selected);
-                  setRowSelection({});
-                }}
+                loading={busy === `bulk:${action.label}`}
+                disabled={busy !== null}
+                onClick={() => void runBulk(action)}
               >
                 {Icon ? <Icon aria-hidden="true" size={16} strokeWidth={1.75} /> : null}
                 {action.label}
@@ -613,24 +629,31 @@ function FacetMenu({
   );
 }
 
-function RowMenu<T>({ row, actions }: { row: T; actions: RowAction<T>[] }) {
+function RowMenu<T>({ actions, loading, onSelect }: { actions: RowAction<T>[]; loading: boolean; onSelect: (action: RowAction<T>) => void }) {
   return (
     <Menu>
       <MenuTrigger asChild>
-        <Button size="icon-sm" variant="quiet" aria-label="Row actions" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+        <Button
+          size="icon-sm"
+          variant="quiet"
+          aria-label="Row actions"
+          loading={loading}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
           <MoreHorizontal aria-hidden="true" size={16} strokeWidth={1.75} />
         </Button>
       </MenuTrigger>
       <MenuContent>
         {actions.map((action) => (
-          <ActionItem key={action.label} kind="dropdown" action={action} row={row} />
+          <ActionItem key={action.label} kind="dropdown" action={action} onSelect={() => onSelect(action)} />
         ))}
       </MenuContent>
     </Menu>
   );
 }
 
-function ActionItem<T>({ kind, action, row }: { kind: "dropdown" | "context"; action: RowAction<T>; row: T }) {
+function ActionItem<T>({ kind, action, onSelect }: { kind: "dropdown" | "context"; action: RowAction<T>; onSelect: () => void }) {
   const Icon = action.icon;
   const Item = kind === "dropdown" ? DM.Item : CM.Item;
   const Separator = kind === "dropdown" ? DM.Separator : CM.Separator;
@@ -638,7 +661,7 @@ function ActionItem<T>({ kind, action, row }: { kind: "dropdown" | "context"; ac
     <>
       {action.separatorBefore ? <Separator className="my-1 h-px bg-border" /> : null}
       <Item
-        onSelect={() => action.onSelect(row)}
+        onSelect={onSelect}
         onClick={(event: MouseEvent) => event.stopPropagation()}
         className={cn(
           "flex h-8 cursor-pointer items-center gap-2 rounded-sm px-2 text-body-sm outline-none select-none data-highlighted:bg-press",
