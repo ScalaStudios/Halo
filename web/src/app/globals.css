@@ -12,6 +12,7 @@
   --color-ember-active: #e06a18;
   --color-ember-tint: #fdb07c;
   --color-ember-deep: #b85110;
+  --color-on-ember: #111111;
   --color-gold: #f7ad31;
   --color-gold-tint: #fad08a;
   --color-flare: #fc4f1b;
@@ -124,7 +125,7 @@
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
   --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.6);
-  --shadow-ember: 0 6px 20px rgba(250, 126, 38, 0.28);
+  --shadow-ember: 0 6px 20px color-mix(in oklab, var(--color-ember) 28%, transparent);
 
   --ease-brand: cubic-bezier(0.2, 0.8, 0.2, 1);
   --duration-fast: 160ms;
@@ -205,7 +206,7 @@
 }
 
 @utility bg-hearth {
-  background-image: radial-gradient(50% 100% at 50% 0%, rgba(250, 126, 38, 0.16), rgba(250, 126, 38, 0));
+  background-image: radial-gradient(50% 100% at 50% 0%, color-mix(in oklab, var(--color-ember) 16%, transparent), transparent);
 }
 
 @utility bg-filament {
@@ -273,7 +274,7 @@
   }
 
   ::selection {
-    background: rgba(250, 126, 38, 0.3);
+    background: color-mix(in oklab, var(--color-ember) 30%, transparent);
   }
 
   ::placeholder {

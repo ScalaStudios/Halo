@@ -87,7 +87,7 @@ export function MenuCheckboxItem({
         aria-hidden="true"
         className={cn(
           "grid size-4 place-items-center rounded-sm border",
-          checked ? "border-ember bg-ember text-ink" : "border-border-strong bg-sunken",
+          checked ? "border-ember bg-ember text-on-ember" : "border-border-strong bg-sunken",
         )}
       >
         <M.ItemIndicator>

@@ -47,10 +47,10 @@ export function CodeInput({
       settle={0.22}
       rise={4}
       cascade={24}
-      slotColor="#0C0B0A"
-      accentColor="#2A2724"
-      digitColor="#FFFFFF"
-      inkColor="#FA7E26"
+      slotColor="var(--color-sunken)"
+      accentColor="var(--color-n800)"
+      digitColor="var(--color-fg)"
+      inkColor="var(--color-ember)"
       dangerColor="#E23D4F"
       className="font-mono"
     />

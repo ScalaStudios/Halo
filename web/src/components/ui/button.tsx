@@ -6,7 +6,7 @@ export type ButtonVariant = "primary" | "secondary" | "tertiary" | "ghost" | "qu
 export type ButtonSize = "sm" | "md" | "lg" | "icon-sm" | "icon";
 
 const variants: Record<ButtonVariant, string> = {
-  primary: "bg-ember text-ink hover:bg-ember-hover hover:shadow-ember active:bg-ember-active active:shadow-none",
+  primary: "bg-ember text-on-ember hover:bg-ember-hover hover:shadow-ember active:bg-ember-active active:shadow-none",
   secondary: "border border-border-strong text-fg hover:border-n500 hover:bg-hover active:bg-press",
   tertiary: "text-ember underline-offset-3 hover:text-ember-tint hover:underline active:text-ember-active",
   ghost: "bg-ghost text-ember hover:bg-ghost-hover active:bg-ghost-active",
@@ -55,7 +55,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       <span className={cn("inline-flex items-center gap-2", loading && "invisible")}>{children}</span>
       {loading ? (
         <span className="absolute inset-0 grid place-items-center">
-          <Spinner className={variant === "primary" ? "text-ink" : variant === "destructive" ? "text-white" : undefined} />
+          <Spinner className={variant === "primary" ? "text-on-ember" : variant === "destructive" ? "text-white" : undefined} />
         </span>
       ) : null}
     </button>

@@ -29,6 +29,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - SSH certificate authority with group-to-principal mappings and a configurable certificate lifetime.
 - The `halo` client commands `login` (device flow), `whoami`, `ssh-cert` and `logout`, and the built-in Halo CLI application.
 - Organization settings: name, contact email, sign-in message, logo, session lifetime, lockout, setup link lifetime and token lifetime defaults.
+- Branding colours for the sign-in, setup and account pages: accent, background, surface, border, text and link, with a live preview, contrast warnings and a reset to Halo's colours.
+- Custom CSS after Halo's stylesheet on the same pages, and optionally in the admin console: up to 32 KB, changed only by global administrators, and turned off with `HALO_DISABLE_CUSTOM_CSS=1`.
+- A Content Security Policy on every page, so images, fonts, stylesheets and scripts load only from Halo's own address.
 - Domain verification with DNS TXT records, and a JSON export of users, groups, memberships, roles, applications, policies, access packages and access reviews.
 - Administration console: overview, users with profile editing, assigned and rule-based groups with rule preview, service accounts, devices, applications with editable redirect URIs, scopes and token lifetimes, API resources, provisioning, roles, policies, infrastructure access, governance, methods, identity providers, sessions, sign-in log, audit log, risk events, API keys, webhooks and settings.
 - Applications: client secrets shown once, rotation with a 24-hour grace period, revocation, enabling and disabling, group assignment, owners, and setup guides for Grafana, Forgejo, kubectl, generic OpenID Connect, generic SAML, AWS IAM Identity Center and Slack.

@@ -1,7 +1,19 @@
+export type Theme = {
+  accent: string;
+  background: string;
+  surface: string;
+  border: string;
+  text: string;
+  link: string;
+};
+
 export type Settings = {
   organizationName: string;
   contactEmail: string;
   signInMessage: string;
+  theme: Theme;
+  customCss: string;
+  consoleBranding: boolean;
   sessionHours: number;
   lockoutThreshold: number;
   lockoutMinutes: number;
@@ -15,6 +27,7 @@ export type SettingsResponse = {
   settings: Settings;
   defaultOrganizationName: string;
   issuer: string;
+  customCssDisabled: boolean;
 };
 
 export type OrganizationProfile = {
@@ -23,6 +36,9 @@ export type OrganizationProfile = {
   contactEmail: string;
   signInMessage: string;
   logoUrl: string | null;
+  theme: Theme;
+  customCss: string;
+  consoleBranding: boolean;
 };
 
 export type Domain = {

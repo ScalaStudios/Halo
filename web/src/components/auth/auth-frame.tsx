@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { BrandStyle } from "@/components/brand-style";
 import { HaloLogo, HaloMark } from "@/components/halo-mark";
 import { apiGet } from "@/lib/api/server";
 import type { OrganizationProfile } from "@/lib/settings-types";
@@ -7,6 +8,7 @@ export async function AuthFrame({ children }: { children: ReactNode }) {
   const org = await apiGet<OrganizationProfile>("/organization");
   return (
     <div className="relative isolate flex min-h-dvh flex-col overflow-hidden">
+      <BrandStyle org={org} />
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-96 bg-hearth" />
       <main className="flex flex-1 flex-col items-center px-5 pt-24 pb-16 sm:justify-center sm:px-8 sm:pt-16">
         <div className="flex w-full max-w-[400px] flex-col gap-12">

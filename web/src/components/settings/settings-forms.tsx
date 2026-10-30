@@ -1,10 +1,11 @@
 "use client";
 
+import { TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { CopyField } from "@/components/ui/copy-field";
-import { Field, Input, Textarea } from "@/components/ui/input";
+import { Checkbox, Field, Input, Textarea } from "@/components/ui/input";
 import type { Settings } from "@/lib/settings-types";
 import { ReadOnlyNote, useSaveSettings } from "./shared";
 
@@ -86,6 +87,79 @@ export function SignInMessageForm({ settings, canEdit }: { settings: Settings; c
             </div>
           ) : (
             <ReadOnlyNote>Only a global administrator can change the sign-in message.</ReadOnlyNote>
+          )}
+        </form>
+      </CardBody>
+    </Card>
+  );
+}
+
+const CSS_LIMIT = 32 * 1024;
+
+export function CustomCssForm({ settings, disabled, canEdit }: { settings: Settings; disabled: boolean; canEdit: boolean }) {
+  const { saving, save } = useSaveSettings();
+  const [css, setCss] = useState(settings.customCss);
+  const [inConsole, setInConsole] = useState(settings.consoleBranding);
+  const bytes = new TextEncoder().encode(css.trim()).length;
+  const error =
+    bytes > CSS_LIMIT
+      ? `Remove ${(bytes - CSS_LIMIT).toLocaleString("en")} bytes to save it.`
+      : css.includes("</")
+        ? "Remove “</”, which would end the style element. In a CSS string, write \\3c/ instead."
+        : undefined;
+
+  return (
+    <Card>
+      <CardHeader
+        title="Custom CSS"
+        description="Added after Halo's stylesheet on the sign-in, setup and account pages, for what the colours don't cover, such as fonts, corner radius or spacing."
+      />
+      <CardBody>
+        <form
+          className="flex flex-col gap-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save({ customCss: css.trim(), consoleBranding: inConsole }, "Custom CSS saved", "The sign-in, setup and account pages use it within 30 seconds.");
+          }}
+        >
+          {disabled ? (
+            <div role="note" className="flex gap-3 rounded-md border border-warning/20 bg-warning-container p-4">
+              <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-warning" />
+              <p className="text-body-sm text-fg-2">
+                This server runs with <code className="text-code-sm">HALO_DISABLE_CUSTOM_CSS=1</code>, so no page uses the custom CSS. Fix it here, then remove the variable and restart Halo.
+              </p>
+            </div>
+          ) : null}
+          <Field label="CSS" error={error} hint={`${bytes.toLocaleString("en")} of 32,768 bytes. Images, fonts and imports load only from this Halo server.`}>
+            {(props) => (
+              <Textarea
+                {...props}
+                mono
+                rows={10}
+                spellCheck={false}
+                autoComplete="off"
+                disabled={!canEdit}
+                value={css}
+                placeholder={":root {\n  --radius-md: 2px;\n  --font-display: Georgia, serif;\n}"}
+                onChange={(event) => setCss(event.target.value)}
+              />
+            )}
+          </Field>
+          <label className="flex cursor-pointer items-start gap-3">
+            <Checkbox className="mt-0.5" disabled={!canEdit} checked={inConsole} onChange={(event) => setInConsole(event.target.checked)} />
+            <span className="flex flex-col">
+              <span className="text-body-sm text-fg">Use the colours and custom CSS in the admin console too</span>
+              <span className="text-caption text-fg-3">Leave it off while you try out a stylesheet, so a mistake can't hide the controls you need to undo it.</span>
+            </span>
+          </label>
+          {canEdit ? (
+            <div>
+              <Button type="submit" variant="secondary" loading={saving} disabled={Boolean(error) || (css.trim() === settings.customCss && inConsole === settings.consoleBranding)}>
+                Save custom CSS
+              </Button>
+            </div>
+          ) : (
+            <ReadOnlyNote>Only a global administrator can change the custom CSS.</ReadOnlyNote>
           )}
         </form>
       </CardBody>

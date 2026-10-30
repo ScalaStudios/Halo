@@ -34,8 +34,8 @@ export function HoldToConfirm({
       wave={false}
       glow={false}
       pressScale={1}
-      backgroundColor="#2A2724"
-      textColor="#FFFFFF"
+      backgroundColor="var(--color-n800)"
+      textColor="var(--color-fg)"
       fillColor="#E23D4F"
       fillTextColor="#FFFFFF"
       className={className}
