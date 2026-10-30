@@ -159,7 +159,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
             <SectionTitle
               title="Groups"
               description="Dynamic groups follow their rule. Assigned groups are managed here or by provisioning."
-              action={<AddToGroup name={user.name} userId={user.id} groups={groups.filter((g) => g.kind === "assigned" && !user.groupIds.includes(g.id))} />}
+              action={<AddToGroup name={user.name} userId={user.id} assigned={user.groupIds} groups={groups} />}
             />
             {userGroups.length === 0 ? (
               <EmptyState icon={UsersRound} title="No groups" description="Add this person to an assigned group to give them its applications." />

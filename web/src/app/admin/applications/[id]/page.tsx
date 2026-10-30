@@ -190,7 +190,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
               }
               action={
                 service ? undefined : (
-                  <AddToGroup name={app.name} appId={app.id} assigned={app.groupIds} groups={groups.filter((g) => !app.groupIds.includes(g.id))} />
+                  <AddToGroup name={app.name} appId={app.id} assigned={app.groupIds} groups={groups} />
                 )
               }
             />
