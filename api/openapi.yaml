@@ -1059,7 +1059,7 @@ paths:
       tags: [Users]
       operationId: inviteUser
       summary: Invite a person
-      description: 'Roles: user administrator. Creates the account with status `invited` and a setup link, and emails the link when SMTP is configured.'
+      description: 'Roles: user administrator; including `roles` requires global administrator. Creates the account with status `invited` and a setup link, and emails the link when SMTP is configured.'
       requestBody:
         required: true
         content:
@@ -1078,6 +1078,9 @@ paths:
                   type: array
                   description: Assigned groups only.
                   items: {type: string}
+                roles:
+                  type: array
+                  items: {$ref: '#/components/schemas/RoleKey'}
       responses:
         '201':
           description: The new person and their setup link.

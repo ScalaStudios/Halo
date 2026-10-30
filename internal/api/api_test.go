@@ -144,6 +144,33 @@ func TestInviteReturnsWorkingEnrollLink(t *testing.T) {
 	}
 }
 
+func TestInviteWithRole(t *testing.T) {
+	st, h := setup(t)
+	ctx := context.Background()
+	_, userAdmin := person(t, st, "uma@example.com", "user_admin")
+	_, global := person(t, st, "gia@example.com", "global_admin")
+	body := map[string]any{"email": "sam@example.com", "name": "Sam Lee", "roles": []string{"user_admin", "user_admin"}}
+
+	expect(t, call(t, h, userAdmin, "POST", "/api/v1/users", body), 403)
+	if _, err := st.GetUserByEmail(ctx, "sam@example.com"); err != store.ErrNotFound {
+		t.Fatalf("a refused invitation created the account: %v", err)
+	}
+	expect(t, call(t, h, global, "POST", "/api/v1/users", map[string]any{"email": "sam@example.com", "name": "Sam Lee", "roles": []string{"owner"}}), 422)
+
+	rec := call(t, h, global, "POST", "/api/v1/users", body)
+	expect(t, rec, 201)
+	sam := decode[struct {
+		User store.User `json:"user"`
+	}](t, rec).User
+	if !slices.Equal(sam.Roles, []string{"User administrator"}) || sam.Status != "invited" {
+		t.Fatalf("invited user: %+v", sam)
+	}
+	audit, err := st.ListAudit(ctx, 2)
+	if err != nil || len(audit) != 2 || audit[0].Action != "role.update" || audit[0].Summary != "Set roles to User administrator" || audit[0].TargetID != sam.ID || audit[1].Action != "user.invite" {
+		t.Fatalf("audit: %+v %v", audit, err)
+	}
+}
+
 func TestSuspendRevokesSessions(t *testing.T) {
 	st, h := setup(t)
 	ctx := context.Background()

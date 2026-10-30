@@ -102,6 +102,7 @@ func (h *handlers) inviteUser(w http.ResponseWriter, r *http.Request, actor stor
 		Location   string   `json:"location"`
 		ManagerID  string   `json:"managerId"`
 		GroupIDs   []string `json:"groupIds"`
+		Roles      []string `json:"roles"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -109,6 +110,15 @@ func (h *handlers) inviteUser(w http.ResponseWriter, r *http.Request, actor stor
 	email, err := checkEmail(in.Email)
 	if err != nil {
 		return err
+	}
+	roles, labels, err := checkRoles(in.Roles)
+	if err != nil {
+		return err
+	}
+	if len(roles) > 0 {
+		if _, err := httpx.RequireRole(r); err != nil {
+			return err
+		}
 	}
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
@@ -148,6 +158,7 @@ func (h *handlers) inviteUser(w http.ResponseWriter, r *http.Request, actor stor
 			Location:   strings.TrimSpace(in.Location),
 			ManagerID:  managerID,
 			Status:     "invited",
+			Roles:      roles,
 			GroupIDs:   groupIDs(groups),
 		})
 		if errors.Is(err, store.ErrConflict) {
@@ -160,7 +171,13 @@ func (h *handlers) inviteUser(w http.ResponseWriter, r *http.Request, actor stor
 		if err != nil {
 			return err
 		}
-		return record(r, tx, actor, store.AuditEvent{Action: "user.invite", Summary: "Invited " + user.Name + " <" + user.Email + ">", TargetType: "user", TargetID: user.ID, TargetLabel: user.Name})
+		if err := record(r, tx, actor, store.AuditEvent{Action: "user.invite", Summary: "Invited " + user.Name + " <" + user.Email + ">", TargetType: "user", TargetID: user.ID, TargetLabel: user.Name}); err != nil {
+			return err
+		}
+		if len(roles) == 0 {
+			return nil
+		}
+		return record(r, tx, actor, roleEvent(user, labels))
 	})
 	if err != nil {
 		return err
@@ -336,34 +353,46 @@ func (h *handlers) setRoles(w http.ResponseWriter, r *http.Request, actor store.
 	if in.Roles == nil {
 		return httpx.Invalid(`Send the complete list of roles, for example {"roles": ["auditor"]}. Send an empty list to remove every role.`)
 	}
+	roles, labels, err := checkRoles(*in.Roles)
+	if err != nil {
+		return err
+	}
+	if target.ID == actor.ID && target.HasRole("global_admin") && !slices.Contains(roles, "global_admin") {
+		return httpx.Invalid("You cannot remove your own global administrator role. Ask another global administrator to do it, so the organization always keeps one.")
+	}
+	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+		if err := tx.SetUserRoles(r.Context(), target.ID, roles); err != nil {
+			return err
+		}
+		return record(r, tx, actor, roleEvent(target, labels))
+	})
+	if err != nil {
+		return err
+	}
+	return h.respondUser(w, r, target.ID)
+}
+
+func checkRoles(keys []string) ([]string, []string, error) {
 	roles, labels := []string{}, []string{}
-	for _, role := range *in.Roles {
+	for _, role := range keys {
 		label, ok := store.RoleLabels[role]
 		if !ok {
-			return httpx.Invalid(fmt.Sprintf("%q is not a role. Use global_admin, security_admin, user_admin, helpdesk_admin, app_admin or auditor.", role))
+			return nil, nil, httpx.Invalid(fmt.Sprintf("%q is not a role. Use global_admin, security_admin, user_admin, helpdesk_admin, app_admin or auditor.", role))
 		}
 		if !slices.Contains(roles, role) {
 			roles = append(roles, role)
 			labels = append(labels, label)
 		}
 	}
-	if target.ID == actor.ID && target.HasRole("global_admin") && !slices.Contains(roles, "global_admin") {
-		return httpx.Invalid("You cannot remove your own global administrator role. Ask another global administrator to do it, so the organization always keeps one.")
-	}
+	return roles, labels, nil
+}
+
+func roleEvent(target store.User, labels []string) store.AuditEvent {
 	summary := "Removed every administrator role"
 	if len(labels) > 0 {
 		summary = "Set roles to " + strings.Join(labels, ", ")
 	}
-	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
-		if err := tx.SetUserRoles(r.Context(), target.ID, roles); err != nil {
-			return err
-		}
-		return record(r, tx, actor, store.AuditEvent{Action: "role.update", Summary: summary, TargetType: "user", TargetID: target.ID, TargetLabel: target.Name})
-	})
-	if err != nil {
-		return err
-	}
-	return h.respondUser(w, r, target.ID)
+	return store.AuditEvent{Action: "role.update", Summary: summary, TargetType: "user", TargetID: target.ID, TargetLabel: target.Name}
 }
 
 const (
