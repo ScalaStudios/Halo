@@ -22,16 +22,6 @@ const silentPrefix = "ars"
 
 type requestKey struct{}
 
-func amr(method string) []string {
-	if method == "passkey" || method == "security-key" {
-		return []string{"hwk", "mfa"}
-	}
-	if method == "password" {
-		return []string{"pwd"}
-	}
-	return []string{"otp"}
-}
-
 func (s *storage) silent(ctx context.Context, a *store.AuthRequest, app store.Application, hintSubject string) error {
 	r, _ := ctx.Value(requestKey{}).(*http.Request)
 	if r == nil {
@@ -69,7 +59,7 @@ func (s *storage) silent(ctx context.Context, a *store.AuthRequest, app store.Ap
 	case decision.Effect == access.RequirePhishingResistant && sess.Method != "passkey" && sess.Method != "security-key":
 		return fail(policyReason(decision), oidc.ErrLoginRequired().WithDescription("This application requires signing in with a passkey or security key."))
 	}
-	a.ID, a.UserID, a.SessionID, a.AuthTime, a.AMR, a.Done = id.New(silentPrefix), &u.ID, &sess.ID, &sess.CreatedAt, amr(sess.Method), true
+	a.ID, a.UserID, a.SessionID, a.AuthTime, a.AMR, a.Done = id.New(silentPrefix), &u.ID, &sess.ID, &sess.CreatedAt, sess.AMR(), true
 	event.Result = "success"
 	return s.st.RecordSignIn(ctx, event)
 }

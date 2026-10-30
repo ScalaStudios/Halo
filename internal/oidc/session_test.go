@@ -246,6 +246,23 @@ func TestPromptNone(t *testing.T) {
 	}
 }
 
+func TestPasswordAMR(t *testing.T) {
+	h := newHarness(t, nil)
+	for _, c := range []struct {
+		secondFactor bool
+		want         []string
+	}{{false, []string{"pwd"}}, {true, []string{"pwd", "otp", "mfa"}}} {
+		_, token, err := h.st.CreateSession(context.Background(), store.NewSession{UserID: h.user.ID, Method: "password", SecondFactor: c.secondFactor})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, claims := h.tokens(h.silent(token, nil).Query().Get("code"))
+		if !slices.Equal(claims.AuthenticationMethodsReferences, c.want) {
+			t.Fatalf("second factor %v: amr %v, want %v", c.secondFactor, claims.AuthenticationMethodsReferences, c.want)
+		}
+	}
+}
+
 func TestEndSession(t *testing.T) {
 	h := newHarness(t, nil)
 	sess, token := h.session(h.user, "passkey")

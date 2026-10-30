@@ -102,6 +102,7 @@ type Session struct {
 	IP           string     `json:"ip"`
 	Location     string     `json:"location"`
 	Method       string     `json:"method"`
+	SecondFactor bool       `json:"-"`
 	CreatedAt    time.Time  `json:"createdAt"`
 	LastActiveAt time.Time  `json:"lastActiveAt"`
 	ExpiresAt    time.Time  `json:"-"`

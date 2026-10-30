@@ -239,6 +239,55 @@ func TestPasswordSprayFromOneAddress(t *testing.T) {
 	spray(from("192.0.2.2"), 1, http.StatusTooManyRequests, "ERR_TOO_MANY_ATTEMPTS")
 }
 
+func TestPasswordAMR(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	ada := e.withPassword("ada@example.com", "correct horse battery staple", false)
+	e.withAuthenticator(ada)
+	group, err := e.st.CreateGroup(ctx, store.NewGroup{Name: "Engineering", Kind: "assigned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.AddGroupMember(ctx, group.ID, ada.ID); err != nil {
+		t.Fatal(err)
+	}
+	app, err := e.st.CreateApplication(ctx, store.NewApplication{Name: "Grafana", Protocol: "oidc", Type: "web", RedirectURIs: []string{"https://grafana.example.com/login/generic_oauth"}, GroupIDs: []string{group.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	amr := func(c *http.Client, path string, body map[string]any) []string {
+		t.Helper()
+		requestID := "arq_" + strings.ToLower(secret.Token(8))
+		if _, err := e.st.CreateAuthRequest(ctx, store.AuthRequest{ID: requestID, ClientID: app.ClientID, RedirectURI: app.RedirectURIs[0], Scopes: []string{"openid"}, ResponseType: "code"}); err != nil {
+			t.Fatal(err)
+		}
+		body["authRequest"] = requestID
+		if status := e.do(c, "POST", path, body, nil); status != http.StatusOK {
+			t.Fatalf("%s: %d", path, status)
+		}
+		req, err := e.st.GetAuthRequest(ctx, requestID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return req.AMR
+	}
+
+	e.allowPasswords(false)
+	if got := amr(client(), "/api/v1/auth/password", map[string]any{"email": "ada@example.com", "password": "correct horse battery staple"}); !slices.Equal(got, []string{"pwd"}) {
+		t.Fatalf("password alone: %v", got)
+	}
+
+	e.allowPasswords(true)
+	c := client()
+	code, _ := totp.GenerateCode(authenticatorSeed, time.Now())
+	if got := amr(c, "/api/v1/auth/password", map[string]any{"email": "ada@example.com", "password": "correct horse battery staple", "code": code}); !slices.Equal(got, []string{"pwd", "otp", "mfa"}) {
+		t.Fatalf("password and code: %v", got)
+	}
+	if got := amr(c, "/api/v1/auth/continue", map[string]any{}); !slices.Equal(got, []string{"pwd", "otp", "mfa"}) {
+		t.Fatalf("continuing the password and code session: %v", got)
+	}
+}
+
 func TestTemporaryPasswordMustBeChanged(t *testing.T) {
 	e := newEnv(t)
 	ada := e.withPassword("ada@example.com", "temporary passphrase one", true)

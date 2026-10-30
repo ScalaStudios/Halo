@@ -121,6 +121,7 @@ func (h *handler) passwordSignIn(w http.ResponseWriter, r *http.Request) error {
 		if reason != "" {
 			return h.reject(r, a, reason, errCodeMismatch)
 		}
+		a.secondFactor = true
 	}
 	return h.finish(w, r, a, nil, func(tx *store.Store) error {
 		if replacement != "" {

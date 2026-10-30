@@ -121,13 +121,14 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 }
 
 type attempt struct {
-	method  string
-	email   string
-	user    *store.User
-	app     *store.Application
-	request string
-	eventID string
-	risk    string
+	method       string
+	secondFactor bool
+	email        string
+	user         *store.User
+	app          *store.Application
+	request      string
+	eventID      string
+	risk         string
 }
 
 func (a attempt) event(r *http.Request, result, reason string) store.SignInEvent {
@@ -202,7 +203,7 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 			if token := httpx.DeviceToken(r); token != "" {
 				device = secret.Hash(token)
 			}
-			created, t, err := tx.CreateSession(ctx, store.NewSession{UserID: u.ID, Method: a.method, IP: httpx.ClientIP(r), UserAgent: r.UserAgent(), DeviceHash: device})
+			created, t, err := tx.CreateSession(ctx, store.NewSession{UserID: u.ID, Method: a.method, SecondFactor: a.secondFactor, IP: httpx.ClientIP(r), UserAgent: r.UserAgent(), DeviceHash: device})
 			if err != nil {
 				return err
 			}
@@ -212,7 +213,7 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 			}
 		}
 		if a.request != "" {
-			if err := tx.CompleteAuthRequest(ctx, a.request, u.ID, sess.ID, amr(sess.Method), sess.CreatedAt); err != nil {
+			if err := tx.CompleteAuthRequest(ctx, a.request, u.ID, sess.ID, sess.AMR(), sess.CreatedAt); err != nil {
 				return err
 			}
 			redirect = store.AuthorizeCallbackPath(a.request)
@@ -240,19 +241,6 @@ func policyReason(d access.Decision) string {
 
 func assigned(u store.User, app store.Application) bool {
 	return app.Status == "active" && slices.ContainsFunc(app.GroupIDs, func(g string) bool { return slices.Contains(u.GroupIDs, g) })
-}
-
-func amr(method string) []string {
-	if method == "passkey" || method == "security-key" {
-		return []string{"hwk", "mfa"}
-	}
-	if method == "federated" {
-		return []string{"fed"}
-	}
-	if method == "password" {
-		return []string{"pwd"}
-	}
-	return []string{"otp"}
 }
 
 func audit(ctx context.Context, st *store.Store, r *http.Request, u store.User, action, summary string) error {

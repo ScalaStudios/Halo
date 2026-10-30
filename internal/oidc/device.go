@@ -175,7 +175,7 @@ func (h *deviceHandlers) decide(approve bool) httpx.HandlerFunc {
 			event.Result, event.Reason = "success", ""
 		}
 		err = h.st.Tx(ctx, func(tx *store.Store) error {
-			if err := tx.DecideDeviceAuthorization(ctx, p.device.UserCode, approve, p.user.ID, p.session.Method, amr(p.session.Method), p.session.CreatedAt); err != nil {
+			if err := tx.DecideDeviceAuthorization(ctx, p.device.UserCode, approve, p.user.ID, p.session.Method, p.session.AMR(), p.session.CreatedAt); err != nil {
 				return err
 			}
 			return tx.RecordSignIn(ctx, event)
