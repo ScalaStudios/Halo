@@ -73,6 +73,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		"POST /api/v1/auth/identify":             h.identify,
 		"POST /api/v1/auth/totp":                 h.totpSignIn,
 		"POST /api/v1/auth/recovery":             h.recoverySignIn,
+		"POST /api/v1/auth/password":             h.passwordSignIn,
 		"POST /api/v1/auth/continue":             h.continueRequest,
 		"GET /api/v1/auth/enroll":                h.enrollInfo,
 		"POST /api/v1/auth/enroll/begin":         h.enrollBegin,
@@ -85,6 +86,8 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		"POST /api/v1/me/totp/begin":             h.totpBegin,
 		"POST /api/v1/me/totp/confirm":           h.totpConfirm,
 		"POST /api/v1/me/recovery-codes":         h.recoveryCodes,
+		"GET /api/v1/me/password":                h.myPassword,
+		"PUT /api/v1/me/password":                h.setMyPassword,
 		"GET /api/v1/me/sessions":                h.sessions,
 		"DELETE /api/v1/me/sessions/{id}":        h.revokeSession,
 		"POST /api/v1/me/sessions/revoke-others": h.revokeOtherSessions,
@@ -246,6 +249,9 @@ func amr(method string) []string {
 	if method == "federated" {
 		return []string{"fed"}
 	}
+	if method == "password" {
+		return []string{"pwd"}
+	}
 	return []string{"otp"}
 }
 
@@ -292,8 +298,12 @@ func (h *handler) identify(w http.ResponseWriter, r *http.Request) error {
 	}
 	methods := []string{}
 	if err == nil && u.Status != "suspended" && u.Status != "deprovisioned" {
-		for _, kind := range []string{"passkey", "security-key", "totp", "recovery-codes"} {
-			if slices.ContainsFunc(u.Methods, func(m store.Method) bool { return m.Kind == kind }) {
+		settings, err := h.st.Settings(r.Context())
+		if err != nil {
+			return err
+		}
+		for _, kind := range []string{"passkey", "security-key", "totp", "recovery-codes", "password"} {
+			if slices.ContainsFunc(u.Methods, func(m store.Method) bool { return m.Kind == kind }) && (kind != "password" || settings.PasswordAllowed(u)) {
 				methods = append(methods, kind)
 			}
 		}

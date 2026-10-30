@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -110,7 +112,7 @@ func TestSettingsValidationCacheAndRoles(t *testing.T) {
 	users := e.person("uma@example.com", "user_admin")
 
 	got := decode[settingsResponse](t, e.expect(e.call(auditor, "GET", "/api/v1/settings", nil), 200))
-	if got.Settings != store.DefaultSettings {
+	if !reflect.DeepEqual(got.Settings, store.DefaultSettings) {
 		t.Fatalf("defaults: %+v", got.Settings)
 	}
 	for _, body := range []map[string]any{
@@ -327,12 +329,13 @@ func TestExportExcludesSecrets(t *testing.T) {
 		}
 	}
 	forbidden := regexp.MustCompile(`(?i)hash|sealed|secret|password|private`)
+	switches := []string{"passwordSecondFactor", "passwordGroupIds", "passwordBreachCheck"}
 	var walk func(any)
 	walk = func(v any) {
 		switch v := v.(type) {
 		case map[string]any:
 			for key, child := range v {
-				if forbidden.MatchString(key) {
+				if forbidden.MatchString(key) && !slices.Contains(switches, key) {
 					t.Errorf("export has a %q field", key)
 				}
 				walk(child)
@@ -347,5 +350,37 @@ func TestExportExcludesSecrets(t *testing.T) {
 	audit, _ := e.st.ListAudit(ctx, 1)
 	if len(audit) != 1 || audit[0].Action != "organization.export" {
 		t.Fatalf("export was not audited: %+v", audit)
+	}
+}
+
+func TestPasswordSettings(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	security := e.person("sam@example.com", "security_admin")
+	first, err := e.st.CreateGroup(ctx, store.NewGroup{Name: "Contractors", Kind: "assigned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := e.st.CreateGroup(ctx, store.NewGroup{Name: "Kiosks", Kind: "assigned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"passwordGroupIds": []string{"grp_missing"}}), 422)
+	got := decode[settingsResponse](t, e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"passwordGroupIds": []string{first.ID}, "passwordSecondFactor": false}), 200))
+	if !slices.Equal(got.Settings.PasswordGroupIDs, []string{first.ID}) || got.Settings.PasswordSecondFactor || !got.Settings.PasswordBreachCheck {
+		t.Fatalf("password settings: %+v", got.Settings)
+	}
+	got = decode[settingsResponse](t, e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"passwordGroupIds": []string{second.ID}}), 200))
+	if !slices.Equal(got.Settings.PasswordGroupIDs, []string{second.ID}) {
+		t.Fatalf("replacing the group list: %+v", got.Settings.PasswordGroupIDs)
+	}
+	audit, _ := e.st.ListAudit(ctx, 2)
+	if audit[0].Summary != "Changed the groups that can use passwords" || audit[1].Summary != "Changed the second factor for passwords, groups that can use passwords" {
+		t.Fatalf("audit: %+v", audit)
+	}
+	got = decode[settingsResponse](t, e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"passwordGroupIds": nil}), 200))
+	if got.Settings.PasswordGroupIDs == nil || len(got.Settings.PasswordGroupIDs) != 0 {
+		t.Fatalf("clearing the group list: %+v", got.Settings.PasswordGroupIDs)
 	}
 }

@@ -262,7 +262,7 @@ paths:
                 email: {type: string, format: email}
       responses:
         '200':
-          description: The methods the person has, out of passkey, security-key, totp and recovery-codes.
+          description: The methods the person has, out of passkey, security-key, totp, recovery-codes and password. A password is listed only when the person may sign in with one.
           content:
             application/json:
               schema:
@@ -301,6 +301,42 @@ paths:
         '401': {$ref: '#/components/responses/CodeMismatch'}
         '403': {$ref: '#/components/responses/SignInRefused'}
         '404': {$ref: '#/components/responses/AuthRequestExpired'}
+        '429': {$ref: '#/components/responses/TooManyAttempts'}
+  /auth/password:
+    post:
+      tags: [Sign-in]
+      operationId: signInWithPassword
+      summary: Sign in with a password
+      description: Works only while passwords are turned on under `/methods` and, when `passwordGroupIds` is set, for members of those groups. When `passwordSecondFactor` is on, send the code from the person's authenticator app as `code`. A temporary password set by an administrator must be replaced by sending `newPassword`. Every request checks the password again, and failed passwords and codes count toward the lockout shared with `/auth/totp` and `/auth/recovery`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: {type: string, format: email}
+                password: {type: string}
+                code: {type: string, description: The current code from the person's authenticator app.}
+                newPassword: {type: string, minLength: 15, maxLength: 256, description: Replaces a temporary password.}
+                authRequest: {$ref: '#/components/schemas/AuthRequestId'}
+      responses:
+        '200': {$ref: '#/components/responses/SignedIn'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401':
+          description: '`ERR_PASSWORD_MISMATCH`: the email and password don''t match, passwords are turned off, or the person may not use one. `ERR_SECOND_FACTOR_REQUIRED`: the password was right; send it again with `code`. `ERR_CODE_MISMATCH`: the code did not match or was already used. `ERR_PASSWORD_CHANGE_REQUIRED`: the password is temporary; send it again with `newPassword`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403':
+          description: '`ERR_SECOND_FACTOR_MISSING`: a second factor is required and the account has no authenticator app. Also `ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED` and `ERR_CROSS_SITE`, as for other sign-in methods.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404': {$ref: '#/components/responses/AuthRequestExpired'}
+        '422': {$ref: '#/components/responses/Invalid'}
         '429': {$ref: '#/components/responses/TooManyAttempts'}
   /auth/magic-link:
     post:
@@ -615,7 +651,7 @@ paths:
       tags: [Account]
       operationId: removeMyMethod
       summary: Remove one of your sign-in methods
-      description: The id `recovery-codes` removes your recovery codes.
+      description: The id `recovery-codes` removes your recovery codes, and `password` your password.
       security: *personal
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
@@ -750,6 +786,40 @@ paths:
                     items: {type: string}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/CrossSite'}
+  /me/password:
+    get:
+      tags: [Account]
+      operationId: getMyPasswordAccess
+      summary: Check whether you may use a password
+      security: *personal
+      responses:
+        '200':
+          description: Whether passwords are turned on and allowed for your groups.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [allowed]
+                properties:
+                  allowed: {type: boolean}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    put:
+      tags: [Account]
+      operationId: setMyPassword
+      summary: Set or change your password
+      description: Between 15 and 256 characters, with no other composition rules. Passwords found in known data breaches are refused while `passwordBreachCheck` is on. Remove your password with `DELETE /me/methods/password`.
+      security: *personal
+      requestBody: {$ref: '#/components/requestBodies/Password'}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403':
+          description: '`ERR_FORBIDDEN`: passwords are turned off or not allowed for your groups. Also `ERR_CROSS_SITE`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /me/sessions:
     get:
       tags: [Account]
@@ -1337,6 +1407,22 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /users/{id}/password:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Users]
+      operationId: setTemporaryPassword
+      summary: Set a temporary password
+      description: 'Roles: user or helpdesk administrator; only a global administrator can set one for an administrator. The person must choose a new password at their next sign-in. The same length and breach rules apply as for `PUT /me/password`.'
+      requestBody: {$ref: '#/components/requestBodies/Password'}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /users/{id}/roles:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -2437,7 +2523,7 @@ paths:
       - name: method
         in: path
         required: true
-        schema: {type: string, enum: [passkey, security-key, totp, magic-link, recovery-codes]}
+        schema: {type: string, enum: [passkey, security-key, totp, magic-link, recovery-codes, password]}
     put:
       tags: [Policies]
       operationId: setMethodEnabled
@@ -3479,6 +3565,15 @@ components:
               email: {type: string, format: email}
               code: {type: string}
               authRequest: {$ref: '#/components/schemas/AuthRequestId'}
+    Password:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [password]
+            properties:
+              password: {type: string, minLength: 15, maxLength: 256}
     DecisionNote:
       content:
         application/json:
@@ -3720,7 +3815,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     TooManyAttempts:
-      description: '`ERR_TOO_MANY_ATTEMPTS`: too many failed codes for this address within the lockout window.'
+      description: '`ERR_TOO_MANY_ATTEMPTS`: too many failed passwords or codes for this address within the lockout window.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -3894,7 +3989,7 @@ components:
       description: The id of an application's sign-in request, from the `authRequest` query parameter of the sign-in page. Omit it to sign in to Halo itself.
     MethodKind:
       type: string
-      enum: [passkey, security-key, totp, magic-link, recovery-codes, federated]
+      enum: [passkey, security-key, totp, magic-link, recovery-codes, password, federated]
     RoleKey:
       type: string
       enum: [global_admin, security_admin, user_admin, helpdesk_admin, app_admin, auditor]
@@ -3934,8 +4029,8 @@ components:
       type: object
       required: [id, kind, label, addedAt, lastUsedAt]
       properties:
-        id: {type: string, description: '`recovery-codes` for the set of recovery codes.'}
-        kind: {type: string, enum: [passkey, security-key, totp, recovery-codes]}
+        id: {type: string, description: '`recovery-codes` for the set of recovery codes, `password` for the password.'}
+        kind: {type: string, enum: [passkey, security-key, totp, recovery-codes, password]}
         label: {type: string, examples: [Passkey · Safari on iOS]}
         addedAt: {type: string, format: date-time}
         lastUsedAt: {type: [string, 'null'], format: date-time}
@@ -4401,7 +4496,7 @@ components:
           items:
             type: object
             properties:
-              type: {type: string, enum: [risky-network, failed-sign-ins, new-device, new-network]}
+              type: {type: string, enum: [risky-network, failed-sign-ins, new-device, new-network, password]}
               level: {type: string, enum: [low, medium, high]}
               detail: {type: string}
         policies:
@@ -4570,6 +4665,9 @@ components:
         accessTokenMinutes: {type: integer, minimum: 5, maximum: 1440, default: 15}
         idTokenMinutes: {type: integer, minimum: 5, maximum: 1440, default: 15}
         refreshTokenHours: {type: integer, minimum: 1, maximum: 2160, default: 8}
+        passwordSecondFactor: {type: boolean, default: true, description: Ask for an authenticator app code with every password sign-in.}
+        passwordGroupIds: {type: array, items: {type: string}, description: Only members of these groups may use a password. Empty allows everyone.}
+        passwordBreachCheck: {type: boolean, default: true, description: 'Refuse new passwords that the Have I Been Pwned range API reports as breached. Only the first 5 characters of the password''s SHA-1 hash leave Halo. Turn it off for installations without internet access; when the API is unreachable, Halo accepts the password and logs a warning.'}
     Domain:
       type: object
       required: [id, name, token, createdAt, verifiedAt]

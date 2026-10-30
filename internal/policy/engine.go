@@ -19,8 +19,8 @@ const haloApp = "halo"
 var (
 	riskLevels    = []string{"none", "low", "medium", "high"}
 	severity      = map[string]int{access.Allow: 0, access.RequirePhishingResistant: 1, access.Block: 2}
-	methodUsing   = map[string]string{"passkey": "a passkey", "security-key": "a security key", "totp": "an authenticator app", "magic-link": "a magic link", "recovery-codes": "a recovery code", "federated": "an identity provider"}
-	methodPlurals = map[string]string{"passkey": "passkeys", "security-key": "security keys", "totp": "authenticator apps", "magic-link": "magic links", "recovery-codes": "recovery codes", "federated": "identity providers"}
+	methodUsing   = map[string]string{"passkey": "a passkey", "security-key": "a security key", "totp": "an authenticator app", "magic-link": "a magic link", "recovery-codes": "a recovery code", "password": "a password", "federated": "an identity provider"}
+	methodPlurals = map[string]string{"passkey": "passkeys", "security-key": "security keys", "totp": "authenticator apps", "magic-link": "magic links", "recovery-codes": "recovery codes", "password": "passwords", "federated": "identity providers"}
 	effectVerbs   = map[string]string{access.Allow: "Allows", access.RequirePhishingResistant: "Requires a passkey or security key for", access.Block: "Blocks"}
 )
 
@@ -53,6 +53,7 @@ type state struct {
 	zones    []store.NetworkZone
 	methods  map[string]bool
 	groups   map[string]string
+	org      store.Settings
 }
 
 type result struct {
@@ -96,7 +97,8 @@ func (e *engine) load(ctx context.Context) (state, error) {
 	for _, g := range groups {
 		s.groups[g.ID] = g.Name
 	}
-	return s, nil
+	s.org, err = e.st.Settings(ctx)
+	return s, err
 }
 
 func (e *engine) Evaluate(ctx context.Context, in access.Input) (access.Decision, error) {
@@ -174,6 +176,9 @@ func (e *engine) assess(ctx context.Context, a *attempt, zones []store.NetworkZo
 	if otherDevices > 0 {
 		add("new-device", "medium", fmt.Sprintf("First sign-in from this device. The account already used %s.", plural(otherDevices, "other device", "other devices")))
 	}
+	if a.method == "password" {
+		add("password", "low", "Password sign-in. Passwords can be guessed, phished or reused from another site.")
+	}
 	if a.addr.IsValid() {
 		ips, err := e.st.RecentSignInIPs(ctx, a.user.ID)
 		if err != nil {
@@ -250,6 +255,12 @@ func decide(s state, a attempt) ([]result, access.Decision) {
 		return results, access.Decision{Effect: access.Block, Reason: "An administrator blocked this device."}
 	case known && !enabled:
 		return results, access.Decision{Effect: access.Block, Reason: "Sign-in with " + methodPlurals[a.method] + " is turned off for this organization."}
+	case a.method == "password" && !s.org.PasswordAllowed(a.user):
+		groups := []string{}
+		for _, g := range s.org.PasswordGroupIDs {
+			groups = append(groups, s.group(g))
+		}
+		return results, access.Decision{Effect: access.Block, Reason: "Sign-in with passwords is limited to members of " + strings.Join(groups, " or ") + "."}
 	case winner != nil:
 		return results, access.Decision{Effect: winner.policy.Effect, Policy: winner.policy.Name, Reason: winner.detail}
 	}

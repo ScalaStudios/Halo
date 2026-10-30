@@ -52,6 +52,9 @@ var fields = []struct {
 	{"accessTokenMinutes", "access token lifetime", false},
 	{"idTokenMinutes", "ID token lifetime", false},
 	{"refreshTokenHours", "refresh token lifetime", false},
+	{"passwordSecondFactor", "second factor for passwords", false},
+	{"passwordGroupIds", "groups that can use passwords", false},
+	{"passwordBreachCheck", "breached password check", false},
 }
 
 type handler struct {
@@ -155,6 +158,7 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 		return err
 	}
 	next := before
+	next.PasswordGroupIDs = slices.Clone(before.PasswordGroupIDs)
 	if err := httpx.Decode(r, &next); err != nil {
 		return err
 	}
@@ -165,8 +169,20 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	for _, c := range colours(&next.Theme) {
 		*c = strings.ToLower(strings.TrimSpace(*c))
 	}
+	if next.PasswordGroupIDs == nil {
+		next.PasswordGroupIDs = []string{}
+	}
 	if err := validate(next); err != nil {
 		return err
+	}
+	if !slices.Equal(before.PasswordGroupIDs, next.PasswordGroupIDs) {
+		existing, err := h.st.ExistingIDs(ctx, "groups", next.PasswordGroupIDs)
+		if err != nil {
+			return err
+		}
+		if slices.ContainsFunc(next.PasswordGroupIDs, func(id string) bool { return !existing[id] }) {
+			return httpx.Invalid("One of the groups chosen for passwords no longer exists. Refresh the page and choose again.")
+		}
 	}
 	var old, updated map[string]json.RawMessage
 	encoded, _ := json.Marshal(before)

@@ -12,6 +12,7 @@ import (
 
 	"halo/internal/httpx"
 	halomail "halo/internal/mail"
+	"halo/internal/secret"
 	"halo/internal/store"
 )
 
@@ -312,6 +313,40 @@ func (h *handlers) resetAuthentication(w http.ResponseWriter, r *http.Request, a
 		return err
 	}
 	return httpx.JSON(w, http.StatusOK, map[string]any{"enrollUrl": link, "expiresAt": expires, "emailed": emailed})
+}
+
+func (h *handlers) setTemporaryPassword(w http.ResponseWriter, r *http.Request, actor store.User) error {
+	target, err := h.user(r)
+	if err != nil {
+		return err
+	}
+	if err := guardAdmin(actor, target); err != nil {
+		return err
+	}
+	var in struct {
+		Password string `json:"password"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	settings, err := h.st.Settings(r.Context())
+	if err != nil {
+		return err
+	}
+	if problem := secret.PasswordProblem(r.Context(), in.Password, settings.PasswordBreachCheck); problem != "" {
+		return httpx.Invalid(problem)
+	}
+	hash := secret.HashPassword(in.Password)
+	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+		if err := tx.SetPassword(r.Context(), target.ID, hash, true); err != nil {
+			return err
+		}
+		return record(r, tx, actor, store.AuditEvent{Action: "user.password.set", Summary: "Set a temporary password that must be changed at the next sign-in", TargetType: "user", TargetID: target.ID, TargetLabel: target.Name})
+	})
+	if err != nil {
+		return err
+	}
+	return noContent(w)
 }
 
 func (h *handlers) deleteMethod(w http.ResponseWriter, r *http.Request, actor store.User) error {

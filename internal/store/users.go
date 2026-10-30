@@ -173,7 +173,7 @@ func (s *Store) SetUserRoles(ctx context.Context, userID string, roles []string)
 
 func (s *Store) DeleteAuthenticationMethods(ctx context.Context, userID string) error {
 	return s.Tx(ctx, func(tx *Store) error {
-		for _, table := range []string{"webauthn_credentials", "totp_secrets", "recovery_codes"} {
+		for _, table := range []string{"webauthn_credentials", "totp_secrets", "recovery_codes", "passwords"} {
 			if _, err := tx.db.Exec(ctx, `delete from `+table+` where user_id = $1`, userID); err != nil {
 				return err
 			}
@@ -192,11 +192,12 @@ func (s *Store) DeleteMethod(ctx context.Context, userID, methodID string) error
 			return nil
 		}
 	}
-	if methodID == "recovery-codes" {
-		_, err := s.db.Exec(ctx, `delete from recovery_codes where user_id = $1`, userID)
-		return err
+	table := map[string]string{"recovery-codes": "recovery_codes", "password": "passwords"}[methodID]
+	if table == "" {
+		return ErrNotFound
 	}
-	return ErrNotFound
+	_, err := s.db.Exec(ctx, `delete from `+table+` where user_id = $1`, userID)
+	return err
 }
 
 func (s *Store) decorate(ctx context.Context, users []User) error {
@@ -231,16 +232,21 @@ func (s *Store) decorate(ctx context.Context, users []User) error {
 	}
 	rows.Close()
 
-	rows, err = s.db.Query(ctx, `select id, user_id, kind, label, created_at, last_used_at from webauthn_credentials where user_id = any($1) order by created_at`, ids)
+	rows, err = s.db.Query(ctx, `select id, user_id, kind, label, false, created_at, last_used_at from webauthn_credentials where user_id = any($1)
+		union all select 'password', user_id, 'password', 'Password', must_change, created_at, last_used_at from passwords where user_id = any($1) order by created_at`, ids)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
 		var m Method
 		var userID string
-		if err := rows.Scan(&m.ID, &userID, &m.Kind, &m.Label, &m.AddedAt, &m.LastUsedAt); err != nil {
+		var temporary bool
+		if err := rows.Scan(&m.ID, &userID, &m.Kind, &m.Label, &temporary, &m.AddedAt, &m.LastUsedAt); err != nil {
 			rows.Close()
 			return err
+		}
+		if temporary {
+			m.Detail = "Temporary, must be changed at the next sign-in"
 		}
 		u := &users[index[userID]]
 		u.Methods = append(u.Methods, m)

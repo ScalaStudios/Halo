@@ -16,6 +16,7 @@ import (
 	"halo/internal/api"
 	"halo/internal/config"
 	"halo/internal/httpx"
+	"halo/internal/secret"
 	"halo/internal/store"
 	"halo/internal/testdb"
 )
@@ -406,5 +407,43 @@ func TestSeedDemo(t *testing.T) {
 	}
 	if sessions, _ := st.ListSessions(ctx, ""); len(sessions) < 10 {
 		t.Fatalf("expected sessions from recent sign-ins, got %d", len(sessions))
+	}
+}
+
+func TestTemporaryPassword(t *testing.T) {
+	st, h := setup(t)
+	ctx := context.Background()
+	_, helpdesk := person(t, st, "hal@example.com", "helpdesk_admin")
+	_, auditor := person(t, st, "aud@example.com", "auditor")
+	security, _ := person(t, st, "sec@example.com", "security_admin")
+	ada, _ := person(t, st, "ada@example.com")
+	settings, err := st.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.PasswordBreachCheck = false
+	if err := st.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	st.ForgetSettings()
+
+	path := "/api/v1/users/" + ada.ID + "/password"
+	expect(t, call(t, h, auditor, "PUT", path, map[string]any{"password": "temporary passphrase"}), 403)
+	expect(t, call(t, h, helpdesk, "PUT", "/api/v1/users/"+security.ID+"/password", map[string]any{"password": "temporary passphrase"}), 403)
+	expect(t, call(t, h, helpdesk, "PUT", path, map[string]any{"password": "too short"}), 422)
+	expect(t, call(t, h, helpdesk, "PUT", path, map[string]any{"password": "temporary passphrase"}), 204)
+
+	stored, err := st.GetPassword(ctx, ada.ID)
+	if err != nil || !stored.MustChange || !secret.PasswordMatches(stored.Hash, "temporary passphrase") {
+		t.Fatalf("stored password: %+v %v", stored, err)
+	}
+	rec := call(t, h, helpdesk, "GET", "/api/v1/users/"+ada.ID, nil)
+	user := decode[store.User](t, rec)
+	if len(user.Methods) != 1 || user.Methods[0].Kind != "password" || user.Methods[0].Detail != "Temporary, must be changed at the next sign-in" || strings.Contains(rec.Body.String(), "argon2") {
+		t.Fatalf("user after a temporary password: %s", rec.Body)
+	}
+	audit, _ := st.ListAudit(ctx, 1)
+	if audit[0].Action != "user.password.set" || audit[0].TargetID != ada.ID || strings.Contains(audit[0].Summary, "passphrase") {
+		t.Fatalf("audit: %+v", audit[0])
 	}
 }

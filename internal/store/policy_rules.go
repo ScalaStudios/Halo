@@ -203,7 +203,7 @@ func (s *Store) ExistingIDs(ctx context.Context, table string, ids []string) (ma
 	return existing, rows.Err()
 }
 
-var MethodKinds = []string{"passkey", "security-key", "totp", "magic-link", "recovery-codes", "federated"}
+var MethodKinds = []string{"passkey", "security-key", "totp", "magic-link", "recovery-codes", "password", "federated"}
 
 type MethodSetting struct {
 	Method    string    `json:"method"`
@@ -226,6 +226,12 @@ func (s *Store) ListMethodSettings(ctx context.Context) ([]MethodSetting, error)
 		settings = append(settings, m)
 	}
 	return settings, rows.Err()
+}
+
+func (s *Store) MethodEnabled(ctx context.Context, method string) (bool, error) {
+	var enabled bool
+	err := s.db.QueryRow(ctx, `select enabled from sign_in_method_settings where method = $1`, method).Scan(&enabled)
+	return enabled, err
 }
 
 func (s *Store) SetMethodEnabled(ctx context.Context, method string, enabled bool) error {

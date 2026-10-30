@@ -53,12 +53,8 @@ func (h *handler) codeSignIn(w http.ResponseWriter, r *http.Request, method stri
 	if err != nil {
 		return err
 	}
-	failures, err := h.st.RecentFailures(ctx, u.ID, a.email, []string{"totp", "recovery-codes"}, time.Now().Add(-time.Duration(settings.LockoutMinutes)*time.Minute))
-	if err != nil {
+	if err := h.lockout(r, a, settings, "codes"); err != nil {
 		return err
-	}
-	if failures >= settings.LockoutThreshold {
-		return h.reject(r, a, "Too many failed attempts.", httpx.Fail(http.StatusTooManyRequests, errTooManyAttempts.Code, fmt.Sprintf("Too many incorrect codes. Wait %d minutes, then try again.", settings.LockoutMinutes)))
 	}
 	if a.user == nil {
 		return h.reject(r, a, "No account uses this email address.", mismatch)
@@ -76,6 +72,21 @@ func (h *handler) codeSignIn(w http.ResponseWriter, r *http.Request, method stri
 		return h.reject(r, a, reason, mismatch)
 	}
 	return h.finish(w, r, a, nil, nil)
+}
+
+func (h *handler) lockout(r *http.Request, a attempt, settings store.Settings, guesses string) error {
+	userID := ""
+	if a.user != nil {
+		userID = a.user.ID
+	}
+	failures, err := h.st.RecentFailures(r.Context(), userID, a.email, []string{"password", "totp", "recovery-codes"}, time.Now().Add(-time.Duration(settings.LockoutMinutes)*time.Minute))
+	if err != nil {
+		return err
+	}
+	if failures >= settings.LockoutThreshold {
+		return h.reject(r, a, "Too many failed attempts.", httpx.Fail(http.StatusTooManyRequests, errTooManyAttempts.Code, fmt.Sprintf("Too many incorrect %s. Wait %d minutes, then try again.", guesses, settings.LockoutMinutes)))
+	}
+	return nil
 }
 
 func (h *handler) useTOTP(ctx context.Context, userID, code string) (string, error) {

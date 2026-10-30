@@ -26,6 +26,9 @@ func amr(method string) []string {
 	if method == "passkey" || method == "security-key" {
 		return []string{"hwk", "mfa"}
 	}
+	if method == "password" {
+		return []string{"pwd"}
+	}
 	return []string{"otp"}
 }
 

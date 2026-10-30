@@ -554,7 +554,7 @@ func (h *handlers) listMethods(w http.ResponseWriter, r *http.Request, _ store.U
 			usage[kind]++
 		}
 		primary := []string{}
-		for _, kind := range []string{"passkey", "security-key", "totp"} {
+		for _, kind := range []string{"passkey", "security-key", "totp", "password"} {
 			if has[kind] && enabled[kind] {
 				primary = append(primary, kind)
 			}
@@ -594,10 +594,11 @@ func (h *handlers) setMethod(w http.ResponseWriter, r *http.Request, actor store
 	if err != nil {
 		return err
 	}
+	everyone := []string{"passkey", "security-key", "totp", "magic-link"}
 	remaining := slices.ContainsFunc(settings, func(m store.MethodSetting) bool {
-		return m.Enabled && m.Method != method && m.Method != "recovery-codes"
+		return m.Enabled && m.Method != method && slices.Contains(everyone, m.Method)
 	})
-	if !in.Enabled && method != "recovery-codes" && !remaining {
+	if !in.Enabled && slices.Contains(everyone, method) && !remaining {
 		return conflict("At least one of passkeys, security keys, authenticator apps or magic links must stay on, otherwise nobody could sign in.")
 	}
 	summary := "Turned off sign-in with " + methodPlurals[method]

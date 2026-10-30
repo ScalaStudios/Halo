@@ -310,3 +310,48 @@ func TestSeedPolicies(t *testing.T) {
 		t.Fatalf("report-only activity: %+v %v", activity, err)
 	}
 }
+
+func TestPasswordSignIns(t *testing.T) {
+	st := testdb.New(t)
+	ctx := context.Background()
+	eng := policy.NewEngine(st)
+	contractors := group(t, st, "Contractors")
+	ada := member(t, st, "ada@example.com")
+	bea := member(t, st, "bea@example.com", contractors.ID)
+
+	d := evaluate(t, eng, ada, "password", "198.51.100.7", "")
+	want(t, d, access.Block, "")
+	if d.Reason != "Sign-in with passwords is turned off for this organization." {
+		t.Fatalf("passwords are off by default: %s", d.Reason)
+	}
+	if err := st.SetMethodEnabled(ctx, "password", true); err != nil {
+		t.Fatal(err)
+	}
+	if d := evaluate(t, eng, ada, "password", "198.51.100.7", ""); d.Effect != access.Allow || d.Risk != "low" {
+		t.Fatalf("password sign-ins are allowed once turned on, as low risk: %+v", d)
+	}
+
+	settings, err := st.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.PasswordGroupIDs = []string{contractors.ID}
+	if err := st.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	st.ForgetSettings()
+	d = evaluate(t, eng, ada, "password", "198.51.100.7", "")
+	want(t, d, access.Block, "")
+	if d.Reason != "Sign-in with passwords is limited to members of Contractors." {
+		t.Fatalf("reason: %s", d.Reason)
+	}
+	want(t, evaluate(t, eng, ada, "passkey", "198.51.100.7", ""), access.Allow, "")
+	want(t, evaluate(t, eng, bea, "password", "198.51.100.7", ""), access.Allow, "")
+
+	require := rule(t, st, "Passkeys instead of passwords", "enforce", access.RequirePhishingResistant, store.PolicyConditions{AllUsers: true, AllApps: true, Methods: []string{"password"}})
+	d = evaluate(t, eng, bea, "password", "198.51.100.7", "")
+	want(t, d, access.RequirePhishingResistant, require.Name)
+	if d.Reason != "Requires a passkey or security key for sign-ins using a password." {
+		t.Fatalf("reason: %s", d.Reason)
+	}
+}

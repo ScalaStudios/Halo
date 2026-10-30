@@ -49,6 +49,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("POST /api/v1/users/{id}/revoke-sessions", []string{"user_admin", "helpdesk_admin", "security_admin"}, h.revokeUserSessions)
 	route("POST /api/v1/users/{id}/reset-authentication", []string{"user_admin", "helpdesk_admin"}, h.resetAuthentication)
 	route("DELETE /api/v1/users/{id}/methods/{methodId}", []string{"user_admin", "helpdesk_admin"}, h.deleteMethod)
+	route("PUT /api/v1/users/{id}/password", []string{"user_admin", "helpdesk_admin"}, h.setTemporaryPassword)
 	route("PUT /api/v1/users/{id}/roles", nil, h.setRoles)
 	route("PATCH /api/v1/users/{id}", []string{"user_admin", "helpdesk_admin"}, h.updateUser)
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -23,29 +24,35 @@ type Theme struct {
 }
 
 type Settings struct {
-	OrganizationName   string `json:"organizationName"`
-	ContactEmail       string `json:"contactEmail"`
-	SignInMessage      string `json:"signInMessage"`
-	Theme              Theme  `json:"theme"`
-	CustomCSS          string `json:"customCss"`
-	ConsoleBranding    bool   `json:"consoleBranding"`
-	SessionHours       int    `json:"sessionHours"`
-	LockoutThreshold   int    `json:"lockoutThreshold"`
-	LockoutMinutes     int    `json:"lockoutMinutes"`
-	InviteDays         int    `json:"inviteDays"`
-	AccessTokenMinutes int    `json:"accessTokenMinutes"`
-	IDTokenMinutes     int    `json:"idTokenMinutes"`
-	RefreshTokenHours  int    `json:"refreshTokenHours"`
+	OrganizationName     string   `json:"organizationName"`
+	ContactEmail         string   `json:"contactEmail"`
+	SignInMessage        string   `json:"signInMessage"`
+	Theme                Theme    `json:"theme"`
+	CustomCSS            string   `json:"customCss"`
+	ConsoleBranding      bool     `json:"consoleBranding"`
+	SessionHours         int      `json:"sessionHours"`
+	LockoutThreshold     int      `json:"lockoutThreshold"`
+	LockoutMinutes       int      `json:"lockoutMinutes"`
+	InviteDays           int      `json:"inviteDays"`
+	AccessTokenMinutes   int      `json:"accessTokenMinutes"`
+	IDTokenMinutes       int      `json:"idTokenMinutes"`
+	RefreshTokenHours    int      `json:"refreshTokenHours"`
+	PasswordSecondFactor bool     `json:"passwordSecondFactor"`
+	PasswordGroupIDs     []string `json:"passwordGroupIds"`
+	PasswordBreachCheck  bool     `json:"passwordBreachCheck"`
 }
 
 var DefaultSettings = Settings{
-	SessionHours:       int(SessionLifetime / time.Hour),
-	LockoutThreshold:   5,
-	LockoutMinutes:     15,
-	InviteDays:         int(EnrollmentLifetime / (24 * time.Hour)),
-	AccessTokenMinutes: 15,
-	IDTokenMinutes:     15,
-	RefreshTokenHours:  8,
+	SessionHours:         int(SessionLifetime / time.Hour),
+	LockoutThreshold:     5,
+	LockoutMinutes:       15,
+	InviteDays:           int(EnrollmentLifetime / (24 * time.Hour)),
+	AccessTokenMinutes:   15,
+	IDTokenMinutes:       15,
+	RefreshTokenHours:    8,
+	PasswordSecondFactor: true,
+	PasswordGroupIDs:     []string{},
+	PasswordBreachCheck:  true,
 }
 
 const settingsTTL = 30 * time.Second
@@ -108,6 +115,10 @@ func (s *Store) ForgetSettings() {
 
 func (s Settings) SessionLifetime() time.Duration {
 	return time.Duration(s.SessionHours) * time.Hour
+}
+
+func (s Settings) PasswordAllowed(u User) bool {
+	return len(s.PasswordGroupIDs) == 0 || slices.ContainsFunc(u.GroupIDs, func(g string) bool { return slices.Contains(s.PasswordGroupIDs, g) })
 }
 
 type Logo struct {
