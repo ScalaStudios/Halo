@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { Plus, Search, UsersRound } from "lucide-react";
-import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox, Input } from "@/components/ui/input";
+import { useListbox } from "@/components/ui/listbox";
 import { api } from "@/lib/api/client";
 import { pluralize } from "@/lib/format";
 import { GROUP_KIND } from "@/lib/labels";
@@ -20,37 +21,28 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
-  const [active, setActive] = useState("");
   const list = useRef<HTMLDivElement>(null);
-  const listId = useId();
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const words = query.toLowerCase().split(" ");
   const matches = groups.filter((g) => words.every((word) => `${g.name} ${g.description}`.toLowerCase().includes(word))).sort((a, b) => a.name.localeCompare(b.name));
   const locked = (group: Group) => assigned.includes(group.id) || (!target.appId && group.kind === "dynamic");
   const choices = matches.filter((g) => !locked(g));
-  const highlighted = choices.find((g) => g.id === active) ?? choices[0];
-  const optionId = (id: string) => `${listId}-${id}`;
-  const activeId = highlighted && optionId(highlighted.id);
+  const listbox = useListbox(choices, (g) => g.id, (g) => toggle(g.id));
 
   function close() {
     setOpen(false);
     setQuery("");
     setPicked([]);
-    setActive("");
+    listbox.reset();
     clearError();
   }
 
   function navigate(event: KeyboardEvent) {
-    if (!highlighted || event.nativeEvent.isComposing) return;
-    const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
-    if (step) {
+    if (event.key === " " && listbox.highlighted && !event.nativeEvent.isComposing && !(query && event.target instanceof HTMLInputElement)) {
       event.preventDefault();
-      const next = choices.at((choices.indexOf(highlighted) + step) % choices.length) ?? highlighted;
-      setActive(next.id);
-      document.getElementById(optionId(next.id))?.scrollIntoView({ block: "nearest" });
-    } else if (event.key === "Enter" || (event.key === " " && !(query && event.target instanceof HTMLInputElement))) {
-      event.preventDefault();
-      toggle(highlighted.id);
+      toggle(listbox.highlighted.id);
+    } else {
+      listbox.onKeyDown(event);
     }
   }
 
@@ -116,13 +108,13 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
             role="combobox"
             aria-label="Search groups"
             aria-expanded={matches.length > 0}
-            aria-controls={listId}
+            aria-controls={listbox.listId}
             aria-autocomplete="list"
-            aria-activedescendant={activeId}
+            aria-activedescendant={listbox.activeId}
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
-              setActive("");
+              listbox.reset();
               list.current?.scrollTo({ top: 0 });
             }}
             placeholder="Search by name or description"
@@ -131,11 +123,11 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
           <div ref={list} className="h-80 max-h-[35dvh] overflow-y-auto rounded-md border border-border">
             {matches.length ? (
               <div
-                id={listId}
+                id={listbox.listId}
                 role="listbox"
                 aria-label="Groups"
                 aria-multiselectable
-                aria-activedescendant={activeId}
+                aria-activedescendant={listbox.activeId}
                 tabIndex={-1}
                 className="min-h-full p-1"
               >
@@ -146,12 +138,12 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
                   return (
                     <div
                       key={group.id}
-                      id={optionId(group.id)}
+                      id={listbox.optionId(group)}
                       role="option"
                       aria-checked={checked}
                       aria-disabled={disabled}
-                      data-active={group === highlighted}
-                      onMouseMove={disabled ? undefined : () => setActive(group.id)}
+                      data-active={group === listbox.highlighted}
+                      onMouseMove={disabled ? undefined : () => listbox.highlight(group)}
                       onClick={disabled ? undefined : () => toggle(group.id)}
                       className="group flex cursor-pointer items-center gap-3 rounded-sm px-3 py-2 aria-disabled:cursor-default data-[active=true]:bg-press"
                     >
