@@ -114,13 +114,15 @@ func (h *handler) passwordSignIn(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	return h.finish(w, r, a, nil, func(tx *store.Store) error {
-		if replacement == "" {
-			return tx.TouchPassword(ctx, u.ID)
+		if replacement != "" {
+			if err := tx.SetPassword(ctx, u.ID, replacement, false); err != nil {
+				return err
+			}
+			if err := audit(ctx, tx, r, u, "user.method.add", u.Name+" replaced their temporary password"); err != nil {
+				return err
+			}
 		}
-		if err := tx.SetPassword(ctx, u.ID, replacement, false); err != nil {
-			return err
-		}
-		return audit(ctx, tx, r, u, "user.method.add", u.Name+" replaced their temporary password")
+		return tx.TouchPassword(ctx, u.ID)
 	})
 }
 

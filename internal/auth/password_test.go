@@ -212,7 +212,7 @@ func TestTemporaryPasswordMustBeChanged(t *testing.T) {
 		t.Fatalf("change at first sign-in: %d", status)
 	}
 	me, _ := e.me(c)
-	if i := slices.IndexFunc(me.Methods, func(m store.Method) bool { return m.Kind == "password" }); i < 0 || me.Methods[i].Detail != "" {
+	if i := slices.IndexFunc(me.Methods, func(m store.Method) bool { return m.Kind == "password" }); i < 0 || me.Methods[i].Detail != "" || me.Methods[i].LastUsedAt == nil {
 		t.Fatalf("password after the change: %+v", me.Methods)
 	}
 	e.expect(client(), "POST", "/api/v1/auth/password", map[string]any{"email": "ada@example.com", "password": "temporary passphrase one"}, http.StatusUnauthorized, "ERR_PASSWORD_MISMATCH")
