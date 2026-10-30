@@ -12,9 +12,8 @@ import { DataTable, facetFilter } from "@/components/ui/data-table";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
+import { GROUP_KIND } from "@/lib/labels";
 import type { Group } from "@/lib/types";
-
-const KIND = { assigned: "Assigned", dynamic: "Rule-based" } as const;
 
 const columns: ColumnDef<Group, any>[] = [
   {
@@ -72,7 +71,7 @@ export function GroupsTable({ groups }: { groups: Group[] }) {
         searchPlaceholder="Search name, description or rule"
         onRowOpen={(g) => router.push(`/admin/groups/${g.id}`)}
         facets={[
-          { column: "kind", label: "Membership", options: Object.entries(KIND).map(([value, label]) => ({ value, label })) },
+          { column: "kind", label: "Membership", options: Object.entries(GROUP_KIND).map(([value, label]) => ({ value, label })) },
           { column: "source", label: "Source", options: sources.map((s) => ({ value: s, label: s })) },
         ]}
         toolbarEnd={

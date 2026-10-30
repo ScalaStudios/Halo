@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox, Input } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
 import { pluralize } from "@/lib/format";
+import { GROUP_KIND } from "@/lib/labels";
 import type { Group } from "@/lib/types";
 
 type Target = { name: string; userId?: string; appId?: string; assigned?: string[] };
@@ -152,13 +153,15 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
                       className="group flex cursor-pointer items-center gap-3 rounded-sm px-3 py-2 aria-disabled:cursor-default data-[active=true]:bg-press"
                     >
                       <Checkbox tabIndex={-1} aria-hidden="true" readOnly checked={checked} className="pointer-events-none group-aria-disabled:opacity-45" />
-                      <span className="flex min-w-0 flex-1 flex-col group-aria-disabled:opacity-45">
-                        <span className="truncate text-body-sm text-fg">{group.name}</span>
-                        <span className="truncate text-caption text-fg-3">
-                          {[group.kind === "dynamic" && "Rule-based", pluralize(group.memberCount, "member"), group.description].filter(Boolean).join(" · ")}
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="flex items-baseline gap-3">
+                          <span className="truncate text-body-sm text-fg group-aria-disabled:opacity-45">{group.name}</span>
+                          {member ? <span className="ml-auto shrink-0 text-caption text-fg-3">{target.appId ? "Already assigned" : "Already a member"}</span> : null}
+                        </span>
+                        <span className="truncate text-caption text-fg-3 group-aria-disabled:opacity-45">
+                          {[GROUP_KIND[group.kind], pluralize(group.memberCount, "member"), group.description].filter(Boolean).join(" · ")}
                         </span>
                       </span>
-                      {member ? <span className="shrink-0 text-caption text-fg-3">{target.appId ? "Already assigned" : "Already a member"}</span> : null}
                     </div>
                   );
                 })}

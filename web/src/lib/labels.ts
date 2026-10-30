@@ -1,6 +1,6 @@
 import { Fingerprint, KeyRound, ListOrdered, Mail, Network, Smartphone, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/badge";
-import type { AuthStrength, MethodKind, RiskLevel, SignInEvent, SignInResult, UserStatus } from "./types";
+import type { AuthStrength, Group, MethodKind, RiskLevel, SignInEvent, SignInResult, UserStatus } from "./types";
 
 export const STATUS: Record<UserStatus, { label: string; tone: Tone }> = {
   active: { label: "Active", tone: "success" },
@@ -36,6 +36,8 @@ export const RISK: Record<RiskLevel, { label: string; tone: Tone }> = {
   medium: { label: "Medium", tone: "warning" },
   high: { label: "High", tone: "danger" },
 };
+
+export const GROUP_KIND: Record<Group["kind"], string> = { assigned: "Assigned", dynamic: "Rule-based" };
 
 export function signInUser(event: SignInEvent, names: Record<string, string>): string {
   return (event.userId && names[event.userId]) || event.email;
