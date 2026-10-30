@@ -91,6 +91,6 @@ export type Simulation = {
   policy: string;
   reason: string;
   risk: RiskLevel;
-  signals: { type: RiskEventType | "new-network"; level: RiskLevel; detail: string }[];
+  signals: { type: RiskEventType | "new-network" | "password"; level: RiskLevel; detail: string }[];
   policies: { id: string; name: string; mode: PolicyMode; effect: PolicyEffect; matched: boolean; outcome: Outcome | ""; detail: string }[];
 };

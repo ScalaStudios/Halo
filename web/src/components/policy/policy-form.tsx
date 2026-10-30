@@ -38,11 +38,11 @@ function nameMap(options: Option[]) {
   return Object.fromEntries(options.map((o) => [o.id, o.name]));
 }
 
-function FieldError({ children }: { children?: string }) {
+export function FieldError({ children }: { children?: string }) {
   return children ? <p className="text-caption text-danger">{children}</p> : null;
 }
 
-function CheckList({ legend, options, selected, onToggle, empty }: { legend: string; options: Option[]; selected: string[]; onToggle: (id: string, on: boolean) => void; empty: ReactNode }) {
+export function CheckList({ legend, options, selected, onToggle, empty }: { legend: string; options: Option[]; selected: string[]; onToggle: (id: string, on: boolean) => void; empty: ReactNode }) {
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="mb-2 text-label text-fg">{legend}</legend>
@@ -310,7 +310,7 @@ export function PolicyForm({
                 ))}
               </div>
               <p className="text-caption text-fg-3">
-                High: a risky network or 5 failed sign-ins in 15 minutes. Medium: a new device. Low: a new network for that person. None checked matches any risk.
+                High: a risky network or 5 failed sign-ins in 15 minutes. Medium: a new device. Low: a new network for that person, or a sign-in with a password. None checked matches any risk.
               </p>
             </fieldset>
             <fieldset className="flex flex-col gap-3">

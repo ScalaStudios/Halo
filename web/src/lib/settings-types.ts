@@ -21,6 +21,9 @@ export type Settings = {
   accessTokenMinutes: number;
   idTokenMinutes: number;
   refreshTokenHours: number;
+  passwordSecondFactor: boolean;
+  passwordGroupIds: string[];
+  passwordBreachCheck: boolean;
 };
 
 export type SettingsResponse = {

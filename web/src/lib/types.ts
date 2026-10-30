@@ -1,6 +1,6 @@
 export type UserStatus = "active" | "suspended" | "invited" | "deprovisioned";
 export type AuthStrength = "phishing-resistant" | "multi-factor" | "single-factor";
-export type MethodKind = "passkey" | "security-key" | "totp" | "magic-link" | "recovery-codes" | "federated";
+export type MethodKind = "passkey" | "security-key" | "totp" | "magic-link" | "recovery-codes" | "password" | "federated";
 
 export type AuthMethod = {
   id: string;

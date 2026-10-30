@@ -1,4 +1,4 @@
-import { Fingerprint, KeyRound, ListOrdered, Mail, Network, Smartphone, type LucideIcon } from "lucide-react";
+import { Fingerprint, KeyRound, ListOrdered, Mail, Network, RectangleEllipsis, Smartphone, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/badge";
 import type { AuthStrength, Group, MethodKind, RiskLevel, SignInEvent, SignInResult, UserStatus } from "./types";
 
@@ -21,6 +21,7 @@ export const METHOD: Record<MethodKind, { label: string; icon: LucideIcon; phish
   totp: { label: "Authenticator app", icon: Smartphone, phishingResistant: false },
   "magic-link": { label: "Magic link", icon: Mail, phishingResistant: false },
   "recovery-codes": { label: "Recovery codes", icon: ListOrdered, phishingResistant: false },
+  password: { label: "Password", icon: RectangleEllipsis, phishingResistant: false },
   federated: { label: "Identity provider", icon: Network, phishingResistant: false },
 };
 

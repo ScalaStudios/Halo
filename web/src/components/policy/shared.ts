@@ -69,6 +69,7 @@ export const METHOD_PLURAL: Record<MethodKind, string> = {
   totp: "authenticator apps",
   "magic-link": "magic links",
   "recovery-codes": "recovery codes",
+  password: "passwords",
   federated: "identity providers",
 };
 

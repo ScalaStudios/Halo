@@ -2,18 +2,22 @@
 
 import { TriangleAlert } from "lucide-react";
 import { useState } from "react";
+import { SecretWarning } from "@/components/applications/shared";
 import { useMutation } from "@/components/console/use-mutation";
+import { useSaveSettings } from "@/components/settings/shared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/input";
+import { Checkbox, Field, Select } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api/client";
 import { pluralize } from "@/lib/format";
 import { METHOD } from "@/lib/labels";
 import type { MethodSetting } from "@/lib/policy-types";
+import type { Settings } from "@/lib/settings-types";
 import type { MethodKind } from "@/lib/types";
+import { CheckList, FieldError, type Option } from "./policy-form";
 import { METHOD_PLURAL } from "./shared";
 
 const DESCRIPTION: Record<MethodKind, string> = {
@@ -22,6 +26,7 @@ const DESCRIPTION: Record<MethodKind, string> = {
   totp: "Six-digit codes from apps such as 1Password, Google Authenticator or Aegis. A convincing fake sign-in page can capture them.",
   "magic-link": "A single-use sign-in link sent by email. Only as safe as the mailbox it goes to.",
   "recovery-codes": "Single-use backup codes for people who lost their other methods.",
+  password: "For people who can't use a passkey yet, such as during a move from another identity provider. Passwords can be phished, guessed or reused from a breach elsewhere.",
   federated: "Sign-in through Google, Microsoft Entra, GitHub or another OpenID Connect provider. Only as strong as that provider's sign-in.",
 };
 
@@ -31,6 +36,7 @@ const HAVE: Record<MethodKind, string> = {
   totp: "an authenticator app",
   "magic-link": "",
   "recovery-codes": "recovery codes",
+  password: "a password",
   federated: "a linked identity provider account",
 };
 
@@ -48,7 +54,7 @@ function warning(m: MethodSetting) {
   return `${pluralize(m.exclusive, "person has", "people have")} no other passkey, security key or authenticator app that is turned on.`;
 }
 
-export function MethodSettings({ methods }: { methods: MethodSetting[] }) {
+export function MethodSettings({ methods, settings, groups }: { methods: MethodSetting[]; settings: Settings; groups: Option[] }) {
   const { pending, run, toast } = useMutation();
   const [confirming, setConfirming] = useState<MethodSetting | null>(null);
   const magicLinks = methods.find((m) => m.method === "magic-link")?.enabled ?? false;
@@ -59,13 +65,13 @@ export function MethodSettings({ methods }: { methods: MethodSetting[] }) {
       setConfirming(null);
       toast({
         title: `${plural[0]!.toUpperCase()}${plural.slice(1)} turned ${enabled ? "on" : "off"}`,
-        description: enabled ? "People can sign in with them again." : "Sign-ins that use them are blocked from now on.",
+        description: !enabled ? "Sign-ins that use them are blocked from now on." : m.method === "password" ? "Choose who can use them under Password rules." : "People can sign in with them again.",
       });
     });
   }
 
   function change(m: MethodSetting, enabled: boolean) {
-    if (!enabled && m.exclusive > 0) setConfirming(m);
+    if ((!enabled && m.exclusive > 0) || (enabled && m.method === "password")) setConfirming(m);
     else apply(m, enabled);
   }
 
@@ -128,8 +134,31 @@ export function MethodSettings({ methods }: { methods: MethodSetting[] }) {
       <p className="text-body-sm text-fg-3">
         Changes apply from the next sign-in. Enrolled methods are kept when you turn one off, so turning it back on restores them. People who are already signed in stay signed in.
       </p>
+      {methods.some((m) => m.method === "password" && m.enabled) ? <PasswordRules settings={settings} groups={groups} /> : null}
       <Dialog
-        open={confirming !== null}
+        open={confirming?.method === "password" && !confirming.enabled}
+        onOpenChange={(open) => {
+          if (!open) setConfirming(null);
+        }}
+        title="Turn on passwords?"
+        description="Passkeys stay the recommended way to sign in. Use passwords only for people who can't use a passkey yet, such as during a move from another identity provider."
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirming(null)}>
+              Cancel
+            </Button>
+            <Button variant="primary" loading={pending === "password"} onClick={() => confirming && apply(confirming, true)}>
+              Turn on passwords
+            </Button>
+          </>
+        }
+      >
+        <SecretWarning>
+          Passwords can be phished by a fake sign-in page, guessed, or reused from a breach at another site. Passkeys resist all three. After you turn passwords on, limit them to the groups that need them under Password rules.
+        </SecretWarning>
+      </Dialog>
+      <Dialog
+        open={confirming !== null && confirming.enabled}
         onOpenChange={(open) => {
           if (!open) setConfirming(null);
         }}
@@ -147,5 +176,85 @@ export function MethodSettings({ methods }: { methods: MethodSetting[] }) {
         }
       />
     </>
+  );
+}
+
+function PasswordRules({ settings, groups }: { settings: Settings; groups: Option[] }) {
+  const { saving, save } = useSaveSettings();
+  const [limited, setLimited] = useState(settings.passwordGroupIds.length > 0);
+  const [groupIds, setGroupIds] = useState(() => settings.passwordGroupIds.filter((id) => groups.some((g) => g.id === id)));
+  const [secondFactor, setSecondFactor] = useState(settings.passwordSecondFactor);
+  const [breachCheck, setBreachCheck] = useState(settings.passwordBreachCheck);
+  const [attempted, setAttempted] = useState(false);
+  const chosen = limited ? groupIds : [];
+  const problem = limited && groupIds.length === 0 ? "Choose at least one group, or let everyone use a password." : undefined;
+  const dirty =
+    secondFactor !== settings.passwordSecondFactor ||
+    breachCheck !== settings.passwordBreachCheck ||
+    chosen.length !== settings.passwordGroupIds.length ||
+    chosen.some((id) => !settings.passwordGroupIds.includes(id));
+
+  function submit() {
+    setAttempted(true);
+    if (problem) return;
+    void save({ passwordGroupIds: chosen, passwordSecondFactor: secondFactor, passwordBreachCheck: breachCheck }, "Password rules saved", "Sign-ins follow them within 30 seconds.");
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Password rules" description="Who can sign in with a password, and what else they need. Halo stores only Argon2id hashes of passwords and never shows them to anyone." />
+      <CardBody>
+        <form
+          noValidate
+          className="flex max-w-xl flex-col gap-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+        >
+          <Field label="Who can use a password">
+            {(props) => (
+              <Select {...props} value={limited ? "groups" : "everyone"} onChange={(event) => setLimited(event.target.value === "groups")}>
+                <option value="everyone">Everyone in the organization</option>
+                <option value="groups">Members of selected groups</option>
+              </Select>
+            )}
+          </Field>
+          {limited ? (
+            <div className="flex flex-col gap-2">
+              <CheckList
+                legend="Groups"
+                options={groups}
+                selected={groupIds}
+                onToggle={(id, on) => setGroupIds((current) => (on ? [...current, id] : current.filter((v) => v !== id)))}
+                empty="There are no groups yet."
+              />
+              <FieldError>{attempted ? problem : undefined}</FieldError>
+            </div>
+          ) : null}
+          <label className="flex cursor-pointer items-start gap-3">
+            <Checkbox className="mt-0.5" checked={secondFactor} onChange={(event) => setSecondFactor(event.target.checked)} />
+            <span className="flex flex-col">
+              <span className="text-body-sm text-fg">Also require a code from an authenticator app</span>
+              <span className="text-caption text-fg-3">Recommended. People without an authenticator app can't sign in with a password, but can still use their other methods.</span>
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-3">
+            <Checkbox className="mt-0.5" checked={breachCheck} onChange={(event) => setBreachCheck(event.target.checked)} />
+            <span className="flex flex-col">
+              <span className="text-body-sm text-fg">Refuse passwords found in data breaches</span>
+              <span className="text-caption text-fg-3">
+                Checks new passwords with Have I Been Pwned, sending only the first 5 characters of their SHA-1 hash. If the service can&apos;t be reached, Halo accepts the password and logs a warning. Turn this off when Halo has no internet access.
+              </span>
+            </span>
+          </label>
+          <div>
+            <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>
+              Save password rules
+            </Button>
+          </div>
+        </form>
+      </CardBody>
+    </Card>
   );
 }
