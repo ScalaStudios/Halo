@@ -30,7 +30,7 @@ export default async function AccountPage() {
   ];
 
   return (
-    <div className="flex animate-page flex-col gap-12">
+    <div className="flex flex-col gap-12">
       <PageHeader size="large" title="Account" description={`Your profile, how you sign in and what you can open at ${org.name}.`} />
 
       <div className="flex flex-col gap-8">

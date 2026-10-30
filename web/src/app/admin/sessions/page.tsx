@@ -10,7 +10,7 @@ export default async function SessionsPage() {
   const [sessions, users] = await Promise.all([apiGet<Session[]>("/sessions"), apiGet<User[]>("/users")]);
   const people = new Set(sessions.map((s) => s.userId)).size;
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Sessions"
         description={`${pluralize(sessions.length, "active session")} across ${pluralize(people, "person", "people")}. Revoking a session signs that device out of Halo.`}

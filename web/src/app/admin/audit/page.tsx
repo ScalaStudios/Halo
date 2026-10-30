@@ -17,7 +17,7 @@ export default async function AuditPage() {
   const people = new Set(audit.flatMap((e) => (e.actorId ? [e.actorId] : []))).size;
   const system = audit.some((e) => e.actorId === null);
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Audit log"
         description={`${pluralize(audit.length, "administrative change")}, made by ${pluralize(people, "administrator or service account", "administrators and service accounts")}${system ? " and Halo itself" : ""}.`}

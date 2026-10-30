@@ -49,7 +49,7 @@ export default async function WebhookPage({ params }: { params: Promise<{ id: st
   const failed = deliveries.filter((d) => d.status === "failed").length;
 
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-6">
         <Link href="/admin/webhooks" className="inline-flex w-fit items-center gap-2 rounded-sm text-body-sm text-fg-3 transition-colors duration-fast hover:text-fg">
           <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.75} />

@@ -16,7 +16,7 @@ export default async function PolicyPage({ params }: { params: Promise<{ id: str
   const { id } = await params;
   const [policy, options] = await Promise.all([apiGet<AccessPolicy>(`/policies/${encodeURIComponent(id)}`), formOptions()]);
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-6">
         <Link href="/admin/policies" className="inline-flex w-fit items-center gap-2 rounded-sm text-body-sm text-fg-3 transition-colors duration-fast hover:text-fg">
           <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.75} />

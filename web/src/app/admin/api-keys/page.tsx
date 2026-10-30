@@ -17,7 +17,7 @@ export default async function ApiKeysPage() {
   const active = activeKeys(keys);
   const accounts = new Set(active.map((key) => key.serviceAccountId)).size;
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="API keys"
         description={`${pluralize(active.length, "active key")} across ${pluralize(accounts, "service account")}. Keys with the api scope call the management API; keys with the scim scope provision people over SCIM.`}

@@ -36,7 +36,7 @@ export default async function ProvisioningPage() {
   const on = configs.filter((c) => c.enabled).length;
 
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Provisioning"
         description="SCIM 2.0 in both directions: your HR system or identity provider keeps people in Halo current, and Halo keeps accounts in your applications current."

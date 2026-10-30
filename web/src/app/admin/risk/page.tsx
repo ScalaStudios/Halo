@@ -14,7 +14,7 @@ export default async function RiskPage() {
   const [events, users] = await Promise.all([apiGet<RiskEvent[]>("/risk-events"), apiGet<User[]>("/users")]);
   const open = events.filter((e) => e.status === "open").length;
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Risk events"
         description={`${pluralize(open, "open risk event")}. Halo raises one when someone signs in from a risky network, after 5 failed sign-ins in 15 minutes, or from a new device.`}

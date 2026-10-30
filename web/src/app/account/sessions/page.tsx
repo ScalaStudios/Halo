@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Sessions" };
 export default async function SessionsPage() {
   const sessions = await apiGet<Session[]>("/me/sessions");
   return (
-    <div className="flex animate-page flex-col gap-12">
+    <div className="flex flex-col gap-12">
       <PageHeader size="large"
         title="Sessions"
         description="Browsers, devices and Halo CLI sign-ins on your Halo account. If you don't recognise one, sign it out and review your security."

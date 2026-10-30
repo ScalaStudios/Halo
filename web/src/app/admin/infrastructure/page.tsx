@@ -28,7 +28,7 @@ export default async function InfrastructurePage() {
   const valid = certificates.filter((c) => new Date(c.validBefore) > current).length;
 
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Infrastructure access"
         description={`Halo signs SSH certificates that last ${formatDuration(authority.certificateLifetime)} for people in mapped groups. ${pluralize(valid, "certificate is", "certificates are")} valid right now.`}

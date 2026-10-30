@@ -45,7 +45,7 @@ export default async function AccessPage() {
   const admin = user.roles.length > 0;
 
   return (
-    <div className="flex animate-page flex-col gap-12">
+    <div className="flex flex-col gap-12">
       <PageHeader
         size="large"
         title="Access"

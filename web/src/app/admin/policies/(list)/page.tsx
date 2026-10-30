@@ -34,7 +34,7 @@ export default async function PoliciesPage({ searchParams }: { searchParams: Pro
   const report = policies.filter((p) => p.enabled && p.mode === "report").length;
 
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Policies"
         description={`${pluralize(policies.length, "policy", "policies")}: ${enforced} enforced, ${report} report-only. At every sign-in Halo checks each policy that is on, and the most restrictive enforced match decides.`}

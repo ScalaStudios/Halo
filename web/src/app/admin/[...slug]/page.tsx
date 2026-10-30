@@ -23,7 +23,7 @@ export default async function PlaceholderPage({ params }: { params: Params }) {
   if (!item) notFound();
 
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader title={item.label} description={item.summary} />
       <Card>
         <EmptyState

@@ -11,7 +11,7 @@ export default async function ApplicationsPage({ searchParams }: { searchParams:
   const active = applications.filter((a) => a.status === "active").length;
   const signIns = applications.reduce((sum, a) => sum + a.signIns7d, 0);
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Applications"
         description={`${applications.length} applications, ${active} active. ${signIns.toLocaleString("en-US")} sign-ins and token requests in the last 7 days.`}

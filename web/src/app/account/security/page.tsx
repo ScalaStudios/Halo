@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Security" };
 export default async function SecurityPage() {
   const [user, password] = await Promise.all([apiGet<User>("/me"), apiGet<{ allowed: boolean; secondFactor: boolean }>("/me/password")]);
   return (
-    <div className="flex animate-page flex-col gap-12">
+    <div className="flex flex-col gap-12">
       <PageHeader size="large"
         title="Security"
         description="How you prove it's you. Keep at least two passkeys or security keys so losing one device doesn't lock you out."

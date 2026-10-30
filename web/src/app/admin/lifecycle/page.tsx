@@ -19,7 +19,7 @@ export default async function LifecyclePage() {
   ]);
   const enabled = rules.filter((r) => r.enabled).length;
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Lifecycle"
         description={`${pluralize(rules.length, "rule")}, ${enabled} enabled. Every minute Halo looks for joiners, movers and leavers and runs each matching rule once per change.`}

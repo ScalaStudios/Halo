@@ -17,7 +17,7 @@ export default async function RequestsPage() {
   ]);
   const yours = pending.filter((r) => r.canDecide).length;
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Requests"
         description={`${pluralize(pending.length, "access request")} waiting for a decision, ${yours} of them yours to decide. Approved access is removed automatically when it expires.`}

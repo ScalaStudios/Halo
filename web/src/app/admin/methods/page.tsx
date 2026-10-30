@@ -11,7 +11,7 @@ export default async function MethodsPage() {
   const [methods, { settings }, groups] = await Promise.all([apiGet<MethodSetting[]>("/methods"), apiGet<SettingsResponse>("/settings"), apiGet<Group[]>("/groups")]);
   const allowed = methods.filter((m) => m.enabled).length;
   return (
-    <div className="flex max-w-4xl animate-page flex-col gap-8">
+    <div className="flex max-w-4xl flex-col gap-8">
       <PageHeader
         title="Methods"
         description={`${allowed} of ${methods.length} sign-in methods are allowed. Turning a method off blocks every sign-in that uses it, for everyone in the organization.`}

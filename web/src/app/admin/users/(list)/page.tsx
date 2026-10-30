@@ -12,7 +12,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
   const [users, groups, me] = await Promise.all([apiGet<User[]>("/users"), apiGet<Group[]>("/groups"), apiGet<User>("/me")]);
   const active = users.filter((u) => u.status === "active").length;
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader title="Users" description={`${pluralize(users.length, "person", "people")}, ${active} active.`} />
       <UsersTable users={users} groups={groups.filter((g) => g.kind === "assigned")} initialView={view} inviteOpen={invite === "1"} canGrantRoles={hasRole(me)} />
     </div>

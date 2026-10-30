@@ -12,7 +12,7 @@ export default async function AccessPackagesPage() {
   const requestable = packages.filter((p) => !p.archived).length;
   const pending = packages.reduce((sum, p) => sum + p.pendingRequests, 0);
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Access packages"
         description={`${pluralize(requestable, "package")} people can request, ${pluralize(pending, "request")} waiting for a decision. Approved access is removed automatically when it expires.`}

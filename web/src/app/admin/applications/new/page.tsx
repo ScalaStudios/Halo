@@ -10,7 +10,7 @@ export const metadata = { title: "Add application" };
 export default async function NewApplicationPage() {
   const org = await apiGet<Organization>("/organization");
   return (
-    <div className="flex max-w-3xl animate-page flex-col gap-8">
+    <div className="flex max-w-3xl flex-col gap-8">
       <div className="flex flex-col gap-6">
         <Link href="/admin/applications" className="inline-flex w-fit items-center gap-2 rounded-sm text-body-sm text-fg-3 transition-colors duration-fast hover:text-fg">
           <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.75} />

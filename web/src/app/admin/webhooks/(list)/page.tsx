@@ -12,7 +12,7 @@ export default async function WebhooksPage() {
   const [webhooks, eventTypes, me] = await Promise.all([apiGet<Webhook[]>("/webhooks"), apiGet<WebhookEventFamily[]>("/webhooks/event-types"), apiGet<User>("/me")]);
   const enabled = webhooks.filter((w) => w.enabled).length;
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Webhooks"
         description={`${pluralize(webhooks.length, "endpoint")}, ${enabled} enabled. Halo checks for new sign-ins and audit events every 10 seconds and posts each one as signed JSON.`}

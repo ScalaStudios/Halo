@@ -127,7 +127,7 @@ export default async function OverviewPage() {
   ];
 
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader title="Overview" description={`What needs attention in ${org.name} right now.`} />
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 min-[1400px]:grid-cols-3">

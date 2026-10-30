@@ -26,7 +26,7 @@ export default async function ApiResourcePage({ params }: { params: Promise<{ id
   const grantable = applications.filter((a) => a.protocol !== "saml").map((a) => ({ id: a.id, name: a.name }));
 
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-6">
         <Link href="/admin/api-resources" className="inline-flex w-fit items-center gap-2 rounded-sm text-body-sm text-fg-3 transition-colors duration-fast hover:text-fg">
           <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.75} />

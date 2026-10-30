@@ -16,7 +16,7 @@ export default async function DevicesPage() {
   const blocked = devices.filter((d) => d.trust === "blocked").length;
   const people = new Set(devices.map((d) => d.userId)).size;
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Devices"
         description={`${pluralize(devices.length, "device")} used by ${pluralize(people, "person", "people")}, ${trusted} trusted and ${blocked} blocked. Blocking a device refuses new sign-ins from it and signs out its open sessions.`}

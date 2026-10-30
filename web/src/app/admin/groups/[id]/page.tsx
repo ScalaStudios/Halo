@@ -30,7 +30,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   const candidates = users.filter((u) => u.status !== "deprovisioned" && !members.some((m) => m.id === u.id));
 
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-6">
         <Link href="/admin/groups" className="inline-flex w-fit items-center gap-2 rounded-sm text-body-sm text-fg-3 transition-colors duration-fast hover:text-fg">
           <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.75} />

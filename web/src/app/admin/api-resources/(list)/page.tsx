@@ -15,7 +15,7 @@ export const metadata = { title: "API resources" };
 export default async function ApiResourcesPage() {
   const resources = await apiGet<ApiResource[]>("/api-resources");
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="API resources"
         description={`${pluralize(resources.length, "API")} protected by Halo. Applications granted an API's scopes receive JWT access tokens addressed to it, which the API validates against Halo's public keys.`}

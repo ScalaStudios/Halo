@@ -14,7 +14,7 @@ export default async function RolesPage() {
   const admins = people.filter((p) => p.roles.length > 0).length;
   const canEdit = hasRole(me);
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Roles"
         description={`${pluralize(admins, "person holds", "people hold")} an administrator role. Every role can read every administration page; the lists below are what each one may change.`}

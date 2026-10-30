@@ -68,7 +68,7 @@ export function ProvidersConsole({ callbackUrl, providers, groups }: { callbackU
   }
 
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Identity providers"
         description={`${pluralize(providers.length, "provider")}, ${enabled} turned on. People sign in with their account at these providers; Halo still applies your access policies and application assignments.`}

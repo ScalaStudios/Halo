@@ -27,7 +27,7 @@ export default async function DevelopersPage() {
   ];
 
   return (
-    <div className="flex max-w-5xl animate-page flex-col gap-8">
+    <div className="flex max-w-5xl flex-col gap-8">
       <PageHeader
         title="SDKs and reference"
         description="Halo speaks standard OpenID Connect, SAML 2.0 and SCIM 2.0, so any certified client library works. These are the addresses to give it."

@@ -9,7 +9,7 @@ export default async function GroupsPage() {
   const groups = await apiGet<Group[]>("/groups");
   const dynamic = groups.filter((g) => g.kind === "dynamic").length;
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Groups"
         description={`${groups.length} groups, ${dynamic} of them rule-based. Groups are how people get access to applications.`}

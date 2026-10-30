@@ -20,7 +20,7 @@ export default async function AccessReviewsPage() {
   const overdue = reviews.filter((r) => r.status === "overdue").length;
 
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Access reviews"
         description={`${pluralize(open, "review")} open, ${overdue} overdue. Reviewers confirm or remove each member's access to a group.`}

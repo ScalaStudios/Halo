@@ -19,7 +19,7 @@ export default async function AccessReviewPage({ params }: { params: Params }) {
   const { id } = await params;
   const review = await apiGet<AccessReview>(`/access-reviews/${encodeURIComponent(id)}`);
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-6">
         <Link
           href="/admin/access-reviews"

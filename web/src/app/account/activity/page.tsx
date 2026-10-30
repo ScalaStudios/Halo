@@ -20,7 +20,7 @@ export default async function ActivityPage() {
   const events = [...user.methods].sort((a, b) => b.addedAt.localeCompare(a.addedAt));
 
   return (
-    <div className="flex animate-page flex-col gap-12">
+    <div className="flex flex-col gap-12">
       <PageHeader size="large"
         title="Activity"
         description="Recent sign-ins and changes to how you sign in. If something looks unfamiliar, sign out of that session and remove the method."

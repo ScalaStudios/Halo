@@ -13,7 +13,7 @@ export default async function ServiceAccountsPage() {
   const withKeys = accounts.filter((a) => activeKeys(a.keys).length > 0).length;
   const people = users.filter((u) => u.status !== "deprovisioned").map(({ id, name, email }) => ({ id, name, email }));
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Service accounts"
         description={`${pluralize(accounts.length, "service account")}, ${withKeys} with active API keys. Each one acts with its own roles and appears in the audit log under its own name.`}

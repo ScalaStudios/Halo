@@ -15,7 +15,7 @@ export default async function SignInsPage({ searchParams }: { searchParams: Prom
   ]);
   const failed = signIns.filter((e) => e.result !== "success").length;
   return (
-    <div className="flex animate-page flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <PageHeader
         title="Sign-in logs"
         description={`${pluralize(signIns.length, "authentication attempt")}, newest first. ${failed} failed or were interrupted.`}

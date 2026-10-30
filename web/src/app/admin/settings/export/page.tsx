@@ -24,7 +24,7 @@ export default async function ExportPage() {
   const me = await apiGet<User>("/me");
   const allowed = hasRole(me);
   return (
-    <div className="flex max-w-4xl animate-page flex-col gap-8">
+    <div className="flex max-w-4xl flex-col gap-8">
       <PageHeader title="Data export" description="Download your directory, applications and policies as one JSON file, for backups or a move to another system." />
       <Card>
         <CardHeader title="What the export contains" description="Halo streams the file as it reads the database, so large directories download without waiting." />
