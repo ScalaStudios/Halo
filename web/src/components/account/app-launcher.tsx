@@ -2,11 +2,12 @@
 
 import { ArrowUpRight, LayoutGrid, Search, SearchX } from "lucide-react";
 import { useState } from "react";
+import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 
-export function AppLauncher({ apps }: { apps: { id: string; name: string; homepage: string; launchUrl: string; host: string }[] }) {
+export function AppLauncher({ apps }: { apps: { id: string; name: string; homepage: string; launchUrl: string; host: string; logoUrl: string | null }[] }) {
   const [query, setQuery] = useState("");
   const needle = query.trim().toLowerCase();
   const shown = needle ? apps.filter((app) => `${app.name} ${app.host}`.toLowerCase().includes(needle)) : apps;
@@ -39,9 +40,7 @@ export function AppLauncher({ apps }: { apps: { id: string; name: string; homepa
                 rel="noreferrer"
                 className="group flex items-center gap-4 rounded-lg border border-border bg-surface p-4 transition-colors duration-fast ease-brand hover:border-border-strong hover:bg-hover"
               >
-                <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-md border border-border-strong bg-n800 font-display text-h4 text-fg-2">
-                  {app.name[0]}
-                </span>
+                <Avatar name={app.name} src={app.logoUrl} size="lg" square />
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-body-sm font-semibold text-fg">{app.name}</span>
                   <span className="truncate text-caption text-fg-3">{app.host}</span>

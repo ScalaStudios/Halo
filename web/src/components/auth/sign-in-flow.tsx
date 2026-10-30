@@ -3,6 +3,7 @@
 import { ChevronDown, CircleAlert, CircleCheck, CircleUserRound, Clock, Fingerprint } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
@@ -50,6 +51,7 @@ function sameOrigin(path: string | undefined) {
 export function SignInFlow({
   authRequest,
   app,
+  appLogo,
   expired: requestExpired,
   next,
   signedIn,
@@ -57,6 +59,7 @@ export function SignInFlow({
 }: {
   authRequest?: string;
   app: string | null;
+  appLogo: string | null;
   expired: boolean;
   next?: string;
   signedIn: boolean;
@@ -274,6 +277,7 @@ export function SignInFlow({
       {step === "start" ? (
         <>
           <div className="flex flex-col gap-3 text-center">
+            {app ? <Avatar name={app} src={appLogo} size="lg" square className="self-center" /> : null}
             <h1 className="text-h3 text-fg">{app ? `Sign in to continue to ${app}` : "Sign in to continue"}</h1>
             {supported ? null : <p className="text-body-sm text-fg-3">This browser can&apos;t use passkeys, so sign in with your email instead.</p>}
           </div>

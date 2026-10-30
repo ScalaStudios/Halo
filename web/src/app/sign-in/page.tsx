@@ -13,7 +13,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
   const params = await searchParams;
   const authRequest = typeof params.authRequest === "string" ? params.authRequest : undefined;
   const [request, methods] = await Promise.all([
-    authRequest ? apiPeek<{ application: { name: string } }>(`/auth/request/${encodeURIComponent(authRequest)}`) : null,
+    authRequest ? apiPeek<{ application: { name: string; logoUrl: string | null } }>(`/auth/request/${encodeURIComponent(authRequest)}`) : null,
     apiPeek<{ methods: string[] }>("/auth/methods"),
   ]);
   return (
@@ -21,6 +21,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
       <SignInFlow
         authRequest={authRequest}
         app={request?.data?.application.name ?? null}
+        appLogo={request?.data?.application.logoUrl ?? null}
         expired={request?.problem?.code === "ERR_AUTH_REQUEST_EXPIRED"}
         next={typeof params.next === "string" ? params.next : undefined}
         signedIn={(await cookies()).has("halo_session")}

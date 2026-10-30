@@ -78,6 +78,7 @@ export type Application = {
   failureRate7d: number;
   tokenPolicy: { accessTokenTtl: number; refreshTokenTtl: number; idTokenTtl: number; rotation: boolean };
   setupGuide: "grafana" | "forgejo" | "aether" | "generic-oidc" | "generic-saml" | "kubernetes" | "aws-iam-identity-center" | "slack";
+  logoUrl: string | null;
 };
 
 export type Session = {

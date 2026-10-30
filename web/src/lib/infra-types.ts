@@ -33,6 +33,7 @@ export type ApiResource = {
 export type DeviceRequest = {
   userCode: string;
   application: string;
+  logoUrl: string | null;
   clientId: string;
   scopes: string[];
   ip: string;

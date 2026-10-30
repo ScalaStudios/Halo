@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { AppWindow, Copy, Plus, Power, Trash2 } from "lucide-react";
 import { useMutation } from "@/components/console/use-mutation";
+import { Avatar } from "@/components/ui/avatar";
 import { StatusDot } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { DataTable, facetFilter, type SavedView } from "@/components/ui/data-table";
@@ -19,9 +20,12 @@ const columns: ColumnDef<Application, any>[] = [
     header: "Name",
     meta: { label: "Name", hideable: false },
     cell: ({ row }) => (
-      <span className="flex max-w-60 min-w-48 flex-col">
-        <span className="truncate font-medium text-fg">{row.original.name}</span>
-        <span className="truncate text-caption text-fg-3">{row.original.description}</span>
+      <span className="flex max-w-72 min-w-60 items-center gap-3">
+        <Avatar name={row.original.name} src={row.original.logoUrl} size="md" square />
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate font-medium text-fg">{row.original.name}</span>
+          <span className="truncate text-caption text-fg-3">{row.original.description}</span>
+        </span>
       </span>
     ),
   },

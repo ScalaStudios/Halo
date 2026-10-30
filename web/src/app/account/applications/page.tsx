@@ -6,7 +6,7 @@ import { apiGet } from "@/lib/api/server";
 export const metadata: Metadata = { title: "Applications" };
 
 export default async function ApplicationsPage() {
-  const apps = await apiGet<{ id: string; name: string; description: string; homepage: string; launchUrl: string }[]>("/me/applications");
+  const apps = await apiGet<{ id: string; name: string; description: string; homepage: string; launchUrl: string; logoUrl: string | null }[]>("/me/applications");
   return (
     <div className="flex animate-page flex-col gap-12">
       <PageHeader size="large" title="Applications" description="Everything you can open with your Halo account." />

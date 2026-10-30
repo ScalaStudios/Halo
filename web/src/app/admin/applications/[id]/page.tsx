@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { ArrowLeft, MonitorSmartphone, ScrollText, UsersRound } from "lucide-react";
+import { AvatarEditor } from "@/components/account/avatar-editor";
 import { AppActions, DangerZone } from "@/components/applications/app-actions";
 import { CredentialList } from "@/components/applications/credentials";
 import { AuthenticationForm, ScopesForm } from "@/components/applications/edit-application";
 import { SamlAttributesForm, SamlConnectionFields, SamlSettingsForm } from "@/components/applications/saml";
-import { APP_STATUS, PROTOCOL_LABEL, SetupGuideCard, TYPE_ICON, TYPE_LABEL } from "@/components/applications/shared";
+import { APP_STATUS, PROTOCOL_LABEL, SetupGuideCard, TYPE_LABEL } from "@/components/applications/shared";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
 import { SessionsTable } from "@/components/monitoring/sessions-table";
 import { SignInRows } from "@/components/monitoring/sign-in-rows";
@@ -45,7 +46,6 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const appGroups = groups.filter((g) => app.groupIds.includes(g.id));
   const assigned = new Set(users.filter((u) => u.appIds.includes(app.id)).map((u) => u.id));
   const appSessions = service ? [] : sessions.filter((s) => assigned.has(s.userId)).sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
-  const TypeIcon = TYPE_ICON[app.type];
 
   const tabs = [
     { id: "overview", label: "Overview" },
@@ -65,11 +65,8 @@ export default async function ApplicationPage({ params, searchParams }: { params
           <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.75} />
           Applications
         </Link>
-        <header className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex min-w-0 items-center gap-4">
-            <span className="grid size-16 shrink-0 place-items-center rounded-lg border border-border bg-sunken text-fg-3">
-              <TypeIcon aria-hidden="true" size={24} strokeWidth={1.75} />
-            </span>
+        <header className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
+          <AvatarEditor name={app.name} avatarUrl={app.logoUrl} endpoint={`/api/v1/applications/${app.id}/logo`} size="xl" logo className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-col gap-1">
               <div className="flex flex-wrap items-center gap-3">
                 <h1 className="text-h2 text-fg">{app.name}</h1>
@@ -82,7 +79,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
                 {app.description ? ` · ${app.description}` : null}
               </p>
             </div>
-          </div>
+          </AvatarEditor>
           <AppActions
             app={{
               id: app.id,
