@@ -52,7 +52,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={buttonClasses(variant, size, cn(loading && "disabled:opacity-100", className))}
       {...rest}
     >
-      <span className={cn("inline-flex items-center gap-2", loading && "invisible")}>{children}</span>
+      <span className={cn("inline-flex items-center gap-2", loading && "opacity-0")}>{children}</span>
       {loading ? (
         <span className="absolute inset-0 grid place-items-center">
           <Spinner className={variant === "primary" ? "text-on-ember" : variant === "destructive" ? "text-white" : undefined} />
