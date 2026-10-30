@@ -20,7 +20,7 @@ type Person = Pick<User, "id" | "name" | "email" | "roles" | "status">;
 
 const KEY_BY_LABEL = Object.fromEntries(ROLE_ORDER.map((key) => [ROLES[key].label, key])) as Record<string, RoleKey>;
 
-function keysOf(person: Person) {
+export function keysOf(person: Person) {
   return person.roles.map((label) => KEY_BY_LABEL[label]).filter((key): key is RoleKey => Boolean(key));
 }
 

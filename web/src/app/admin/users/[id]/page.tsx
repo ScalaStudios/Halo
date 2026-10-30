@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { TabNav } from "@/components/ui/tab-nav";
 import { UserActions } from "@/components/directory/user-actions";
 import { EditProfileButton, type ProfileEdit } from "@/components/directory/edit-profile";
+import { EditRolesButton, PasskeyWarning } from "@/components/directory/edit-roles";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
 import { PROTOCOL_LABEL } from "@/components/applications/shared";
 import { MethodList } from "@/components/identity/method-list";
@@ -103,7 +104,9 @@ export default async function UserPage({ params, searchParams }: { params: Promi
               {STRENGTH[user.strength].label}
             </span>
           </Fact>
-          <Fact label="Admin role">{user.roles[0] ?? "None"}</Fact>
+          <Fact label="Admin role" action={global ? <EditRolesButton user={user} /> : undefined}>
+            {user.roles.join(", ") || "None"}
+          </Fact>
           <Fact label="Last sign-in">{user.lastSignInAt ? formatRelative(user.lastSignInAt) : "Never"}</Fact>
           <Fact label="Source">{user.source}</Fact>
           <Fact label="Member since">{formatDate(user.createdAt)}</Fact>
@@ -240,14 +243,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
           />
           <CardBody className="flex flex-col gap-4">
             <p className="text-body-sm text-fg-2">{STRENGTH[user.strength].description}</p>
-            {user.roles.length > 0 && user.strength !== "phishing-resistant" ? (
-              <div className="flex gap-3 rounded-md border border-warning/20 bg-warning-container p-4">
-                <ShieldAlert aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-warning" />
-                <p className="text-body-sm text-fg-2">
-                  {user.roles[0]} should sign in with a passkey or security key. Until then this account can be phished.
-                </p>
-              </div>
-            ) : null}
+            {user.roles.length > 0 && user.strength !== "phishing-resistant" ? <PasskeyWarning role={user.roles[0]} /> : null}
             <ul className="flex flex-col gap-2">
               {signInMethods.map((m) => {
                 const Icon = METHOD[m.kind].icon;
@@ -355,10 +351,13 @@ function ProfileHeading({ user }: { user: User }) {
   );
 }
 
-function Fact({ label, children }: { label: string; children: ReactNode }) {
+function Fact({ label, action, children }: { label: string; action?: ReactNode; children: ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <dt className="text-label text-fg-3">{label}</dt>
+      <dt className="flex items-center gap-2 text-label text-fg-3">
+        {label}
+        {action}
+      </dt>
       <dd className="truncate text-body-sm text-fg">{children}</dd>
     </div>
   );
