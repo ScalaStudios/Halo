@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleCheck, CircleX, Terminal } from "lucide-react";
+import { CircleCheck, CircleX } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/ui/avatar";
@@ -107,13 +107,7 @@ export function DeviceApproval({ initialCode, signIn }: { initialCode: string; s
     return (
       <div className="flex animate-enter flex-col gap-8">
         <div className="flex flex-col items-center gap-3 text-center">
-          {request.logoUrl ? (
-            <Avatar name={request.application} src={request.logoUrl} size="lg" square />
-          ) : (
-            <span className="grid size-12 place-items-center rounded-lg border border-border bg-sunken text-fg-3">
-              <Terminal aria-hidden="true" size={24} strokeWidth={1.75} />
-            </span>
-          )}
+          <Avatar name={request.application} src={request.logoUrl} size="lg" square />
           <h1 className="text-h3 text-fg">Allow {request.application} to sign in as you?</h1>
           <p className="text-body text-fg-3">Only approve a sign-in you started yourself, when the code matches the one in your terminal.</p>
         </div>
