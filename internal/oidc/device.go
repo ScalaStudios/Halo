@@ -145,7 +145,7 @@ func (h *deviceHandlers) show(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return httpx.JSON(w, http.StatusOK, map[string]any{
-		"userCode": p.device.UserCode, "application": p.app.Name, "clientId": p.app.ClientID, "scopes": p.device.Scopes,
+		"userCode": p.device.UserCode, "application": p.app.Name, "logoUrl": p.app.LogoURL, "clientId": p.app.ClientID, "scopes": p.device.Scopes,
 		"ip": p.device.IP, "userAgent": p.device.UserAgent, "requestedAt": p.device.CreatedAt, "expiresAt": p.device.ExpiresAt,
 	})
 }

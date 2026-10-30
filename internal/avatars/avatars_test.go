@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"halo/internal/config"
@@ -69,4 +70,31 @@ func TestAvatars(t *testing.T) {
 	call(helpdesk, "DELETE", "/api/v1/users/"+sam.ID+"/avatar", nil, 200)
 	call("", "GET", "/api/v1/users/"+sam.ID+"/avatar", nil, 404)
 	call(samToken, "DELETE", "/api/v1/me/avatar", nil, 404)
+
+	app, err := st.CreateApplication(ctx, store.NewApplication{Name: "Aether", Protocol: "oidc", Type: "web", RedirectURIs: []string{"https://aether.example.com/callback"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, appAdmin := person("ada@example.com", "app_admin")
+	logo := "/api/v1/applications/" + app.ID + "/logo"
+	svg := []byte(`<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><script>alert(1)</script></svg>`)
+	call(samToken, "PUT", logo, svg, 403)
+	call(helpdesk, "PUT", logo, svg, 403)
+	call(appAdmin, "PUT", logo, []byte(`<svg viewBox="0 0 8 8"/>`), 422)
+	call(appAdmin, "PUT", logo, []byte(`<html><body><svg xmlns="http://www.w3.org/2000/svg"/></body></html>`), 422)
+	call(appAdmin, "PUT", logo, append(png, make([]byte, 512<<10)...), 413)
+	call(appAdmin, "PUT", logo, svg, 200)
+	rec = call("", "GET", logo, nil, 200)
+	if rec.Header().Get("Content-Type") != "image/svg+xml" || !strings.Contains(rec.Header().Get("Content-Security-Policy"), "sandbox") || !bytes.Equal(rec.Body.Bytes(), svg) {
+		t.Fatalf("served %q with CSP %q", rec.Header().Get("Content-Type"), rec.Header().Get("Content-Security-Policy"))
+	}
+	if a, _ := st.GetApplication(ctx, app.ID); a.LogoURL == nil {
+		t.Fatal("no logo URL after upload")
+	}
+	if events, _ := st.ListAudit(ctx, 1); len(events) == 0 || events[0].Action != "application.logo.update" || events[0].TargetID != app.ID {
+		t.Fatalf("audit %+v", events)
+	}
+	call(appAdmin, "DELETE", logo, nil, 200)
+	call("", "GET", logo, nil, 404)
+	call(appAdmin, "DELETE", logo, nil, 404)
 }

@@ -93,11 +93,12 @@ func (h *handler) revokeOtherSessions(w http.ResponseWriter, r *http.Request) er
 }
 
 type myApplication struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Homepage    string `json:"homepage"`
-	LaunchURL   string `json:"launchUrl"`
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	Homepage    string  `json:"homepage"`
+	LaunchURL   string  `json:"launchUrl"`
+	LogoURL     *string `json:"logoUrl"`
 }
 
 func (h *handler) applications(w http.ResponseWriter, r *http.Request) error {
@@ -116,7 +117,7 @@ func (h *handler) applications(w http.ResponseWriter, r *http.Request) error {
 			if a.Protocol == "saml" {
 				launch = "/saml/launch/" + a.ID
 			}
-			out = append(out, myApplication{ID: a.ID, Name: a.Name, Description: a.Description, Homepage: a.Homepage, LaunchURL: launch})
+			out = append(out, myApplication{ID: a.ID, Name: a.Name, Description: a.Description, Homepage: a.Homepage, LaunchURL: launch, LogoURL: a.LogoURL})
 		}
 	}
 	return httpx.JSON(w, http.StatusOK, out)

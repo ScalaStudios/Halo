@@ -90,6 +90,7 @@ type Application struct {
 	FailureRate7d  float64      `json:"failureRate7d"`
 	TokenPolicy    TokenPolicy  `json:"tokenPolicy"`
 	SetupGuide     string       `json:"setupGuide"`
+	LogoURL        *string      `json:"logoUrl"`
 }
 
 type Session struct {

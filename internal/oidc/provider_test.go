@@ -45,7 +45,7 @@ func TestAuthorizationCodeFlow(t *testing.T) {
 	user, err := st.CreateUser(ctx, store.NewUser{Email: "ada@example.com", Name: "Ada Lovelace", Status: "active", GroupIDs: []string{group.ID}})
 	must(err)
 	avatarAt := time.Unix(1790000000, 0)
-	must(st.SetAvatarUpdated(ctx, user.ID, &avatarAt))
+	must(st.SetImageUpdated(ctx, store.Avatars, user.ID, &avatarAt))
 	must(st.MarkEmailVerified(ctx, user.ID))
 	const redirect = "https://grafana.example.com/login/generic_oauth"
 	web, err := st.CreateApplication(ctx, store.NewApplication{Name: "Grafana", Protocol: "oidc", Type: "web", RedirectURIs: []string{redirect}, GroupIDs: []string{group.ID}})

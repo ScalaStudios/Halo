@@ -276,7 +276,7 @@ func (h *handler) authRequest(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return httpx.JSON(w, http.StatusOK, map[string]any{"application": map[string]string{"name": app.Name, "homepage": app.Homepage}})
+	return httpx.JSON(w, http.StatusOK, map[string]any{"application": map[string]any{"name": app.Name, "homepage": app.Homepage, "logoUrl": app.LogoURL}})
 }
 
 func (h *handler) identify(w http.ResponseWriter, r *http.Request) error {

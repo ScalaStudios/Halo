@@ -192,7 +192,7 @@ paths:
       security: []
       responses:
         '200':
-          description: The application's name and homepage.
+          description: The application's name, homepage and logo.
           content:
             application/json:
               schema:
@@ -201,10 +201,11 @@ paths:
                 properties:
                   application:
                     type: object
-                    required: [name, homepage]
+                    required: [name, homepage, logoUrl]
                     properties:
                       name: {type: string}
                       homepage: {type: string}
+                      logoUrl: {type: [string, 'null']}
         '404': {$ref: '#/components/responses/AuthRequestExpired'}
   /auth/passkey/begin:
     post:
@@ -1760,6 +1761,81 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /applications/{id}/logo:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Applications]
+      operationId: getApplicationLogo
+      summary: Get an application's logo
+      description: No authentication, so the sign-in page can show it. The `v` query is a cache version. The response carries a Content-Security-Policy with `sandbox`, so scripts in an SVG logo do not run when the URL is opened directly.
+      security: []
+      responses:
+        '200':
+          description: The logo. Cached for one day.
+          content:
+            image/png:
+              schema: {type: string, contentMediaType: image/png}
+            image/jpeg:
+              schema: {type: string, contentMediaType: image/jpeg}
+            image/webp:
+              schema: {type: string, contentMediaType: image/webp}
+            image/svg+xml:
+              schema: {type: string, contentMediaType: image/svg+xml}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Applications]
+      operationId: uploadApplicationLogo
+      summary: Set an application's logo
+      description: 'Roles: application administrator. Send the image bytes as the body: PNG, JPEG, WebP or SVG, at most 512 KB. Halo detects the type from the content; an SVG needs the SVG namespace on its root element.'
+      requestBody:
+        required: true
+        content:
+          image/png:
+            schema: {type: string, contentMediaType: image/png}
+          image/jpeg:
+            schema: {type: string, contentMediaType: image/jpeg}
+          image/webp:
+            schema: {type: string, contentMediaType: image/webp}
+          image/svg+xml:
+            schema: {type: string, contentMediaType: image/svg+xml}
+      responses:
+        '200':
+          description: The logo URL, including a version so caches fetch the new image.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [logoUrl]
+                properties:
+                  logoUrl: {type: string, examples: ['/api/v1/applications/app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9/logo?v=1790000000']}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413':
+          description: '`ERR_TOO_LARGE`: the image is larger than 512 KB.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Applications]
+      operationId: removeApplicationLogo
+      summary: Remove an application's logo
+      description: 'Roles: application administrator.'
+      responses:
+        '200':
+          description: The logo was removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [logoUrl]
+                properties:
+                  logoUrl: {type: 'null'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /applications/{id}/saml:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -3936,7 +4012,7 @@ components:
         source: {type: string}
     Application:
       type: object
-      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, setupGuide]
+      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, setupGuide, logoUrl]
       properties:
         id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
@@ -3972,6 +4048,7 @@ components:
         failureRate7d: {type: number, description: Percentage of failed sign-ins in the past 7 days.}
         tokenPolicy: {$ref: '#/components/schemas/TokenPolicy'}
         setupGuide: {type: string}
+        logoUrl: {type: [string, 'null'], description: Path of the logo, or null., examples: ['/api/v1/applications/app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9/logo?v=1790000000']}
         saml: {$ref: '#/components/schemas/SAMLView'}
     SAMLAttributes:
       type: object
@@ -4019,13 +4096,14 @@ components:
             certificateExpiresAt: {type: string, format: date-time}
     MyApplication:
       type: object
-      required: [id, name, description, homepage, launchUrl]
+      required: [id, name, description, homepage, launchUrl, logoUrl]
       properties:
         id: {type: string}
         name: {type: string}
         description: {type: string}
         homepage: {type: string}
         launchUrl: {type: string, description: 'The homepage, or `/saml/launch/{id}` for SAML applications.'}
+        logoUrl: {type: [string, 'null']}
     Session:
       type: object
       required: [id, userId, device, os, browser, ip, location, method, createdAt, lastActiveAt]
@@ -4613,10 +4691,11 @@ components:
         validBefore: {type: string, format: date-time}
     DeviceAuthorization:
       type: object
-      required: [userCode, application, clientId, scopes, ip, userAgent, requestedAt, expiresAt]
+      required: [userCode, application, logoUrl, clientId, scopes, ip, userAgent, requestedAt, expiresAt]
       properties:
         userCode: {type: string, examples: [BCDF-GHJK]}
         application: {type: string}
+        logoUrl: {type: [string, 'null']}
         clientId: {type: string, examples: [halo-cli]}
         scopes:
           type: array

@@ -11,12 +11,17 @@ import (
 	"halo/internal/secret"
 )
 
-const appColumns = `id, name, description, protocol, app_type, status, client_id, homepage, redirect_uris, post_logout_uris, scopes, access_token_ttl, refresh_token_ttl, id_token_ttl, refresh_rotation, setup_guide, owner_id, created_at`
+const appColumns = `id, name, description, protocol, app_type, status, client_id, homepage, redirect_uris, post_logout_uris, scopes, access_token_ttl, refresh_token_ttl, id_token_ttl, refresh_rotation, setup_guide, owner_id, created_at, logo_updated_at`
 
 func scanApp(row rowScanner) (Application, error) {
 	var a Application
+	var logo *time.Time
 	err := row.Scan(&a.ID, &a.Name, &a.Description, &a.Protocol, &a.Type, &a.Status, &a.ClientID, &a.Homepage, &a.RedirectURIs, &a.PostLogoutURIs, &a.Scopes,
-		&a.TokenPolicy.AccessTokenTTL, &a.TokenPolicy.RefreshTokenTTL, &a.TokenPolicy.IDTokenTTL, &a.TokenPolicy.Rotation, &a.SetupGuide, &a.Owner, &a.CreatedAt)
+		&a.TokenPolicy.AccessTokenTTL, &a.TokenPolicy.RefreshTokenTTL, &a.TokenPolicy.IDTokenTTL, &a.TokenPolicy.Rotation, &a.SetupGuide, &a.Owner, &a.CreatedAt, &logo)
+	if logo != nil {
+		path := AppLogos.Path(a.ID, *logo)
+		a.LogoURL = &path
+	}
 	return a, err
 }
 

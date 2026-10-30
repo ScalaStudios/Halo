@@ -40,7 +40,7 @@ func scanUser(row rowScanner) (User, error) {
 	var avatar *time.Time
 	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Title, &u.Department, &u.Location, &u.Status, &u.ManagerID, &u.Source, &u.CreatedAt, &u.LastSignInAt, &u.Kind, &u.EmailVerified, &avatar)
 	if avatar != nil {
-		path := AvatarPath(u.ID, *avatar)
+		path := Avatars.Path(u.ID, *avatar)
 		u.AvatarURL = &path
 	}
 	return u, err
