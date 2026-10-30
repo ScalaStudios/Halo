@@ -9,7 +9,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { DescriptionList } from "@/components/ui/description-list";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TabNav } from "@/components/ui/tab-nav";
-import { UserActions } from "@/components/directory/user-actions";
+import { TemporaryPasswordButton, UserActions } from "@/components/directory/user-actions";
 import { EditProfileButton, type ProfileEdit } from "@/components/directory/edit-profile";
 import { EditRolesButton, PasskeyWarning } from "@/components/directory/edit-roles";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
@@ -20,10 +20,12 @@ import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { SessionList } from "@/components/identity/session-list";
 import { DevicesTable } from "@/components/policy/devices-table";
+import { joinList } from "@/components/policy/shared";
 import { apiGet } from "@/lib/api/server";
 import { formatDate, formatDateTime, formatRelative } from "@/lib/format";
 import { METHOD, STATUS, STRENGTH } from "@/lib/labels";
 import type { Device } from "@/lib/policy-types";
+import type { SettingsResponse } from "@/lib/settings-types";
 import type { Application, AuditEvent, Group, Session, SignInEvent, User } from "@/lib/types";
 
 const strengthIcon = { "phishing-resistant": ShieldCheck, "multi-factor": ShieldAlert, "single-factor": ShieldX } as const;
@@ -38,7 +40,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
   const { id } = await params;
   const { tab = "overview" } = await searchParams;
   const path = `/users/${encodeURIComponent(id)}`;
-  const [user, userSessions, userSignIns, groups, applications, audit, userDevices, directory, me] = await Promise.all([
+  const [user, userSessions, userSignIns, groups, applications, audit, userDevices, directory, me, enabled, { settings }] = await Promise.all([
     apiGet<User>(path),
     apiGet<Session[]>(`${path}/sessions`),
     apiGet<SignInEvent[]>(`${path}/sign-ins`),
@@ -48,6 +50,8 @@ export default async function UserPage({ params, searchParams }: { params: Promi
     apiGet<Device[]>(`/devices?user=${encodeURIComponent(id)}`),
     apiGet<User[]>("/users"),
     apiGet<User>("/me"),
+    apiGet<{ methods: string[] }>("/auth/methods"),
+    apiGet<SettingsResponse>("/settings"),
   ]);
   const manager = user.managerId ? await apiGet<User>(`/users/${encodeURIComponent(user.managerId)}`) : undefined;
 
@@ -59,6 +63,14 @@ export default async function UserPage({ params, searchParams }: { params: Promi
   const global = me.roles.includes("Global administrator");
   const access = user.roles.length > 0 && !global ? null : global || me.roles.includes("User administrator") ? "all" : me.roles.includes("Helpdesk administrator") ? "org" : null;
   const edit: ProfileEdit | undefined = access ? { user, directory, access } : undefined;
+  const passwordGroups = settings.passwordGroupIds.map((id) => groups.find((g) => g.id === id)?.name ?? "a deleted group");
+  const passwordWarning = !enabled.methods.includes("password")
+    ? `Passwords are turned off, so ${user.name} can't use this until a security administrator turns them on under Methods.`
+    : passwordGroups.length > 0 && !settings.passwordGroupIds.some((id) => user.groupIds.includes(id))
+      ? `Passwords are limited to members of ${joinList(passwordGroups)}, so ${user.name} can't use this until you add them to one of those groups.`
+      : settings.passwordSecondFactor && !user.methods.some((m) => m.kind === "totp")
+        ? `Password sign-ins also need a code from an authenticator app, and ${user.name} doesn't have one, so they can't finish signing in with a password yet.`
+        : undefined;
 
   const tabs = [
     { id: "overview", label: "Overview" },
@@ -119,7 +131,11 @@ export default async function UserPage({ params, searchParams }: { params: Promi
         {tab === "overview" ? <OverviewTab user={user} manager={manager} /> : null}
         {tab === "authentication" ? (
           <div className="flex flex-col gap-6">
-            <SectionTitle title="Sign-in methods" description={STRENGTH[user.strength].description} />
+            <SectionTitle
+              title="Sign-in methods"
+              description={STRENGTH[user.strength].description}
+              action={edit ? <TemporaryPasswordButton user={{ id: user.id, name: user.name }} warning={passwordWarning} /> : undefined}
+            />
             <MethodList
               key={user.methods.map((m) => m.id).join()}
               methods={user.methods}

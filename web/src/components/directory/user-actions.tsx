@@ -1,12 +1,14 @@
 "use client";
 
-import { Ban, Copy, MonitorX, MoreHorizontal, RotateCcw, Undo2, UserPen, UsersRound } from "lucide-react";
-import { useState } from "react";
+import { Ban, Copy, MonitorX, MoreHorizontal, RectangleEllipsis, RotateCcw, Undo2, UserPen, UsersRound } from "lucide-react";
+import { useId, useState } from "react";
 import { SecretWarning } from "@/components/applications/shared";
 import { useMutation } from "@/components/console/use-mutation";
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import { CopyField } from "@/components/ui/copy-field";
 import { Dialog } from "@/components/ui/dialog";
+import { Field, Input } from "@/components/ui/input";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { api } from "@/lib/api/client";
 import { formatDateTime, pluralize } from "@/lib/format";
@@ -14,6 +16,13 @@ import type { SetupLink } from "@/lib/mail-types";
 import { EditProfileDialog, type ProfileEdit } from "./edit-profile";
 
 type UserRef = { id: string; name: string };
+
+const PASSWORD_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789";
+
+function randomPassword() {
+  const chars = Array.from(crypto.getRandomValues(new Uint8Array(20)), (byte) => PASSWORD_ALPHABET[byte % PASSWORD_ALPHABET.length]);
+  return [0, 5, 10, 15].map((start) => chars.slice(start, start + 5).join("")).join("-");
+}
 
 export function UserActions({ id, name, suspended, edit }: { id: string; name: string; suspended: boolean; edit?: ProfileEdit }) {
   const { pending, run, toast, router } = useMutation();
@@ -112,7 +121,7 @@ export function ResetAuthenticationDialog({ user, onClose }: { user: UserRef | n
       description={
         link
           ? `${link.emailed ? `We emailed a setup link to ${user?.name}` : `Send this link to ${user?.name}`} so they can enroll a new passkey. It expires ${formatDateTime(link.expiresAt)}.`
-          : "Removes every passkey, security key, authenticator app and recovery code, and signs them out everywhere. They enroll again from a new setup link."
+          : "Removes every passkey, security key, authenticator app, password and recovery code, and signs them out everywhere. They enroll again from a new setup link."
       }
       footer={
         link ? (
@@ -145,6 +154,72 @@ export function ResetAuthenticationDialog({ user, onClose }: { user: UserRef | n
         </div>
       ) : null}
     </Dialog>
+  );
+}
+
+export function TemporaryPasswordButton({ user, warning }: { user: UserRef; warning?: string }) {
+  const { pending, run, toast } = useMutation();
+  const formId = useId();
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+
+  return (
+    <>
+      <Button
+        size="sm"
+        onClick={() => {
+          setPassword(randomPassword());
+          setOpen(true);
+        }}
+      >
+        <RectangleEllipsis aria-hidden="true" size={16} strokeWidth={1.75} />
+        Set temporary password
+      </Button>
+      <Dialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Set a temporary password"
+        description={`${user.name} signs in with it once and then chooses their own password. Share it in person or over another channel you trust.`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit" form={formId} loading={pending === "password"}>
+              Set temporary password
+            </Button>
+          </>
+        }
+      >
+        <form
+          id={formId}
+          noValidate
+          className="flex flex-col gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void run("password", () => api(`/users/${user.id}/password`, { method: "PUT", body: { password } }), () => {
+              setOpen(false);
+              toast({ title: "Temporary password set", description: `${user.name} must choose a new password the next time they sign in.` });
+            });
+          }}
+        >
+          <Field label="Temporary password" hint="Halo generated a random one. You can replace it with your own of at least 15 characters.">
+            {(props) => (
+              <Input
+                {...props}
+                mono
+                autoComplete="off"
+                spellCheck={false}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                trailing={<CopyButton value={password} label="Copy password" className="[&>span]:sr-only" />}
+              />
+            )}
+          </Field>
+          {warning ? <SecretWarning>{warning}</SecretWarning> : null}
+        </form>
+      </Dialog>
+    </>
   );
 }
 
