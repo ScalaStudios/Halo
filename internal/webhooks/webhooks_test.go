@@ -5,9 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -233,4 +238,33 @@ func TestSendTestEvent(t *testing.T) {
 		t.Fatalf("test event: %d %s", rec.Code, rec.Body.String())
 	}
 	verify(t, secret, rc.headers[0], rc.bodies[0])
+}
+
+func TestEveryEmittedEventIsDescribed(t *testing.T) {
+	notEvents := []string{"credentials.json", "emails.value", "manager.value", "name.familyname", "name.formatted", "name.givenname", "webhook.test"}
+	literal := regexp.MustCompile(`"([a-z_]+(?:\.[a-z_]+)+)"`)
+	err := filepath.WalkDir("..", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && path == filepath.Join("..", "store") {
+			return filepath.SkipDir
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, m := range literal.FindAllStringSubmatch(string(src), -1) {
+			if !slices.Contains(notEvents, m[1]) && !slices.ContainsFunc(catalog, func(e eventType) bool { return e.Type == m[1] && e.Description != "" }) {
+				t.Errorf("%s records %q, which has no description in the webhook event catalog", path, m[1])
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
