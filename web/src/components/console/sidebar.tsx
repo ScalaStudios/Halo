@@ -12,7 +12,7 @@ import { BASE, findItem, nav } from "./nav";
 
 const STORAGE_KEY = "halo.sidebar.collapsed";
 
-export function Sidebar({ orgName, onSearch, onNavigate }: { orgName: string; onSearch: () => void; onNavigate?: () => void }) {
+export function Sidebar({ orgName, onSearch, onNavigate }: { orgName: string; onSearch: () => void; onNavigate?: (href: string) => void }) {
   const pathname = usePathname();
   const activeHref = findItem(pathname)?.href;
   const activeGroup = nav.find((group) => group.items.some((item) => item.href === activeHref))?.id;
@@ -27,6 +27,14 @@ export function Sidebar({ orgName, onSearch, onNavigate }: { orgName: string; on
     }
   }, []);
 
+  function navigate(href: string) {
+    if (!onNavigate) return undefined;
+    return (event: { preventDefault: () => void }) => {
+      event.preventDefault();
+      onNavigate(href);
+    };
+  }
+
   function toggle(id: string) {
     setCollapsed((current) => {
       const next = current.includes(id) ? current.filter((value) => value !== id) : [...current, id];
@@ -40,7 +48,7 @@ export function Sidebar({ orgName, onSearch, onNavigate }: { orgName: string; on
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-16 shrink-0 items-center gap-3 border-b border-border px-4">
-        <Link href={BASE} onClick={onNavigate} className="flex min-w-0 flex-1 items-center gap-3 rounded-md">
+        <Link href={BASE} onNavigate={navigate(BASE)} className="flex min-w-0 flex-1 items-center gap-3 rounded-md">
           <HaloMark className="size-6 shrink-0" />
           <span className="flex min-w-0 flex-col">
             <span className="truncate font-display text-h4 text-fg">Halo</span>
@@ -94,7 +102,7 @@ export function Sidebar({ orgName, onSearch, onNavigate }: { orgName: string; on
                       <li key={item.href}>
                         <Link
                           href={item.href}
-                          onClick={onNavigate}
+                          onNavigate={navigate(item.href)}
                           aria-current={active ? "page" : undefined}
                           className={cn(
                             "relative flex h-8 items-center gap-3 rounded-md px-2 text-body-sm font-medium transition-colors duration-fast ease-brand",
@@ -118,7 +126,7 @@ export function Sidebar({ orgName, onSearch, onNavigate }: { orgName: string; on
 
       <div className="flex h-12 shrink-0 items-center justify-between border-t border-border px-4 text-caption text-fg-3">
         <span className="font-mono">v0.1.1</span>
-        <Link href={`${BASE}/developers`} onClick={onNavigate} className="transition-colors duration-fast hover:text-fg">
+        <Link href={`${BASE}/developers`} onNavigate={navigate(`${BASE}/developers`)} className="transition-colors duration-fast hover:text-fg">
           Documentation
         </Link>
       </div>

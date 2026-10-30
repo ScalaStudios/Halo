@@ -56,7 +56,10 @@ export function ConsoleShell({ user, orgName, children }: { user: { name: string
                 setDrawerOpen(false);
                 setPaletteOpen(true);
               }}
-              onNavigate={() => setDrawerOpen(false)}
+              onNavigate={(href) => {
+                setDrawerOpen(false);
+                startNavigation(() => router.push(href));
+              }}
             />
           </D.Content>
         </D.Portal>
