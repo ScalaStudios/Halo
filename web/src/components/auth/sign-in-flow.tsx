@@ -6,6 +6,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Spinner } from "@/components/ui/spinner";
 import { api, ApiError } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
@@ -15,8 +16,8 @@ import { cancelled, describeFailure, usePasskeySupport, type Ceremony } from "./
 import { federationProblem, ProviderButtons, useSignInProviders } from "./providers";
 import { VerifyCode } from "./verify-code";
 
-type Step = "loading" | "start" | "choose" | "passkey" | "security-key" | "code" | "recovery" | "inbox" | "done" | "expired";
-type Choice = "passkey" | "security-key" | "totp" | "recovery-codes" | "magic-link";
+type Step = "loading" | "start" | "choose" | "passkey" | "security-key" | "code" | "recovery" | "password" | "new-password" | "second-factor" | "inbox" | "done" | "expired";
+type Choice = "passkey" | "security-key" | "totp" | "password" | "recovery-codes" | "magic-link";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -84,10 +85,14 @@ export function SignInFlow({
   const [busy, setBusy] = useState(false);
   const [recovery, setRecovery] = useState("");
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [resent, setResent] = useState(false);
   const home = methods.length > 0 ? "choose" : "start";
+  const changing = step === "new-password";
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -182,6 +187,12 @@ export function SignInFlow({
   function pick(kind: Choice) {
     if (kind === "passkey" || kind === "security-key") return passkey(kind);
     if (kind === "magic-link") return sendLink();
+    if (kind === "password") {
+      setPassword("");
+      setNewPassword("");
+      setPasswordError(null);
+      return setStep("password");
+    }
     setRecovery("");
     setRecoveryError(null);
     setStep(kind === "totp" ? "code" : "recovery");
@@ -241,6 +252,34 @@ export function SignInFlow({
     }
   }
 
+  async function signInWithPassword(code = "") {
+    try {
+      const { redirect } = await api<{ redirect: string }>("/auth/password", { body: { email, password, newPassword, code, authRequest } });
+      finish(redirect);
+    } catch (error) {
+      if (expired(error)) return setStep("expired");
+      if (!(error instanceof ApiError) || !["ERR_PASSWORD_CHANGE_REQUIRED", "ERR_SECOND_FACTOR_REQUIRED"].includes(error.code)) throw error;
+      setPasswordError(null);
+      setStep(error.code === "ERR_PASSWORD_CHANGE_REQUIRED" ? "new-password" : "second-factor");
+    }
+  }
+
+  async function submitPassword(event: FormEvent) {
+    event.preventDefault();
+    if (!(changing ? newPassword : password)) {
+      setPasswordError(changing ? "Enter a new password of at least 15 characters." : "Enter your password.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await signInWithPassword();
+    } catch (error) {
+      setPasswordError(describeFailure(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const account = (
     <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-surface py-1 pr-3 pl-4">
       <span className="flex min-w-0 items-center gap-3">
@@ -262,7 +301,7 @@ export function SignInFlow({
 
   const passkeys = supported && allowed.includes("passkey");
   const permitted = (kind: Choice) => allowed.includes(kind);
-  const otherKinds: Choice[] = (supported ? (["security-key", "totp", "recovery-codes", "magic-link"] as Choice[]) : (["totp", "recovery-codes", "magic-link"] as Choice[])).filter(permitted);
+  const otherKinds: Choice[] = (supported ? (["security-key", "totp", "password", "recovery-codes", "magic-link"] as Choice[]) : (["totp", "password", "recovery-codes", "magic-link"] as Choice[])).filter(permitted);
   const choices: Choice[] = ([...methods, "magic-link"] as Choice[]).filter(permitted);
 
   return (
@@ -481,6 +520,63 @@ export function SignInFlow({
               Sign in
             </Button>
           </form>
+          <button type="button" onClick={differentMethod} className={linkButton}>
+            Use a different method
+          </button>
+        </>
+      ) : null}
+
+      {step === "password" || step === "new-password" ? (
+        <>
+          <div className="flex flex-col gap-4">
+            <h1 className="text-center text-h3 text-fg">{changing ? "Choose a new password" : "Enter your password"}</h1>
+            {account}
+          </div>
+          {changing ? (
+            <p className="text-center text-body text-fg-3">Your administrator gave you a temporary password. Choose your own to finish signing in.</p>
+          ) : null}
+          <form noValidate className="flex flex-col gap-4" onSubmit={submitPassword}>
+            <input type="email" name="email" autoComplete="username" value={email} readOnly hidden />
+            <Field
+              label={changing ? "New password" : "Password"}
+              hint={changing ? "At least 15 characters. A few unrelated words make a password that is long and easy to remember." : undefined}
+              error={passwordError}
+            >
+              {(field) => (
+                <PasswordInput
+                  {...field}
+                  autoFocus
+                  name={changing ? "new-password" : "password"}
+                  autoComplete={changing ? "new-password" : "current-password"}
+                  value={changing ? newPassword : password}
+                  onChange={(event) => {
+                    (changing ? setNewPassword : setPassword)(event.target.value);
+                    if (passwordError) setPasswordError(null);
+                  }}
+                  className="h-12"
+                />
+              )}
+            </Field>
+            <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy}>
+              {changing ? "Save password and sign in" : "Sign in"}
+            </Button>
+          </form>
+          <button type="button" onClick={differentMethod} className={linkButton}>
+            Use a different method
+          </button>
+        </>
+      ) : null}
+
+      {step === "second-factor" ? (
+        <>
+          <div className="flex flex-col gap-4">
+            <h1 className="text-center text-h3 text-fg">Enter the code from your authenticator app</h1>
+            {account}
+          </div>
+          <VerifyCode
+            verify={signInWithPassword}
+            hint="Your organization asks for a code from your authenticator app as well as your password."
+          />
           <button type="button" onClick={differentMethod} className={linkButton}>
             Use a different method
           </button>

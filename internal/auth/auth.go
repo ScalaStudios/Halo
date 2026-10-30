@@ -302,7 +302,7 @@ func (h *handler) identify(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		for _, kind := range []string{"passkey", "security-key", "totp", "recovery-codes", "password"} {
+		for _, kind := range []string{"passkey", "security-key", "totp", "password", "recovery-codes"} {
 			if slices.ContainsFunc(u.Methods, func(m store.Method) bool { return m.Kind == kind }) && (kind != "password" || settings.PasswordAllowed(u)) {
 				methods = append(methods, kind)
 			}
