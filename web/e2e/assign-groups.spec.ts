@@ -34,11 +34,15 @@ test("assign group searches and assigns several groups at once from the keyboard
   const trigger = page.getByRole("button", { name: "Assign group" });
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: `Assign groups to ${appName}` });
-  await expect(dialog.getByRole("combobox")).toBeFocused();
+  const combobox = dialog.getByRole("combobox");
+  const options = dialog.getByRole("option");
+  await expect(combobox).toBeFocused();
   await page.keyboard.type(`e2e ${stamp}`);
-  await expect(dialog.getByRole("option")).toHaveCount(3);
+  await expect(options).toHaveCount(3);
+  await expect(combobox).toHaveAttribute("aria-activedescendant", (await options.nth(0).getAttribute("id")) ?? "");
   await page.keyboard.press("Enter");
   await page.keyboard.press("ArrowDown");
+  await expect(combobox).toHaveAttribute("aria-activedescendant", (await options.nth(1).getAttribute("id")) ?? "");
   await page.keyboard.press("Enter");
   await dialog.getByRole("button", { name: "Assign 2 groups" }).click();
   await expect(dialog).toBeHidden();
@@ -48,7 +52,7 @@ test("assign group searches and assigns several groups at once from the keyboard
   await expect(table.getByText(`E2E Beta ${stamp}`)).toBeVisible();
 
   await trigger.click();
-  await expect(dialog.getByRole("combobox")).toBeFocused();
+  await expect(combobox).toBeFocused();
   await page.keyboard.type(String(stamp));
   await expect(dialog.getByRole("option", option("Alpha"))).toBeDisabled();
   await expect(dialog.getByRole("option", option("Rule"))).toBeEnabled();
