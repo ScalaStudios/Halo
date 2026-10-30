@@ -33,13 +33,14 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { Button } from "./button";
 import { EmptyState } from "./empty-state";
 import { Checkbox, Input } from "./input";
 import { Kbd } from "./kbd";
 import { Menu, MenuCheckboxItem, MenuContent, MenuLabel, MenuSeparator, MenuTrigger } from "./menu";
+import { NavigationProgress } from "./navigation-progress";
 
 declare module "@tanstack/react-table" {
   interface ColumnMeta<TData, TValue> {
@@ -120,6 +121,7 @@ export function DataTable<T>({
   const [customViews, setCustomViews] = useState<SavedView[]>([]);
   const [naming, setNaming] = useState(false);
   const [viewName, setViewName] = useState("");
+  const [opening, startOpening] = useTransition();
   const searchRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const viewsKey = `halo.views.${storageKey}`;
@@ -256,7 +258,7 @@ export function DataTable<T>({
     else if (event.key === "ArrowUp" || event.key === "k") focusRow(event, -1);
     else if (event.key === "Enter" && onRowOpen) {
       event.preventDefault();
-      onRowOpen(row.original);
+      startOpening(() => onRowOpen(row.original));
     } else if (event.key === "x" && bulkActions) {
       event.preventDefault();
       row.toggleSelected();
@@ -267,6 +269,7 @@ export function DataTable<T>({
 
   return (
     <div className="flex flex-col gap-4">
+      {opening ? <NavigationProgress /> : null}
       {allViews.length > 0 ? (
         <div className="-mx-1 flex items-center gap-1 overflow-x-auto px-1" role="toolbar" aria-label="Saved views">
           {allViews.map((view) => {
@@ -447,7 +450,7 @@ export function DataTable<T>({
                     data-row=""
                     tabIndex={0}
                     aria-selected={bulkActions ? row.getIsSelected() : undefined}
-                    onClick={onRowOpen ? () => onRowOpen(row.original) : undefined}
+                    onClick={onRowOpen ? () => startOpening(() => onRowOpen(row.original)) : undefined}
                     onKeyDown={(event) => onRowKeyDown(event, row)}
                     className={cn(
                       "h-12 border-b border-border outline-none last:border-b-0 transition-colors duration-fast ease-brand",

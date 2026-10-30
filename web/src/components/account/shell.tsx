@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { History, KeyRound, LayoutGrid, LogOut, MonitorSmartphone, ShieldCheck, UserRound, UserRoundCog } from "lucide-react";
-import type { ReactNode } from "react";
+import { useTransition, type ReactNode } from "react";
 import { HaloLogo } from "@/components/halo-mark";
 import { Avatar } from "@/components/ui/avatar";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
+import { LinkProgress, NavigationProgress } from "@/components/ui/navigation-progress";
 import { TabNav } from "@/components/ui/tab-nav";
 import { useToast } from "@/components/ui/toast";
 import { describeFailure } from "@/components/auth/passkey";
@@ -27,6 +28,7 @@ export function AccountShell({ user, children }: { user: Pick<User, "name" | "em
   const pathname = usePathname();
   const router = useRouter();
   const toast = useToast();
+  const [navigating, startNavigation] = useTransition();
   const path = pathname.startsWith("/account/reviews") ? "/account/access" : pathname;
   const active = [...nav].reverse().find((item) => path === item.href || path.startsWith(`${item.href}/`))?.href ?? "/account";
 
@@ -41,6 +43,7 @@ export function AccountShell({ user, children }: { user: Pick<User, "name" | "em
 
   return (
     <div className="flex min-h-dvh flex-col">
+      {navigating ? <NavigationProgress /> : null}
       <header className="sticky top-0 z-30 border-b border-border bg-canvas">
         <div className="mx-auto flex h-16 w-full max-w-288 items-center gap-3 px-5 sm:px-8">
           <Link href="/account" className="flex items-center gap-3 rounded-md">
@@ -63,7 +66,7 @@ export function AccountShell({ user, children }: { user: Pick<User, "name" | "em
               </MenuLabel>
               <MenuSeparator />
               {user.roles.length > 0 ? (
-                <MenuItem icon={UserRoundCog} onSelect={() => router.push("/admin")}>
+                <MenuItem icon={UserRoundCog} onSelect={() => startNavigation(() => router.push("/admin"))}>
                   Halo administration
                 </MenuItem>
               ) : null}
@@ -101,6 +104,7 @@ export function AccountShell({ user, children }: { user: Pick<User, "name" | "em
                     {current ? <span aria-hidden="true" className="absolute top-2 bottom-2 -left-3 w-0.5 rounded-full bg-ember" /> : null}
                     <Icon aria-hidden="true" size={16} strokeWidth={1.75} className={current ? "text-ember" : undefined} />
                     {item.label}
+                    <LinkProgress />
                   </Link>
                 </li>
               );

@@ -3,9 +3,10 @@
 import { usePathname } from "next/navigation";
 import { Dialog as D, VisuallyHidden } from "radix-ui";
 import { ChevronRight, LogOut, Menu as MenuIcon, UserRound } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
+import { NavigationProgress } from "@/components/ui/navigation-progress";
 import { api } from "@/lib/api/client";
 import { CommandPalette } from "./command-palette";
 import { findItem, nav } from "./nav";
@@ -17,6 +18,7 @@ export function ConsoleShell({ user, orgName, children }: { user: { name: string
   const { run, router } = useMutation();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [navigating, startNavigation] = useTransition();
   const item = findItem(pathname);
   const group = nav.find((g) => g.items.some((i) => i.href === item?.href));
 
@@ -94,7 +96,7 @@ export function ConsoleShell({ user, orgName, children }: { user: { name: string
                   <span className="block truncate font-normal">{user.email}</span>
                 </MenuLabel>
                 <MenuSeparator />
-                <MenuItem icon={UserRound} onSelect={() => router.push("/account")}>
+                <MenuItem icon={UserRound} onSelect={() => startNavigation(() => router.push("/account"))}>
                   Your Halo account
                 </MenuItem>
                 <MenuItem icon={LogOut} onSelect={signOut}>
@@ -110,6 +112,7 @@ export function ConsoleShell({ user, orgName, children }: { user: { name: string
       </div>
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      {navigating ? <NavigationProgress /> : null}
     </div>
   );
 }

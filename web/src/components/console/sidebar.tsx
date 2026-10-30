@@ -6,6 +6,7 @@ import { ChevronDown, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { HaloMark } from "@/components/halo-mark";
 import { Kbd } from "@/components/ui/kbd";
+import { LinkProgress } from "@/components/ui/navigation-progress";
 import { cn } from "@/lib/cn";
 import { BASE, findItem, nav } from "./nav";
 
@@ -103,6 +104,7 @@ export function Sidebar({ orgName, onSearch, onNavigate }: { orgName: string; on
                           {active ? <span aria-hidden="true" className="absolute top-2 bottom-2 -left-3 w-0.5 rounded-full bg-ember" /> : null}
                           <Icon aria-hidden="true" size={16} strokeWidth={1.75} className={active ? "text-ember" : undefined} />
                           <span className="truncate">{item.label}</span>
+                          <LinkProgress />
                         </Link>
                       </li>
                     );

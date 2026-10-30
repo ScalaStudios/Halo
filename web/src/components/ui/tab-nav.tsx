@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cn } from "@/lib/cn";
+import { LinkProgress } from "./navigation-progress";
 
 export type TabItem = { id: string; label: string; count?: number };
 
@@ -35,6 +36,7 @@ export function TabNav({
                 {tab.label}
                 {tab.count !== undefined ? <span className="tnum text-caption text-fg-3">{tab.count}</span> : null}
                 {current ? <span aria-hidden="true" className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-ember" /> : null}
+                <LinkProgress />
               </Link>
             </li>
           );
