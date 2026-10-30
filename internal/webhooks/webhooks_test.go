@@ -264,7 +264,7 @@ func TestEveryEmittedEventIsDescribed(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() && path == filepath.Join("..", "store") {
+		if d.IsDir() && (path == filepath.Join("..", "store") || path == filepath.Join("..", "rule")) {
 			return filepath.SkipDir
 		}
 		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {

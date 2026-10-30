@@ -304,8 +304,8 @@ func TestDynamicGroupMembershipIsRefused(t *testing.T) {
 
 	rec := call(t, h, admin, "POST", "/api/v1/groups", map[string]any{"name": "Engineering", "kind": "dynamic", "rule": "department = Engineering"})
 	expect(t, rec, 422)
-	if !strings.Contains(rec.Body.String(), `user.department == \"Engineering\"`) {
-		t.Fatalf("rule error should show the syntax: %s", rec.Body)
+	if !strings.Contains(rec.Body.String(), `Position 12: unexpected '='`) {
+		t.Fatalf("rule error should point at the mistake: %s", rec.Body)
 	}
 	rec = call(t, h, admin, "POST", "/api/v1/groups", map[string]any{"name": "Engineering", "kind": "dynamic", "rule": `user.department == "Engineering"`})
 	expect(t, rec, 201)

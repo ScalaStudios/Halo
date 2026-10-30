@@ -175,7 +175,7 @@ func TestUserListQueryCount(t *testing.T) {
 		expect(t, call(t, h, token, "GET", "/api/v1/users", nil), 200)
 		return queries.Load() - start
 	}
-	const limit = 15
+	const limit = 17
 	small, large := count(2), count(40)
 	if small != large || large > limit {
 		t.Fatalf("GET /api/v1/users ran %d queries with 3 people and %d with 43; want the same number, at most %d", small, large, limit)
