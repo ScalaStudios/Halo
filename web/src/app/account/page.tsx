@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ChevronRight, LayoutGrid, MonitorSmartphone, ShieldCheck } from "lucide-react";
+import { ChevronRight, Fingerprint, LayoutGrid, MonitorSmartphone, ShieldCheck } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { AvatarEditor } from "@/components/account/avatar-editor";
+import { buttonClasses } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DescriptionList } from "@/components/ui/description-list";
 import { apiGet } from "@/lib/api/server";
@@ -22,6 +23,7 @@ export default async function AccountPage() {
   const count = (kind: string) => user.methods.filter((m) => m.kind === kind).length;
   const strong = count("passkey") + count("security-key");
   const resistant = user.strength === "phishing-resistant";
+  const passwordSession = strong === 0 && sessions.some((s) => s.current && s.method === "password");
   const links = [
     { href: "/account/sessions", icon: MonitorSmartphone, label: "Sessions", detail: `${pluralize(sessions.length, "device")} signed in` },
     { href: "/account/applications", icon: LayoutGrid, label: "Applications", detail: `${pluralize(apps.length, "application")} available to you` },
@@ -32,6 +34,21 @@ export default async function AccountPage() {
       <PageHeader size="large" title="Account" description={`Your profile, how you sign in and what you can open at ${org.name}.`} />
 
       <div className="flex flex-col gap-8">
+        {passwordSession ? (
+          <Card className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center">
+            <span className="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-sunken">
+              <Fingerprint aria-hidden="true" size={20} strokeWidth={1.75} className="text-ember" />
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <h2 className="text-h4 text-fg">You signed in with a password</h2>
+              <p className="text-body-sm text-fg-3">A passkey is quicker and can&apos;t be phished or guessed. Add one, then sign in with your fingerprint, face or screen lock.</p>
+            </div>
+            <Link href="/account/security" className={buttonClasses("primary", "md")}>
+              Add a passkey
+            </Link>
+          </Card>
+        ) : null}
+
         <Card className="flex flex-col gap-6 p-6">
           <AvatarEditor name={user.name} avatarUrl={user.avatarUrl} endpoint="/api/v1/me/avatar">
             <div className="flex min-w-0 flex-col gap-1">
@@ -56,27 +73,29 @@ export default async function AccountPage() {
           </p>
         </Card>
 
-        <Card className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center">
-          <span className="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-sunken">
-            <ShieldCheck aria-hidden="true" size={20} strokeWidth={1.75} className={resistant ? "text-success" : "text-warning"} />
-          </span>
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <h2 className="text-h4 text-fg">
-              {resistant ? "You sign in with a passkey." : "You don't have a passkey yet."} {STRENGTH[user.strength].label}.
-            </h2>
-            <p className="text-body-sm text-fg-3">
-              {pluralize(count("passkey"), "passkey")} and {pluralize(count("security-key"), "security key")} enrolled.{" "}
-              {strong > 1
-                ? "Losing one device won't lock you out."
-                : strong === 1
-                  ? "Add another so losing one device won't lock you out."
-                  : "Add one to sign in without codes."}
-            </p>
-          </div>
-          <Link href="/account/security" className="shrink-0 text-body-sm text-link underline underline-offset-3 hover:text-ember-hover">
-            Review security
-          </Link>
-        </Card>
+        {passwordSession ? null : (
+          <Card className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center">
+            <span className="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-sunken">
+              <ShieldCheck aria-hidden="true" size={20} strokeWidth={1.75} className={resistant ? "text-success" : "text-warning"} />
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <h2 className="text-h4 text-fg">
+                {resistant ? "You sign in with a passkey." : "You don't have a passkey yet."} {STRENGTH[user.strength].label}.
+              </h2>
+              <p className="text-body-sm text-fg-3">
+                {pluralize(count("passkey"), "passkey")} and {pluralize(count("security-key"), "security key")} enrolled.{" "}
+                {strong > 1
+                  ? "Losing one device won't lock you out."
+                  : strong === 1
+                    ? "Add another so losing one device won't lock you out."
+                    : "Add one to sign in without codes."}
+              </p>
+            </div>
+            <Link href="/account/security" className="shrink-0 text-body-sm text-link underline underline-offset-3 hover:text-ember-hover">
+              Review security
+            </Link>
+          </Card>
+        )}
 
         <ul className="overflow-hidden rounded-lg border border-border bg-surface">
           {links.map((link) => {

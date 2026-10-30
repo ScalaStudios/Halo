@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Download, ListOrdered, Plus, RefreshCw, TriangleAlert } from "lucide-react";
+import { Download, ListOrdered, Plus, RectangleEllipsis, RefreshCw, TriangleAlert } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { encode } from "uqr";
 import { cancelled, describeFailure, deviceLabel, type Ceremony } from "@/components/auth/passkey";
@@ -13,6 +13,7 @@ import { CopyButton } from "@/components/ui/copy-button";
 import { CopyField } from "@/components/ui/copy-field";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { SectionTitle } from "@/components/ui/section-title";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/components/ui/toast";
@@ -49,14 +50,21 @@ const SECTIONS: { kind: Enrollable; title: string; description: string; action: 
   },
 ];
 
-export function SecuritySettings({ methods, email }: { methods: AuthMethod[]; email: string }) {
+export function SecuritySettings({ methods, email, password }: { methods: AuthMethod[]; email: string; password: { allowed: boolean; secondFactor: boolean } }) {
   const router = useRouter();
   const toast = useToast();
   const [adding, setAdding] = useState<"passkey" | "security-key" | null>(null);
   const [totp, setTotp] = useState<TotpSetup | null>(null);
   const [codes, setCodes] = useState<{ codes: string[]; replaced: boolean } | null>(null);
   const [busy, setBusy] = useState<"totp" | "recovery" | null>(null);
+  const [changingPassword, setChangingPassword] = useState(false);
   const recovery = methods.find((m) => m.kind === "recovery-codes");
+  const current = methods.find((m) => m.kind === "password");
+  const passwordNote = !password.allowed
+    ? "Your organization doesn't let you sign in with a password, so this one doesn't work right now."
+    : password.secondFactor && !methods.some((m) => m.kind === "totp")
+      ? "Signing in with a password also needs a code from an authenticator app. Set one up above so your password works."
+      : null;
 
   function fail(error: unknown) {
     toast({ title: "That didn't work", description: describeFailure(error), tone: "danger" });
@@ -65,6 +73,7 @@ export function SecuritySettings({ methods, email }: { methods: AuthMethod[]; em
   function changed() {
     setAdding(null);
     setTotp(null);
+    setChangingPassword(false);
     router.refresh();
   }
 
@@ -125,6 +134,34 @@ export function SecuritySettings({ methods, email }: { methods: AuthMethod[]; em
         );
       })}
 
+      {password.allowed || current ? (
+        <section className="flex flex-col gap-4">
+          <SectionTitle
+            title="Password"
+            description="For computers that can't use a passkey. A password can be phished or guessed, so use a passkey whenever you can."
+            action={
+              password.allowed ? (
+                <Button size="sm" onClick={() => setChangingPassword(true)}>
+                  <RectangleEllipsis aria-hidden="true" size={16} strokeWidth={1.75} />
+                  {current ? "Change password" : "Set password"}
+                </Button>
+              ) : undefined
+            }
+          />
+          {current ? (
+            <MethodList key={current.addedAt} methods={[current]} />
+          ) : (
+            <p className="rounded-lg border border-border px-6 py-4 text-body-sm text-fg-3">No password set. You don&apos;t need one on devices that can use a passkey.</p>
+          )}
+          {passwordNote ? (
+            <p className="flex items-start gap-2 text-body-sm text-warning">
+              <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0" />
+              {passwordNote}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
       <section className="flex flex-col gap-4">
         <SectionTitle
           title="Recovery"
@@ -153,6 +190,7 @@ export function SecuritySettings({ methods, email }: { methods: AuthMethod[]; em
 
       {adding ? <EnrollDialog kind={adding} onClose={() => setAdding(null)} onAdded={changed} /> : null}
       {totp ? <AuthenticatorDialog setup={totp} email={email} onClose={() => setTotp(null)} onAdded={changed} /> : null}
+      {changingPassword ? <PasswordDialog email={email} replacing={current !== undefined} onClose={() => setChangingPassword(false)} onSaved={changed} /> : null}
       {codes ? <RecoveryCodesDialog codes={codes.codes} replaced={codes.replaced} email={email} onClose={() => setCodes(null)} /> : null}
     </div>
   );
@@ -252,6 +290,71 @@ function EnrollDialog({ kind, onClose, onAdded }: { kind: "passkey" | "security-
           </Field>
         </form>
       )}
+    </Dialog>
+  );
+}
+
+function PasswordDialog({ email, replacing, onClose, onSaved }: { email: string; replacing: boolean; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
+  const formId = useId();
+  const [value, setValue] = useState("");
+  const [problem, setProblem] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!value) {
+      setProblem("Enter a password of at least 15 characters.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api("/me/password", { method: "PUT", body: { password: value } });
+      toast({ title: replacing ? "Password changed" : "Password set", description: "Use it to sign in on computers that can't use a passkey." });
+      onSaved();
+    } catch (error) {
+      setProblem(describeFailure(error));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={replacing ? "Change your password" : "Set a password"}
+      description="Use at least 15 characters and don't reuse a password from another site. A few unrelated words make a password that is long and easy to remember."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" type="submit" form={formId} loading={saving}>
+            Save password
+          </Button>
+        </>
+      }
+    >
+      <form id={formId} noValidate onSubmit={submit}>
+        <input type="email" name="email" autoComplete="username" value={email} readOnly hidden />
+        <Field label="New password" error={problem}>
+          {(field) => (
+            <PasswordInput
+              {...field}
+              autoFocus
+              name="new-password"
+              autoComplete="new-password"
+              value={value}
+              onChange={(event) => {
+                setValue(event.target.value);
+                setProblem(null);
+              }}
+            />
+          )}
+        </Field>
+      </form>
     </Dialog>
   );
 }

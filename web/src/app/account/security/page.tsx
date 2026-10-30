@@ -7,14 +7,14 @@ import type { User } from "@/lib/types";
 export const metadata: Metadata = { title: "Security" };
 
 export default async function SecurityPage() {
-  const user = await apiGet<User>("/me");
+  const [user, password] = await Promise.all([apiGet<User>("/me"), apiGet<{ allowed: boolean; secondFactor: boolean }>("/me/password")]);
   return (
     <div className="flex animate-page flex-col gap-12">
       <PageHeader size="large"
         title="Security"
         description="How you prove it's you. Keep at least two passkeys or security keys so losing one device doesn't lock you out."
       />
-      <SecuritySettings methods={user.methods} email={user.email} />
+      <SecuritySettings methods={user.methods} email={user.email} password={password} />
     </div>
   );
 }

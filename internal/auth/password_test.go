@@ -241,15 +241,15 @@ func TestOwnPassword(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
 	ada, c, _ := e.enrolledUser("ada@example.com", virtualwebauthn.AuthenticatorOptions{})
-	var state struct{ Allowed bool }
-	if e.do(c, "GET", "/api/v1/me/password", nil, &state); state.Allowed {
-		t.Fatal("passwords are off by default")
+	var state struct{ Allowed, SecondFactor bool }
+	if e.do(c, "GET", "/api/v1/me/password", nil, &state); state.Allowed || !state.SecondFactor {
+		t.Fatalf("passwords are off by default and need a second factor: %+v", state)
 	}
 	e.expect(c, "PUT", "/api/v1/me/password", map[string]any{"password": "my own long passphrase"}, http.StatusForbidden, "ERR_FORBIDDEN")
 
 	e.allowPasswords(false)
-	if e.do(c, "GET", "/api/v1/me/password", nil, &state); !state.Allowed {
-		t.Fatal("passwords turned on for everyone")
+	if e.do(c, "GET", "/api/v1/me/password", nil, &state); !state.Allowed || state.SecondFactor {
+		t.Fatalf("passwords turned on for everyone without a second factor: %+v", state)
 	}
 	e.expect(c, "PUT", "/api/v1/me/password", map[string]any{"password": "short"}, http.StatusUnprocessableEntity, "ERR_INVALID")
 	if status := e.do(c, "PUT", "/api/v1/me/password", map[string]any{"password": "my own long passphrase"}, nil); status != http.StatusNoContent {

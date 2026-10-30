@@ -131,11 +131,11 @@ func (h *handler) myPassword(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	allowed, _, err := h.passwordAllowed(r, u)
+	allowed, settings, err := h.passwordAllowed(r, u)
 	if err != nil {
 		return err
 	}
-	return httpx.JSON(w, http.StatusOK, map[string]bool{"allowed": allowed})
+	return httpx.JSON(w, http.StatusOK, map[string]bool{"allowed": allowed, "secondFactor": settings.PasswordSecondFactor})
 }
 
 func (h *handler) setMyPassword(w http.ResponseWriter, r *http.Request) error {

@@ -794,14 +794,15 @@ paths:
       security: *personal
       responses:
         '200':
-          description: Whether passwords are turned on and allowed for your groups.
+          description: Whether passwords are turned on and allowed for your groups, and whether a password sign-in also needs a code from your authenticator app.
           content:
             application/json:
               schema:
                 type: object
-                required: [allowed]
+                required: [allowed, secondFactor]
                 properties:
                   allowed: {type: boolean}
+                  secondFactor: {type: boolean}
         '401': {$ref: '#/components/responses/Unauthenticated'}
     put:
       tags: [Account]
