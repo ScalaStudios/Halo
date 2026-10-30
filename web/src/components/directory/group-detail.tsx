@@ -9,7 +9,7 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { Dialog } from "@/components/ui/dialog";
 import { HoldToConfirm } from "@/components/ui/hold-to-confirm";
-import { Field, Input } from "@/components/ui/input";
+import { Checkbox, Field, Input } from "@/components/ui/input";
 import { ApiError, api } from "@/lib/api/client";
 import { pluralize } from "@/lib/format";
 import { STATUS, STRENGTH } from "@/lib/labels";
@@ -18,12 +18,20 @@ import { userColumns } from "./users-table";
 
 type GroupBody = { name: string; description: string; rule?: string };
 
+export function inlineRuleError(show: (message: string) => void) {
+  return (error: unknown) => {
+    if (!(error instanceof ApiError && error.code === "ERR_INVALID_RULE")) return false;
+    show(error.message);
+    return true;
+  };
+}
+
 export function EditGroupButton({ group }: { group: Group }) {
   const [open, setOpen] = useState(false);
   const formId = useId();
   const { pending, run, toast } = useMutation();
 
-  function save(body: GroupBody) {
+  function save(body: GroupBody, showRuleError: (message: string) => void) {
     void run(
       "save",
       () => api<Group>(`/groups/${group.id}`, { method: "PATCH", body }),
@@ -31,6 +39,7 @@ export function EditGroupButton({ group }: { group: Group }) {
         setOpen(false);
         toast({ title: `${saved.name} saved`, description: "Recorded in the audit log." });
       },
+      inlineRuleError(showRuleError),
     );
   }
 
@@ -66,7 +75,7 @@ export function EditGroupButton({ group }: { group: Group }) {
   );
 }
 
-function GroupForm({ id, group, onSave }: { id: string; group: Group; onSave: (body: GroupBody) => void }) {
+function GroupForm({ id, group, onSave }: { id: string; group: Group; onSave: (body: GroupBody, showRuleError: (message: string) => void) => void }) {
   const [name, setName] = useState(group.name);
   const [description, setDescription] = useState(group.description);
   const [rule, setRule] = useState(group.rule ?? "");
@@ -74,6 +83,7 @@ function GroupForm({ id, group, onSave }: { id: string; group: Group; onSave: (b
   const [preview, setPreview] = useState<User[] | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const dynamic = group.kind === "dynamic";
+  const everyone = rule.trim() === "true";
 
   async function previewRule() {
     setPreviewing(true);
@@ -96,7 +106,10 @@ function GroupForm({ id, group, onSave }: { id: string; group: Group; onSave: (b
     };
     setErrors(next);
     if (next.name || next.rule) return;
-    onSave({ name: name.trim(), description: description.trim(), ...(dynamic ? { rule: rule.trim() } : {}) });
+    onSave(
+      { name: name.trim(), description: description.trim(), ...(dynamic ? { rule: rule.trim() } : {}) },
+      (message) => setErrors({ rule: message }),
+    );
   }
 
   return (
@@ -109,29 +122,47 @@ function GroupForm({ id, group, onSave }: { id: string; group: Group; onSave: (b
       </Field>
       {dynamic ? (
         <div className="flex flex-col gap-3">
-          <Field
-            label="Rule"
-            error={errors.rule}
-            hint={
-              <>
-                Compare a user attribute, for example <code className="text-code-sm text-fg-2">user.department == &quot;Engineering&quot;</code>
-              </>
-            }
-          >
-            {(props) => (
-              <Input
-                {...props}
-                mono
-                autoComplete="off"
-                spellCheck={false}
-                value={rule}
-                onChange={(event) => {
-                  setRule(event.target.value);
-                  setPreview(null);
-                }}
-              />
-            )}
-          </Field>
+          <label className="flex cursor-pointer items-start gap-3">
+            <Checkbox
+              className="mt-0.5"
+              checked={everyone}
+              onChange={(event) => {
+                setRule(event.target.checked ? "true" : "");
+                setPreview(null);
+                setErrors({ ...errors, rule: undefined });
+              }}
+            />
+            <span className="flex flex-col">
+              <span className="text-body-sm text-fg">All users</span>
+              <span className="text-caption text-fg-3">Everyone in the directory is a member.</span>
+            </span>
+          </label>
+          {everyone ? null : (
+            <Field
+              label="Rule"
+              error={errors.rule}
+              hint={
+                <>
+                  Combine attributes with and, or and not, for example{" "}
+                  <code className="text-code-sm text-fg-2">user.email endsWith &quot;@example.com&quot; and user.status == &quot;active&quot;</code>
+                </>
+              }
+            >
+              {(props) => (
+                <Input
+                  {...props}
+                  mono
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={rule}
+                  onChange={(event) => {
+                    setRule(event.target.value);
+                    setPreview(null);
+                  }}
+                />
+              )}
+            </Field>
+          )}
           <div className="flex flex-wrap items-center gap-3">
             <Button size="sm" variant="secondary" loading={previewing} disabled={!rule.trim()} onClick={previewRule}>
               Preview matches

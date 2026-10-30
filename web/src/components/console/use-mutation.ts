@@ -10,13 +10,14 @@ export function useMutation() {
   const toast = useToast();
   const [pending, setPending] = useState<string | null>(null);
 
-  async function run<T>(key: string, request: () => Promise<T>, onSuccess?: (result: T) => void): Promise<boolean> {
+  async function run<T>(key: string, request: () => Promise<T>, onSuccess?: (result: T) => void, onError?: (error: unknown) => boolean): Promise<boolean> {
     setPending(key);
     try {
       const result = await request();
       onSuccess?.(result);
       return true;
     } catch (error) {
+      if (onError?.(error)) return false;
       toast({ title: "That didn't work", description: error instanceof ApiError ? error.message : "Halo could not reach the server. Try again.", tone: "danger" });
       return false;
     } finally {

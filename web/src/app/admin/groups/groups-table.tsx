@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useMutation } from "@/components/console/use-mutation";
+import { inlineRuleError } from "@/components/directory/group-detail";
 import { Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, facetFilter } from "@/components/ui/data-table";
@@ -89,7 +90,7 @@ export function GroupsTable({ groups }: { groups: Group[] }) {
 function CreateGroupDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [kind, setKind] = useState<Group["kind"]>("assigned");
+  const [membership, setMembership] = useState<Group["kind"] | "all">("assigned");
   const [rule, setRule] = useState("");
   const [errors, setErrors] = useState<{ name?: string; rule?: string }>({});
   const { pending, run, toast, router } = useMutation();
@@ -97,7 +98,7 @@ function CreateGroupDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   function reset() {
     setName("");
     setDescription("");
-    setKind("assigned");
+    setMembership("assigned");
     setRule("");
     setErrors({});
   }
@@ -105,22 +106,31 @@ function CreateGroupDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   function submit() {
     const next = {
       name: name.trim() ? undefined : "Enter a group name.",
-      rule: kind === "dynamic" && !rule.trim() ? "Enter a rule, or switch to assigned membership." : undefined,
+      rule: membership === "dynamic" && !rule.trim() ? "Enter a rule, or switch to assigned membership." : undefined,
     };
     setErrors(next);
     if (next.name || next.rule) return;
     void run(
       "create",
-      () => api<Group>("/groups", { body: { name: name.trim(), description: description.trim(), kind, rule: kind === "dynamic" ? rule.trim() : null } }),
+      () =>
+        api<Group>("/groups", {
+          body: {
+            name: name.trim(),
+            description: description.trim(),
+            kind: membership === "assigned" ? "assigned" : "dynamic",
+            rule: membership === "assigned" ? null : membership === "all" ? "true" : rule.trim(),
+          },
+        }),
       (group) => {
         onOpenChange(false);
         toast({
           title: `${group.name} created`,
-          description: kind === "dynamic" ? "People who match the rule are added automatically." : "Add its members here.",
+          description: membership === "assigned" ? "Add its members here." : "People who match the rule are added automatically.",
         });
         reset();
         router.push(`/admin/groups/${group.id}`);
       },
+      inlineRuleError((message) => setErrors({ rule: message })),
     );
   }
 
@@ -159,19 +169,21 @@ function CreateGroupDialog({ open, onOpenChange }: { open: boolean; onOpenChange
         </Field>
         <Field label="Membership">
           {(props) => (
-            <Select {...props} value={kind} onChange={(event) => setKind(event.target.value as Group["kind"])}>
+            <Select {...props} value={membership} onChange={(event) => setMembership(event.target.value as Group["kind"] | "all")}>
               <option value="assigned">Assigned — add people by hand</option>
               <option value="dynamic">Rule-based — members follow a rule</option>
+              <option value="all">All users — everyone in the directory</option>
             </Select>
           )}
         </Field>
-        {kind === "dynamic" ? (
+        {membership === "dynamic" ? (
           <Field
             label="Rule"
             error={errors.rule}
             hint={
               <>
-                Compare user attributes, for example <code className="text-code-sm text-fg-2">user.department == &quot;Engineering&quot;</code>
+                Combine attributes with and, or and not, for example{" "}
+                <code className="text-code-sm text-fg-2">user.email endsWith &quot;@example.com&quot; and user.status == &quot;active&quot;</code>
               </>
             }
           >
