@@ -19,7 +19,7 @@ In identity terms, Halo is an identity provider (IdP) for single sign-on (SSO) o
 
 Halo works in the same space as hosted services such as Microsoft Entra ID, Okta and Auth0, and open-source projects such as Keycloak, authentik and ZITADEL. It is built around a few choices:
 
-- **No passwords.** People sign in with passkeys and security keys, which are phishing-resistant. Authenticator apps, recovery codes and emailed sign-in links are fallbacks that you can turn off.
+- **No passwords by default.** People sign in with passkeys and security keys, which are phishing-resistant. Authenticator apps, recovery codes and emailed sign-in links are fallbacks that you can turn off. Passwords stay off until you turn them on, for example for the groups you are moving from another identity provider.
 - **Access that ends.** Access packages with approvers and time limits, access reviews, and joiner, mover and leaver rules are part of the core product.
 - **Policies you can test before they apply.** Report-only mode shows what a policy would have done to the last 24 hours of sign-ins, and the simulator shows how your policies would treat a given sign-in.
 - **Small to run.** A Go server, a Next.js web interface and PostgreSQL. No Redis, no message queue and no license key.
