@@ -112,6 +112,7 @@ var catalog = []eventType{
 	{"user.method.add", "A person added a sign-in method or generated new recovery codes"},
 	{"user.method.delete", "An administrator removed one of a person's sign-in methods"},
 	{"user.method.remove", "A person removed one of their sign-in methods"},
+	{"user.password.set", "An administrator set a temporary password for a person"},
 	{"user.restore", "A suspended person's access was restored"},
 	{"user.suspend", "A person was suspended"},
 	{"user.update", "A person's profile was changed"},
