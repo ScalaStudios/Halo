@@ -9,7 +9,7 @@ export function useMutation() {
   const router = useRouter();
   const toast = useToast();
   const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState<{ key: string; message: string } | null>(null);
+  const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
 
   async function run<T>(
     key: string,
@@ -18,7 +18,7 @@ export function useMutation() {
     onError?: ((error: unknown) => boolean) | "inline",
   ): Promise<boolean> {
     setPending(key);
-    setError(null);
+    setFailure(null);
     try {
       const result = await request();
       startTransition(() => {
@@ -31,15 +31,15 @@ export function useMutation() {
       setPending(null);
       router.refresh();
       const message = error instanceof ApiError ? error.message : "Halo could not reach the server. Try again.";
-      if (onError === "inline") setError({ key, message });
+      if (onError === "inline") setFailure({ key, message });
       else if (!onError?.(error)) toast({ title: "That didn't work", description: message, tone: "danger" });
       return false;
     }
   }
 
   function errorFor(key: string) {
-    return error?.key === key ? error.message : undefined;
+    return failure?.key === key ? failure.message : undefined;
   }
 
-  return { pending, run, errorFor, clearError: () => setError(null), toast, router };
+  return { pending, run, errorFor, clearError: () => setFailure(null), toast, router };
 }
