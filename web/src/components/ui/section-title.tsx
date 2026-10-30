@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-export function SectionTitle({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
+export function SectionTitle({ title, description, action }: { title: ReactNode; description?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="flex min-w-0 flex-col gap-1">

@@ -57,8 +57,8 @@ export function LinkedAccounts() {
             <Icon aria-hidden="true" size={20} strokeWidth={1.75} />
           </span>
           <div className="flex flex-1 flex-col gap-2">
-            <Skeleton className="w-32" />
-            <Skeleton className="w-48" />
+            <Skeleton className="h-3 w-32 rounded-sm" />
+            <Skeleton className="h-3 w-48 rounded-sm" />
           </div>
         </div>
       ) : accounts.length === 0 ? (

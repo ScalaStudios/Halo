@@ -135,6 +135,7 @@
   --animate-enter: halo-enter 220ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
   --animate-page: halo-enter 320ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
   --animate-shimmer: halo-shimmer 1.4s linear infinite;
+  --animate-progress: halo-progress 1.2s ease-in-out 150ms infinite backwards;
   --animate-spin: spin 0.8s linear infinite;
 
   @keyframes halo-enter {
@@ -146,10 +147,19 @@
 
   @keyframes halo-shimmer {
     from {
-      background-position: 100% 0;
+      background-position-x: 100%;
     }
     to {
-      background-position: -100% 0;
+      background-position-x: -100%;
+    }
+  }
+
+  @keyframes halo-progress {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(250%);
     }
   }
 
