@@ -35,6 +35,8 @@ var catalog = []eventType{
 	{"application.disable", "Sign-in to an application was turned off"},
 	{"application.enable", "Sign-in to an application was turned on"},
 	{"application.groups.update", "The groups assigned to an application changed"},
+	{"application.logo.remove", "An application's logo was removed"},
+	{"application.logo.update", "A new logo was uploaded for an application"},
 	{"application.saml.update", "An application's SAML settings were changed"},
 	{"application.secret.revoke", "An application's client secret or certificate was revoked"},
 	{"application.secret.rotate", "A new client secret was created for an application"},
