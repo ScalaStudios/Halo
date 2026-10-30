@@ -252,6 +252,44 @@ func TestUpdateApplication(t *testing.T) {
 		t.Fatalf("refresh tokens and owner not cleared: %+v", got)
 	}
 
+	ops, err := st.CreateGroup(ctx, store.NewGroup{Name: "Ops", Kind: "assigned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vpn, err := st.CreateGroup(ctx, store.NewGroup{Name: "VPN", Kind: "assigned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, call(t, h, userAdmin, "PATCH", path, map[string]any{"groupIds": []string{ops.ID}}), 403)
+	expect(t, call(t, h, admin, "PATCH", path, map[string]any{"groupIds": []string{"grp_missing"}}), 422)
+	rec = call(t, h, admin, "PATCH", path, map[string]any{"groupIds": []string{ops.ID, vpn.ID, ops.ID}})
+	expect(t, rec, 200)
+	if got := decode[store.Application](t, rec); !slices.Equal(got.GroupIDs, []string{ops.ID, vpn.ID}) && !slices.Equal(got.GroupIDs, []string{vpn.ID, ops.ID}) {
+		t.Fatalf("groups not assigned: %+v", got.GroupIDs)
+	}
+	if e := lastAudit(t, st); e.Action != "application.groups.update" || e.Summary != "Assigned to Ops, VPN" || e.TargetID != app.ID {
+		t.Fatalf("audit: %+v", e)
+	}
+	rec = call(t, h, admin, "PATCH", path, map[string]any{"groupIds": []string{vpn.ID}, "description": "Metrics"})
+	expect(t, rec, 200)
+	if got := decode[store.Application](t, rec); !slices.Equal(got.GroupIDs, []string{vpn.ID}) || got.Description != "Metrics" {
+		t.Fatalf("groups and description not updated: %+v", got)
+	}
+	expect(t, call(t, h, admin, "PATCH", path, map[string]any{"groupIds": []string{vpn.ID}}), 200)
+	if e := lastAudit(t, st); e.Action != "application.update" || e.Summary != "Updated description" {
+		t.Fatalf("an unchanged group set must not be audited: %+v", e)
+	}
+	rec = call(t, h, admin, "PATCH", path, map[string]any{"groupIds": []string{}})
+	expect(t, rec, 200)
+	if got := decode[store.Application](t, rec); len(got.GroupIDs) != 0 {
+		t.Fatalf("groups not cleared: %+v", got.GroupIDs)
+	}
+	rec = call(t, h, admin, "PATCH", path, map[string]any{"description": "x", "group_ids": []string{ops.ID}})
+	expect(t, rec, 400)
+	if body := rec.Body.String(); !strings.Contains(body, "ERR_UNKNOWN_FIELD") || !strings.Contains(body, `\"group_ids\"`) {
+		t.Fatalf("unknown field error: %s", body)
+	}
+
 	saml, err := st.CreateApplication(ctx, store.NewApplication{Name: "Slack", Protocol: "saml", Type: "web", ClientID: "https://slack.com", RedirectURIs: []string{"https://example.slack.com/sso/saml"}})
 	if err != nil {
 		t.Fatal(err)

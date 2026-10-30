@@ -81,6 +81,9 @@ func Decode(r *http.Request, dst any) error {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
+		if field, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
+			return Fail(http.StatusBadRequest, "ERR_UNKNOWN_FIELD", "Halo does not recognise the field "+field+". Check the field names against the API reference.")
+		}
 		return ErrBadJSON
 	}
 	return nil

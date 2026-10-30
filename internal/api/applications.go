@@ -465,9 +465,20 @@ func (h *handlers) setApplicationGroups(w http.ResponseWriter, r *http.Request, 
 	if in.GroupIDs == nil {
 		return httpx.Invalid(`Send the complete list of groups, for example {"groupIds": ["grp_…"]}. Send an empty list to remove every assignment.`)
 	}
-	groups, err := h.groupsByID(r.Context(), *in.GroupIDs)
+	save, err := h.groupsChange(r, actor, app, *in.GroupIDs)
 	if err != nil {
 		return err
+	}
+	if err := h.st.Tx(r.Context(), save); err != nil {
+		return err
+	}
+	return h.respondApplication(w, r, app.ID)
+}
+
+func (h *handlers) groupsChange(r *http.Request, actor store.User, app store.Application, ids []string) (func(*store.Store) error, error) {
+	groups, err := h.groupsByID(r.Context(), ids)
+	if err != nil {
+		return nil, err
 	}
 	summary := "Removed every group assignment"
 	if len(groups) > 0 {
@@ -477,16 +488,12 @@ func (h *handlers) setApplicationGroups(w http.ResponseWriter, r *http.Request, 
 		}
 		summary = "Assigned to " + strings.Join(names, ", ")
 	}
-	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+	return func(tx *store.Store) error {
 		if err := tx.SetApplicationGroups(r.Context(), app.ID, groupIDs(groups)); err != nil {
 			return err
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "application.groups.update", Summary: summary, TargetType: "application", TargetID: app.ID, TargetLabel: app.Name})
-	})
-	if err != nil {
-		return err
-	}
-	return h.respondApplication(w, r, app.ID)
+	}, nil
 }
 
 func (h *handlers) respondApplication(w http.ResponseWriter, r *http.Request, appID string) error {
@@ -519,7 +526,8 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 			IDTokenTTL      *int  `json:"idTokenTtl"`
 			Rotation        *bool `json:"rotation"`
 		} `json:"tokenPolicy"`
-		Owner *string `json:"owner"`
+		Owner    *string   `json:"owner"`
+		GroupIDs *[]string `json:"groupIds"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -596,7 +604,17 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		}
 		changed = append(changed, "owner")
 	}
-	if len(changed) == 0 {
+	var saveGroups func(*store.Store) error
+	if in.GroupIDs != nil {
+		want := slices.Clone(*in.GroupIDs)
+		slices.Sort(want)
+		if !slices.Equal(slices.Compact(want), slices.Sorted(slices.Values(app.GroupIDs))) {
+			if saveGroups, err = h.groupsChange(r, actor, next, *in.GroupIDs); err != nil {
+				return err
+			}
+		}
+	}
+	if len(changed) == 0 && saveGroups == nil {
 		return h.respondApplication(w, r, app.ID)
 	}
 	if next.Name == "" {
@@ -632,6 +650,14 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		}
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+		if saveGroups != nil {
+			if err := saveGroups(tx); err != nil {
+				return err
+			}
+		}
+		if len(changed) == 0 {
+			return nil
+		}
 		if err := tx.UpdateApplication(r.Context(), next); err != nil {
 			return found(err, "This application")
 		}

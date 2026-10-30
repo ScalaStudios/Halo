@@ -1603,7 +1603,7 @@ paths:
       tags: [Applications]
       operationId: updateApplication
       summary: Change an application
-      description: 'Roles: application administrator. Send only the fields to change. SAML applications accept only name, description, homepage and owner. OpenID Connect applications must keep the `openid` scope.'
+      description: 'Roles: application administrator. Send only the fields to change. SAML applications accept only name, description, homepage, owner and groupIds. OpenID Connect applications must keep the `openid` scope.'
       requestBody:
         required: true
         content:
@@ -1631,6 +1631,10 @@ paths:
                     refreshTokenTtl: {type: integer, minimum: 0, maximum: 7776000, description: 0 stops issuing refresh tokens.}
                     rotation: {type: boolean}
                 owner: {type: string, description: Id of a person. An empty string removes the owner.}
+                groupIds:
+                  type: array
+                  items: {type: string}
+                  description: Replaces the assigned groups. An empty list removes every assignment.
       responses:
         '200': {$ref: '#/components/responses/ApplicationResponse'}
         '400': {$ref: '#/components/responses/BadJSON'}
@@ -3550,7 +3554,7 @@ components:
     NoContent:
       description: Done. No body.
     BadJSON:
-      description: '`ERR_INVALID_JSON`: the body is not valid JSON, is larger than 1 MiB, or has an unknown field.'
+      description: '`ERR_INVALID_JSON`: the body is not valid JSON or is larger than 1 MiB. `ERR_UNKNOWN_FIELD`: the body has a field the endpoint does not accept; the message names it.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
