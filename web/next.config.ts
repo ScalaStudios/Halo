@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const api = process.env.HALO_API_URL ?? "http://localhost:8080";
+const csp = `default-src 'self'; script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}; style-src 'self' 'unsafe-inline'; img-src 'self' data:`;
 
 const config: NextConfig = {
   distDir: process.env.HALO_WEB_DIST ?? ".next",
@@ -9,6 +10,9 @@ const config: NextConfig = {
   poweredByHeader: false,
   devIndicators: false,
   agentRules: false,
+  async headers() {
+    return [{ source: "/(.*)", headers: [{ key: "Content-Security-Policy", value: csp }] }];
+  },
   async rewrites() {
     return [
       { source: "/api/:path*", destination: `${api}/api/:path*` },

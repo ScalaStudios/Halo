@@ -66,6 +66,9 @@ for (const [name, viewport] of Object.entries(viewports)) {
       const diff = error.message.split("\n").filter((line) => /^[+-]\s{2,}/.test(line)).map((line) => line.replace(/\s+/g, " "));
       test.info().annotations.push({ type: "hydration mismatch", description: `${new URL(page.url()).pathname}: ${diff.join(" ")}` });
     });
+    page.on("console", (message) => {
+      if (message.type() === "error" && message.text().includes("Content Security Policy")) errors.push(message.text());
+    });
     for (const path of paths) await visit(page, path, errors);
   });
 }
