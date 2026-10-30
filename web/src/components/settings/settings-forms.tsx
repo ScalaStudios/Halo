@@ -178,10 +178,10 @@ const GROUPS: { title: string; description: string; fields: NumberSpec[] }[] = [
     fields: [{ key: "sessionHours", label: "Session lifetime", unit: "hours", min: 1, max: 72, hint: "Between 1 and 72. Applies to sign-ins from now on; existing sessions keep their expiry." }],
   },
   {
-    title: "Code lockout",
-    description: "Stops guessing of authenticator app and recovery codes. Passkeys are not affected.",
+    title: "Lockout",
+    description: "Stops guessing of passwords, authenticator app codes and recovery codes. Passkeys are not affected.",
     fields: [
-      { key: "lockoutThreshold", label: "Failed codes before lockout", unit: "codes", min: 3, max: 20, hint: "Between 3 and 20 incorrect codes for the same account." },
+      { key: "lockoutThreshold", label: "Failed attempts before lockout", unit: "attempts", min: 3, max: 20, hint: "Between 3 and 20 incorrect passwords or codes for the same account." },
       { key: "lockoutMinutes", label: "Lockout window", unit: "minutes", min: 5, max: 1440, hint: "Between 5 and 1,440. Failures older than this stop counting." },
     ],
   },

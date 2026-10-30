@@ -14,7 +14,7 @@ export default async function SecurityDefaultsPage() {
     <div className="flex max-w-4xl animate-page flex-col gap-8">
       <PageHeader
         title="Security defaults"
-        description={`Sessions last ${settings.sessionHours} hours and ${settings.lockoutThreshold} incorrect codes lock an account for ${settings.lockoutMinutes} minutes. Changes reach every Halo server within 30 seconds.`}
+        description={`Sessions last ${settings.sessionHours} hours and ${settings.lockoutThreshold} incorrect passwords or codes lock an account for ${settings.lockoutMinutes} minutes. Changes reach every Halo server within 30 seconds.`}
       />
       <SecurityForm settings={settings} canEdit={hasRole(me, "security_admin")} />
       <SigningKeys keys={keys} canRotate={hasRole(me)} />

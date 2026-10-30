@@ -32,7 +32,7 @@ const GUIDANCE: Record<string, { why: string; next: string }> = {
     next: "Check for a typo in the address. Repeated attempts for many addresses can mean someone is probing for accounts.",
   },
   "Too many failed attempts.": {
-    why: "Halo locked code sign-in for this account after repeated wrong codes.",
+    why: "Halo locked password and code sign-in for this account after repeated wrong passwords or codes.",
     next: "The lock lifts on its own. If the user didn't make these attempts, revoke their sessions and reset their authentication.",
   },
   "The code did not match.": {

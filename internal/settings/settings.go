@@ -233,7 +233,7 @@ func validate(s store.Settings) error {
 	case !between(s.SessionHours, 1, 72):
 		return httpx.Invalid("Session lifetime must be between 1 and 72 hours.")
 	case !between(s.LockoutThreshold, 3, 20):
-		return httpx.Invalid("The lockout threshold must be between 3 and 20 failed codes.")
+		return httpx.Invalid("The lockout threshold must be between 3 and 20 failed passwords or codes.")
 	case !between(s.LockoutMinutes, 5, 1440):
 		return httpx.Invalid("The lockout window must be between 5 and 1,440 minutes (24 hours).")
 	case !between(s.InviteDays, 1, 30):
