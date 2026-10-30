@@ -23,7 +23,7 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
   const [active, setActive] = useState("");
   const list = useRef<HTMLDivElement>(null);
   const listId = useId();
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
   const words = query.toLowerCase().split(" ");
   const matches = groups.filter((g) => words.every((word) => `${g.name} ${g.description}`.toLowerCase().includes(word))).sort((a, b) => a.name.localeCompare(b.name));
   const locked = (group: Group) => assigned.includes(group.id) || (!target.appId && group.kind === "dynamic");
@@ -37,6 +37,7 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
     setQuery("");
     setPicked([]);
     setActive("");
+    clearError();
   }
 
   function navigate(event: KeyboardEvent) {
@@ -76,6 +77,7 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
             : { title: `Added to ${label}`, description: `${target.name} gets the ${one ? "group's" : "groups'"} applications at next sign-in.` },
         );
       },
+      "inline",
     );
   }
 
@@ -89,6 +91,7 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
       }
       open={open}
       onOpenChange={(next) => (next ? setOpen(true) : close())}
+      error={errorFor("add")}
       title={target.appId ? `Assign groups to ${target.name}` : `Add ${target.name} to groups`}
       description={
         target.appId

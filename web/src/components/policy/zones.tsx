@@ -17,7 +17,7 @@ import type { NetworkZone } from "@/lib/policy-types";
 import { ZONE_KIND, joinList } from "./shared";
 
 export function ZonesSection({ zones, usedBy }: { zones: NetworkZone[]; usedBy: Record<string, string[]> }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
   const [editing, setEditing] = useState<NetworkZone | "new" | null>(null);
   const [deleting, setDeleting] = useState<NetworkZone | null>(null);
 
@@ -27,7 +27,7 @@ export function ZonesSection({ zones, usedBy }: { zones: NetworkZone[]; usedBy: 
     void run("delete", () => api(`/network-zones/${zone.id}`, { method: "DELETE" }), () => {
       setDeleting(null);
       toast({ title: `${zone.name} deleted`, description: "Recorded in the audit log." });
-    });
+    }, "inline");
   }
 
   return (
@@ -87,8 +87,11 @@ export function ZonesSection({ zones, usedBy }: { zones: NetworkZone[]; usedBy: 
       <Dialog
         open={deleting !== null}
         onOpenChange={(open) => {
-          if (!open) setDeleting(null);
+          if (open) return;
+          setDeleting(null);
+          clearError();
         }}
+        error={errorFor("delete")}
         title={`Delete ${deleting?.name ?? "network"}?`}
         description="Policies can no longer target it. Halo refuses if a policy still uses it."
         footer={
@@ -107,7 +110,7 @@ export function ZonesSection({ zones, usedBy }: { zones: NetworkZone[]; usedBy: 
 }
 
 function ZoneDialog({ zone, onClose }: { zone: NetworkZone | null; onClose: () => void }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
   const [name, setName] = useState(zone?.name ?? "");
   const [kind, setKind] = useState<NetworkZone["kind"]>(zone?.kind ?? "trusted");
   const [ranges, setRanges] = useState(zone?.cidrs.join("\n") ?? "");
@@ -132,6 +135,7 @@ function ZoneDialog({ zone, onClose }: { zone: NetworkZone | null; onClose: () =
         toast({ title: zone ? `${saved.name} saved` : `${saved.name} added`, description: `${pluralize(saved.cidrs.length, "range")}. Policies that use it apply the change right away.` });
         onClose();
       },
+      "inline",
     );
   }
 
@@ -141,6 +145,7 @@ function ZoneDialog({ zone, onClose }: { zone: NetworkZone | null; onClose: () =
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
+      error={errorFor("save")}
       title={zone ? `Edit ${zone.name}` : "Add network"}
       description="Halo matches the sign-in IP address against these ranges."
       footer={

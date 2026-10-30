@@ -4,6 +4,7 @@ import { Plus, X } from "lucide-react";
 import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { PeoplePicker } from "@/components/governance/people-picker";
+import { ActionError } from "@/components/ui/action-error";
 import { Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -49,7 +50,7 @@ const wholeNumber = (d: Duration) => (/^\d+$/.test(d.amount.trim()) ? undefined 
 
 export function EditDetailsDialog({ app, directory, open, onOpenChange }: { app: Details; directory: User[]; open: boolean; onOpenChange: (open: boolean) => void }) {
   const formId = useId();
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
 
   function save(body: { name: string; description: string; homepage: string; owner: string }) {
     void run(
@@ -59,13 +60,18 @@ export function EditDetailsDialog({ app, directory, open, onOpenChange }: { app:
         onOpenChange(false);
         toast({ title: `${body.name} saved`, description: "Recorded in the audit log." });
       },
+      "inline",
     );
   }
 
   return (
     <Dialog
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={(next) => {
+        clearError();
+        onOpenChange(next);
+      }}
+      error={errorFor("details")}
       title="Edit details"
       description="People see the name on the Halo sign-in screen and in their app launcher."
       footer={
@@ -147,7 +153,7 @@ export function AuthenticationForm({ app, children }: { app: Application; childr
   const [refresh, setRefresh] = useState(split(policy.refreshTokenTtl));
   const [rotation, setRotation] = useState(policy.rotation);
   const [errors, setErrors] = useState<{ access?: string; id?: string; refresh?: string; redirects?: string; redirect?: (string | undefined)[]; postLogout?: (string | undefined)[] }>({});
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
   const refreshOff = refresh.amount.trim() === "0";
 
   function submit(event: FormEvent) {
@@ -178,6 +184,7 @@ export function AuthenticationForm({ app, children }: { app: Application; childr
           body: service ? { tokenPolicy } : { tokenPolicy, redirectUris: clean(redirects), postLogoutUris: clean(postLogout) },
         }),
       () => toast({ title: "Authentication settings saved", description: `${app.name} gets them on its next token request. Recorded in the audit log.` }),
+      "inline",
     );
   }
 
@@ -231,7 +238,8 @@ export function AuthenticationForm({ app, children }: { app: Application; childr
           </CardBody>
         )}
       </Card>
-      <div className="flex justify-end xl:col-span-2">
+      <div className="flex flex-wrap items-center justify-end gap-4 xl:col-span-2">
+        <ActionError message={errorFor("authentication")} />
         <Button type="submit" variant="primary" loading={pending === "authentication"}>
           Save changes
         </Button>
@@ -323,7 +331,7 @@ export function ScopesForm({ app }: { app: Application }) {
   const [scopes, setScopes] = useState(app.scopes);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string>();
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
   const required = (scope: string) => scope === "openid" && app.protocol === "oidc";
 
   function add() {
@@ -346,6 +354,7 @@ export function ScopesForm({ app }: { app: Application }) {
       "scopes",
       () => api(`/applications/${app.id}`, { method: "PATCH", body: { scopes } }),
       () => toast({ title: "Scopes saved", description: `${app.name} can request them from its next sign-in. Recorded in the audit log.` }),
+      "inline",
     );
   }
 
@@ -395,9 +404,12 @@ export function ScopesForm({ app }: { app: Application }) {
             </div>
           )}
         </Field>
-        <Button variant="primary" loading={pending === "scopes"} onClick={save} className="self-start sm:self-auto">
-          Save scopes
-        </Button>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <ActionError message={errorFor("scopes")} />
+          <Button variant="primary" loading={pending === "scopes"} onClick={save}>
+            Save scopes
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -3,6 +3,7 @@
 import { ImageUp, Trash2 } from "lucide-react";
 import { useRef, type ReactNode } from "react";
 import { useMutation } from "@/components/console/use-mutation";
+import { ActionError } from "@/components/ui/action-error";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { toApiError } from "@/lib/api/error";
@@ -40,7 +41,7 @@ export function AvatarEditor({
   className?: string;
   children: ReactNode;
 }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
   const input = useRef<HTMLInputElement>(null);
   const types = logo ? [...TYPES, SVG] : TYPES;
   const noun = logo ? "logo" : "picture";
@@ -57,6 +58,7 @@ export function AvatarEditor({
         if (!res.ok) throw await toApiError(res, `Halo could not store the ${noun}. Try again.`);
       },
       () => toast(logo ? { title: "Logo updated" } : { title: "Profile picture updated", description: "Applications that read the picture claim get it the next time they sign you in." }),
+      "inline",
     );
   }
 
@@ -68,6 +70,7 @@ export function AvatarEditor({
         if (!res.ok) throw await toApiError(res, `Halo could not remove the ${noun}. Try again.`);
       },
       () => toast({ title: logo ? "Logo removed" : "Profile picture removed" }),
+      "inline",
     );
   }
 
@@ -101,6 +104,7 @@ export function AvatarEditor({
             Remove
           </Button>
         ) : null}
+        <ActionError message={errorFor("upload") ?? errorFor("remove")} className="basis-full" />
       </div>
     </div>
   );

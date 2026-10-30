@@ -7,11 +7,11 @@ import { api } from "@/lib/api/client";
 import type { Settings, SettingsResponse } from "@/lib/settings-types";
 
 export function useSaveSettings() {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
   function save(body: Partial<Settings>, title: string, description: string) {
-    return run("save", () => api<SettingsResponse>("/settings", { method: "PATCH", body }), () => toast({ title, description }));
+    return run("save", () => api<SettingsResponse>("/settings", { method: "PATCH", body }), () => toast({ title, description }), "inline");
   }
-  return { saving: pending === "save", save };
+  return { saving: pending === "save", failure: errorFor("save"), save };
 }
 
 export function ReadOnlyNote({ children }: { children: ReactNode }) {

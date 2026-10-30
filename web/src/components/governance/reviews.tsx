@@ -43,7 +43,7 @@ function StartReviewDialog({ groups, people, onClose }: { groups: Group[]; peopl
   const [due, setDue] = useState(isoDay(14));
   const [autoApply, setAutoApply] = useState(true);
   const [errors, setErrors] = useState<{ name?: string; group?: string; reviewers?: string; due?: string }>({});
-  const { pending, run, toast, router } = useMutation();
+  const { pending, run, errorFor, toast, router } = useMutation();
 
   function submit() {
     const next = {
@@ -65,6 +65,7 @@ function StartReviewDialog({ groups, people, onClose }: { groups: Group[]; peopl
         toast({ title: `${review.name} started`, description: `${pluralize(review.total, "member")} to review. Reviewers see it on their Access page.` });
         router.push(`/admin/access-reviews/${review.id}`);
       },
+      "inline",
     );
   }
 
@@ -72,6 +73,7 @@ function StartReviewDialog({ groups, people, onClose }: { groups: Group[]; peopl
     <Dialog
       open
       onOpenChange={(open) => (open ? undefined : onClose())}
+      error={errorFor("start")}
       title="Start an access review"
       description="Reviewers confirm or remove each current member of the group."
       footer={
@@ -142,17 +144,18 @@ function StartReviewDialog({ groups, people, onClose }: { groups: Group[]; peopl
 
 function NoteDialog({ review, item, decision, onClose }: { review: AccessReview; item: ReviewItem; decision: ReviewDecision; onClose: () => void }) {
   const [note, setNote] = useState(item.note);
-  const { pending, run } = useMutation();
+  const { pending, run, errorFor } = useMutation();
   const remove = decision === "remove";
 
   function submit() {
-    void run("note", () => api(`/access-reviews/${review.id}/decisions/${item.user.id}`, { method: "PUT", body: { decision, note: note.trim() } }), onClose);
+    void run("note", () => api(`/access-reviews/${review.id}/decisions/${item.user.id}`, { method: "PUT", body: { decision, note: note.trim() } }), onClose, "inline");
   }
 
   return (
     <Dialog
       open
       onOpenChange={(open) => (open ? undefined : onClose())}
+      error={errorFor("note")}
       title={remove ? `Remove ${item.user.name} from ${review.group.name}?` : `Keep ${item.user.name} in ${review.group.name}?`}
       description={
         remove
@@ -353,7 +356,7 @@ export function ReviewWorkspace({ review }: { review: AccessReview }) {
 }
 
 function CompleteDialog({ review, onClose }: { review: AccessReview; onClose: () => void }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
   const undecided = review.total - review.decided;
   const removals = review.autoApply
     ? `Halo removes ${pluralize(review.removals, "person", "people")} marked for removal from ${review.group.name}.`
@@ -362,6 +365,7 @@ function CompleteDialog({ review, onClose }: { review: AccessReview; onClose: ()
     <Dialog
       open
       onOpenChange={(open) => (open ? undefined : onClose())}
+      error={errorFor("complete")}
       title={`Complete ${review.name}?`}
       description={`${removals}${undecided ? ` ${pluralize(undecided, "person", "people")} without a decision keep their access.` : ""} Decisions can't change afterwards.`}
       footer={
@@ -380,6 +384,7 @@ function CompleteDialog({ review, onClose }: { review: AccessReview; onClose: ()
                   onClose();
                   toast({ title: `${review.name} completed`, description: "Results are recorded in the audit log." });
                 },
+                "inline",
               )
             }
           >

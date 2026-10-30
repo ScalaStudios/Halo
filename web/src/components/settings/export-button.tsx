@@ -2,6 +2,7 @@
 
 import { Download } from "lucide-react";
 import { useMutation } from "@/components/console/use-mutation";
+import { ActionError } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { toApiError } from "@/lib/api/error";
 
@@ -13,7 +14,7 @@ async function fetchExport() {
 }
 
 export function ExportButton({ disabled }: { disabled: boolean }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
 
   function download() {
     void run("export", fetchExport, ({ name, blob }) => {
@@ -21,13 +22,16 @@ export function ExportButton({ disabled }: { disabled: boolean }) {
       Object.assign(document.createElement("a"), { href: url, download: name }).click();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
       toast({ title: "Export downloaded", description: `Saved as ${name}. The export is recorded in the audit log.` });
-    });
+    }, "inline");
   }
 
   return (
-    <Button variant="primary" loading={pending === "export"} disabled={disabled} onClick={download}>
-      <Download aria-hidden="true" size={16} strokeWidth={1.75} />
-      Download export
-    </Button>
+    <>
+      <Button variant="primary" loading={pending === "export"} disabled={disabled} onClick={download}>
+        <Download aria-hidden="true" size={16} strokeWidth={1.75} />
+        Download export
+      </Button>
+      <ActionError message={errorFor("export")} className="mt-3" />
+    </>
   );
 }

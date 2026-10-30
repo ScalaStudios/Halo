@@ -4,6 +4,7 @@ import { Dialog as D, VisuallyHidden } from "radix-ui";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { ActionError } from "./action-error";
 
 export function Dialog({
   open,
@@ -14,6 +15,7 @@ export function Dialog({
   width = "default",
   children,
   footer,
+  error,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -23,6 +25,7 @@ export function Dialog({
   width?: "default" | "wide";
   children?: ReactNode;
   footer?: ReactNode;
+  error?: string;
 }) {
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
@@ -53,7 +56,12 @@ export function Dialog({
             </D.Close>
           </div>
           {children ? <div className="flex-1 overflow-y-auto px-6 pb-4 sm:px-8">{children}</div> : null}
-          {footer ? <div className="flex justify-end gap-2 px-6 pt-4 pb-6 sm:px-8 sm:pb-8">{footer}</div> : null}
+          {footer ? (
+            <div className="flex flex-col gap-3 px-6 pt-4 pb-6 sm:px-8 sm:pb-8">
+              <ActionError message={error} />
+              <div className="flex justify-end gap-2">{footer}</div>
+            </div>
+          ) : null}
         </D.Content>
       </D.Portal>
     </D.Root>

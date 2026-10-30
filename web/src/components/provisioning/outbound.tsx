@@ -121,7 +121,7 @@ function ConfigureDialog({ app, onClose }: { app: OutboundApp | null; onClose: (
   const [token, setToken] = useState("");
   const [enabled, setEnabled] = useState(app?.config?.enabled ?? true);
   const [errors, setErrors] = useState<{ baseUrl?: string; token?: string }>({});
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
 
   function submit() {
     if (!app) return;
@@ -141,6 +141,7 @@ function ConfigureDialog({ app, onClose }: { app: OutboundApp | null; onClose: (
           description: enabled ? "Halo pushes assigned people every 2 minutes. Use Test to check the connection." : "Provisioning is paused. Nothing is pushed until you turn it on.",
         });
       },
+      "inline",
     );
   }
 
@@ -148,6 +149,7 @@ function ConfigureDialog({ app, onClose }: { app: OutboundApp | null; onClose: (
     <Dialog
       open={app !== null}
       onOpenChange={(next) => (next ? undefined : onClose())}
+      error={errorFor("save")}
       title={configured ? `Edit provisioning for ${app?.name}` : `Set up provisioning for ${app?.name}`}
       description="Halo creates accounts for people assigned to the application, updates them when their profile changes and deactivates them when they lose access."
       footer={

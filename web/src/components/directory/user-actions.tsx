@@ -105,18 +105,20 @@ export function UserActions({ id, name, suspended, edit }: { id: string; name: s
 }
 
 export function ResetAuthenticationDialog({ user, onClose }: { user: UserRef | null; onClose: () => void }) {
-  const { pending, run } = useMutation();
+  const { pending, run, errorFor, clearError } = useMutation();
   const [link, setLink] = useState<SetupLink | null>(null);
 
   function close() {
     onClose();
     setLink(null);
+    clearError();
   }
 
   return (
     <Dialog
       open={user !== null}
       onOpenChange={(next) => (next ? undefined : close())}
+      error={errorFor("reset")}
       title={link ? "New setup link" : `Reset ${user?.name ?? ""}'s authentication?`}
       description={
         link
@@ -136,7 +138,7 @@ export function ResetAuthenticationDialog({ user, onClose }: { user: UserRef | n
             <Button
               variant="destructive"
               loading={pending === "reset"}
-              onClick={() => user && run("reset", () => api<SetupLink>(`/users/${user.id}/reset-authentication`, { method: "POST" }), setLink)}
+              onClick={() => user && run("reset", () => api<SetupLink>(`/users/${user.id}/reset-authentication`, { method: "POST" }), setLink, "inline")}
             >
               Reset authentication
             </Button>
@@ -158,7 +160,7 @@ export function ResetAuthenticationDialog({ user, onClose }: { user: UserRef | n
 }
 
 export function TemporaryPasswordButton({ user, warning }: { user: UserRef; warning?: string }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
   const formId = useId();
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState("");
@@ -169,6 +171,7 @@ export function TemporaryPasswordButton({ user, warning }: { user: UserRef; warn
         size="sm"
         onClick={() => {
           setPassword(randomPassword());
+          clearError();
           setOpen(true);
         }}
       >
@@ -178,6 +181,7 @@ export function TemporaryPasswordButton({ user, warning }: { user: UserRef; warn
       <Dialog
         open={open}
         onOpenChange={setOpen}
+        error={errorFor("password")}
         title="Set a temporary password"
         description={`${user.name} signs in with it once and then chooses their own password. Share it in person or over another channel you trust.`}
         footer={
@@ -200,7 +204,7 @@ export function TemporaryPasswordButton({ user, warning }: { user: UserRef; warn
             void run("password", () => api(`/users/${user.id}/password`, { method: "PUT", body: { password } }), () => {
               setOpen(false);
               toast({ title: "Temporary password set", description: `${user.name} must choose a new password the next time they sign in.` });
-            });
+            }, "inline");
           }}
         >
           <Field label="Temporary password" hint="Halo generated a random one. You can replace it with your own of at least 15 characters.">
@@ -224,18 +228,24 @@ export function TemporaryPasswordButton({ user, warning }: { user: UserRef; warn
 }
 
 export function SuspendDialog({ users, onClose }: { users: UserRef[]; onClose: () => void }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
   const single = users.length === 1 ? users[0] : undefined;
+
+  function close() {
+    clearError();
+    onClose();
+  }
 
   return (
     <Dialog
       open={users.length > 0}
-      onOpenChange={(next) => (next ? undefined : onClose())}
+      onOpenChange={(next) => (next ? undefined : close())}
+      error={errorFor("suspend")}
       title={single ? `Suspend ${single.name}?` : `Suspend ${pluralize(users.length, "user")}?`}
       description="Sign-in is blocked immediately and every session is revoked. Group memberships and application assignments are kept, so you can restore access later."
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={close}>
             Cancel
           </Button>
           <Button
@@ -249,6 +259,7 @@ export function SuspendDialog({ users, onClose }: { users: UserRef[]; onClose: (
                   onClose();
                   toast({ title: single ? `${single.name} suspended` : `${pluralize(users.length, "user")} suspended`, description: "Recorded in the audit log." });
                 },
+                "inline",
               )
             }
           >

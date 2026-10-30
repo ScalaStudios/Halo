@@ -2,6 +2,7 @@
 
 import { TriangleAlert } from "lucide-react";
 import { useState } from "react";
+import { ActionError } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { CopyField } from "@/components/ui/copy-field";
@@ -10,7 +11,7 @@ import type { Settings } from "@/lib/settings-types";
 import { ReadOnlyNote, useSaveSettings } from "./shared";
 
 export function OrganizationForm({ settings, defaultName, issuer, canEdit }: { settings: Settings; defaultName: string; issuer: string; canEdit: boolean }) {
-  const { saving, save } = useSaveSettings();
+  const { saving, failure, save } = useSaveSettings();
   const [name, setName] = useState(settings.organizationName);
   const [email, setEmail] = useState(settings.contactEmail);
   const [error, setError] = useState<string>();
@@ -45,10 +46,11 @@ export function OrganizationForm({ settings, defaultName, issuer, canEdit }: { s
           </Field>
           <CopyField label="Issuer URL" value={issuer} hint="Set by HALO_PUBLIC_URL when Halo starts. Applications discover every protocol endpoint from it." />
           {canEdit ? (
-            <div>
+            <div className="flex flex-wrap items-center gap-4">
               <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>
                 Save organization
               </Button>
+              <ActionError message={failure} />
             </div>
           ) : (
             <ReadOnlyNote>Only a global administrator can change the organization profile.</ReadOnlyNote>
@@ -60,7 +62,7 @@ export function OrganizationForm({ settings, defaultName, issuer, canEdit }: { s
 }
 
 export function SignInMessageForm({ settings, canEdit }: { settings: Settings; canEdit: boolean }) {
-  const { saving, save } = useSaveSettings();
+  const { saving, failure, save } = useSaveSettings();
   const [message, setMessage] = useState(settings.signInMessage);
 
   return (
@@ -80,10 +82,11 @@ export function SignInMessageForm({ settings, canEdit }: { settings: Settings; c
             )}
           </Field>
           {canEdit ? (
-            <div>
+            <div className="flex flex-wrap items-center gap-4">
               <Button type="submit" variant="secondary" loading={saving} disabled={message.trim() === settings.signInMessage}>
                 Save message
               </Button>
+              <ActionError message={failure} />
             </div>
           ) : (
             <ReadOnlyNote>Only a global administrator can change the sign-in message.</ReadOnlyNote>
@@ -97,7 +100,7 @@ export function SignInMessageForm({ settings, canEdit }: { settings: Settings; c
 const CSS_LIMIT = 32 * 1024;
 
 export function CustomCssForm({ settings, disabled, canEdit }: { settings: Settings; disabled: boolean; canEdit: boolean }) {
-  const { saving, save } = useSaveSettings();
+  const { saving, failure, save } = useSaveSettings();
   const [css, setCss] = useState(settings.customCss);
   const [inConsole, setInConsole] = useState(settings.consoleBranding);
   const bytes = new TextEncoder().encode(css.trim()).length;
@@ -153,10 +156,11 @@ export function CustomCssForm({ settings, disabled, canEdit }: { settings: Setti
             </span>
           </label>
           {canEdit ? (
-            <div>
+            <div className="flex flex-wrap items-center gap-4">
               <Button type="submit" variant="secondary" loading={saving} disabled={Boolean(error) || (css.trim() === settings.customCss && inConsole === settings.consoleBranding)}>
                 Save custom CSS
               </Button>
+              <ActionError message={failure} />
             </div>
           ) : (
             <ReadOnlyNote>Only a global administrator can change the custom CSS.</ReadOnlyNote>
@@ -204,7 +208,7 @@ const GROUPS: { title: string; description: string; fields: NumberSpec[] }[] = [
 const FIELDS = GROUPS.flatMap((group) => group.fields);
 
 export function SecurityForm({ settings, canEdit }: { settings: Settings; canEdit: boolean }) {
-  const { saving, save } = useSaveSettings();
+  const { saving, failure, save } = useSaveSettings();
   const [values, setValues] = useState(() => Object.fromEntries(FIELDS.map((f) => [f.key, String(settings[f.key])])) as Record<NumberKey, string>);
   const [errors, setErrors] = useState<Partial<Record<NumberKey, string>>>({});
   const dirty = FIELDS.some((f) => Number(values[f.key]) !== settings[f.key]);
@@ -261,10 +265,11 @@ export function SecurityForm({ settings, canEdit }: { settings: Settings; canEdi
         </Card>
       ))}
       {canEdit ? (
-        <div>
+        <div className="flex flex-wrap items-center gap-4">
           <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>
             Save security defaults
           </Button>
+          <ActionError message={failure} />
         </div>
       ) : (
         <ReadOnlyNote>Only security and global administrators can change security defaults.</ReadOnlyNote>

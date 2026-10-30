@@ -3,6 +3,7 @@
 import { Download } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@/components/console/use-mutation";
+import { ActionError } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { CopyField } from "@/components/ui/copy-field";
@@ -48,7 +49,7 @@ export function SamlSettingsForm({ appId, appName, saml }: { appId: string; appN
   const [acsUrls, setAcsUrls] = useState(saml.acsUrls.join("\n"));
   const [format, setFormat] = useState<NameIdFormat>(saml.nameIdFormat);
   const [signResponse, setSignResponse] = useState(saml.signResponse);
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -57,6 +58,7 @@ export function SamlSettingsForm({ appId, appName, saml }: { appId: string; appN
       "settings",
       () => api(`/applications/${appId}/saml`, { method: "PUT", body: { entityId: entityId.trim(), acsUrls: urls, nameIdFormat: format, signResponse } }),
       () => toast({ title: "SAML settings saved", description: `${appName} gets them on its next sign-in. Recorded in the audit log.` }),
+      "inline",
     );
   }
 
@@ -91,7 +93,8 @@ export function SamlSettingsForm({ appId, appName, saml }: { appId: string; appN
             )}
           </Field>
         </CardBody>
-        <div className="flex justify-end border-t border-border px-6 py-4">
+        <div className="flex flex-wrap items-center justify-end gap-4 border-t border-border px-6 py-4">
+          <ActionError message={errorFor("settings")} />
           <Button type="submit" variant="primary" loading={pending === "settings"}>
             Save settings
           </Button>
@@ -103,7 +106,7 @@ export function SamlSettingsForm({ appId, appName, saml }: { appId: string; appN
 
 export function SamlAttributesForm({ appId, appName, saml }: { appId: string; appName: string; saml: SamlSettings }) {
   const [names, setNames] = useState<SamlAttributes>(saml.attributes);
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -111,6 +114,7 @@ export function SamlAttributesForm({ appId, appName, saml }: { appId: string; ap
       "attributes",
       () => api(`/applications/${appId}/saml`, { method: "PUT", body: { attributes: names } }),
       () => toast({ title: "Attributes saved", description: `${appName} receives them on its next sign-in. Recorded in the audit log.` }),
+      "inline",
     );
   }
 
@@ -153,9 +157,12 @@ export function SamlAttributesForm({ appId, appName, saml }: { appId: string; ap
       />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-body-sm text-fg-3">Clear a name to stop sending that value. Empty values, like a missing family name, are never sent.</p>
-        <Button type="submit" variant="primary" loading={pending === "attributes"} className="self-start sm:self-auto">
-          Save attributes
-        </Button>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <ActionError message={errorFor("attributes")} />
+          <Button type="submit" variant="primary" loading={pending === "attributes"}>
+            Save attributes
+          </Button>
+        </div>
       </div>
     </form>
   );

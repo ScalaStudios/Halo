@@ -3,6 +3,7 @@
 import { Trash2 } from "lucide-react";
 import { useRef } from "react";
 import { useMutation } from "@/components/console/use-mutation";
+import { ActionError } from "@/components/ui/action-error";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api/client";
@@ -12,7 +13,7 @@ const TYPES = ["image/png", "image/jpeg", "image/webp"];
 const MAX_BYTES = 256 * 1024;
 
 export function OrgLogo({ name, logoUrl, canEdit }: { name: string; logoUrl: string | null; canEdit: boolean }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
   const input = useRef<HTMLInputElement>(null);
 
   function upload(file: File) {
@@ -31,6 +32,7 @@ export function OrgLogo({ name, logoUrl, canEdit }: { name: string; logoUrl: str
         if (!res.ok) throw await toApiError(res, "Halo could not store the logo. Try again.");
       },
       () => toast({ title: "Logo updated", description: "The overview and the sign-in page show it from now on." }),
+      "inline",
     );
   }
 
@@ -80,7 +82,7 @@ export function OrgLogo({ name, logoUrl, canEdit }: { name: string; logoUrl: str
                 size="sm"
                 loading={pending === "remove"}
                 aria-label="Remove organization logo"
-                onClick={() => void run("remove", () => api("/branding/logo", { method: "DELETE" }), () => toast({ title: "Logo removed" }))}
+                onClick={() => void run("remove", () => api("/branding/logo", { method: "DELETE" }), () => toast({ title: "Logo removed" }), "inline")}
               >
                 <Trash2 aria-hidden="true" size={14} strokeWidth={1.75} />
                 Remove
@@ -88,6 +90,7 @@ export function OrgLogo({ name, logoUrl, canEdit }: { name: string; logoUrl: str
             ) : null}
           </div>
         ) : null}
+        <ActionError message={errorFor("upload") ?? errorFor("remove")} />
       </div>
     </div>
   );

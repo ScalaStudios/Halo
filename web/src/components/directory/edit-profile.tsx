@@ -66,7 +66,7 @@ export function OrgFields({
 
 export function EditProfileDialog({ user, directory, access, open, onOpenChange }: ProfileEdit & { open: boolean; onOpenChange: (open: boolean) => void }) {
   const formId = useId();
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
 
   function save(body: Record<string, string>) {
     void run(
@@ -76,13 +76,18 @@ export function EditProfileDialog({ user, directory, access, open, onOpenChange 
         onOpenChange(false);
         toast({ title: "Profile saved", description: `${user.name}'s profile is updated. Recorded in the audit log.` });
       },
+      "inline",
     );
   }
 
   return (
     <Dialog
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={(next) => {
+        clearError();
+        onOpenChange(next);
+      }}
+      error={errorFor("profile")}
       title="Edit profile"
       description={
         access === "org"

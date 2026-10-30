@@ -58,7 +58,7 @@ function RuleToggle({ rule }: { rule: LifecycleRule }) {
 export function RulesTable({ rules, groups }: { rules: LifecycleRule[]; groups: Group[] }) {
   const [editing, setEditing] = useState<LifecycleRule | "new" | null>(null);
   const [deleting, setDeleting] = useState<LifecycleRule | null>(null);
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
   const describe = useMemo(() => {
     const name = (id?: string) => groups.find((g) => g.id === id)?.name ?? "a deleted group";
     return (a: LifecycleAction) =>
@@ -178,7 +178,12 @@ export function RulesTable({ rules, groups }: { rules: LifecycleRule[]; groups: 
       {editing ? <RuleDialog rule={editing === "new" ? null : editing} groups={groups} onClose={() => setEditing(null)} /> : null}
       <Dialog
         open={deleting !== null}
-        onOpenChange={(open) => (open ? undefined : setDeleting(null))}
+        onOpenChange={(open) => {
+          if (open) return;
+          setDeleting(null);
+          clearError();
+        }}
+        error={errorFor("delete")}
         title={`Delete ${deleting?.name ?? ""}?`}
         description={
           deleting?.runs
@@ -202,6 +207,7 @@ export function RulesTable({ rules, groups }: { rules: LifecycleRule[]; groups: 
                     toast({ title: `${deleting.name} deleted`, description: "Recorded in the audit log." });
                     setDeleting(null);
                   },
+                  "inline",
                 )
               }
             >
@@ -221,7 +227,7 @@ function RuleDialog({ rule, groups, onClose }: { rule: LifecycleRule | null; gro
   const [actions, setActions] = useState<LifecycleAction[]>(rule?.actions ?? [{ type: "add-to-group" }]);
   const [enabled, setEnabled] = useState(rule?.enabled ?? true);
   const [errors, setErrors] = useState<{ name?: string; actions?: string }>({});
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
 
   function update(index: number, next: LifecycleAction) {
     setActions((current) => current.map((a, i) => (i === index ? next : a)));
@@ -251,6 +257,7 @@ function RuleDialog({ rule, groups, onClose }: { rule: LifecycleRule | null; gro
           description: "It applies to changes Halo detects from now on, checked every minute.",
         });
       },
+      "inline",
     );
   }
 
@@ -258,6 +265,7 @@ function RuleDialog({ rule, groups, onClose }: { rule: LifecycleRule | null; gro
     <Dialog
       open
       onOpenChange={(open) => (open ? undefined : onClose())}
+      error={errorFor("save")}
       title={rule ? `Edit ${rule.name}` : "Create lifecycle rule"}
       description="Halo compares every account with what it saw last time, every minute, and runs each matching rule once per change."
       footer={

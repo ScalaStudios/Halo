@@ -37,7 +37,7 @@ const ROTATION: Record<Rotation, { path: string; title: string; description: str
 };
 
 export function SigningKeys({ keys, canRotate }: { keys: Keys; canRotate: boolean }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
   const [confirming, setConfirming] = useState<Rotation | null>(null);
   const rotation = confirming ? ROTATION[confirming] : null;
 
@@ -45,7 +45,7 @@ export function SigningKeys({ keys, canRotate }: { keys: Keys; canRotate: boolea
     void run(kind, () => api<Keys>(ROTATION[kind].path, { method: "POST" }), () => {
       setConfirming(null);
       toast({ title: ROTATION[kind].done, description: ROTATION[kind].result });
-    });
+    }, "inline");
   }
 
   function remove(id: string) {
@@ -174,8 +174,11 @@ export function SigningKeys({ keys, canRotate }: { keys: Keys; canRotate: boolea
       <Dialog
         open={rotation !== null}
         onOpenChange={(open) => {
-          if (!open) setConfirming(null);
+          if (open) return;
+          setConfirming(null);
+          clearError();
         }}
+        error={confirming ? errorFor(confirming) : undefined}
         title={rotation?.title ?? ""}
         description={rotation?.description}
         footer={

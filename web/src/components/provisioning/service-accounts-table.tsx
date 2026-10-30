@@ -179,10 +179,11 @@ function CreateServiceAccountDialog({ open, onOpenChange, people }: { open: bool
   const [ownerId, setOwnerId] = useState("");
   const [roles, setRoles] = useState<RoleKey[]>([]);
   const [error, setError] = useState<string>();
-  const { pending, run, toast, router } = useMutation();
+  const { pending, run, errorFor, clearError, toast, router } = useMutation();
 
   function close() {
     onOpenChange(false);
+    clearError();
     setName("");
     setDescription("");
     setOwnerId("");
@@ -203,6 +204,7 @@ function CreateServiceAccountDialog({ open, onOpenChange, people }: { open: bool
         toast({ title: `${account.name} created`, description: "Create an API key so it can authenticate." });
         router.push(`/admin/service-accounts/${account.id}`);
       },
+      "inline",
     );
   }
 
@@ -210,6 +212,7 @@ function CreateServiceAccountDialog({ open, onOpenChange, people }: { open: bool
     <Dialog
       open={open}
       onOpenChange={(next) => (next ? onOpenChange(true) : close())}
+      error={errorFor("create")}
       title="Create service account"
       description="A non-human identity for automation. It can't sign in to the console; it authenticates with API keys and acts with the roles you give it here."
       footer={

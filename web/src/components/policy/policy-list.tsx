@@ -42,7 +42,7 @@ export function ReportInsights({ policies }: { policies: PolicyWithActivity[] })
 }
 
 export function PolicyList({ policies, names }: { policies: PolicyWithActivity[]; names: Names }) {
-  const { pending, run, toast, router } = useMutation();
+  const { pending, run, errorFor, clearError, toast, router } = useMutation();
   const [deleting, setDeleting] = useState<PolicyWithActivity | null>(null);
 
   function move(index: number, delta: number) {
@@ -65,7 +65,7 @@ export function PolicyList({ policies, names }: { policies: PolicyWithActivity[]
     void run("delete", () => api(`/policies/${p.id}`, { method: "DELETE" }), () => {
       setDeleting(null);
       toast({ title: `${p.name} deleted`, description: "Halo no longer evaluates it. Recorded in the audit log." });
-    });
+    }, "inline");
   }
 
   if (policies.length === 0) {
@@ -167,8 +167,11 @@ export function PolicyList({ policies, names }: { policies: PolicyWithActivity[]
       <Dialog
         open={deleting !== null}
         onOpenChange={(open) => {
-          if (!open) setDeleting(null);
+          if (open) return;
+          setDeleting(null);
+          clearError();
         }}
+        error={errorFor("delete")}
         title={`Delete ${deleting?.name ?? "policy"}?`}
         description="Halo stops evaluating it immediately. Its changes stay in the audit log."
         footer={

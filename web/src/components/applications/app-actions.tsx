@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { BookOpen, Copy, Ellipsis, ExternalLink, Pencil, Power, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useMutation } from "@/components/console/use-mutation";
+import { ActionError } from "@/components/ui/action-error";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { HoldToConfirm } from "@/components/ui/hold-to-confirm";
@@ -87,7 +88,7 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
 }
 
 export function DangerZone({ id, name, disabled, className }: { id: string; name: string; disabled: boolean; className?: string }) {
-  const { pending, run, toast, router } = useMutation();
+  const { pending, run, errorFor, toast, router } = useMutation();
 
   function toggle() {
     void run(
@@ -99,6 +100,7 @@ export function DangerZone({ id, name, disabled, className }: { id: string; name
             ? { title: `${name} enabled`, description: "Assigned people can sign in again." }
             : { title: `${name} disabled`, description: "New sign-ins are blocked and tokens already issued are revoked." },
         ),
+      "inline",
     );
   }
 
@@ -110,6 +112,7 @@ export function DangerZone({ id, name, disabled, className }: { id: string; name
         toast({ title: `${name} deleted`, description: "Recorded in the audit log." });
         router.push("/admin/applications");
       },
+      "inline",
     );
   }
 
@@ -125,6 +128,7 @@ export function DangerZone({ id, name, disabled, className }: { id: string; name
                 ? `Lets people assigned to ${name} sign in again with the existing credentials.`
                 : `Blocks new sign-ins to ${name} and revokes tokens already issued. You can enable it again at any time.`}
             </p>
+            <ActionError message={errorFor("toggle")} />
           </div>
           <Button size="sm" variant="secondary" loading={pending === "toggle"} onClick={toggle} className="self-start sm:self-center">
             <Power aria-hidden="true" size={16} strokeWidth={1.75} />
@@ -135,6 +139,7 @@ export function DangerZone({ id, name, disabled, className }: { id: string; name
           <div className="flex flex-col gap-1">
             <p className="text-body-sm font-semibold text-fg">Delete application</p>
             <p className="text-body-sm text-fg-3">Removes {name}, its credentials and group assignments. Sign-in stops immediately and cannot be restored.</p>
+            <ActionError message={errorFor("delete")} />
           </div>
           <HoldToConfirm
             size="sm"

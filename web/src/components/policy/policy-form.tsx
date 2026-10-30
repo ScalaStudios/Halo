@@ -4,6 +4,7 @@ import Link from "next/link";
 import { TriangleAlert, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useMutation } from "@/components/console/use-mutation";
+import { ActionError } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -123,7 +124,7 @@ export function PolicyForm({
   applications: Option[];
   zones: Option[];
 }) {
-  const { pending, run, toast, router } = useMutation();
+  const { pending, run, errorFor, toast, router } = useMutation();
   const [name, setName] = useState(policy?.name ?? "");
   const [description, setDescription] = useState(policy?.description ?? "");
   const [effect, setEffect] = useState<PolicyEffect>(policy?.effect ?? "block");
@@ -167,6 +168,7 @@ export function PolicyForm({
         });
         router.push("/admin/policies");
       },
+      "inline",
     );
   }
 
@@ -175,7 +177,7 @@ export function PolicyForm({
     return run("delete", () => api(`/policies/${policy.id}`, { method: "DELETE" }), () => {
       toast({ title: `${policy.name} deleted`, description: "Halo no longer evaluates it. Recorded in the audit log." });
       router.push("/admin/policies");
-    });
+    }, "inline");
   }
 
   return (
@@ -376,6 +378,7 @@ export function PolicyForm({
                   <p className="text-body-sm text-fg-2">This applies to everyone, including you. Exclude a break-glass group or account, or save it as report-only first.</p>
                 </div>
               ) : null}
+              <ActionError message={errorFor("save")} />
               <div className="flex flex-wrap gap-2 pt-2">
                 <Button type="submit" variant="primary" loading={pending === "save"}>
                   {policy ? "Save policy" : "Create policy"}
@@ -390,10 +393,11 @@ export function PolicyForm({
           {policy ? (
             <Card>
               <CardHeader title="Delete policy" description="Halo stops evaluating it immediately. Its changes stay in the audit log." />
-              <CardBody>
+              <CardBody className="flex flex-col items-start gap-3">
                 <HoldToConfirm size="sm" doneLabel="Deleted" onConfirm={remove}>
                   Hold to delete
                 </HoldToConfirm>
+                <ActionError message={errorFor("delete")} />
               </CardBody>
             </Card>
           ) : null}

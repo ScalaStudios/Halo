@@ -39,7 +39,7 @@ export function InviteDialog({
   const [role, setRole] = useState<RoleKey | "">("");
   const [errors, setErrors] = useState<{ email?: string; name?: string }>({});
   const [invitation, setInvitation] = useState<SetupLink | null>(null);
-  const { pending, run } = useMutation();
+  const { pending, run, errorFor, clearError } = useMutation();
 
   function reset() {
     setEmail("");
@@ -54,6 +54,7 @@ export function InviteDialog({
   function close() {
     onOpenChange(false);
     reset();
+    clearError();
   }
 
   function submit() {
@@ -63,13 +64,14 @@ export function InviteDialog({
     };
     setErrors(next);
     if (next.email || next.name) return;
-    void run("invite", () => api<SetupLink>("/users", { body: { email: email.trim(), name: name.trim(), ...org, groupIds: selected, roles: role ? [role] : [] } }), setInvitation);
+    void run("invite", () => api<SetupLink>("/users", { body: { email: email.trim(), name: name.trim(), ...org, groupIds: selected, roles: role ? [role] : [] } }), setInvitation, "inline");
   }
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => (next ? onOpenChange(true) : close())}
+      error={errorFor("invite")}
       title={invitation ? "Invitation created" : "Invite user"}
       description={
         invitation

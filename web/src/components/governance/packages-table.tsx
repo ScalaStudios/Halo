@@ -105,7 +105,7 @@ function bodyFor(p: AccessPackage) {
 }
 
 export function PackagesTable({ packages, groups, people }: { packages: AccessPackage[]; groups: Group[]; people: Person[] }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
   const [editing, setEditing] = useState<AccessPackage | "new" | null>(null);
   const [deleting, setDeleting] = useState<AccessPackage | null>(null);
 
@@ -172,7 +172,12 @@ export function PackagesTable({ packages, groups, people }: { packages: AccessPa
       {editing ? <PackageDialog pkg={editing === "new" ? null : editing} groups={groups} people={people} onClose={() => setEditing(null)} /> : null}
       <Dialog
         open={deleting !== null}
-        onOpenChange={(open) => (open ? undefined : setDeleting(null))}
+        onOpenChange={(open) => {
+          if (open) return;
+          setDeleting(null);
+          clearError();
+        }}
+        error={errorFor("delete")}
         title={`Delete ${deleting?.name ?? ""}?`}
         description="Only packages nobody has requested can be deleted. To stop new requests and keep the history, archive the package instead."
         footer={
@@ -205,6 +210,7 @@ export function PackagesTable({ packages, groups, people }: { packages: AccessPa
                     toast({ title: `${deleting.name} deleted`, description: "Recorded in the audit log." });
                     setDeleting(null);
                   },
+                  "inline",
                 )
               }
             >
@@ -227,7 +233,7 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
   const [requireJustification, setRequireJustification] = useState(pkg?.requireJustification ?? true);
   const [archived, setArchived] = useState(pkg?.archived ?? false);
   const [errors, setErrors] = useState<{ name?: string; groups?: string }>({});
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
   const durations = [...new Set([...DURATIONS, ...(pkg?.maxDays ? [pkg.maxDays] : [])])].sort((a, b) => a - b);
 
   function submit() {
@@ -255,6 +261,7 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
             : { title: `${saved.name} created`, description: "People can request it from the Access page in their account." },
         );
       },
+      "inline",
     );
   }
 
@@ -262,6 +269,7 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
     <Dialog
       open
       onOpenChange={(open) => (open ? undefined : onClose())}
+      error={errorFor("save")}
       title={pkg ? `Edit ${pkg.name}` : "Create access package"}
       description="A package bundles groups people can request. Approved access is removed automatically when it expires."
       footer={

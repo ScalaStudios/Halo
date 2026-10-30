@@ -27,7 +27,7 @@ const EXPIRY = [
 ];
 
 export function AccountActions({ account, scimUrl }: { account: ServiceAccount; scimUrl: string }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
   const [creating, setCreating] = useState(false);
   const [disabling, setDisabling] = useState(false);
   const disabled = account.status === "suspended";
@@ -40,6 +40,7 @@ export function AccountActions({ account, scimUrl }: { account: ServiceAccount; 
         setDisabling(false);
         toast(next ? { title: `${account.name} disabled`, description: "Its API keys stopped working. Recorded in the audit log." } : { title: `${account.name} enabled`, description: "Its API keys work again." });
       },
+      next ? "inline" : undefined,
     );
   }
 
@@ -80,12 +81,22 @@ export function AccountActions({ account, scimUrl }: { account: ServiceAccount; 
       <CreateKeyDialog account={account} scimUrl={scimUrl} open={creating} onOpenChange={setCreating} />
       <Dialog
         open={disabling}
-        onOpenChange={setDisabling}
+        onOpenChange={(next) => {
+          clearError();
+          setDisabling(next);
+        }}
+        error={errorFor("status")}
         title={`Disable ${account.name}?`}
         description={`Its ${pluralize(activeKeys(account.keys).length, "active API key")} stop working immediately. Nothing is deleted, and you can enable it again later.`}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setDisabling(false)}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                clearError();
+                setDisabling(false);
+              }}
+            >
               Cancel
             </Button>
             <Button variant="destructive" loading={pending === "status"} onClick={() => setDisabled(true)}>
@@ -104,10 +115,11 @@ function CreateKeyDialog({ account, scimUrl, open, onOpenChange }: { account: Se
   const [expiry, setExpiry] = useState("90");
   const [errors, setErrors] = useState<{ label?: string; scopes?: string }>({});
   const [issued, setIssued] = useState<{ key: ApiKey; secret: string } | null>(null);
-  const { pending, run } = useMutation();
+  const { pending, run, errorFor, clearError } = useMutation();
 
   function close() {
     onOpenChange(false);
+    clearError();
     setLabel("");
     setScopes([]);
     setExpiry("90");
@@ -123,13 +135,14 @@ function CreateKeyDialog({ account, scimUrl, open, onOpenChange }: { account: Se
     setErrors(next);
     if (next.label || next.scopes) return;
     const expiresAt = expiry === "never" ? null : new Date(Date.now() + Number(expiry) * 86_400_000).toISOString();
-    void run("create", () => api<{ key: ApiKey; secret: string }>(`/service-accounts/${account.id}/keys`, { body: { label: label.trim(), scopes, expiresAt } }), setIssued);
+    void run("create", () => api<{ key: ApiKey; secret: string }>(`/service-accounts/${account.id}/keys`, { body: { label: label.trim(), scopes, expiresAt } }), setIssued, "inline");
   }
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => (next ? onOpenChange(true) : close())}
+      error={errorFor("create")}
       title={issued ? "New API key" : "Create API key"}
       description={
         issued
@@ -217,7 +230,7 @@ function CreateKeyDialog({ account, scimUrl, open, onOpenChange }: { account: Se
 export function RolesCard({ account }: { account: ServiceAccount }) {
   const [editing, setEditing] = useState(false);
   const [roles, setRoles] = useState<RoleKey[]>(account.roles);
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
 
   function save() {
     void run(
@@ -227,6 +240,7 @@ export function RolesCard({ account }: { account: ServiceAccount }) {
         setEditing(false);
         toast({ title: "Roles updated", description: `${account.name} now acts with ${pluralize(roles.length, "role")}. Recorded in the audit log.` });
       },
+      "inline",
     );
   }
 
@@ -264,7 +278,11 @@ export function RolesCard({ account }: { account: ServiceAccount }) {
       </CardBody>
       <Dialog
         open={editing}
-        onOpenChange={setEditing}
+        onOpenChange={(next) => {
+          clearError();
+          setEditing(next);
+        }}
+        error={errorFor("roles")}
         title={`Edit ${account.name}'s roles`}
         description="You can only give roles you hold yourself. Global administrators can give any role."
         footer={
@@ -328,17 +346,23 @@ export function KeyTable({ keys, accountName }: { keys: ApiKey[]; accountName: s
 }
 
 export function RevokeKeyDialog({ apiKey, onClose }: { apiKey: ApiKey | null; onClose: () => void }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
+
+  function close() {
+    clearError();
+    onClose();
+  }
 
   return (
     <Dialog
       open={apiKey !== null}
-      onOpenChange={(next) => (next ? undefined : onClose())}
+      onOpenChange={(next) => (next ? undefined : close())}
+      error={errorFor("revoke")}
       title={`Revoke “${apiKey?.label ?? ""}”?`}
       description={apiKey ? `Requests that use ${apiKey.prefix}… fail immediately. ${apiKey.serviceAccountName} keeps its other keys. A revoked key can't be restored.` : undefined}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={close}>
             Cancel
           </Button>
           <Button
@@ -353,6 +377,7 @@ export function RevokeKeyDialog({ apiKey, onClose }: { apiKey: ApiKey | null; on
                   onClose();
                   toast({ title: `“${apiKey.label}” revoked`, description: "Recorded in the audit log." });
                 },
+                "inline",
               )
             }
           >

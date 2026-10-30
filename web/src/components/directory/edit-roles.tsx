@@ -24,14 +24,14 @@ export function PasskeyWarning({ role }: { role: string }) {
 export function EditRolesButton({ user }: { user: User }) {
   const [open, setOpen] = useState(false);
   const [roles, setRoles] = useState<RoleKey[]>([]);
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
   const given = roles.find((role) => !keysOf(user).includes(role));
 
   function save() {
     void run("roles", () => api(`/users/${user.id}/roles`, { method: "PUT", body: { roles } }), () => {
       setOpen(false);
       toast({ title: "Roles saved", description: "Takes effect on their next request. Recorded in the audit log." });
-    });
+    }, "inline");
   }
 
   return (
@@ -42,6 +42,7 @@ export function EditRolesButton({ user }: { user: User }) {
         className="rounded-sm text-link transition-colors duration-fast hover:text-ember"
         onClick={() => {
           setRoles(keysOf(user));
+          clearError();
           setOpen(true);
         }}
       >
@@ -50,6 +51,7 @@ export function EditRolesButton({ user }: { user: User }) {
       <Dialog
         open={open}
         onOpenChange={setOpen}
+        error={errorFor("roles")}
         title={`Edit ${user.name}'s roles`}
         description="Every role can read every administration page. Changes take effect on their next request."
         footer={

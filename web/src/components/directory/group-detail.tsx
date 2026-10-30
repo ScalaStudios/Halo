@@ -187,11 +187,12 @@ function GroupForm({ id, group, onSave }: { id: string; group: Group; onSave: (b
 export function AddMembers({ group, people }: { group: Group; people: User[] }) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
 
   function close() {
     setOpen(false);
     setSelected([]);
+    clearError();
   }
 
   function add() {
@@ -203,6 +204,7 @@ export function AddMembers({ group, people }: { group: Group; people: User[] }) 
         close();
         toast({ title: `Added ${pluralize(count, "person", "people")}`, description: `They get ${group.name}'s applications at their next sign-in.` });
       },
+      "inline",
     );
   }
 
@@ -215,6 +217,7 @@ export function AddMembers({ group, people }: { group: Group; people: User[] }) 
       <Dialog
         open={open}
         onOpenChange={(next) => (next ? setOpen(true) : close())}
+        error={errorFor("add")}
         title={`Add members to ${group.name}`}
         description="Members get the group's applications at their next sign-in. Recorded in the audit log."
         footer={

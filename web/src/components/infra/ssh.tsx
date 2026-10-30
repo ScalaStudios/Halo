@@ -3,6 +3,7 @@
 import { Pencil, Plus, Trash2, UsersRound } from "lucide-react";
 import { useState } from "react";
 import { useMutation } from "@/components/console/use-mutation";
+import { ActionError } from "@/components/ui/action-error";
 import { Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -19,7 +20,7 @@ import type { Group } from "@/lib/types";
 const LIFETIMES = [900, 3600, 7200, 14400, 28800, 43200, 86400];
 
 export function LifetimeSetting({ lifetime }: { lifetime: number }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
   const [value, setValue] = useState(lifetime);
   const options = LIFETIMES.includes(lifetime) ? LIFETIMES : [...LIFETIMES, lifetime].sort((a, b) => a - b);
 
@@ -30,6 +31,7 @@ export function LifetimeSetting({ lifetime }: { lifetime: number }) {
         event.preventDefault();
         void run("lifetime", () => api<SshAuthority>("/ssh/authority", { method: "PUT", body: { certificateLifetime: value } }), () =>
           toast({ title: `Certificates now last ${formatDuration(value)}`, description: "Applies to certificates issued from now on. Recorded in the audit log." }),
+          "inline",
         );
       }}
     >
@@ -48,12 +50,13 @@ export function LifetimeSetting({ lifetime }: { lifetime: number }) {
       <Button type="submit" variant="secondary" loading={pending === "lifetime"} disabled={value === lifetime} className="sm:mt-6">
         Save lifetime
       </Button>
+      <ActionError message={errorFor("lifetime")} className="sm:mt-8" />
     </form>
   );
 }
 
 export function MappingsSection({ mappings, groups }: { mappings: PrincipalMapping[]; groups: Group[] }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
   const [editing, setEditing] = useState<PrincipalMapping | "new" | null>(null);
   const [deleting, setDeleting] = useState<PrincipalMapping | null>(null);
   const groupName = (id: string) => groups.find((g) => g.id === id)?.name ?? "Deleted group";
@@ -64,7 +67,7 @@ export function MappingsSection({ mappings, groups }: { mappings: PrincipalMappi
     void run("delete", () => api(`/ssh/principal-mappings/${mapping.id}`, { method: "DELETE" }), () => {
       setDeleting(null);
       toast({ title: `${groupName(mapping.groupId)} unmapped`, description: "Its members get no certificate for these accounts from now on. Recorded in the audit log." });
-    });
+    }, "inline");
   }
 
   return (
@@ -128,8 +131,11 @@ export function MappingsSection({ mappings, groups }: { mappings: PrincipalMappi
       <Dialog
         open={deleting !== null}
         onOpenChange={(open) => {
-          if (!open) setDeleting(null);
+          if (open) return;
+          setDeleting(null);
+          clearError();
         }}
+        error={errorFor("delete")}
         title={`Delete the mapping for ${deleting ? groupName(deleting.groupId) : "this group"}?`}
         description="Certificates already issued stay valid until they expire, because sshd cannot check revocation."
         footer={
@@ -148,7 +154,7 @@ export function MappingsSection({ mappings, groups }: { mappings: PrincipalMappi
 }
 
 function MappingDialog({ mapping, groups, onClose }: { mapping: PrincipalMapping | null; groups: Group[]; onClose: () => void }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
   const [groupId, setGroupId] = useState(mapping?.groupId ?? "");
   const [principals, setPrincipals] = useState(mapping?.principals.join(", ") ?? "");
   const [errors, setErrors] = useState<{ group?: string; principals?: string }>({});
@@ -176,6 +182,7 @@ function MappingDialog({ mapping, groups, onClose }: { mapping: PrincipalMapping
         toast({ title: `${name} mapped to ${saved.principals.join(", ")}`, description: "Applies to the next certificate each member requests." });
         onClose();
       },
+      "inline",
     );
   }
 
@@ -185,6 +192,7 @@ function MappingDialog({ mapping, groups, onClose }: { mapping: PrincipalMapping
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
+      error={errorFor("save")}
       title={mapping ? "Edit principal mapping" : "Add principal mapping"}
       description="Principals are the account names on your servers that a certificate lets someone log in as."
       footer={

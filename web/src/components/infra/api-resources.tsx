@@ -35,7 +35,7 @@ export function NewResourceButton() {
 }
 
 export function ResourceActions({ resource }: { resource: ApiResource }) {
-  const { pending, run, toast, router } = useMutation();
+  const { pending, run, errorFor, clearError, toast, router } = useMutation();
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -43,7 +43,7 @@ export function ResourceActions({ resource }: { resource: ApiResource }) {
     void run("delete", () => api(`/api-resources/${resource.id}`, { method: "DELETE" }), () => {
       toast({ title: `${resource.name} deleted`, description: `${pluralize(resource.grants.length, "application")} lost access. Recorded in the audit log.` });
       router.push("/admin/api-resources");
-    });
+    }, "inline");
   }
 
   return (
@@ -59,7 +59,11 @@ export function ResourceActions({ resource }: { resource: ApiResource }) {
       {editing ? <ResourceDialog resource={resource} onClose={() => setEditing(false)} /> : null}
       <Dialog
         open={deleting}
-        onOpenChange={setDeleting}
+        onOpenChange={(next) => {
+          clearError();
+          setDeleting(next);
+        }}
+        error={errorFor("delete")}
         title={`Delete ${resource.name}?`}
         description={`Halo stops issuing tokens for ${resource.identifier} and removes its grants to ${pluralize(resource.grants.length, "application")}. Tokens already issued stay valid until they expire.`}
         footer={
@@ -78,7 +82,7 @@ export function ResourceActions({ resource }: { resource: ApiResource }) {
 }
 
 function ResourceDialog({ resource, onClose }: { resource: ApiResource | null; onClose: () => void }) {
-  const { pending, run, toast, router } = useMutation();
+  const { pending, run, errorFor, toast, router } = useMutation();
   const [name, setName] = useState(resource?.name ?? "");
   const [identifier, setIdentifier] = useState(resource?.identifier ?? "");
   const [description, setDescription] = useState(resource?.description ?? "");
@@ -109,6 +113,7 @@ function ResourceDialog({ resource, onClose }: { resource: ApiResource | null; o
         onClose();
         if (!resource) router.push(`/admin/api-resources/${saved.id}`);
       },
+      "inline",
     );
   }
 
@@ -119,6 +124,7 @@ function ResourceDialog({ resource, onClose }: { resource: ApiResource | null; o
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
+      error={errorFor("save")}
       title={resource ? `Edit ${resource.name}` : "Add API"}
       description="An API is a resource server that accepts Halo access tokens. Applications you grant its scopes get tokens addressed to it."
       footer={
@@ -213,7 +219,7 @@ function ResourceDialog({ resource, onClose }: { resource: ApiResource | null; o
 }
 
 export function GrantsSection({ resource, applications }: { resource: ApiResource; applications: GrantTarget[] }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
   const [editing, setEditing] = useState<{ appId: string; scopes: string[] } | "new" | null>(null);
   const [removing, setRemoving] = useState<GrantTarget | null>(null);
   const appName = (id: string) => applications.find((a) => a.id === id)?.name ?? "Deleted application";
@@ -225,7 +231,7 @@ export function GrantsSection({ resource, applications }: { resource: ApiResourc
     void run("remove", () => api(`/api-resources/${resource.id}/grants/${app.id}`, { method: "PUT", body: { scopes: [] } }), () => {
       setRemoving(null);
       toast({ title: `${app.name} no longer has access to ${resource.name}`, description: "Its next token leaves out these scopes. Tokens already issued stay valid until they expire." });
-    });
+    }, "inline");
   }
 
   return (
@@ -284,8 +290,11 @@ export function GrantsSection({ resource, applications }: { resource: ApiResourc
       <Dialog
         open={removing !== null}
         onOpenChange={(open) => {
-          if (!open) setRemoving(null);
+          if (open) return;
+          setRemoving(null);
+          clearError();
         }}
+        error={errorFor("remove")}
         title={`Remove access for ${removing?.name ?? "this application"}?`}
         description="Its next token leaves out every scope of this API. Tokens already issued stay valid until they expire."
         footer={
@@ -314,7 +323,7 @@ function GrantDialog({
   applications: GrantTarget[];
   onClose: () => void;
 }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
   const [appId, setAppId] = useState(grant?.appId ?? "");
   const [scopes, setScopes] = useState<string[]>(grant?.scopes ?? []);
   const [errors, setErrors] = useState<{ app?: string; scopes?: string }>({});
@@ -330,7 +339,7 @@ function GrantDialog({
       const name = applications.find((a) => a.id === appId)?.name ?? "The application";
       toast({ title: `${name} can use ${scopes.join(", ")}`, description: "Applies to the next token it requests. Recorded in the audit log." });
       onClose();
-    });
+    }, "inline");
   }
 
   return (
@@ -339,6 +348,7 @@ function GrantDialog({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
+      error={errorFor("save")}
       title={grant ? `Edit access for ${applications[0]?.name ?? "application"}` : `Grant access to ${resource.name}`}
       description="The application receives only the scopes you check here, and only when it asks for them."
       footer={

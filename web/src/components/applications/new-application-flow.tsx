@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Check, FileKey, KeyRound, ServerCog, type LucideIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@/components/console/use-mutation";
+import { ActionError } from "@/components/ui/action-error";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { CopyField } from "@/components/ui/copy-field";
@@ -111,7 +112,7 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
   const [errors, setErrors] = useState<{ name?: string; uri?: string; address?: string; slug?: string; entityId?: string; metadata?: string }>({});
   const [created, setCreated] = useState<{ application: SamlApplication; clientSecret: string | null } | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
-  const { pending, run } = useMutation();
+  const { pending, run, errorFor } = useMutation();
 
   const steps = protocol === "oidc" ? ["Protocol", "Platform", "Details"] : protocol === "saml" ? ["Protocol", "Service provider", "Details"] : ["Protocol", "Details"];
   const current = steps[step];
@@ -174,6 +175,7 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
           },
         }),
       setCreated,
+      "inline",
     );
   }
 
@@ -199,6 +201,7 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
           },
         }),
       setCreated,
+      "inline",
     );
   }
 
@@ -380,6 +383,7 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
             </div>
           ) : null}
         </div>
+        <ActionError message={errorFor("create")} className="px-6 pb-4" />
         <div className="flex items-center justify-between gap-4 border-t border-border px-6 py-4">
           {step === 0 ? (
             <Link href="/admin/applications" className={buttonClasses("quiet")}>

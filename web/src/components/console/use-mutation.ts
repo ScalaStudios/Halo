@@ -9,9 +9,16 @@ export function useMutation() {
   const router = useRouter();
   const toast = useToast();
   const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<{ key: string; message: string } | null>(null);
 
-  async function run<T>(key: string, request: () => Promise<T>, onSuccess?: (result: T) => void, onError?: (error: unknown) => boolean): Promise<boolean> {
+  async function run<T>(
+    key: string,
+    request: () => Promise<T>,
+    onSuccess?: (result: T) => void,
+    onError?: ((error: unknown) => boolean) | "inline",
+  ): Promise<boolean> {
     setPending(key);
+    setError(null);
     try {
       const result = await request();
       startTransition(() => {
@@ -23,11 +30,16 @@ export function useMutation() {
     } catch (error) {
       setPending(null);
       router.refresh();
-      if (onError?.(error)) return false;
-      toast({ title: "That didn't work", description: error instanceof ApiError ? error.message : "Halo could not reach the server. Try again.", tone: "danger" });
+      const message = error instanceof ApiError ? error.message : "Halo could not reach the server. Try again.";
+      if (onError === "inline") setError({ key, message });
+      else if (!onError?.(error)) toast({ title: "That didn't work", description: message, tone: "danger" });
       return false;
     }
   }
 
-  return { pending, run, toast, router };
+  function errorFor(key: string) {
+    return error?.key === key ? error.message : undefined;
+  }
+
+  return { pending, run, errorFor, clearError: () => setError(null), toast, router };
 }

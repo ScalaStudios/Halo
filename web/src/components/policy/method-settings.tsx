@@ -5,6 +5,7 @@ import { useState } from "react";
 import { SecretWarning } from "@/components/applications/shared";
 import { useMutation } from "@/components/console/use-mutation";
 import { useSaveSettings } from "@/components/settings/shared";
+import { ActionError } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -55,7 +56,7 @@ function warning(m: MethodSetting) {
 }
 
 export function MethodSettings({ methods, settings, groups }: { methods: MethodSetting[]; settings: Settings; groups: Option[] }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
   const [confirming, setConfirming] = useState<MethodSetting | null>(null);
   const magicLinks = methods.find((m) => m.method === "magic-link")?.enabled ?? false;
 
@@ -67,7 +68,7 @@ export function MethodSettings({ methods, settings, groups }: { methods: MethodS
         title: `${plural[0]!.toUpperCase()}${plural.slice(1)} turned ${enabled ? "on" : "off"}`,
         description: !enabled ? "Sign-ins that use them are blocked from now on." : m.method === "password" ? "Choose who can use them under Password rules." : "People can sign in with them again.",
       });
-    });
+    }, "inline");
   }
 
   function change(m: MethodSetting, enabled: boolean) {
@@ -110,6 +111,7 @@ export function MethodSettings({ methods, settings, groups }: { methods: MethodS
                     </span>
                     <p className="text-body-sm text-fg-3">{DESCRIPTION[m.method]}</p>
                     <p className="tnum text-body-sm text-fg-2">{usage(m)}</p>
+                    {confirming ? null : <ActionError message={errorFor(m.method)} />}
                     {m.enabled && m.exclusive > 0 ? (
                       <p className="flex items-start gap-2 text-body-sm text-warning">
                         <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0" />
@@ -138,8 +140,11 @@ export function MethodSettings({ methods, settings, groups }: { methods: MethodS
       <Dialog
         open={confirming?.method === "password" && !confirming.enabled}
         onOpenChange={(open) => {
-          if (!open) setConfirming(null);
+          if (open) return;
+          setConfirming(null);
+          clearError();
         }}
+        error={confirming ? errorFor(confirming.method) : undefined}
         title="Turn on passwords?"
         description="Passkeys stay the recommended way to sign in. Use passwords only for people who can't use a passkey yet, such as during a move from another identity provider."
         footer={
@@ -160,8 +165,11 @@ export function MethodSettings({ methods, settings, groups }: { methods: MethodS
       <Dialog
         open={confirming !== null && confirming.enabled}
         onOpenChange={(open) => {
-          if (!open) setConfirming(null);
+          if (open) return;
+          setConfirming(null);
+          clearError();
         }}
+        error={confirming ? errorFor(confirming.method) : undefined}
         title={confirming ? `Turn off ${METHOD_PLURAL[confirming.method]}?` : "Turn off this method?"}
         description={confirming ? consequence(confirming) : undefined}
         footer={

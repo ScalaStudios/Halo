@@ -25,14 +25,19 @@ export function keysOf(person: Person) {
 }
 
 export function RolesBoard({ people, meId, canEdit }: { people: Person[]; meId: string; canEdit: boolean }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
   const [adding, setAdding] = useState<RoleKey | null>(null);
 
   function setRoles(person: Person, roles: RoleKey[], title: string) {
-    void run(`${person.id}`, () => api(`/users/${person.id}/roles`, { method: "PUT", body: { roles } }), () => {
-      setAdding(null);
-      toast({ title, description: "Takes effect on their next request. Recorded in the audit log." });
-    });
+    void run(
+      adding ? "add" : person.id,
+      () => api(`/users/${person.id}/roles`, { method: "PUT", body: { roles } }),
+      () => {
+        setAdding(null);
+        toast({ title, description: "Takes effect on their next request. Recorded in the audit log." });
+      },
+      adding ? "inline" : undefined,
+    );
   }
 
   return (
@@ -106,16 +111,34 @@ export function RolesBoard({ people, meId, canEdit }: { people: Person[]; meId: 
         <AddMemberDialog
           role={adding}
           candidates={people.filter((p) => p.status === "active" && !keysOf(p).includes(adding))}
-          saving={pending !== null}
+          saving={pending === "add"}
+          failure={errorFor("add")}
           onAdd={(person) => setRoles(person, [...keysOf(person), adding], `${person.name} is now a ${ROLES[adding].label.toLowerCase()}`)}
-          onClose={() => setAdding(null)}
+          onClose={() => {
+            clearError();
+            setAdding(null);
+          }}
         />
       ) : null}
     </>
   );
 }
 
-function AddMemberDialog({ role, candidates, saving, onAdd, onClose }: { role: RoleKey; candidates: Person[]; saving: boolean; onAdd: (person: Person) => void; onClose: () => void }) {
+function AddMemberDialog({
+  role,
+  candidates,
+  saving,
+  failure,
+  onAdd,
+  onClose,
+}: {
+  role: RoleKey;
+  candidates: Person[];
+  saving: boolean;
+  failure?: string;
+  onAdd: (person: Person) => void;
+  onClose: () => void;
+}) {
   const [personId, setPersonId] = useState("");
   const [error, setError] = useState<string>();
   const person = candidates.find((p) => p.id === personId);
@@ -126,6 +149,7 @@ function AddMemberDialog({ role, candidates, saving, onAdd, onClose }: { role: R
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
+      error={failure}
       title={`Add a ${ROLES[role].label.toLowerCase()}`}
       description={`${ROLES[role].description} Their other roles stay as they are.`}
       footer={

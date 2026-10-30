@@ -3,6 +3,7 @@
 import { Globe, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useMutation } from "@/components/console/use-mutation";
+import { ActionError } from "@/components/ui/action-error";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -18,7 +19,7 @@ import type { Domain } from "@/lib/settings-types";
 import { ReadOnlyNote } from "./shared";
 
 export function DomainsManager({ domains, canEdit }: { domains: Domain[]; canEdit: boolean }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<Domain | null>(null);
   const waiting = domains.filter((d) => !d.verifiedAt);
@@ -27,6 +28,7 @@ export function DomainsManager({ domains, canEdit }: { domains: Domain[]; canEdi
   function verify(domain: Domain) {
     void run(`verify-${domain.id}`, () => api<Domain>(`/domains/${domain.id}/verify`, { method: "POST" }), () =>
       toast({ title: `${domain.name} verified`, description: "You can remove the TXT record now, or keep it to verify again later." }),
+      "inline",
     );
   }
 
@@ -36,7 +38,7 @@ export function DomainsManager({ domains, canEdit }: { domains: Domain[]; canEdi
     void run("remove", () => api(`/domains/${domain.id}`, { method: "DELETE" }), () => {
       setRemoving(null);
       toast({ title: `${domain.name} removed`, description: "Recorded in the audit log." });
-    });
+    }, "inline");
   }
 
   const add = canEdit ? (
@@ -89,11 +91,12 @@ export function DomainsManager({ domains, canEdit }: { domains: Domain[]; canEdi
                       <CopyField label="TXT value" value={`halo-verification=${domain.token}`} />
                     </div>
                     {canEdit ? (
-                      <div>
+                      <div className="flex flex-wrap items-center gap-4">
                         <Button variant="secondary" loading={pending === `verify-${domain.id}`} onClick={() => verify(domain)}>
                           <ShieldCheck aria-hidden="true" size={16} strokeWidth={1.75} />
                           Verify {domain.name}
                         </Button>
+                        <ActionError message={errorFor(`verify-${domain.id}`)} />
                       </div>
                     ) : null}
                   </CardBody>
@@ -140,8 +143,11 @@ export function DomainsManager({ domains, canEdit }: { domains: Domain[]; canEdi
       <Dialog
         open={removing !== null}
         onOpenChange={(open) => {
-          if (!open) setRemoving(null);
+          if (open) return;
+          setRemoving(null);
+          clearError();
         }}
+        error={errorFor("remove")}
         title={`Remove ${removing?.name ?? "domain"}?`}
         description="Halo forgets the domain and its verification. To use it again, add it and publish a new TXT record."
         footer={
@@ -160,7 +166,7 @@ export function DomainsManager({ domains, canEdit }: { domains: Domain[]; canEdi
 }
 
 function AddDomainDialog({ onClose }: { onClose: () => void }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
   const [name, setName] = useState("");
   const [error, setError] = useState<string>();
 
@@ -173,7 +179,7 @@ function AddDomainDialog({ onClose }: { onClose: () => void }) {
     void run("add", () => api<Domain>("/domains", { body: { name: value } }), (domain) => {
       toast({ title: `${domain.name} added`, description: "Publish the TXT record shown on this page, then verify it." });
       onClose();
-    });
+    }, "inline");
   }
 
   return (
@@ -182,6 +188,7 @@ function AddDomainDialog({ onClose }: { onClose: () => void }) {
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
+      error={errorFor("add")}
       title="Add domain"
       description="Halo gives you a TXT record to publish at the domain. Verification proves your organization controls it."
       footer={

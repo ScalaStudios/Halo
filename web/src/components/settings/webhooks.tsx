@@ -231,7 +231,7 @@ export function WebhooksTable({ webhooks, eventTypes, canEdit }: { webhooks: Web
 }
 
 function WebhookDialog({ webhook, eventTypes, onClose }: { webhook: Webhook | null; eventTypes: WebhookEventFamily[]; onClose: () => void }) {
-  const { pending, run, toast, router } = useMutation();
+  const { pending, run, errorFor, toast, router } = useMutation();
   const [url, setUrl] = useState(webhook?.url ?? "");
   const [description, setDescription] = useState(webhook?.description ?? "");
   const [all, setAll] = useState(webhook ? webhook.events.includes("*") : true);
@@ -249,13 +249,13 @@ function WebhookDialog({ webhook, eventTypes, onClose }: { webhook: Webhook | nu
     if (next.url || next.events) return;
     const body = { url: url.trim(), description: description.trim(), events: all ? ["*"] : events, enabled };
     if (!webhook) {
-      void run("save", () => api<{ webhook: Webhook; secret: string }>("/webhooks", { body }), setCreated);
+      void run("save", () => api<{ webhook: Webhook; secret: string }>("/webhooks", { body }), setCreated, "inline");
       return;
     }
     void run("save", () => api<Webhook>(`/webhooks/${webhook.id}`, { method: "PUT", body }), () => {
       toast({ title: "Endpoint saved", description: "Events from now on follow the new settings." });
       onClose();
-    });
+    }, "inline");
   }
 
   if (created) {
@@ -287,6 +287,7 @@ function WebhookDialog({ webhook, eventTypes, onClose }: { webhook: Webhook | nu
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
+      error={errorFor("save")}
       title={webhook ? "Edit endpoint" : "Add endpoint"}
       description="Halo sends each event as a signed JSON POST and retries failures up to 8 times over about an hour."
       width="wide"
@@ -340,7 +341,7 @@ function WebhookDialog({ webhook, eventTypes, onClose }: { webhook: Webhook | nu
 }
 
 export function WebhookActions({ webhook, eventTypes }: { webhook: Webhook; eventTypes: WebhookEventFamily[] }) {
-  const { pending, run, toast, router } = useMutation();
+  const { pending, run, errorFor, clearError, toast, router } = useMutation();
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -386,7 +387,11 @@ export function WebhookActions({ webhook, eventTypes }: { webhook: Webhook; even
       {editing ? <WebhookDialog webhook={webhook} eventTypes={eventTypes} onClose={() => setEditing(false)} /> : null}
       <Dialog
         open={deleting}
-        onOpenChange={setDeleting}
+        onOpenChange={(next) => {
+          clearError();
+          setDeleting(next);
+        }}
+        error={errorFor("delete")}
         title="Delete this endpoint?"
         description="Halo stops sending events to it and deletes its delivery log. Queued retries are dropped."
         footer={
@@ -401,7 +406,7 @@ export function WebhookActions({ webhook, eventTypes }: { webhook: Webhook; even
                 void run("delete", () => api(`/webhooks/${webhook.id}`, { method: "DELETE" }), () => {
                   toast({ title: "Endpoint deleted", description: "Recorded in the audit log." });
                   router.push("/admin/webhooks");
-                })
+                }, "inline")
               }
             >
               Delete endpoint

@@ -3,6 +3,7 @@
 import { CircleUserRound, RotateCcw, TriangleAlert } from "lucide-react";
 import { useId, useState, type CSSProperties } from "react";
 import { HaloLogo } from "@/components/halo-mark";
+import { ActionError } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
@@ -34,7 +35,7 @@ function stored(key: keyof Theme, value: string) {
 }
 
 export function ThemeEditor({ org, saved, canEdit }: { org: OrganizationProfile; saved: Theme; canEdit: boolean }) {
-  const { saving, save } = useSaveSettings();
+  const { saving, failure, save } = useSaveSettings();
   const warningId = useId();
   const [theme, setTheme] = useState(saved);
   const [errors, setErrors] = useState<Partial<Record<keyof Theme, string>>>({});
@@ -172,6 +173,7 @@ export function ThemeEditor({ org, saved, canEdit }: { org: OrganizationProfile;
                 <RotateCcw aria-hidden="true" size={16} strokeWidth={1.75} />
                 Reset to Halo defaults
               </Button>
+              <ActionError message={failure} className="basis-full" />
             </div>
           ) : (
             <ReadOnlyNote>Only a global administrator can change the colours.</ReadOnlyNote>

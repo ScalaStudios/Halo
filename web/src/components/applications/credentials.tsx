@@ -26,12 +26,13 @@ export function RotateSecretDialog({
   appId: string;
   appName: string;
 }) {
-  const { pending, run } = useMutation();
+  const { pending, run, errorFor, clearError } = useMutation();
   const [rotated, setRotated] = useState<{ secret: string; graceEnds: string } | null>(null);
 
   function close() {
     onOpenChange(false);
     setRotated(null);
+    clearError();
   }
 
   function rotate() {
@@ -39,6 +40,7 @@ export function RotateSecretDialog({
       "rotate",
       () => api<{ credential: Credential; clientSecret: string }>(`/applications/${appId}/secrets`, { body: {} }),
       ({ clientSecret }) => setRotated({ secret: clientSecret, graceEnds: formatDateTime(new Date(Date.now() + 86_400_000).toISOString()) }),
+      "inline",
     );
   }
 
@@ -46,6 +48,7 @@ export function RotateSecretDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => (next ? onOpenChange(true) : close())}
+      error={errorFor("rotate")}
       title={rotated ? "New client secret" : "Rotate client secret?"}
       description={
         rotated

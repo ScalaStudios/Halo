@@ -71,7 +71,7 @@ export function PendingRequests({ requests, linkPeople = false }: { requests: Ac
 
 function DecideDialog({ request, approve, onClose }: { request: AccessRequest; approve: boolean; onClose: () => void }) {
   const [note, setNote] = useState("");
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
   const who = request.requester.name;
 
   function submit() {
@@ -89,6 +89,7 @@ function DecideDialog({ request, approve, onClose }: { request: AccessRequest; a
             : { title: "Request denied", description: `${who} gets an email${note.trim() ? " with your note" : ""}.` },
         );
       },
+      "inline",
     );
   }
 
@@ -96,6 +97,7 @@ function DecideDialog({ request, approve, onClose }: { request: AccessRequest; a
     <Dialog
       open
       onOpenChange={(open) => (open ? undefined : onClose())}
+      error={errorFor("decide")}
       title={approve ? `Approve ${who}'s request?` : `Deny ${who}'s request?`}
       description={
         approve
@@ -122,7 +124,7 @@ function DecideDialog({ request, approve, onClose }: { request: AccessRequest; a
 
 function RevokeButton({ request }: { request: AccessRequest }) {
   const [open, setOpen] = useState(false);
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
   return (
     <>
       <Button size="sm" variant="quiet" onClick={() => setOpen(true)}>
@@ -130,7 +132,11 @@ function RevokeButton({ request }: { request: AccessRequest }) {
       </Button>
       <Dialog
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(next) => {
+          clearError();
+          setOpen(next);
+        }}
+        error={errorFor("revoke")}
         title={`Revoke ${request.package.name} for ${request.requester.name}?`}
         description="Halo removes the group memberships this approval added, unless another active approval still needs them. Memberships they had before the approval stay."
         footer={
@@ -152,6 +158,7 @@ function RevokeButton({ request }: { request: AccessRequest }) {
                       description: `${request.requester.name} no longer has ${request.package.name}. Recorded in the audit log.`,
                     });
                   },
+                  "inline",
                 )
               }
             >

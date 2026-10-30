@@ -38,7 +38,7 @@ function words(value: string) {
 }
 
 export function ProvidersConsole({ callbackUrl, providers, groups }: { callbackUrl: string; providers: IdentityProvider[]; groups: Group[] }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
   const [editing, setEditing] = useState<IdentityProvider | "new" | null>(null);
   const [deleting, setDeleting] = useState<IdentityProvider | null>(null);
   const enabled = providers.filter((p) => p.enabled).length;
@@ -64,7 +64,7 @@ export function ProvidersConsole({ callbackUrl, providers, groups }: { callbackU
     void run("delete", () => api(`/identity-providers/${p.id}`, { method: "DELETE" }), () => {
       setDeleting(null);
       toast({ title: `${p.name} deleted`, description: `${pluralize(p.linkedCount, "linked account")} unlinked. Recorded in the audit log.` });
-    });
+    }, "inline");
   }
 
   return (
@@ -150,8 +150,11 @@ export function ProvidersConsole({ callbackUrl, providers, groups }: { callbackU
       <Dialog
         open={deleting !== null}
         onOpenChange={(open) => {
-          if (!open) setDeleting(null);
+          if (open) return;
+          setDeleting(null);
+          clearError();
         }}
+        error={errorFor("delete")}
         title={`Delete ${deleting?.name ?? "identity provider"}?`}
         description={`${pluralize(deleting?.linkedCount ?? 0, "linked account")} will be unlinked. People who only sign in with ${deleting?.name ?? "it"} can't sign in until they get another method.`}
         footer={
@@ -170,7 +173,7 @@ export function ProvidersConsole({ callbackUrl, providers, groups }: { callbackU
 }
 
 function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvider | null; groups: Group[]; onClose: () => void }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
   const [kind, setKind] = useState<ProviderKind>(provider?.kind ?? "google");
   const [name, setName] = useState(provider?.name ?? KIND.google.name);
   const [issuer, setIssuer] = useState(provider?.kind === "microsoft" ? "" : (provider?.issuer ?? ""));
@@ -231,6 +234,7 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
         });
         onClose();
       },
+      "inline",
     );
   }
 
@@ -240,6 +244,7 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
+      error={errorFor("save")}
       title={provider ? `Edit ${provider.name}` : "Add identity provider"}
       description="Create an app registration at the provider with the callback URL from this page, then copy its client ID and secret here."
       footer={

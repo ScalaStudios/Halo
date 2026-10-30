@@ -40,7 +40,7 @@ function RequestDialog({ packages, pendingIds, onClose }: { packages: AccessPack
   const [duration, setDuration] = useState(defaultDuration(first));
   const [justification, setJustification] = useState("");
   const [error, setError] = useState<string>();
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
   const pkg = packages.find((p) => p.id === selected);
 
   function choose(next: AccessPackage) {
@@ -69,6 +69,7 @@ function RequestDialog({ packages, pendingIds, onClose }: { packages: AccessPack
           description: `${pkg.name}, ${durationLabel(duration === "none" ? null : Number(duration)).toLowerCase()}. You'll get an email when they decide.`,
         });
       },
+      "inline",
     );
   }
 
@@ -76,6 +77,7 @@ function RequestDialog({ packages, pendingIds, onClose }: { packages: AccessPack
     <Dialog
       open
       onOpenChange={(next) => (next ? undefined : onClose())}
+      error={errorFor("request")}
       title="Request access"
       description="Choose what you need. An approver reads your reason and decides. Access is removed automatically when it ends."
       footer={

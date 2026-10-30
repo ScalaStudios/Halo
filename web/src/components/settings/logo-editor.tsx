@@ -4,6 +4,7 @@ import { ImageUp, Trash2 } from "lucide-react";
 import { useRef } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { HaloLogo } from "@/components/halo-mark";
+import { ActionError } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { api } from "@/lib/api/client";
@@ -15,7 +16,7 @@ const TYPES = ["image/png", "image/jpeg", "image/webp"];
 const MAX_BYTES = 256 * 1024;
 
 export function LogoEditor({ org, canEdit }: { org: OrganizationProfile; canEdit: boolean }) {
-  const { pending, run, toast } = useMutation();
+  const { pending, run, errorFor, toast } = useMutation();
   const input = useRef<HTMLInputElement>(null);
 
   function upload(file: File) {
@@ -34,6 +35,7 @@ export function LogoEditor({ org, canEdit }: { org: OrganizationProfile; canEdit
         if (!res.ok) throw await toApiError(res, "Halo could not store the logo. Try again.");
       },
       () => toast({ title: "Logo uploaded", description: "The sign-in and setup pages show it from now on." }),
+      "inline",
     );
   }
 
@@ -77,13 +79,14 @@ export function LogoEditor({ org, canEdit }: { org: OrganizationProfile; canEdit
               <Button
                 variant="secondary"
                 loading={pending === "remove"}
-                onClick={() => void run("remove", () => api("/branding/logo", { method: "DELETE" }), () => toast({ title: "Logo removed", description: "The sign-in page shows the Halo logo again." }))}
+                onClick={() => void run("remove", () => api("/branding/logo", { method: "DELETE" }), () => toast({ title: "Logo removed", description: "The sign-in page shows the Halo logo again." }), "inline")}
               >
                 <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
                 Remove logo
               </Button>
             ) : null}
             <span className="text-caption text-fg-3">PNG, JPEG or WebP, up to 256 KB. Shown 48 pixels tall.</span>
+            <ActionError message={errorFor("upload") ?? errorFor("remove")} className="basis-full" />
           </div>
         ) : (
           <ReadOnlyNote>Only a global administrator can change the logo.</ReadOnlyNote>
