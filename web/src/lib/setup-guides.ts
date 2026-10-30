@@ -65,6 +65,26 @@ export function setupGuide(app: GuideApp, issuer: string): SetupGuide {
           '  --admin-group "Forgejo maintainers"',
         ].join("\n"),
       };
+    case "aether": {
+      const [, address = "https://mail.example.com", slug = "halo"] = app.redirectUris[0]?.match(/^(.+)\/api\/v1\/auth\/oidc\/([^/]+)\/callback$/) ?? [];
+      return {
+        title: "Set up Aether",
+        description:
+          "In Aether, open Administration → Identity providers → Connect Halo and enter these values. Group mappings match Halo group names and give their members the owner, admin or member role in an organization. Optional: to suspend Aether accounts as soon as Halo suspends them, add an endpoint under Webhooks in Halo for the webhook URL with the user, scim and session events, and paste its signing secret into Webhook signing secret in Aether. To create accounts before people sign in, turn on SCIM for the provider in Aether, then set up this application under Provisioning in Halo with the SCIM base URL and Aether's bearer token.",
+        file: "Aether",
+        code: pairs([
+          ["Issuer URL", urls.issuer],
+          ["Slug", slug],
+          ["Client ID", app.clientId],
+          ["Client secret", "shown once when you created this application"],
+          ["Administrator group", "a Halo group whose members become platform administrators"],
+          ["Group mappings", "Halo group name → organization → owner, admin or member"],
+          ["Webhook URL", `${address}/api/v1/hooks/identity-providers/${slug}`],
+          ["Webhook events", "user.*  scim.*  session.*"],
+          ["SCIM base URL", `${address}/api/v1/scim/${slug}`],
+        ]),
+      };
+    }
     case "kubernetes":
       return {
         title: "Set up kubectl",

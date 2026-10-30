@@ -22,7 +22,7 @@ const (
 	rotationGrace  = 24 * time.Hour
 )
 
-var setupGuides = []string{"grafana", "forgejo", "generic-oidc", "kubernetes", "generic-saml", "aws-iam-identity-center", "slack"}
+var setupGuides = []string{"grafana", "forgejo", "aether", "generic-oidc", "kubernetes", "generic-saml", "aws-iam-identity-center", "slack"}
 
 func (h *handlers) application(r *http.Request) (store.Application, error) {
 	a, err := h.st.GetApplication(r.Context(), r.PathValue("id"))

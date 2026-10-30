@@ -1568,7 +1568,7 @@ paths:
                 groupIds:
                   type: array
                   items: {type: string}
-                setupGuide: {type: string, enum: [grafana, forgejo, generic-oidc, kubernetes, generic-saml, aws-iam-identity-center, slack]}
+                setupGuide: {type: string, enum: [grafana, forgejo, aether, generic-oidc, kubernetes, generic-saml, aws-iam-identity-center, slack]}
                 saml: {$ref: '#/components/schemas/SAMLInput'}
       responses:
         '201':

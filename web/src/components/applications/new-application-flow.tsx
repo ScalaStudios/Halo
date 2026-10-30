@@ -36,6 +36,7 @@ const PLATFORMS: Option<Platform>[] = [
 const TEMPLATES: Template[] = [
   { value: "grafana", label: "Grafana", uri: "https://grafana.example.com/login/generic_oauth", guide: "grafana" },
   { value: "forgejo", label: "Forgejo", uri: "https://git.example.com/user/oauth2/halo/callback", guide: "forgejo" },
+  { value: "aether", label: "Aether", uri: "https://mail.example.com/api/v1/auth/oidc/halo/callback", scopes: ["openid", "profile", "email", "groups"], guide: "aether" },
   { value: "nextcloud", label: "Nextcloud", uri: "https://cloud.example.com/apps/user_oidc/code", guide: "generic-oidc" },
   { value: "proxmox", label: "Proxmox VE", uri: "https://pve.example.com:8006", guide: "generic-oidc" },
   { value: "outline", label: "Outline", uri: "https://wiki.example.com/auth/oidc.callback", guide: "generic-oidc" },
@@ -101,11 +102,13 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
   const [template, setTemplate] = useState("custom");
   const [name, setName] = useState("");
   const [uri, setUri] = useState("");
+  const [address, setAddress] = useState("");
+  const [slug, setSlug] = useState("halo");
   const [entityId, setEntityId] = useState("");
   const [source, setSource] = useState<Source>("values");
   const [metadata, setMetadata] = useState("");
   const [format, setFormat] = useState<NameIdFormat>("email");
-  const [errors, setErrors] = useState<{ name?: string; uri?: string; entityId?: string; metadata?: string }>({});
+  const [errors, setErrors] = useState<{ name?: string; uri?: string; address?: string; slug?: string; entityId?: string; metadata?: string }>({});
   const [created, setCreated] = useState<{ application: SamlApplication; clientSecret: string | null } | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
   const { pending, run } = useMutation();
@@ -116,6 +119,8 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
   const urls = endpoints(issuer);
   const picked = TEMPLATES.find((t) => t.value === template);
   const platformTemplates = TEMPLATES.filter((t) => t.value === "custom" || (t.platform ?? "web") === platform);
+  const aether = template === "aether";
+  const base = address.trim().replace(/\/+$/, "");
 
   function pickTemplate(value: string, list = TEMPLATES) {
     const picked = list.find((t) => t.value === value);
@@ -148,10 +153,12 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
     }
     const next = {
       name: name.trim() ? undefined : "Enter a name. People see it on the Halo sign-in screen.",
-      uri: needsUri ? uriError(uri) : undefined,
+      uri: needsUri && !aether ? uriError(uri) : undefined,
+      address: aether ? uriError(address, "Enter the address people open Aether at, like https://mail.example.com.") : undefined,
+      slug: aether && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(slug.trim()) ? "Use lowercase letters, digits and hyphens, like halo." : undefined,
     };
     setErrors(next);
-    if (next.name || next.uri) return;
+    if (next.name || next.uri || next.address || next.slug) return;
     void run(
       "create",
       () =>
@@ -160,7 +167,8 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
             name: name.trim(),
             protocol,
             type: protocol === "oauth" ? "service" : platform,
-            redirectUris: needsUri ? [uri.trim(), ...(picked?.more ?? [])] : [],
+            redirectUris: aether ? [`${base}/api/v1/auth/oidc/${slug.trim()}/callback`] : needsUri ? [uri.trim(), ...(picked?.more ?? [])] : [],
+            postLogoutUris: aether ? [`${base}/login`] : undefined,
             scopes: picked?.scopes,
             setupGuide: picked?.guide ?? "generic-oidc",
           },
@@ -347,7 +355,16 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
               <Field label="Name" error={errors.name}>
                 {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Team wiki" />}
               </Field>
-              {needsUri ? (
+              {aether ? (
+                <>
+                  <Field label="Aether address" error={errors.address} hint="The address people open Aether at, its AETHER_PUBLIC_URL.">
+                    {(props) => <Input {...props} type="url" mono value={address} onChange={(e) => setAddress(e.target.value)} placeholder="https://mail.example.com" />}
+                  </Field>
+                  <Field label="Provider slug" error={errors.slug} hint="The slug you give Halo in Aether. It is part of the redirect URI.">
+                    {(props) => <Input {...props} mono value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="halo" />}
+                  </Field>
+                </>
+              ) : needsUri ? (
                 <Field
                   label="Redirect URI"
                   error={errors.uri}
