@@ -131,7 +131,7 @@ const views: SavedView[] = [
   { id: "invited", label: "Invited", filters: [{ id: "status", value: ["invited"] }] },
 ];
 
-export function UsersTable({ users, groups, initialView, inviteOpen }: { users: User[]; groups: Group[]; initialView?: string; inviteOpen?: boolean }) {
+export function UsersTable({ users, groups, initialView, inviteOpen, canGrantRoles }: { users: User[]; groups: Group[]; initialView?: string; inviteOpen?: boolean; canGrantRoles: boolean }) {
   const { run, toast, router } = useMutation();
   const [invite, setInvite] = useState(Boolean(inviteOpen));
   const [resetting, setResetting] = useState<User | null>(null);
@@ -205,7 +205,7 @@ export function UsersTable({ users, groups, initialView, inviteOpen }: { users: 
           </Button>
         }
       />
-      <InviteDialog open={invite} onOpenChange={setInvite} groups={groups} directory={users} />
+      <InviteDialog open={invite} onOpenChange={setInvite} groups={groups} directory={users} canGrantRoles={canGrantRoles} />
       <ResetAuthenticationDialog user={resetting} onClose={() => setResetting(null)} />
       <SuspendDialog users={suspending} onClose={() => setSuspending([])} />
     </>

@@ -50,6 +50,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Container images for `linux/amd64` and `linux/arm64`, published to `ghcr.io/scalastudios/halo-server` and `halo-web` for every commit on `main` and every release tag. The Compose deployment uses them, and `deploy/compose.build.yml` builds from the checkout instead.
 - An install script, `deploy/install.sh`, behind `curl -fsSL https://halo.scala.gg/install.sh | sh`, that sets up the Docker Compose deployment on a fresh host, installing Docker first when it is missing, and stays on the host as `halo.sh` to create the first administrator, start, stop, restart, update and follow logs.
 - A console home page with the organization's directory counts, your roles, open risk events and shortcuts, above what needs attention.
+- Changing a person's administrator roles from their page in the console, and an optional role when inviting them. Both need a global administrator, like the Roles page.
 - User and operator documentation at [halo.scala.gg/docs](https://halo.scala.gg/docs), with guides for email, policies, governance, federation, provisioning, webhooks, API resources and infrastructure access, and integration guides for Grafana, Forgejo, Nextcloud, Kubernetes, Proxmox VE, Outline, Headscale, AWS IAM Identity Center and Slack.
 - Continuous integration for `go vet`, `go test`, type checking and the web build.
 - Contributing guide, security policy, code of conduct, and issue and pull request templates.
