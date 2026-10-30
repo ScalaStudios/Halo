@@ -4,7 +4,10 @@ import (
 	"context"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
+
 	"halo/internal/id"
+	"halo/internal/rule"
 )
 
 const assignedCountSQL = `(select count(*) from group_members m join users u on u.id = m.user_id where m.group_id = g.id and u.status <> 'deprovisioned')`
@@ -14,13 +17,83 @@ func (s *Store) ListGroupsRaw(ctx context.Context) ([]Group, error) {
 }
 
 func (s *Store) ListGroups(ctx context.Context) ([]Group, error) {
-	return s.queryGroups(ctx, `with `+dynamicGroupsSQL+` select g.id, g.name, g.description, g.kind, g.rule, g.source, g.created_at,
-		case when g.kind = 'dynamic' then (select count(*) from dynamic d join users u on `+ruleMatchSQL+` where d.id = g.id and u.status <> 'deprovisioned' and u.kind = 'person')
-		else `+assignedCountSQL+` end from groups g order by g.created_at`)
+	dynamic, args, err := s.dynamicGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.queryGroups(ctx, dynamic+`select g.id, g.name, g.description, g.kind, g.rule, g.source, g.created_at,
+		case when g.kind = 'dynamic' then (select count(*) from dynamic d join users u on u.id = d.user_id where d.id = g.id and u.status <> 'deprovisioned' and u.kind = 'person')
+		else `+assignedCountSQL+` end from groups g order by g.created_at`, args...)
 }
 
-func (s *Store) queryGroups(ctx context.Context, query string) ([]Group, error) {
-	rows, err := s.db.Query(ctx, query)
+func (s *Store) ruleCompiler(ctx context.Context, args ...any) (*rule.Compiler, []rule.Group, error) {
+	rows, err := s.db.Query(ctx, `select id, name, rule from groups order by created_at, id`)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	c := &rule.Compiler{Groups: map[string]rule.Group{}, Args: args}
+	var dynamic []rule.Group
+	for rows.Next() {
+		var g rule.Group
+		var name string
+		if err := rows.Scan(&g.ID, &name, &g.Rule); err != nil {
+			return nil, nil, err
+		}
+		c.Groups[strings.ToLower(name)] = g
+		if g.Rule != nil {
+			dynamic = append(dynamic, g)
+		}
+	}
+	return c, dynamic, rows.Err()
+}
+
+func (s *Store) dynamicGroups(ctx context.Context, args ...any) (string, []any, error) {
+	c, dynamic, err := s.ruleCompiler(ctx, args...)
+	if err != nil {
+		return "", nil, err
+	}
+	match := "false"
+	if len(dynamic) > 0 {
+		match = "case g.id"
+		for _, g := range dynamic {
+			where, err := c.Rule(g.ID, *g.Rule)
+			if err != nil {
+				where = "false"
+			}
+			match += " when " + c.Param(g.ID) + " then " + where
+		}
+		match += " else false end"
+	}
+	return `with dynamic as (select g.id, g.created_at, u.id as user_id from groups g cross join users u where ` + match + `) `, c.Args, nil
+}
+
+func (s *Store) CheckRule(ctx context.Context, groupID, src string) error {
+	c, _, err := s.ruleCompiler(ctx)
+	if err == nil {
+		_, err = c.Rule(groupID, src)
+	}
+	return err
+}
+
+func (s *Store) MatchRule(ctx context.Context, groupID, src string) ([]string, error) {
+	c, _, err := s.ruleCompiler(ctx)
+	if err != nil {
+		return nil, err
+	}
+	where, err := c.Rule(groupID, src)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Query(ctx, `select u.id from users u where `+where, c.Args...)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+func (s *Store) queryGroups(ctx context.Context, query string, args ...any) ([]Group, error) {
+	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

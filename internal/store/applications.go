@@ -281,11 +281,15 @@ func (s *Store) decorateApps(ctx context.Context, apps []Application, withStats 
 	}
 	rows.Close()
 
-	rows, err = s.db.Query(ctx, `with `+dynamicGroupsSQL+` select app_id, count(*) from (select distinct a.app_id, a.user_id from (
+	dynamic, args, err := s.dynamicGroups(ctx, ids)
+	if err != nil {
+		return err
+	}
+	rows, err = s.db.Query(ctx, dynamic+`select app_id, count(*) from (select distinct a.app_id, a.user_id from (
 			select ag.app_id, m.user_id from app_groups ag join group_members m on m.group_id = ag.group_id where ag.app_id = any($1)
 			union all
-			select ag.app_id, u.id from app_groups ag join dynamic d on d.id = ag.group_id join users u on `+ruleMatchSQL+` where ag.app_id = any($1)
-		) a join users u on u.id = a.user_id and u.kind = 'person' and u.status <> 'deprovisioned') assigned group by app_id`, ids)
+			select ag.app_id, d.user_id from app_groups ag join dynamic d on d.id = ag.group_id where ag.app_id = any($1)
+		) a join users u on u.id = a.user_id and u.kind = 'person' and u.status <> 'deprovisioned') assigned group by app_id`, args...)
 	if err != nil {
 		return err
 	}

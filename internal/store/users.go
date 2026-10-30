@@ -281,11 +281,15 @@ func (s *Store) decorate(ctx context.Context, users []User) error {
 	}
 	rows.Close()
 
-	rows, err = s.db.Query(ctx, `with `+dynamicGroupsSQL+` select user_id, group_id from (
+	dynamic, args, err := s.dynamicGroups(ctx, ids)
+	if err != nil {
+		return err
+	}
+	rows, err = s.db.Query(ctx, dynamic+`select user_id, group_id from (
 			select m.user_id, m.group_id, 0 as rank, m.created_at from group_members m where m.user_id = any($1)
 			union all
-			select u.id, d.id, 1, d.created_at from users u join dynamic d on `+ruleMatchSQL+` where u.id = any($1) and u.kind <> 'service'
-		) memberships order by rank, created_at`, ids)
+			select u.id, d.id, 1, d.created_at from users u join dynamic d on d.user_id = u.id where u.id = any($1) and u.kind <> 'service'
+		) memberships order by rank, created_at`, args...)
 	if err != nil {
 		return err
 	}
@@ -350,11 +354,6 @@ func strength(methods []Method) string {
 const ruleExpression = `^\s*user\.(status|department|location|title|source)\s*==\s*"([^"]*)"\s*$`
 
 var rulePattern = regexp.MustCompile(ruleExpression)
-
-const dynamicGroupsSQL = `dynamic as materialized (select g.id, g.created_at, r[1] as attribute, lower(r[2]) as value
-	from groups g cross join lateral regexp_match(g.rule, '` + ruleExpression + `') r where g.kind = 'dynamic' and r is not null)`
-
-const ruleMatchSQL = `lower(case d.attribute when 'status' then u.status when 'department' then u.department when 'location' then u.location when 'title' then u.title when 'source' then u.source end) = d.value`
 
 func ValidRule(rule string) bool {
 	return rulePattern.MatchString(rule)

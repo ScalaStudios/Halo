@@ -7,10 +7,17 @@ import (
 	"strings"
 
 	"halo/internal/httpx"
+	"halo/internal/rule"
 	"halo/internal/store"
 )
 
-const ruleHelp = `The membership rule is not valid. Write it as user.<attribute> == "<value>", for example user.department == "Engineering". Supported attributes: status, department, location, title and source.`
+func ruleError(err error) error {
+	var invalid *rule.Error
+	if errors.As(err, &invalid) {
+		return httpx.Fail(http.StatusUnprocessableEntity, "ERR_INVALID_RULE", invalid.Error())
+	}
+	return err
+}
 
 func (h *handlers) group(r *http.Request) (store.Group, error) {
 	g, err := h.st.GetGroup(r.Context(), r.PathValue("id"))
@@ -61,10 +68,13 @@ func (h *handlers) createGroup(w http.ResponseWriter, r *http.Request, actor sto
 		}
 		in.Rule = nil
 	case "dynamic":
-		if in.Rule == nil || !store.ValidRule(*in.Rule) {
-			return httpx.Invalid(ruleHelp)
+		rule := ""
+		if in.Rule != nil {
+			rule = strings.TrimSpace(*in.Rule)
 		}
-		rule := strings.TrimSpace(*in.Rule)
+		if err := h.st.CheckRule(r.Context(), "", rule); err != nil {
+			return ruleError(err)
+		}
 		in.Rule = &rule
 		summary = "Created dynamic group with rule " + rule
 	default:
@@ -159,16 +169,18 @@ func (h *handlers) groupMembers(w http.ResponseWriter, r *http.Request, _ store.
 	if err != nil {
 		return err
 	}
-	rule := ""
-	if g.Rule != nil {
-		rule = *g.Rule
-	}
-	if r.URL.Query().Has("rule") {
+	preview := r.URL.Query().Has("rule")
+	matched := map[string]bool{}
+	if preview {
 		if g.Kind != "dynamic" {
 			return httpx.Invalid(g.Name + " is an assigned group, so it has no rule to preview.")
 		}
-		if rule = r.URL.Query().Get("rule"); !store.ValidRule(rule) {
-			return httpx.Invalid(ruleHelp)
+		ids, err := h.st.MatchRule(r.Context(), g.ID, strings.TrimSpace(r.URL.Query().Get("rule")))
+		if err != nil {
+			return ruleError(err)
+		}
+		for _, id := range ids {
+			matched[id] = true
 		}
 	}
 	users, err := h.st.ListUsers(r.Context())
@@ -177,7 +189,7 @@ func (h *handlers) groupMembers(w http.ResponseWriter, r *http.Request, _ store.
 	}
 	members := []store.User{}
 	for _, u := range users {
-		if u.Status != "deprovisioned" && ((g.Kind == "dynamic" && store.RuleMatches(rule, u)) || (g.Kind == "assigned" && slices.Contains(u.GroupIDs, g.ID))) {
+		if u.Status != "deprovisioned" && (matched[u.ID] || !preview && slices.Contains(u.GroupIDs, g.ID)) {
 			members = append(members, u)
 		}
 	}
@@ -214,10 +226,11 @@ func (h *handlers) updateGroup(w http.ResponseWriter, r *http.Request, actor sto
 		return httpx.Invalid("Assigned groups do not take a rule. Create a dynamic group if membership should follow a rule.")
 	}
 	if in.Rule != nil && g.Kind == "dynamic" {
-		if !store.ValidRule(*in.Rule) {
-			return httpx.Invalid(ruleHelp)
+		rule := strings.TrimSpace(*in.Rule)
+		if err := h.st.CheckRule(r.Context(), g.ID, rule); err != nil {
+			return ruleError(err)
 		}
-		if rule := strings.TrimSpace(*in.Rule); rule != *g.Rule {
+		if rule != *g.Rule {
 			next.Rule = &rule
 			changed = append(changed, "rule to "+rule)
 		}
