@@ -1,0 +1,9 @@
+Halo is starting at {{ .Values.publicUrl }}. The server applies database migrations before it reports ready.
+
+Create the first global administrator and print their setup link:
+
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "halo.fullname" . }}-server -- halo bootstrap --email you@example.com --name "Your Name"
+
+The web interface reaches the server at http://halo-server:8080, so install one Halo release per namespace.
+
+HALO_TRUSTED_PROXIES is {{ .Values.trustedProxies | default "unset" }}. Narrow it to your cluster's pod CIDR so clients cannot set their own address with X-Forwarded-For.
