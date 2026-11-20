@@ -28,6 +28,8 @@ type AppSummary = {
   bookmark: boolean;
   disabled: boolean;
   awaitingApproval: boolean;
+  redirectUris: string[];
+  postLogoutUris: string[];
   hasSecret: boolean;
 };
 
@@ -49,7 +51,7 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
           onClick={() =>
             void run(
               "approve",
-              () => api(`/applications/${app.id}/enable`, { method: "POST" }),
+              () => api(`/applications/${app.id}/enable`, { method: "POST", body: { redirectUris: app.redirectUris, postLogoutUris: app.postLogoutUris } }),
               () => toast({ title: `${app.name} approved`, description: "Assign groups to it so people can sign in." }),
             )
           }

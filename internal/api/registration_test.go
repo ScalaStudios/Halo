@@ -336,7 +336,9 @@ func TestApprovalQueue(t *testing.T) {
 	}
 
 	_, admin := person(t, st, "apps@example.com", "app_admin")
-	rec := call(t, h, admin, http.MethodPost, "/api/v1/applications/"+app.ID+"/enable", nil)
+	enable := "/api/v1/applications/" + app.ID + "/enable"
+	expect(t, call(t, h, admin, http.MethodPost, enable, map[string]any{"redirectUris": []string{"https://elsewhere.example.com/callback"}, "postLogoutUris": []string{}}), http.StatusConflict)
+	rec := call(t, h, admin, http.MethodPost, enable, map[string]any{"redirectUris": []string{toolCallback}, "postLogoutUris": []string{}})
 	expect(t, rec, http.StatusOK)
 	if approved := decode[store.Application](t, rec); approved.Status != "active" || approved.AwaitingApproval || !approved.RegisteredDynamically {
 		t.Fatalf("approved client: %s", rec.Body)

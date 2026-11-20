@@ -101,6 +101,8 @@ export default async function ApplicationPage({ params, searchParams }: { params
               bookmark,
               disabled: app.status === "disabled",
               awaitingApproval: app.awaitingApproval,
+              redirectUris: app.redirectUris,
+              postLogoutUris: app.postLogoutUris,
               hasSecret: !saml && !bookmark && (app.type === "web" || app.type === "service"),
             }}
             directory={users}
