@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/x509"
 	"net/http"
+	"slices"
 	"time"
 
 	"halo/internal/httpx"
@@ -40,16 +41,31 @@ func (h *handlers) listSigningKeys(w http.ResponseWriter, r *http.Request, _ sto
 }
 
 func (h *handlers) rotateSigningKey(w http.ResponseWriter, r *http.Request, actor store.User) error {
-	der, err := oidc.NewSigningKey()
+	keys, err := h.st.ListSigningKeyInfo(r.Context())
 	if err != nil {
 		return err
 	}
-	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
-		key, err := tx.CreateSigningKey(r.Context(), "RS256", der)
-		if err != nil {
-			return err
+	algorithms := []string{"RS256"}
+	for _, k := range keys {
+		if k.Active && !slices.Contains(algorithms, k.Algorithm) {
+			algorithms = append(algorithms, k.Algorithm)
 		}
-		return record(r, tx, actor, store.AuditEvent{Action: "signing_key.rotate", Summary: "Rotated the OpenID Connect signing key. Previous keys stay published for 7 days", TargetType: "signing_key", TargetID: key.ID, TargetLabel: key.ID})
+	}
+	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+		for _, alg := range algorithms {
+			der, err := oidc.NewSigningKey(alg)
+			if err != nil {
+				return err
+			}
+			key, err := tx.CreateSigningKey(r.Context(), alg, der)
+			if err != nil {
+				return err
+			}
+			if err := record(r, tx, actor, store.AuditEvent{Action: "signing_key.rotate", Summary: "Rotated the OpenID Connect " + alg + " signing key. Previous keys stay published for 7 days", TargetType: "signing_key", TargetID: key.ID, TargetLabel: key.ID}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return err

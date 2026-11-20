@@ -71,6 +71,9 @@ func (s *storage) grant(ctx context.Context, req op.TokenRequest) (store.OIDCTok
 	if t.Audience, ttl = audience(granted, t.ClientID, t.Scopes); ttl == 0 {
 		ttl = app.TokenPolicy.AccessTokenTTL
 	}
+	if err := choose(ctx, app.TokenPolicy.IDTokenAlg, granted, t.Audience); err != nil {
+		return t, app, err
+	}
 	t.ExpiresAt = time.Now().Add(seconds(ttl))
 	if t.SubjectID != nil && subject.ExpiresAt.Before(t.ExpiresAt) {
 		t.ExpiresAt = subject.ExpiresAt

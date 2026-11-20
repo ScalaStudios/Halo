@@ -50,6 +50,8 @@ func New(d httpx.Deps) (http.Handler, error) {
 		op.WithCustomRevocationEndpoint(op.NewEndpoint("oauth2/revoke")),
 		op.WithCustomIntrospectionEndpoint(op.NewEndpoint("oauth2/introspect")),
 		op.WithCustomDeviceAuthorizationEndpoint(op.NewEndpoint("oauth2/device_authorization")),
+		op.WithIDTokenHintVerifierOpts(op.WithSupportedIDTokenHintSigningAlgorithms(store.SigningAlgorithms...)),
+		op.WithAccessTokenVerifierOpts(op.WithSupportedAccessTokenSigningAlgorithms(store.SigningAlgorithms...)),
 	}
 	if d.Config.Dev {
 		options = append(options, op.WithAllowInsecure())
@@ -72,7 +74,7 @@ func New(d httpx.Deps) (http.Handler, error) {
 		if r.Form.Get("grant_type") == string(oidc.GrantTypeTokenExchange) {
 			r.Form["audience"] = slices.Compact(slices.Sorted(slices.Values(append(r.Form["audience"], r.Form["resource"]...))))
 		}
-		provider.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestKey{}, r)))
+		provider.ServeHTTP(w, r.WithContext(withAlgorithms(context.WithValue(r.Context(), requestKey{}, r))))
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", serve)

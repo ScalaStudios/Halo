@@ -69,6 +69,9 @@ func TestDiscoveryAdvertisesOnlyServedFeatures(t *testing.T) {
 	if !slices.Contains(grants, string(oidc.GrantTypeDeviceCode)) || !slices.Contains(grants, "client_credentials") || !slices.Contains(grants, string(oidc.GrantTypeTokenExchange)) {
 		t.Errorf("grants: %v", grants)
 	}
+	if got := list("id_token_signing_alg_values_supported"); !slices.Equal(got, []string{"RS256", "ES256", "EdDSA"}) {
+		t.Errorf("ID token signing algorithms: %v", got)
+	}
 	claims := list("claims_supported")
 	if slices.Contains(claims, "phone_number") || slices.Contains(claims, "locale") || !slices.Contains(claims, "groups") || !slices.Contains(claims, "email_verified") {
 		t.Errorf("claims: %v", claims)
@@ -175,7 +178,7 @@ func TestSigningKeyRotationKeepsOldTokensValid(t *testing.T) {
 	h := newInfra(t, nil)
 	ctx := context.Background()
 	before, _ := h.signInCLI()
-	der, err := halooidc.NewSigningKey()
+	der, err := halooidc.NewSigningKey("RS256")
 	h.must(err)
 	rotated, err := h.st.CreateSigningKey(ctx, "RS256", der)
 	h.must(err)

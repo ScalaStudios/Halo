@@ -305,7 +305,8 @@ func (s *storage) SetIntrospectionFromToken(ctx context.Context, resp *oidc.Intr
 	return nil
 }
 
-func (s *storage) GetPrivateClaimsFromScopes(_ context.Context, _, _ string, scopes []string) (map[string]any, error) {
+func (s *storage) GetPrivateClaimsFromScopes(ctx context.Context, _, _ string, scopes []string) (map[string]any, error) {
+	signingAccessToken(ctx)
 	return map[string]any{"scope": strings.Join(scopes, " ")}, nil
 }
 

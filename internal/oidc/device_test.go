@@ -339,7 +339,7 @@ func TestAPIResources(t *testing.T) {
 	}
 	created := h.send(http.MethodPost, "/api/v1/api-resources", billing, cookie(h.admin))
 	resourceID, _ := created.body["id"].(string)
-	if created.status != http.StatusCreated || resourceID == "" {
+	if created.status != http.StatusCreated || resourceID == "" || created.body["accessTokenAlg"] != "RS256" {
 		t.Fatalf("create: %d %v", created.status, created.body)
 	}
 	for _, bad := range []map[string]any{
@@ -352,6 +352,19 @@ func TestAPIResources(t *testing.T) {
 	}
 	if r := h.send(http.MethodPost, "/api/v1/api-resources", map[string]any{"name": "Reports", "identifier": "https://reports.example.com", "accessTokenTtl": 300, "scopes": []map[string]string{{"name": "openid"}}}, cookie(h.admin)); r.status != http.StatusUnprocessableEntity {
 		t.Fatalf("reserved scope: %d %v", r.status, r.body)
+	}
+	billing["accessTokenAlg"] = "ES256"
+	if r := h.send(http.MethodPut, "/api/v1/api-resources/"+resourceID, billing, cookie(h.admin)); r.status != http.StatusOK || r.body["accessTokenAlg"] != "ES256" {
+		t.Fatalf("switch to ES256: %d %v", r.status, r.body)
+	}
+	delete(billing, "accessTokenAlg")
+	if r := h.send(http.MethodPut, "/api/v1/api-resources/"+resourceID, billing, cookie(h.admin)); r.status != http.StatusOK || r.body["accessTokenAlg"] != "ES256" {
+		t.Fatalf("an update without accessTokenAlg keeps the algorithm: %d %v", r.status, r.body)
+	}
+	billing["accessTokenAlg"] = "RS256"
+	h.send(http.MethodPut, "/api/v1/api-resources/"+resourceID, billing, cookie(h.admin))
+	if r := h.send(http.MethodPost, "/api/v1/api-resources", map[string]any{"name": "Reports", "identifier": "https://reports.example.com", "accessTokenTtl": 300, "accessTokenAlg": "HS256", "scopes": []map[string]string{{"name": "reports:read"}}}, cookie(h.admin)); r.status != http.StatusUnprocessableEntity {
+		t.Fatalf("HS256 access tokens: %d %v", r.status, r.body)
 	}
 	if r := h.send(http.MethodPut, "/api/v1/api-resources/"+resourceID+"/grants/"+worker.ID, map[string]any{"scopes": []string{"billing:delete"}}, cookie(h.admin)); r.status != http.StatusUnprocessableEntity {
 		t.Fatalf("grant an unknown scope: %d %v", r.status, r.body)

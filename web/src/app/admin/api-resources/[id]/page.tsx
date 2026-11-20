@@ -41,9 +41,10 @@ export default async function ApiResourcePage({ params }: { params: Promise<{ id
           <ResourceActions resource={resource} />
         </header>
         <DescriptionList
-          className="grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-3"
+          className="grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-4"
           items={[
             { label: "Access token lifetime", value: formatDuration(resource.accessTokenTtl) },
+            { label: "Access token signing", value: resource.accessTokenAlg },
             { label: "Applications", value: pluralize(resource.grants.length, "application") },
             { label: "Created", value: formatDate(resource.createdAt) },
           ]}
@@ -67,7 +68,7 @@ export default async function ApiResourcePage({ params }: { params: Promise<{ id
 
       <GrantsSection resource={resource} applications={grantable} />
 
-      <TokenValidationCard issuer={org.issuer} identifier={resource.identifier} />
+      <TokenValidationCard issuer={org.issuer} identifier={resource.identifier} algorithm={resource.accessTokenAlg} />
     </div>
   );
 }

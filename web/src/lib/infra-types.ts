@@ -1,3 +1,5 @@
+import type { SigningAlgorithm } from "./types";
+
 export type SshAuthority = { publicKey: string; fingerprint: string; createdAt: string; certificateLifetime: number };
 
 export type PrincipalMapping = { id: string; groupId: string; principals: string[]; createdAt: string; updatedAt: string };
@@ -24,6 +26,7 @@ export type ApiResource = {
   identifier: string;
   description: string;
   accessTokenTtl: number;
+  accessTokenAlg: SigningAlgorithm;
   scopes: ApiScope[];
   grants: { appId: string; scopes: string[] }[];
   createdAt: string;

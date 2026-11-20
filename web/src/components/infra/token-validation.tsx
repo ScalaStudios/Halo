@@ -2,9 +2,9 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { CopyField } from "@/components/ui/copy-field";
 import { endpoints } from "@/lib/setup-guides";
 
-export function TokenValidationCard({ issuer, identifier }: { issuer: string; identifier: string }) {
+export function TokenValidationCard({ issuer, identifier, algorithm }: { issuer: string; identifier: string; algorithm: string }) {
   const checks = [
-    <>Verify the RS256 signature with the key from the JWKS whose kid matches the token header. Cache the key set and fetch it again when an unknown kid appears.</>,
+    <>Verify the {algorithm} signature with the key from the JWKS whose kid matches the token header. Cache the key set and fetch it again when an unknown kid appears.</>,
     <>
       Check that <code className="font-mono text-code-sm text-fg">iss</code> equals <code className="font-mono text-code-sm text-fg">{issuer}</code>.
     </>,

@@ -260,7 +260,7 @@ func TestUpdateApplication(t *testing.T) {
 	expect(t, rec, 200)
 	got := decode[store.Application](t, rec)
 	if got.Name != "Dashboards" || len(got.RedirectURIs) != 2 || len(got.PostLogoutURIs) != 1 || !slices.Equal(got.Scopes, []string{"openid", "email", "offline_access"}) ||
-		!reflect.DeepEqual(got.TokenPolicy, store.TokenPolicy{AccessTokenTTL: 300, RefreshTokenTTL: 7 * 86400, IDTokenTTL: 900, Rotation: false, ExchangeFrom: []string{}}) || got.Owner == nil || *got.Owner != owner.ID {
+		!reflect.DeepEqual(got.TokenPolicy, store.TokenPolicy{AccessTokenTTL: 300, RefreshTokenTTL: 7 * 86400, IDTokenTTL: 900, IDTokenAlg: "RS256", Rotation: false, ExchangeFrom: []string{}}) || got.Owner == nil || *got.Owner != owner.ID {
 		t.Fatalf("application not updated: %+v", got)
 	}
 	want := "Updated name, homepage, redirect URIs, post-logout URIs, scopes, refresh token rotation, token lifetimes, owner"
@@ -287,6 +287,7 @@ func TestUpdateApplication(t *testing.T) {
 		{"tokenPolicy": map[string]any{"idTokenTtl": 0}},
 		{"tokenPolicy": map[string]any{"refreshTokenTtl": 90*86400 + 1}},
 		{"tokenPolicy": map[string]any{"refreshTokenTtl": -1}},
+		{"tokenPolicy": map[string]any{"idTokenAlg": "HS256"}},
 		{"owner": "usr_missing"},
 	} {
 		if rec := call(t, h, admin, "PATCH", path, body); rec.Code != 422 {
@@ -305,6 +306,11 @@ func TestUpdateApplication(t *testing.T) {
 	}
 	if e := lastAudit(t, st); e.Summary != "Updated token exchange" {
 		t.Fatalf("token exchange audit: %+v", e)
+	}
+	rec = call(t, h, admin, "PATCH", path, map[string]any{"tokenPolicy": map[string]any{"idTokenAlg": "ES256"}})
+	expect(t, rec, 200)
+	if got := decode[store.Application](t, rec); got.TokenPolicy.IDTokenAlg != "ES256" || lastAudit(t, st).Summary != "Updated ID token signing algorithm" {
+		t.Fatalf("ID token signing algorithm not saved: %+v", got.TokenPolicy)
 	}
 	billing, err := st.SaveAPIResource(ctx, store.APIResource{Name: "Billing", Identifier: "https://billing.example.com", AccessTokenTTL: 300, Scopes: []store.APIScope{{Name: "billing:read"}}})
 	if err != nil {

@@ -1,6 +1,7 @@
 package oidc
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -94,12 +95,13 @@ func (h *resourceHandlers) read(r *http.Request, current string) (store.APIResou
 		Identifier     string           `json:"identifier"`
 		Description    string           `json:"description"`
 		AccessTokenTTL int              `json:"accessTokenTtl"`
+		AccessTokenAlg string           `json:"accessTokenAlg"`
 		Scopes         []store.APIScope `json:"scopes"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return store.APIResource{}, err
 	}
-	res := store.APIResource{ID: current, Name: strings.TrimSpace(in.Name), Identifier: strings.TrimSpace(in.Identifier), Description: strings.TrimSpace(in.Description), AccessTokenTTL: in.AccessTokenTTL}
+	res := store.APIResource{ID: current, Name: strings.TrimSpace(in.Name), Identifier: strings.TrimSpace(in.Identifier), Description: strings.TrimSpace(in.Description), AccessTokenTTL: in.AccessTokenTTL, AccessTokenAlg: in.AccessTokenAlg}
 	u, err := url.Parse(res.Identifier)
 	switch {
 	case res.Name == "" || len(res.Name) > 200:
@@ -110,6 +112,8 @@ func (h *resourceHandlers) read(r *http.Request, current string) (store.APIResou
 		return res, httpx.Invalid("Keep the description under 500 characters.")
 	case res.AccessTokenTTL < 60 || res.AccessTokenTTL > 86400:
 		return res, httpx.Invalid("Set the access token lifetime between 60 seconds and 24 hours.")
+	case res.AccessTokenAlg != "" && !slices.Contains(store.SigningAlgorithms, res.AccessTokenAlg):
+		return res, httpx.Invalid("Sign access tokens with RS256, ES256 or EdDSA.")
 	case len(in.Scopes) == 0 || len(in.Scopes) > 100:
 		return res, httpx.Invalid("Add between 1 and 100 scopes, such as billing:read.")
 	}
@@ -181,6 +185,7 @@ func (h *resourceHandlers) update(w http.ResponseWriter, r *http.Request, actor 
 	if err != nil {
 		return err
 	}
+	res.AccessTokenAlg = cmp.Or(res.AccessTokenAlg, old.AccessTokenAlg)
 	return h.save(w, r, actor, res, "api_resource.update", fmt.Sprintf("Updated the API %s, now %s", res.Identifier, plural(len(res.Scopes), "scope", "scopes")), http.StatusOK)
 }
 

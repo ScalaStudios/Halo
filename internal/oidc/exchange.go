@@ -88,7 +88,8 @@ func (s *storage) CreateTokenExchangeRequest(context.Context, op.TokenExchangeRe
 	return nil
 }
 
-func (s *storage) GetPrivateClaimsFromTokenExchangeRequest(_ context.Context, req op.TokenExchangeRequest) (map[string]any, error) {
+func (s *storage) GetPrivateClaimsFromTokenExchangeRequest(ctx context.Context, req op.TokenExchangeRequest) (map[string]any, error) {
+	signingAccessToken(ctx)
 	act := map[string]any{"sub": req.GetClientID()}
 	if prior, ok := req.GetExchangeSubjectTokenClaims()["act"]; ok {
 		act["act"] = prior

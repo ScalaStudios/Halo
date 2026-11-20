@@ -135,6 +135,20 @@ func TestSigningKeyLifecycle(t *testing.T) {
 	if err != nil || len(info) != 2 || info[1].RetiredAt == nil || info[1].RetiresAt != nil {
 		t.Fatalf("retired key: %+v %v", info, err)
 	}
+
+	ec, err := st.CreateSigningKey(ctx, "ES256", []byte("ec"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RetireSigningKeys(ctx, time.Now().Add(2*store.SigningKeyOverlap)); err != nil {
+		t.Fatal(err)
+	}
+	if keys, err := st.ListSigningKeys(ctx); err != nil || len(keys) != 2 || keys[0].ID != ec.ID || keys[1].ID != second.ID {
+		t.Fatalf("a key of another algorithm must not supersede the RS256 key: %+v %v", keys, err)
+	}
+	if info, err = st.ListSigningKeyInfo(ctx); err != nil || !info[0].Active || !info[1].Active || info[1].RetiresAt != nil {
+		t.Fatalf("each algorithm has its own active key: %+v %v", info, err)
+	}
 }
 
 func TestSetBasedCounts(t *testing.T) {
