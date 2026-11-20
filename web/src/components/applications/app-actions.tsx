@@ -92,8 +92,23 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
   );
 }
 
-export function DangerZone({ id, name, disabled, className }: { id: string; name: string; disabled: boolean; className?: string }) {
+export function DangerZone({ id, name, disabled, bookmark = false, className }: { id: string; name: string; disabled: boolean; bookmark?: boolean; className?: string }) {
   const { pending, run, errorFor, toast, router } = useMutation();
+  const copy = bookmark
+    ? {
+        enabled: "It appears in the account portal again.",
+        disabled: "It no longer appears in the account portal.",
+        enable: `Shows ${name} in the account portal of the people assigned to it again.`,
+        disable: `Hides ${name} from the account portal. You can enable it again at any time.`,
+        remove: `Removes ${name} and its group assignments. This cannot be undone.`,
+      }
+    : {
+        enabled: "Assigned people can sign in again.",
+        disabled: "New sign-ins are blocked and tokens already issued are revoked.",
+        enable: `Lets people assigned to ${name} sign in again with the existing credentials.`,
+        disable: `Blocks new sign-ins to ${name} and revokes tokens already issued. You can enable it again at any time.`,
+        remove: `Removes ${name}, its credentials and group assignments. Sign-in stops immediately and cannot be restored.`,
+      };
 
   function toggle() {
     void run(
@@ -101,9 +116,7 @@ export function DangerZone({ id, name, disabled, className }: { id: string; name
       () => api(`/applications/${id}/${disabled ? "enable" : "disable"}`, { method: "POST" }),
       () =>
         toast(
-          disabled
-            ? { title: `${name} enabled`, description: "Assigned people can sign in again." }
-            : { title: `${name} disabled`, description: "New sign-ins are blocked and tokens already issued are revoked." },
+          disabled ? { title: `${name} enabled`, description: copy.enabled } : { title: `${name} disabled`, description: copy.disabled },
         ),
       "inline",
     );
@@ -128,11 +141,7 @@ export function DangerZone({ id, name, disabled, className }: { id: string; name
         <div className="flex flex-col gap-4 border-t border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-1">
             <p className="text-body-sm font-semibold text-fg">{disabled ? "Enable application" : "Disable application"}</p>
-            <p className="text-body-sm text-fg-3">
-              {disabled
-                ? `Lets people assigned to ${name} sign in again with the existing credentials.`
-                : `Blocks new sign-ins to ${name} and revokes tokens already issued. You can enable it again at any time.`}
-            </p>
+            <p className="text-body-sm text-fg-3">{disabled ? copy.enable : copy.disable}</p>
             <ActionError message={errorFor("toggle")} />
           </div>
           <Button size="sm" variant="secondary" loading={pending === "toggle"} onClick={toggle} className="self-start sm:self-center">
@@ -143,7 +152,7 @@ export function DangerZone({ id, name, disabled, className }: { id: string; name
         <div className="flex flex-col gap-4 border-t border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-1">
             <p className="text-body-sm font-semibold text-fg">Delete application</p>
-            <p className="text-body-sm text-fg-3">Removes {name}, its credentials and group assignments. Sign-in stops immediately and cannot be restored.</p>
+            <p className="text-body-sm text-fg-3">{copy.remove}</p>
             <ActionError message={errorFor("delete")} />
           </div>
           <HoldToConfirm

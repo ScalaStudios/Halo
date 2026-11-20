@@ -14,7 +14,7 @@ import { pluralize } from "@/lib/format";
 import { GROUP_KIND } from "@/lib/labels";
 import type { Group } from "@/lib/types";
 
-type Target = { name: string; userId?: string; appId?: string; assigned?: string[] };
+type Target = { name: string; userId?: string; appId?: string; assigned?: string[]; bookmark?: boolean };
 type GroupRef = { id: string; name: string };
 
 export function AddToGroup({ groups, assigned = [], ...target }: Target & { groups: Group[] }) {
@@ -65,7 +65,7 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
         close();
         toast(
           target.appId
-            ? { title: `${label} assigned`, description: `Members of ${label} can now sign in to ${target.name}.` }
+            ? { title: `${label} assigned`, description: `Members of ${label} can now ${target.bookmark ? "open" : "sign in to"} ${target.name}.` }
             : { title: `Added to ${label}`, description: `${target.name} gets the ${one ? "group's" : "groups'"} applications at next sign-in.` },
         );
       },
@@ -87,7 +87,7 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
       title={target.appId ? `Assign groups to ${target.name}` : `Add ${target.name} to groups`}
       description={
         target.appId
-          ? `Members of the groups you pick can sign in to ${target.name}. Recorded in the audit log.`
+          ? `Members of the groups you pick can ${target.bookmark ? "open" : "sign in to"} ${target.name}. Recorded in the audit log.`
           : "Rule-based groups follow people's profiles, so they can't be picked."
       }
       footer={
@@ -198,7 +198,7 @@ export function RemoveFromGroup({ group, ...target }: Target & { group: GroupRef
       () =>
         toast(
           target.appId
-            ? { title: `${group.name} unassigned`, description: `Members of ${group.name} can no longer sign in to ${target.name} through it.` }
+            ? { title: `${group.name} unassigned`, description: `Members of ${group.name} can no longer ${target.bookmark ? "open" : "sign in to"} ${target.name} through it.` }
             : { title: `Removed from ${group.name}`, description: `${target.name} loses the group's applications at next sign-in.` },
         ),
     );
