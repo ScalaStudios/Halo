@@ -2,8 +2,11 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
+	"fmt"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"slices"
 	"strings"
@@ -18,9 +21,13 @@ const (
 	magicLinkLifetime = 10 * time.Minute
 	magicLinkWindow   = 15 * time.Minute
 	magicLinkLimit    = 5
+	emailCodeAttempts = 5
 )
 
-var errMagicLinkExpired = httpx.Fail(http.StatusNotFound, "ERR_LINK_EXPIRED", "This sign-in link has expired or was already used. Request a new one from the sign-in page.")
+var (
+	errMagicLinkExpired  = httpx.Fail(http.StatusNotFound, "ERR_LINK_EXPIRED", "This sign-in link has expired or was already used. Request a new one from the sign-in page.")
+	errEmailCodeMismatch = httpx.Fail(http.StatusUnauthorized, "ERR_CODE_MISMATCH", "That code didn't match or has expired. Enter the code from the latest email from Halo, or request a new one.")
+)
 
 func (h *handler) magicLink(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
@@ -66,7 +73,19 @@ func (h *handler) mailMagicLink(ctx context.Context, email, authRequest string, 
 		slog.WarnContext(ctx, "magic link not sent: too many requests in 15 minutes", "user", u.ID)
 		return nil
 	}
-	token, err := h.st.CreateMagicLink(ctx, u.ID, authRequest, time.Now().Add(magicLinkLifetime))
+	org, err := h.st.Settings(ctx)
+	if err != nil {
+		return err
+	}
+	code := ""
+	if org.EmailSignIn != "link" {
+		n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
+		if err != nil {
+			return err
+		}
+		code = fmt.Sprintf("%06d", n.Int64())
+	}
+	token, err := h.st.CreateMagicLink(ctx, u.ID, authRequest, code, time.Now().Add(magicLinkLifetime))
 	if err != nil {
 		return err
 	}
@@ -74,7 +93,28 @@ func (h *handler) mailMagicLink(ctx context.Context, email, authRequest string, 
 	if app != nil {
 		appName = app.Name
 	}
-	return h.mailer.Send(ctx, mail.MagicLink(u.Email, u.Name, appName, h.cfg.Issuer()+store.MagicLinkPath(token)))
+	link := ""
+	if org.EmailSignIn != "code" {
+		link = h.cfg.Issuer() + store.MagicLinkPath(token)
+	}
+	return h.mailer.Send(ctx, mail.MagicLink(u.Email, u.Name, appName, link, code))
+}
+
+func (h *handler) emailCodeSignIn(w http.ResponseWriter, r *http.Request) error {
+	return h.codeSignIn(w, r, "magic-link", errEmailCodeMismatch)
+}
+
+func (h *handler) useEmailCode(ctx context.Context, userID, code string) (string, error) {
+	used, err := h.st.UseEmailCode(ctx, userID, strings.TrimSpace(code), emailCodeAttempts)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return "The emailed code expired, was already used, or was entered wrong too many times.", nil
+	case err != nil:
+		return "", err
+	case !used:
+		return "The emailed code did not match.", nil
+	}
+	return "", h.st.MarkEmailVerified(ctx, userID)
 }
 
 func (h *handler) redeemMagicLink(w http.ResponseWriter, r *http.Request) error {

@@ -2,12 +2,14 @@ package auth_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -39,15 +41,23 @@ func (f policyFunc) Evaluate(_ context.Context, in access.Input) (access.Decisio
 	return f(in), nil
 }
 
-var tokenPattern = regexp.MustCompile(`/sign-in/magic\?token=([A-Za-z0-9_-]+)`)
+var (
+	tokenPattern = regexp.MustCompile(`/sign-in/magic\?token=([A-Za-z0-9_-]+)`)
+	codePattern  = regexp.MustCompile(`\n\n(\d{6})\n\n`)
+)
 
 func (b inbox) token(t *testing.T) (mail.Message, string) {
 	t.Helper()
+	return b.match(t, tokenPattern)
+}
+
+func (b inbox) match(t *testing.T, pattern *regexp.Regexp) (mail.Message, string) {
+	t.Helper()
 	select {
 	case m := <-b:
-		match := tokenPattern.FindStringSubmatch(m.Text)
+		match := pattern.FindStringSubmatch(m.Text)
 		if match == nil {
-			t.Fatalf("no sign-in link in %q", m.Text)
+			t.Fatalf("no %s in %q", pattern, m.Text)
 		}
 		return m, match[1]
 	case <-time.After(5 * time.Second):
@@ -119,7 +129,7 @@ func TestMagicLink(t *testing.T) {
 	}
 	m, token := box.token(t)
 	box.empty(t)
-	if m.To != "ada@example.com" || m.Subject != "Your Halo sign-in link" || !strings.HasPrefix(m.Text, "Hi Ada,") || !strings.Contains(m.Text, "http://localhost:3200/sign-in/magic?token=") {
+	if m.To != "ada@example.com" || m.Subject != "Your Halo sign-in link" || !strings.HasPrefix(m.Text, "Hi Ada,") || !strings.Contains(m.Text, "http://localhost:3200/sign-in/magic?token=") || codePattern.MatchString(m.Text) {
 		t.Fatalf("email: %+v", m)
 	}
 
@@ -132,7 +142,7 @@ func TestMagicLink(t *testing.T) {
 		t.Fatalf("session after redeem: %d", status)
 	}
 	e.expect(client(), "POST", "/api/v1/auth/magic-link/redeem", map[string]any{"token": token}, http.StatusNotFound, "ERR_LINK_EXPIRED")
-	expired, err := e.st.CreateMagicLink(ctx, u.ID, "", time.Now().Add(-time.Minute))
+	expired, err := e.st.CreateMagicLink(ctx, u.ID, "", "", time.Now().Add(-time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,6 +198,105 @@ func TestMagicLink(t *testing.T) {
 	if !slices.Equal(reasons, want) {
 		t.Fatalf("events:\n%q\nwant\n%q", reasons, want)
 	}
+}
+
+func TestEmailCode(t *testing.T) {
+	e, box := newMagicEnv(t, nil)
+	ctx := context.Background()
+	group, err := e.st.CreateGroup(ctx, store.NewGroup{Name: "Observability", Kind: "assigned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	person := func(email string) store.User {
+		t.Helper()
+		u, err := e.st.CreateUser(ctx, store.NewUser{Email: email, Name: "Ada Lovelace", Status: "active", GroupIDs: []string{group.ID}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return u
+	}
+	request := func(body map[string]any) (mail.Message, string) {
+		t.Helper()
+		if status := e.do(client(), "POST", "/api/v1/auth/magic-link", body, nil); status != http.StatusAccepted {
+			t.Fatalf("request a code: %d", status)
+		}
+		return box.match(t, codePattern)
+	}
+	enter := func(email, code string, status int, errCode string) {
+		t.Helper()
+		e.expect(client(), "POST", "/api/v1/auth/magic-link/code", map[string]any{"email": email, "code": code}, status, errCode)
+	}
+	wrong := func(code string) string {
+		n, _ := strconv.Atoi(code)
+		return fmt.Sprintf("%06d", (n+1)%1_000_000)
+	}
+	e.org(func(s *store.Settings) { s.EmailSignIn, s.LockoutThreshold = "code", 10 })
+
+	ada := person("ada@example.com")
+	m, code := request(map[string]any{"email": "ada@example.com"})
+	if m.Subject != "Your Halo sign-in code" || tokenPattern.MatchString(m.Text) {
+		t.Fatalf("code email: %+v", m)
+	}
+	enter("ada@example.com", wrong(code), http.StatusUnauthorized, "ERR_CODE_MISMATCH")
+	enter("nobody@example.com", code, http.StatusUnauthorized, "ERR_CODE_MISMATCH")
+	c := client()
+	var out struct{ Redirect string }
+	if status := e.do(c, "POST", "/api/v1/auth/magic-link/code", map[string]any{"email": "ADA@example.com", "code": code}, &out); status != http.StatusOK || out.Redirect != "/account" {
+		t.Fatalf("sign in with the code: %d %+v", status, out)
+	}
+	if me, status := e.me(c); status != http.StatusOK || me.ID != ada.ID || !e.verified(ada.ID) {
+		t.Fatalf("session after the code: %d", status)
+	}
+	enter("ada@example.com", code, http.StatusUnauthorized, "ERR_CODE_MISMATCH")
+
+	person("bob@example.com")
+	_, code = request(map[string]any{"email": "bob@example.com"})
+	for range 5 {
+		enter("bob@example.com", wrong(code), http.StatusUnauthorized, "ERR_CODE_MISMATCH")
+	}
+	enter("bob@example.com", code, http.StatusUnauthorized, "ERR_CODE_MISMATCH")
+	_, code = request(map[string]any{"email": "bob@example.com"})
+	if status := e.do(client(), "POST", "/api/v1/auth/magic-link/code", map[string]any{"email": "bob@example.com", "code": code}, nil); status != http.StatusOK {
+		t.Fatalf("a new code after too many attempts: %d", status)
+	}
+
+	e.org(func(s *store.Settings) { s.LockoutThreshold = 3 })
+	person("cy@example.com")
+	_, code = request(map[string]any{"email": "cy@example.com"})
+	for range 3 {
+		enter("cy@example.com", wrong(code), http.StatusUnauthorized, "ERR_CODE_MISMATCH")
+	}
+	enter("cy@example.com", code, http.StatusTooManyRequests, "ERR_TOO_MANY_ATTEMPTS")
+
+	e.org(func(s *store.Settings) { s.EmailSignIn = "both" })
+	m, code = request(map[string]any{"email": "ada@example.com"})
+	if status := e.do(client(), "POST", "/api/v1/auth/magic-link/redeem", map[string]any{"token": tokenPattern.FindStringSubmatch(m.Text)[1]}, nil); status != http.StatusOK {
+		t.Fatalf("link from an email with a code: %d", status)
+	}
+	if status := e.do(client(), "POST", "/api/v1/auth/magic-link/code", map[string]any{"email": "ada@example.com", "code": code}, nil); status != http.StatusOK {
+		t.Fatalf("code after its link was used: %d", status)
+	}
+	app, err := e.st.CreateApplication(ctx, store.NewApplication{Name: "Grafana", Protocol: "oidc", Type: "web", RedirectURIs: []string{"https://grafana.example.com/cb"}, GroupIDs: []string{group.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.CreateAuthRequest(ctx, store.AuthRequest{ID: "are_code", ClientID: app.ClientID, RedirectURI: app.RedirectURIs[0], Scopes: []string{"openid"}, ResponseType: "code"}); err != nil {
+		t.Fatal(err)
+	}
+	m, code = request(map[string]any{"email": "ada@example.com", "authRequest": "are_code"})
+	link := tokenPattern.FindStringSubmatch(m.Text)
+	if link == nil || !strings.Contains(m.Text, "sign in to Grafana:") || !strings.Contains(m.Text, "in the browser where you started signing in") {
+		t.Fatalf("email with a link and a code: %q", m.Text)
+	}
+	if status := e.do(client(), "POST", "/api/v1/auth/magic-link/code", map[string]any{"email": "ada@example.com", "code": code, "authRequest": "are_code"}, &out); status != http.StatusOK || out.Redirect != store.AuthorizeCallbackPath("are_code") {
+		t.Fatalf("code for an auth request: %d %+v", status, out)
+	}
+	req, err := e.st.GetAuthRequest(ctx, "are_code")
+	if err != nil || !req.Done || req.UserID == nil || *req.UserID != ada.ID || !slices.Equal(req.AMR, []string{"otp"}) {
+		t.Fatalf("auth request after the code: %+v %v", req, err)
+	}
+	enter("ada@example.com", code, http.StatusUnauthorized, "ERR_CODE_MISMATCH")
+	e.expect(client(), "POST", "/api/v1/auth/magic-link/redeem", map[string]any{"token": link[1]}, http.StatusNotFound, "ERR_AUTH_REQUEST_EXPIRED")
 }
 
 func TestDevOutbox(t *testing.T) {

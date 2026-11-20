@@ -541,7 +541,11 @@ func (h *handlers) enabledMethods(w http.ResponseWriter, r *http.Request) error 
 			enabled = append(enabled, m.Method)
 		}
 	}
-	return httpx.JSON(w, http.StatusOK, map[string][]string{"methods": enabled})
+	org, err := h.st.Settings(r.Context())
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, map[string]any{"methods": enabled, "emailSignIn": org.EmailSignIn})
 }
 
 func (h *handlers) listMethods(w http.ResponseWriter, r *http.Request, _ store.User) error {

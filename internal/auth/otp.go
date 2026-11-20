@@ -62,6 +62,8 @@ func (h *handler) codeSignIn(w http.ResponseWriter, r *http.Request, method stri
 	reason := ""
 	if method == "totp" {
 		reason, err = h.useTOTP(ctx, u.ID, in.Code)
+	} else if method == "magic-link" {
+		reason, err = h.useEmailCode(ctx, u.ID, in.Code)
 	} else if err = h.st.UseRecoveryCode(ctx, u.ID, h.st.RecoveryCodeHash(normalizeRecoveryCode(in.Code))); errors.Is(err, store.ErrNotFound) {
 		reason, err = "The recovery code did not match an unused code.", nil
 	}
@@ -79,7 +81,7 @@ func (h *handler) lockout(r *http.Request, a attempt, settings store.Settings, g
 	if a.user != nil {
 		userID = a.user.ID
 	}
-	failures, err := h.st.RecentFailures(r.Context(), userID, a.email, []string{"password", "totp", "recovery-codes"}, lockoutStart(settings))
+	failures, err := h.st.RecentFailures(r.Context(), userID, a.email, []string{"password", "totp", "recovery-codes", "magic-link"}, lockoutStart(settings))
 	if err != nil {
 		return err
 	}

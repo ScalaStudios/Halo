@@ -11,6 +11,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { api, ApiError } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
 import { METHOD } from "@/lib/labels";
+import type { Settings } from "@/lib/settings-types";
 import { getAssertion } from "@/lib/webauthn";
 import { cancelled, describeFailure, usePasskeySupport, type Ceremony } from "./passkey";
 import { federationProblem, ProviderButtons, useSignInProviders } from "./providers";
@@ -31,8 +32,8 @@ function emailProblem(value: string) {
   return null;
 }
 
-function choiceLabel(kind: Choice) {
-  if (kind === "magic-link") return "Email me a sign-in link";
+function choiceLabel(kind: Choice, emailed: string) {
+  if (kind === "magic-link") return `Email me a sign-in ${emailed}`;
   return kind === "recovery-codes" ? "Recovery code" : METHOD[kind].label;
 }
 
@@ -58,6 +59,7 @@ export function SignInFlow({
   next,
   signedIn,
   allowed,
+  emailSignIn,
   terms,
 }: {
   authRequest?: string;
@@ -67,6 +69,7 @@ export function SignInFlow({
   next?: string;
   signedIn: boolean;
   allowed: string[];
+  emailSignIn: Settings["emailSignIn"];
   terms?: string;
 }) {
   const optionsId = useId();
@@ -96,6 +99,7 @@ export function SignInFlow({
   const [cooldown, setCooldown] = useState(0);
   const [resent, setResent] = useState(false);
   const home = methods.length > 0 ? "choose" : "start";
+  const emailed = emailSignIn === "link" ? "link" : "code";
   const changing = step === "new-password";
 
   useEffect(() => {
@@ -231,7 +235,7 @@ export function SignInFlow({
     }
   }
 
-  async function signInWithCode(path: "/auth/totp" | "/auth/recovery", code: string) {
+  async function signInWithCode(path: "/auth/totp" | "/auth/recovery" | "/auth/magic-link/code", code: string) {
     try {
       finish(await api<SignedIn>(path, { body: { email, code, authRequest } }));
     } catch (error) {
@@ -390,7 +394,7 @@ export function SignInFlow({
                       <li key={kind}>
                         <Button size="lg" className="w-full" loading={kind === "magic-link" && sending} onClick={() => other(kind)}>
                           <Icon aria-hidden="true" size={20} strokeWidth={1.75} className="text-fg-3" />
-                          {choiceLabel(kind)}
+                          {choiceLabel(kind, emailed)}
                         </Button>
                       </li>
                     );
@@ -423,7 +427,7 @@ export function SignInFlow({
                     onClick={() => pick(kind)}
                   >
                     <Icon aria-hidden="true" size={20} strokeWidth={1.75} className={index === 0 ? undefined : "text-fg-3"} />
-                    {choiceLabel(kind)}
+                    {choiceLabel(kind, emailed)}
                   </Button>
                 </li>
               );
@@ -440,15 +444,20 @@ export function SignInFlow({
           </div>
           {alert}
           <p className="text-center text-body text-fg-3">
-            If this address has a Halo account, a sign-in link is on its way. It works once and expires in 10 minutes.
-            {app ? ` Open it in this browser to continue to ${app}.` : null}
+            {emailSignIn === "both"
+              ? "If this address has a Halo account, an email with a sign-in code and link is on its way. Each works once and expires in 10 minutes."
+              : `If this address has a Halo account, a sign-in ${emailed} is on its way. It works once and expires in 10 minutes.`}
+            {app && emailSignIn !== "code" ? ` Open the link in this browser to continue to ${app}.` : null}
           </p>
+          {emailSignIn === "link" ? null : (
+            <VerifyCode verify={(code) => signInWithCode("/auth/magic-link/code", code)} hint="Enter the 6-digit code from the email. You can read it on any device." />
+          )}
           <div className="flex flex-col gap-2">
             <Button size="lg" className="w-full" loading={sending} disabled={cooldown > 0} onClick={sendLink}>
-              {cooldown > 0 ? `Resend link in ${cooldown}s` : "Resend link"}
+              {cooldown > 0 ? `Resend ${emailed} in ${cooldown}s` : `Resend ${emailed}`}
             </Button>
             <p aria-live="polite" className="text-center text-caption text-fg-3">
-              {resent ? "New link requested." : null}
+              {resent ? `New ${emailed} requested.` : null}
             </p>
           </div>
           <button type="button" onClick={differentMethod} className={linkButton}>

@@ -244,6 +244,13 @@ func TestMethodsAndDevicesAPI(t *testing.T) {
 		expect(t, call(t, h, token, "PUT", "/api/v1/methods/"+kind, map[string]any{"enabled": false}), 204)
 	}
 	expect(t, call(t, h, token, "PUT", "/api/v1/methods/magic-link", map[string]any{"enabled": false}), 409)
+	enabled := decode[struct {
+		Methods     []string
+		EmailSignIn string
+	}](t, call(t, h, "", "GET", "/api/v1/auth/methods", nil))
+	if !slices.Equal(enabled.Methods, []string{"magic-link", "recovery-codes"}) || enabled.EmailSignIn != "link" {
+		t.Fatalf("enabled methods: %+v", enabled)
+	}
 	expect(t, call(t, h, token, "PUT", "/api/v1/methods/sms", map[string]any{"enabled": false}), 404)
 	federated := call(t, h, token, "PUT", "/api/v1/methods/federated", map[string]any{"enabled": false})
 	expect(t, federated, 422)

@@ -55,6 +55,7 @@ var fields = []struct {
 	{"passwordSecondFactor", "second factor for passwords", false},
 	{"passwordGroupIds", "groups that can use passwords", false},
 	{"passwordBreachCheck", "breached password check", false},
+	{"emailSignIn", "sign-in email", false},
 	{"sessionLimit", "session limit", false},
 	{"sessionLimitAction", "action at the session limit", false},
 	{"sessionLimitCli", "Halo CLI session limit", false},
@@ -269,6 +270,8 @@ func validate(s store.Settings) error {
 		return httpx.Invalid("The session limit must be between 1 and 100 sessions, or 0 for no limit.")
 	case s.SessionLimitAction != "refuse" && s.SessionLimitAction != "end-oldest":
 		return httpx.Invalid(`Set the action at the session limit to "refuse" or "end-oldest".`)
+	case s.EmailSignIn != "link" && s.EmailSignIn != "code" && s.EmailSignIn != "both":
+		return httpx.Invalid(`Set the sign-in email to "link", "code" or "both".`)
 	}
 	seen := map[string]bool{}
 	for _, g := range s.SessionLimitGroups {

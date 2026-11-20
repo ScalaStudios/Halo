@@ -24,6 +24,7 @@ export type Settings = {
   passwordSecondFactor: boolean;
   passwordGroupIds: string[];
   passwordBreachCheck: boolean;
+  emailSignIn: "link" | "code" | "both";
   sessionLimit: number;
   sessionLimitAction: "refuse" | "end-oldest";
   sessionLimitCli: boolean;

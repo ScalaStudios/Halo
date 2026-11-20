@@ -117,7 +117,7 @@ func TestSettingsValidationCacheAndRoles(t *testing.T) {
 	}
 	for _, body := range []map[string]any{
 		{"sessionHours": 0}, {"sessionHours": 73}, {"lockoutThreshold": 2}, {"lockoutMinutes": 4}, {"inviteDays": 31},
-		{"accessTokenMinutes": 1441}, {"refreshTokenHours": 0}, {"contactEmail": "IT <it@example.com>"}, {"signInMessage": strings.Repeat("x", 501)},
+		{"accessTokenMinutes": 1441}, {"refreshTokenHours": 0}, {"contactEmail": "IT <it@example.com>"}, {"signInMessage": strings.Repeat("x", 501)}, {"emailSignIn": "sms"},
 	} {
 		e.expect(e.call(admin, "PATCH", "/api/v1/settings", body), 422)
 	}

@@ -30,12 +30,25 @@ func Reset(to, name, admin, link string, expires time.Time) Message {
 		"The link works once and expires " + expiry(expires) + ". If you didn't expect this, contact your administrator before you use it."}
 }
 
-func MagicLink(to, name, app, link string) Message {
+func MagicLink(to, name, app, link, code string) Message {
 	target, browser := "Halo", ""
 	if app != "" {
 		target, browser = app, " Open it in the browser where you started signing in."
 	}
-	return Message{To: to, Subject: "Your Halo sign-in link", Text: greeting(name) +
-		"Open this link to sign in to " + target + ":\n\n" + link + "\n\n" +
-		"It works once and expires in 10 minutes." + browser + " If you didn't ask to sign in, you can ignore this email."}
+	if code == "" {
+		return Message{To: to, Subject: "Your Halo sign-in link", Text: greeting(name) +
+			"Open this link to sign in to " + target + ":\n\n" + link + "\n\n" +
+			"It works once and expires in 10 minutes." + browser + " If you didn't ask to sign in, you can ignore this email."}
+	}
+	text := greeting(name) + "Enter this code on the sign-in page to sign in to " + target + ":\n\n" + code + "\n\n"
+	ending := "It works once and expires in 10 minutes."
+	if link != "" {
+		where := ":"
+		if app != "" {
+			where = " in the browser where you started signing in:"
+		}
+		text += "Or open this link" + where + "\n\n" + link + "\n\n"
+		ending = "Each works once and expires in 10 minutes."
+	}
+	return Message{To: to, Subject: "Your Halo sign-in code", Text: text + ending + " Don't share the code with anyone. If you didn't ask to sign in, you can ignore this email."}
 }

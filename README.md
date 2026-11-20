@@ -29,7 +29,7 @@ Halo works in the same space as hosted services such as Microsoft Entra ID, Okta
 
 | Area | What Halo includes |
 | --- | --- |
-| **Sign-in** | Passkeys and security keys (WebAuthn), authenticator apps (TOTP), single-use recovery codes and magic links by email. Sign-in through Google, Microsoft Entra ID, GitHub or any OpenID Connect provider, with account linking and accounts created on first sign-in. |
+| **Sign-in** | Passkeys and security keys (WebAuthn), authenticator apps (TOTP), single-use recovery codes, and magic links or one-time codes by email. Sign-in through Google, Microsoft Entra ID, GitHub or any OpenID Connect provider, with account linking and accounts created on first sign-in. |
 | **Single sign-on** | An OpenID Connect provider and OAuth 2.0 authorization server for web, single-page, native and machine-to-machine applications. A SAML 2.0 identity provider with service provider metadata import and IdP-initiated sign-in. |
 | **Directory** | People with profiles and managers, assigned groups and rule-based groups such as `user.department == "Engineering"`, service accounts, devices, and six administrative roles. |
 | **Provisioning** | A SCIM 2.0 server, tested with the request formats of Okta and Microsoft Entra ID, so either of them or an HR system can provision people into Halo; and outbound SCIM that creates, updates and deactivates accounts in your applications. |
