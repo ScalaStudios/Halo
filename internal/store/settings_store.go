@@ -61,6 +61,10 @@ type Settings struct {
 	SignInLogDays int `json:"signInLogDays"`
 	AuditLogDays  int `json:"auditLogDays"`
 
+	SignUp         string   `json:"signUp"`
+	SignUpDomains  []string `json:"signUpDomains"`
+	SignUpGroupIDs []string `json:"signUpGroupIds"`
+
 	EmailTemplates map[string]EmailTemplate `json:"emailTemplates,omitempty"`
 }
 
@@ -93,6 +97,9 @@ var DefaultSettings = Settings{
 	ImpersonationGroups:  []string{},
 	ReauthMinutes:        10,
 	ClientRegistration:   "off",
+	SignUp:               "off",
+	SignUpDomains:        []string{},
+	SignUpGroupIDs:       []string{},
 }
 
 const settingsTTL = 30 * time.Second

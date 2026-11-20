@@ -90,6 +90,13 @@ var Templates = []Template{
 			" once and expires in 10 minutes. Don't share the code with anyone. If you didn't ask to sign in, you can ignore this email."},
 	},
 	{
+		Kind: "sign_up", Label: "Sign-up", Description: "Sent when someone signs up, to confirm their email address before they create a passkey.", Required: "Link",
+		Variables: uses("Name", "Link", "Expires", "Organization"),
+		Default: store.EmailTemplate{Subject: "Finish signing up for Halo", Body: greetingLine +
+			"Confirm your email address and create your passkey to finish signing up for Halo:\n\n{{.Link}}\n\n" +
+			"The link works once and expires {{.Expires}}. If you didn't sign up, you can ignore this email and no account is created."},
+	},
+	{
 		Kind: "access_request", Label: "Access request", Description: "Sent to approvers when someone asks for an access package.",
 		Variables: uses("Requester", "RequesterEmail", "Package", "Duration", "Reason", "Link", "Organization"),
 		Default: store.EmailTemplate{Subject: "{{.Requester}} requests {{.Package}}", Body: "{{.Requester}} ({{.RequesterEmail}}) requested the access package {{.Package}} {{.Duration}}." +

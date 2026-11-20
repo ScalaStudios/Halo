@@ -264,8 +264,9 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [methods, emailSignIn, challenge]
+                required: [methods, emailSignIn, challenge, signUp]
                 properties:
+                  signUp: {type: boolean, description: 'Whether people can create an account at `/auth/sign-up`.'}
                   methods:
                     type: array
                     items: {$ref: '#/components/schemas/MethodKind'}
@@ -736,6 +737,126 @@ paths:
         '400': {$ref: '#/components/responses/RegistrationFailed'}
         '403': {$ref: '#/components/responses/SignInRefused'}
         '404': {$ref: '#/components/responses/LinkExpired'}
+  /auth/sign-up:
+    post:
+      tags: [Sign-in]
+      operationId: signUp
+      summary: Sign up with an email address
+      description: 'Works while `signUp` in the settings is `open` or `approval`, for addresses at a domain in `signUpDomains`, or at a verified domain when that list is empty. Emails a link that works once for 24 hours, at most 3 times per address an hour; the person opens it to confirm the address and create a passkey with `/auth/sign-up/begin` and `/auth/sign-up/finish`. Answers `202` the same way whether or not the address already has an account, and sends nothing when it has. At most 10 requests per client IP address an hour. While `botProtection` is on, every request needs `challenge`. No account exists until the person finishes; nothing is recorded before that.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, name]
+              properties:
+                email: {type: string, format: email, maxLength: 254}
+                name: {type: string, maxLength: 200}
+                challenge: {$ref: '#/components/schemas/ChallengeToken'}
+      responses:
+        '202':
+          description: Accepted. The body is an empty object.
+          content:
+            application/json:
+              schema: {type: object}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '403': {$ref: '#/components/responses/SignUpRefused'}
+        '404': {$ref: '#/components/responses/SignUpOff'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        '429':
+          description: '`ERR_RATE_LIMITED`: more than 10 sign-ups from this client IP address within the hour, with `Retry-After` in seconds.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '503': {$ref: '#/components/responses/ChallengeUnavailable'}
+    get:
+      tags: [Sign-in]
+      operationId: getSignUp
+      summary: Get the name and address a sign-up link belongs to
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: The name and address, in the shape of `/auth/enroll`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user, purpose]
+                properties:
+                  user:
+                    type: object
+                    required: [name, email]
+                    properties:
+                      name: {type: string}
+                      email: {type: string}
+                  purpose: {type: string, enum: [sign-up]}
+        '403': {$ref: '#/components/responses/SignUpRefused'}
+        '404': {$ref: '#/components/responses/SignUpOff'}
+  /auth/sign-up/begin:
+    post:
+      tags: [Sign-in]
+      operationId: beginSignUp
+      summary: Start creating the passkey for a sign-up
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: {type: string}
+      responses:
+        '200': {$ref: '#/components/responses/Ceremony'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '403': {$ref: '#/components/responses/SignUpRefused'}
+        '404': {$ref: '#/components/responses/SignUpOff'}
+  /auth/sign-up/finish:
+    post:
+      tags: [Sign-in]
+      operationId: finishSignUp
+      summary: Save the passkey and confirm the email address
+      description: 'Uses up the link in the same transaction that confirms the address and keeps the passkey, and records `user.sign_up` in the audit log. When `signUp` is `open`, creates an active account with a confirmed address, adds it to the assigned groups in `signUpGroupIds` and no others, gives it no roles, and signs in like `/auth/enroll/finish`. When it is `approval`, no account or session exists yet: the sign-up waits under `/sign-ups` and the response is `{"pending": true}`.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, ceremony, credential]
+              properties:
+                token: {type: string}
+                ceremony: {type: string}
+                credential: {type: object, description: 'The browser''s PublicKeyCredential creation response, as JSON.'}
+                label: {type: string, description: 'Defaults to the kind, browser and operating system, such as "Passkey · Chrome on macOS".'}
+      responses:
+        '200':
+          description: 'Signed in, as with `SignedIn`, or `{"pending": true}` while an administrator has to approve the sign-up.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  redirect: {type: string}
+                  terms: {type: string}
+                  pending: {type: boolean}
+        '400': {$ref: '#/components/responses/RegistrationFailed'}
+        '403': {$ref: '#/components/responses/SignUpRefused'}
+        '404': {$ref: '#/components/responses/SignUpOff'}
+        '409':
+          description: '`ERR_ACCOUNT_EXISTS`: an account with the address was created after the sign-up started.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
   /auth/sign-out:
     post:
       tags: [Sign-in]
@@ -2140,6 +2261,49 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /sign-ups:
+    get:
+      tags: [Users]
+      operationId: listSignUps
+      summary: List sign-ups waiting for approval
+      description: 'Roles: any administrator. Only sign-ups whose address is confirmed and that hold a passkey, oldest first.'
+      responses:
+        '200':
+          description: The sign-ups.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/SignUp'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /sign-ups/{id}/approve:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Users]
+      operationId: approveSignUp
+      summary: Approve a sign-up
+      description: 'Roles: user administrator. Creates an active account with the confirmed address and the passkey from the sign-up, in the assigned groups in `signUpGroupIds` at the time of approval and no others, with no roles. Recorded as `user.sign_up.approve`.'
+      responses:
+        '200': {$ref: '#/components/responses/UserResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /sign-ups/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    delete:
+      tags: [Users]
+      operationId: rejectSignUp
+      summary: Reject a sign-up
+      description: 'Roles: user administrator. Deletes the sign-up and its passkey. The person can sign up again. Recorded as `user.sign_up.reject`.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /groups:
     get:
       tags: [Groups]
@@ -4573,7 +4737,7 @@ components:
       name: kind
       in: path
       required: true
-      schema: {type: string, enum: [invite, reset, magic_link, magic_code, access_request, access_approved, access_denied]}
+      schema: {type: string, enum: [invite, reset, magic_link, magic_code, sign_up, access_request, access_approved, access_denied]}
     UserId:
       name: userId
       in: path
@@ -4887,6 +5051,16 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
+    SignUpOff:
+      description: '`ERR_SIGN_UP_OFF`: sign-up is turned off. `ERR_LINK_EXPIRED`: the sign-up link expired, was used, or was replaced by a newer one.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    SignUpRefused:
+      description: '`ERR_SIGN_UP_DOMAIN`: the address is not at an allowed domain. `ERR_CHALLENGE_REQUIRED` or `ERR_CHALLENGE_FAILED` (see `ChallengeToken`); failed checks on sign-up are not recorded in the sign-in log. Also `ERR_CROSS_SITE`.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     Suspended:
       description: '`ERR_ACCOUNT_SUSPENDED`: the account is suspended or deprovisioned. Also `ERR_CROSS_SITE`.'
       content:
@@ -4913,7 +5087,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     ChallengeUnavailable:
-      description: '`ERR_CHALLENGE_UNAVAILABLE`: Halo could not verify the check with the bot protection provider, or the provider rejected the secret key, so the request was refused. Recorded in the sign-in log. Passkeys are never checked.'
+      description: '`ERR_CHALLENGE_UNAVAILABLE`: Halo could not verify the check with the bot protection provider, or the provider rejected the secret key, so the request was refused. Recorded in the sign-in log, except on `/auth/sign-up`. Passkeys are never checked.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -5983,8 +6157,11 @@ components:
           readOnly: true
           additionalProperties: {$ref: '#/components/schemas/EmailTemplateText'}
           description: Custom email subjects and bodies by template kind, left out when there are none. Change them through `/email-templates/{kind}`.
-        botProtection: {type: string, enum: ['', turnstile, hcaptcha], default: '', description: 'Ask for a check from Cloudflare Turnstile or hCaptcha on `/auth/magic-link`, and on `/auth/password`, `/auth/totp`, `/auth/recovery` and `/auth/magic-link/code` once the client IP address has `lockoutThreshold` failed sign-ins within the lockout window. Passkeys are never checked. Empty turns it off. Turning it on needs `botProtectionSiteKey` and a stored `botProtectionSecret`.'}
+        botProtection: {type: string, enum: ['', turnstile, hcaptcha], default: '', description: 'Ask for a check from Cloudflare Turnstile or hCaptcha on `/auth/magic-link` and `/auth/sign-up`, and on `/auth/password`, `/auth/totp`, `/auth/recovery` and `/auth/magic-link/code` once the client IP address has `lockoutThreshold` failed sign-ins within the lockout window. Passkeys are never checked. Empty turns it off. Turning it on needs `botProtectionSiteKey` and a stored `botProtectionSecret`.'}
         botProtectionSiteKey: {type: string, pattern: '^[A-Za-z0-9_-]{1,100}$', description: The public site key from the provider. The sign-in page uses it to show the check.}
+        signUp: {type: string, enum: ['off', open, approval], default: 'off', description: 'Who can create an account at `/auth/sign-up`: nobody, anyone at an allowed domain once they confirm their address and create a passkey, or the same people after a user administrator approves them under `/sign-ups`. Turning it on with an empty `signUpDomains` needs a verified domain.'}
+        signUpDomains: {type: array, default: [], maxItems: 100, items: {type: string, examples: [example.com]}, description: 'Email domains people can sign up with, matched exactly and without case. Empty allows the verified domains under `/domains`.'}
+        signUpGroupIds: {type: array, default: [], items: {type: string}, description: 'Assigned groups that new accounts from sign-up join. Dynamic groups are skipped.'}
         botProtectionSecret: {type: string, maxLength: 200, writeOnly: true, description: The secret key from the provider. Stored encrypted and never returned; `botProtectionSecretSet` in the response says whether one is stored. Omit it or send an empty string to keep the stored one.}
         signInLogDays: {type: integer, minimum: 0, maximum: 3650, default: 0, description: 'Days to keep sign-in log entries, between 7 and 3,650. 0 keeps them forever. Once a day Halo deletes older entries in batches and records the count as `log.prune` in the audit log. Only a global administrator can change it.'}
         auditLogDays: {type: integer, minimum: 0, maximum: 3650, default: 0, description: 'Days to keep audit log entries, between 30 and 3,650. 0 keeps them forever. Once a day Halo deletes older entries in batches and records the count as `log.prune` in the audit log. Only a global administrator can change it.'}
@@ -5998,7 +6175,7 @@ components:
       type: object
       required: [kind, label, description, variables, default, custom]
       properties:
-        kind: {type: string, enum: [invite, reset, magic_link, magic_code, access_request, access_approved, access_denied]}
+        kind: {type: string, enum: [invite, reset, magic_link, magic_code, sign_up, access_request, access_approved, access_denied]}
         label: {type: string, examples: [Invitation]}
         description: {type: string}
         variables:
@@ -6019,7 +6196,7 @@ components:
           description: The saved subject and body, or null when Halo sends its default.
     ChallengeToken:
       type: string
-      description: 'The token from the bot protection check on the sign-in page. Needed only while `botProtection` is on: always for `/auth/magic-link`, and for password and code sign-ins once the client IP address has `lockoutThreshold` failed sign-ins within the lockout window. Without it the request is refused with `ERR_CHALLENGE_REQUIRED`; Halo verifies it with the provider, and the result is recorded in the sign-in log as `challenge`. If the provider cannot be reached, the request is refused with `ERR_CHALLENGE_UNAVAILABLE`.'
+      description: 'The token from the bot protection check on the sign-in page. Needed only while `botProtection` is on: always for `/auth/magic-link` and `/auth/sign-up`, and for password and code sign-ins once the client IP address has `lockoutThreshold` failed sign-ins within the lockout window. Without it the request is refused with `ERR_CHALLENGE_REQUIRED`; Halo verifies it with the provider, and the result is recorded in the sign-in log as `challenge`. If the provider cannot be reached, the request is refused with `ERR_CHALLENGE_UNAVAILABLE`.'
     ClientMetadata:
       type: object
       description: 'Client metadata from RFC 7591. Halo ignores fields it does not list here. Requests are at most 16 KB.'
@@ -6069,6 +6246,15 @@ components:
       enum: [link, code, both]
       default: link
       description: 'What sign-in emails from `/auth/magic-link` contain: a link, a six-digit code to enter on the sign-in page that asked for it, or both. A code works when the email is read on another device, and a mail scanner that opens the link does not use up the code.'
+    SignUp:
+      type: object
+      required: [id, email, name, createdAt, verifiedAt]
+      properties:
+        id: {type: string}
+        email: {type: string}
+        name: {type: string}
+        createdAt: {type: string, format: date-time, description: When the person last asked for the sign-up link.}
+        verifiedAt: {type: string, format: date-time, description: When the person confirmed the address and created the passkey.}
     Domain:
       type: object
       required: [id, name, token, createdAt, verifiedAt]

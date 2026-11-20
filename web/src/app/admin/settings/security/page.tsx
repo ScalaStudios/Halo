@@ -1,15 +1,21 @@
-import { BotProtectionForm, ClientRegistrationForm, ImpersonationForm, SecurityForm, SessionLimitForm } from "@/components/settings/settings-forms";
+import { BotProtectionForm, ClientRegistrationForm, ImpersonationForm, SecurityForm, SessionLimitForm, SignUpForm } from "@/components/settings/settings-forms";
 import { hasRole } from "@/components/settings/roles";
 import { SigningKeys } from "@/components/settings/signing-keys";
 import { PageHeader } from "@/components/ui/page-header";
 import { apiGet } from "@/lib/api/server";
-import type { SettingsResponse, SigningKeys as Keys } from "@/lib/settings-types";
+import type { Domain, SettingsResponse, SigningKeys as Keys } from "@/lib/settings-types";
 import type { Group, User } from "@/lib/types";
 
 export const metadata = { title: "Security defaults" };
 
 export default async function SecurityDefaultsPage() {
-  const [{ settings, issuer, botProtectionSecretSet }, me, keys, groups] = await Promise.all([apiGet<SettingsResponse>("/settings"), apiGet<User>("/me"), apiGet<Keys>("/signing-keys"), apiGet<Group[]>("/groups")]);
+  const [{ settings, issuer, botProtectionSecretSet }, me, keys, groups, domains] = await Promise.all([
+    apiGet<SettingsResponse>("/settings"),
+    apiGet<User>("/me"),
+    apiGet<Keys>("/signing-keys"),
+    apiGet<Group[]>("/groups"),
+    apiGet<Domain[]>("/domains"),
+  ]);
   return (
     <div className="flex max-w-4xl flex-col gap-8">
       <PageHeader
@@ -20,6 +26,7 @@ export default async function SecurityDefaultsPage() {
       <SessionLimitForm settings={settings} groups={groups} canEdit={hasRole(me, "security_admin")} />
       <ImpersonationForm settings={settings} groups={groups} canEdit={hasRole(me)} />
       <ClientRegistrationForm settings={settings} issuer={issuer} canEdit={hasRole(me, "security_admin")} />
+      <SignUpForm settings={settings} groups={groups} domains={domains} canEdit={hasRole(me, "security_admin")} />
       <BotProtectionForm settings={settings} secretSet={botProtectionSecretSet} canEdit={hasRole(me, "security_admin")} />
       <SigningKeys keys={keys} canRotate={hasRole(me)} />
     </div>

@@ -47,15 +47,23 @@ func (h *handler) challenge(r *http.Request, a *attempt, token string, settings 
 	passed, err := h.verifyChallenge(r, settings.BotProtection, token)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "bot check not verified", "provider", settings.BotProtection, "error", err)
-		a.challenge = "unavailable"
-		return h.reject(r, *a, "The bot check service could not be reached.", errChallengeUnavailable)
+		return h.refuse(r, a, "unavailable", "The bot check service could not be reached.", errChallengeUnavailable)
 	}
 	if !passed {
-		a.challenge = "failed"
-		return h.reject(r, *a, "The bot check failed.", errChallengeFailed)
+		return h.refuse(r, a, "failed", "The bot check failed.", errChallengeFailed)
 	}
-	a.challenge = "passed"
+	if a != nil {
+		a.challenge = "passed"
+	}
 	return nil
+}
+
+func (h *handler) refuse(r *http.Request, a *attempt, outcome, reason string, e *httpx.Error) error {
+	if a == nil {
+		return e
+	}
+	a.challenge = outcome
+	return h.reject(r, *a, reason, e)
 }
 
 func (h *handler) verifyChallenge(r *http.Request, provider, token string) (bool, error) {

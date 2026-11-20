@@ -17,6 +17,7 @@ const config: NextConfig = {
     return [
       { source: "/(.*)", headers: [{ key: "Content-Security-Policy", value: csp }] },
       { source: "/sign-in", headers: [{ key: "Content-Security-Policy", value: signInCsp }] },
+      { source: "/sign-up", headers: [{ key: "Content-Security-Policy", value: signInCsp }] },
     ];
   },
   async rewrites() {

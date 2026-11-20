@@ -502,3 +502,43 @@ func TestLogRetentionSettings(t *testing.T) {
 		t.Fatalf("keep forever: %+v", got.Settings)
 	}
 }
+
+func TestSignUpSettings(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	security := e.person("sam@example.com", "security_admin")
+	group, err := e.st.CreateGroup(ctx, store.NewGroup{Name: "Members", Kind: "assigned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, body := range []map[string]any{
+		{"signUp": "anyone"},
+		{"signUp": "open"},
+		{"signUp": "open", "signUpDomains": []string{"@example.com"}},
+		{"signUp": "approval", "signUpDomains": []string{"example.com"}, "signUpGroupIds": []string{"grp_missing"}},
+	} {
+		e.expect(e.call(security, "PATCH", "/api/v1/settings", body), 422)
+	}
+	rec := e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"signUp": "approval", "signUpDomains": []string{" Example.com", "example.com", ""}, "signUpGroupIds": []string{group.ID}}), 200)
+	got := decode[struct {
+		Settings store.Settings `json:"settings"`
+	}](t, rec).Settings
+	if got.SignUp != "approval" || !slices.Equal(got.SignUpDomains, []string{"example.com"}) || !slices.Equal(got.SignUpGroupIDs, []string{group.ID}) {
+		t.Fatalf("sign-up settings: %+v", got)
+	}
+
+	domain, err := e.st.AddDomain(ctx, "example.org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"signUpDomains": []string{}}), 422)
+	if _, err := e.st.VerifyDomain(ctx, domain.ID); err != nil {
+		t.Fatal(err)
+	}
+	e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"signUpDomains": []string{}}), 200)
+	audit, _ := e.st.ListAudit(ctx, 1)
+	if audit[0].Summary != "Changed the sign-up domains" {
+		t.Fatalf("audit: %+v", audit)
+	}
+}
