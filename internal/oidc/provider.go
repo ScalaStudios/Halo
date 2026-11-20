@@ -108,6 +108,15 @@ func New(d httpx.Deps) (http.Handler, error) {
 		}
 		serve(w, r)
 	})
+	workload := &workloads{st: d.Store, dev: d.Config.Dev, issuers: map[string]*issuerKeys{}}
+	mux.HandleFunc("POST /oauth2/token", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.PostForm.Get("grant_type") == string(oidc.GrantTypeClientCredentials) && r.PostForm.Get("client_assertion_type") == oidc.ClientAssertionTypeJWTAssertion {
+			workload.ServeHTTP(w, r)
+			return
+		}
+		serve(w, r)
+	})
 	mux.HandleFunc("GET /oauth2/logout/return", st.logoutReturn)
 	mux.HandleFunc("/oauth2/authorize/callback", func(w http.ResponseWriter, r *http.Request) {
 		req, err := d.Store.GetAuthRequest(r.Context(), r.FormValue("id"))

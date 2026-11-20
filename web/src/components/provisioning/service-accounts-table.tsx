@@ -99,7 +99,7 @@ export function ServiceAccountsTable({ accounts, people }: { accounts: ServiceAc
   const { toast, router } = useMutation();
   const [creating, setCreating] = useState(false);
   const names = Object.fromEntries(people.map((p) => [p.id, p.name]));
-  const rows: Row[] = accounts.map((a) => ({ ...a, ownerName: (a.ownerId && names[a.ownerId]) || "", activeKeyCount: activeKeys(a.keys).length, lastUsedAt: lastUsed(a.keys) }));
+  const rows: Row[] = accounts.map((a) => ({ ...a, ownerName: (a.ownerId && names[a.ownerId]) || "", activeKeyCount: activeKeys(a.keys).length, lastUsedAt: lastUsed([...a.keys, ...a.federatedCredentials]) }));
   const create = (
     <Button size="sm" variant="primary" onClick={() => setCreating(true)}>
       <Plus aria-hidden="true" size={16} strokeWidth={1.75} />

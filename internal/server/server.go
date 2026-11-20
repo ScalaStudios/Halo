@@ -34,6 +34,8 @@ var sensitiveRoutes = []string{
 	"POST /api/v1/service-accounts",
 	"PUT /api/v1/service-accounts/{id}/roles",
 	"POST /api/v1/service-accounts/{id}/keys",
+	"POST /api/v1/service-accounts/{id}/federated-credentials",
+	"DELETE /api/v1/service-accounts/{id}/federated-credentials/{credentialId}",
 	"POST /api/v1/applications/{id}/secrets",
 	"POST /api/v1/signing-keys/rotate",
 	"POST /api/v1/saml/certificate/rotate",

@@ -153,6 +153,15 @@ func ClientIP(r *http.Request) string {
 	return client
 }
 
+func ValidIssuer(issuer string, dev bool) bool {
+	u, err := url.Parse(issuer)
+	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	local := u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1"
+	return u.Scheme == "https" || u.Scheme == "http" && local && dev
+}
+
 type contextKey int
 
 const (

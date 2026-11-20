@@ -26,8 +26,23 @@ export type ServiceAccount = {
   rateLimit: number;
   roles: RoleKey[];
   keys: ApiKey[];
+  federatedCredentials: FederatedCredential[];
   createdBy: string | null;
   createdAt: string;
+};
+
+export type FederatedCredential = {
+  id: string;
+  serviceAccountId: string;
+  name: string;
+  issuer: string;
+  subject: string;
+  audience: string;
+  conditions: Record<string, string>;
+  scopes: KeyScope[];
+  createdBy: string | null;
+  createdAt: string;
+  lastUsedAt: string | null;
 };
 
 export type AppProvisioning = {

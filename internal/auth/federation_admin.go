@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"errors"
 	"net/http"
-	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -239,7 +238,7 @@ func (h *handler) validProvider(r *http.Request, in providerInput, existing stor
 	case "github":
 		p.Issuer = strings.TrimSuffix(cmp.Or(p.Issuer, "https://github.com"), "/")
 	}
-	if !validIssuer(p.Issuer, h.cfg.Dev) {
+	if !httpx.ValidIssuer(p.Issuer, h.cfg.Dev) {
 		return p, httpx.Invalid("Enter the provider URL starting with https://, for example https://auth.example.com.")
 	}
 	p.Scopes = []string{}
@@ -300,15 +299,6 @@ func (h *handler) validProvider(r *http.Request, in providerInput, existing stor
 		}
 	}
 	return p, nil
-}
-
-func validIssuer(issuer string, dev bool) bool {
-	u, err := url.Parse(issuer)
-	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return false
-	}
-	local := u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1"
-	return u.Scheme == "https" || u.Scheme == "http" && local && dev
 }
 
 func (h *handler) myIdentities(w http.ResponseWriter, r *http.Request) error {

@@ -39,6 +39,8 @@ type ServiceAccount struct {
 	Keys        []APIKey  `json:"keys"`
 	CreatedBy   *string   `json:"createdBy"`
 	CreatedAt   time.Time `json:"createdAt"`
+
+	FederatedCredentials []FederatedCredential `json:"federatedCredentials"`
 }
 
 type NewServiceAccount struct {
@@ -66,7 +68,7 @@ func scanAPIKey(row rowScanner) (APIKey, error) {
 }
 
 func (s *Store) ListAPIKeys(ctx context.Context, serviceAccountID string) ([]APIKey, error) {
-	rows, err := s.db.Query(ctx, apiKeyQuery+` where $1 = '' or k.service_account_id = $1 order by k.created_at desc, k.id`, serviceAccountID)
+	rows, err := s.db.Query(ctx, apiKeyQuery+` where k.credential_id is null and ($1 = '' or k.service_account_id = $1) order by k.created_at desc, k.id`, serviceAccountID)
 	if err != nil {
 		return nil, err
 	}
@@ -114,13 +116,13 @@ func (s *Store) ResolveAPIKey(ctx context.Context, token string) (User, Resolved
 	var key ResolvedKey
 	var accountID string
 	var lastUsed *time.Time
-	err := s.db.QueryRow(ctx, `select k.id, k.service_account_id, k.scopes, a.rate_limit, k.last_used_at from api_keys k join users u on u.id = k.service_account_id join service_accounts a on a.user_id = k.service_account_id
+	err := s.db.QueryRow(ctx, `select coalesce(k.credential_id, k.id), k.service_account_id, k.scopes, a.rate_limit, k.last_used_at from api_keys k join users u on u.id = k.service_account_id join service_accounts a on a.user_id = k.service_account_id
 		where k.key_hash = $1 and k.revoked_at is null and (k.expires_at is null or k.expires_at > now()) and u.status = 'active'`, secret.Hash(token)).Scan(&key.ID, &accountID, &key.Scopes, &key.RateLimit, &lastUsed)
 	if err != nil {
 		return User{}, ResolvedKey{}, notFound(err)
 	}
 	if lastUsed == nil || time.Since(*lastUsed) > time.Minute {
-		_, _ = s.db.Exec(ctx, `update api_keys set last_used_at = now() where id = $1`, key.ID)
+		_, _ = s.db.Exec(ctx, `update api_keys set last_used_at = now() where key_hash = $1`, secret.Hash(token))
 	}
 	u, err := s.GetUser(ctx, accountID)
 	return u, key, err
@@ -152,7 +154,7 @@ func (s *Store) serviceAccounts(ctx context.Context, accountID string) ([]Servic
 	accounts := []ServiceAccount{}
 	index := map[string]int{}
 	for rows.Next() {
-		a := ServiceAccount{Keys: []APIKey{}}
+		a := ServiceAccount{Keys: []APIKey{}, FederatedCredentials: []FederatedCredential{}}
 		if err := rows.Scan(&a.ID, &a.Name, &a.Email, &a.Description, &a.OwnerID, &a.Status, &a.RateLimit, &a.CreatedBy, &a.CreatedAt, &a.Roles); err != nil {
 			return nil, err
 		}
@@ -169,6 +171,15 @@ func (s *Store) serviceAccounts(ctx context.Context, accountID string) ([]Servic
 	for _, k := range keys {
 		if i, ok := index[k.ServiceAccountID]; ok {
 			accounts[i].Keys = append(accounts[i].Keys, k)
+		}
+	}
+	credentials, err := s.ListFederatedCredentials(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range credentials {
+		if i, ok := index[c.ServiceAccountID]; ok {
+			accounts[i].FederatedCredentials = append(accounts[i].FederatedCredentials, c)
 		}
 	}
 	return accounts, nil

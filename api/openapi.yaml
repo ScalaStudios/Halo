@@ -8,9 +8,10 @@ info:
   description: |
     The JSON API behind the Halo console and account portal. Anything the web interface does, a script can do with the same requests.
 
-    **Authentication.** Send either the `halo_session` cookie of a signed-in person, or an API key of a service account as `Authorization: Bearer hlk_…`. API keys work only when they have the `api` scope, act with the roles of their service account, and are ignored on the personal routes under `/me` and on the sign-in routes under `/auth`. The personal routes under `/me/` (with a trailing segment, not `/me` itself) also accept an access token that `halo login` obtained for the built-in Halo CLI application.
+    **Authentication.** Send either the `halo_session` cookie of a signed-in person, or an API key of a service account as `Authorization: Bearer hlk_…`. API keys work only when they have the `api` scope, act with the roles of their service account, and are ignored on the personal routes under `/me` and on the sign-in routes under `/auth`. A workload with a federated credential on a service account trades a token from its own identity provider for an API key that expires after an hour at `POST /oauth2/token`. The personal routes under `/me/` (with a trailing segment, not `/me` itself) also accept an access token that `halo login` obtained for the built-in Halo CLI application.
 
     **Re-authentication.** Sensitive operations need a recent strong sign-in when a person calls them with a session: a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, within the last `reauthMinutes` (10 by default). Otherwise they answer `401` with `ERR_REAUTH_REQUIRED`; confirm with `/me/reauthenticate/begin` and `/me/reauthenticate`, then send the same request again. A person with no passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE` instead. API keys are not affected, and an approved change applies without asking the requester again. The sensitive operations are the ones whose `401` response lists `ERR_REAUTH_REQUIRED`: granting or activating administrator roles, creating service accounts and API keys, rotating signing keys, SAML certificates and client secrets, changing access policies, sign-in methods and organization settings, resetting or changing another person's sign-in methods, extending a guest's access or changing their sponsor, changing identity providers, exporting the configuration and approving a held change. Adding or removing your own passkey, security key or authenticator app, and creating recovery codes, need it too once you have a passkey, security key or authenticator app.
+    **Re-authentication.** Sensitive operations need a recent strong sign-in when a person calls them with a session: a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, within the last `reauthMinutes` (10 by default). Otherwise they answer `401` with `ERR_REAUTH_REQUIRED`; confirm with `/me/reauthenticate/begin` and `/me/reauthenticate`, then send the same request again. A person with no passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE` instead. API keys are not affected, and an approved change applies without asking the requester again. The sensitive operations are the ones whose `401` response lists `ERR_REAUTH_REQUIRED`: granting or activating administrator roles, creating service accounts, API keys and federated credentials, removing federated credentials, rotating signing keys, SAML certificates and client secrets, changing access policies, sign-in methods and organization settings, resetting or changing another person's sign-in methods, changing identity providers, exporting the configuration and approving a held change. Adding or removing your own passkey, security key or authenticator app, and creating recovery codes, need it too once you have a passkey, security key or authenticator app.
 
     **Roles.** Each operation states the roles it requires. A global administrator passes every role check. "Any administrator" means security, user, helpdesk or application administrator, or auditor.
 
@@ -54,7 +55,7 @@ tags:
   - name: Policies
     description: Conditional access policies, network zones, sign-in methods, devices and risk events.
   - name: Service accounts
-    description: Non-human accounts and their API keys.
+    description: Non-human accounts, their API keys and the federated credentials that let workloads sign in without one.
   - name: Provisioning
     description: Outbound SCIM provisioning to applications.
   - name: Identity providers
@@ -172,6 +173,56 @@ paths:
         '204': {description: Deleted.}
         '401': {$ref: '#/components/responses/RegistrationTokenInvalid'}
         '404': {$ref: '#/components/responses/RegistrationOff'}
+  /oauth2/token:
+    servers:
+      - url: /
+    post:
+      tags: [Service accounts]
+      operationId: exchangeWorkloadToken
+      summary: Exchange a workload's token for a short-lived API key
+      description: 'The client credentials grant at `/oauth2/token` with a JWT client assertion (RFC 7523) from an issuer that one of the service account''s federated credentials trusts, as in Microsoft Entra workload identity federation. The assertion''s `sub` is the workload, not the client. Halo reads the issuer''s signing keys from its discovery document, caches them for an hour and fetches them again when a token names a key it doesn''t know, at most once a minute. The token must be signed with RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384 or ES512, have `exp` and `iat`, be valid within one minute of clock skew, and match the credential''s issuer, subject, audience and claim conditions exactly. The API key acts with the service account''s current roles, carries the credential''s scopes, expires after one hour, counts toward one rate limit with the other keys of the same credential, and stops working when the credential is removed or the account is disabled. Each exchange is recorded as `federated_credential.exchange` and in the sign-in log with the method `federated`, and so are refusals of tokens whose signature and subject checked out.'
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type, client_id, client_assertion_type, client_assertion]
+              properties:
+                grant_type: {type: string, enum: [client_credentials]}
+                client_id: {type: string, description: The ID of the service account.}
+                client_assertion_type: {type: string, enum: ['urn:ietf:params:oauth:client-assertion-type:jwt-bearer']}
+                client_assertion: {type: string, description: 'The workload''s token, such as a GitHub Actions ID token or a projected Kubernetes service account token.'}
+      responses:
+        '200':
+          description: The API key.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [access_token, token_type, expires_in, scope]
+                properties:
+                  access_token: {type: string, examples: [hlk_…]}
+                  token_type: {type: string, enum: [Bearer]}
+                  expires_in: {type: integer, examples: [3600]}
+                  scope: {type: string, examples: [api], description: The credential's scopes separated by spaces.}
+        '400':
+          description: '`invalid_request`: `client_id` or `client_assertion` is missing.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '401':
+          description: '`invalid_client`: `client_id` is not a service account, the account is disabled, or the token is unsigned, signed with another algorithm or key, expired, not valid yet, or matches no federated credential of the account.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '500':
+          description: '`server_error`: Halo could not fetch the issuer''s signing keys.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
   /organization:
     get:
       tags: [Organization]
@@ -4159,12 +4210,68 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /service-accounts/{id}/federated-credentials:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Service accounts]
+      operationId: createFederatedCredential
+      summary: Trust a workload's tokens
+      description: 'Roles: security administrator, holding every role of the account. Workloads whose tokens match the issuer, subject, audience and every claim condition exactly can sign in as the account at `POST /oauth2/token`. Recorded as `federated_credential.create`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, issuer, subject, scopes]
+              properties:
+                name: {type: string, maxLength: 100, examples: [Deploy workflow]}
+                issuer: {type: string, format: uri, maxLength: 500, examples: ['https://token.actions.githubusercontent.com'], description: 'The `iss` claim, exactly. Must start with `https://`.'}
+                subject: {type: string, maxLength: 500, examples: ['repo:acme/infra:ref:refs/heads/main', 'system:serviceaccount:ci:deployer'], description: 'The `sub` claim, exactly.'}
+                audience: {type: string, maxLength: 500, description: 'A value the `aud` claim must contain. Defaults to the Halo URL.'}
+                conditions:
+                  type: object
+                  maxProperties: 20
+                  additionalProperties: {type: string, maxLength: 500}
+                  examples: [{repository_owner_id: '1342004'}]
+                  description: Top-level string claims and the exact value each must have.
+                scopes:
+                  type: array
+                  minItems: 1
+                  items: {type: string, enum: [api, scim, registration]}
+      responses:
+        '201':
+          description: The federated credential.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/FederatedCredential'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /service-accounts/{id}/federated-credentials/{credentialId}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+      - {name: credentialId, in: path, required: true, schema: {type: string}}
+    delete:
+      tags: [Service accounts]
+      operationId: deleteFederatedCredential
+      summary: Stop trusting a workload's tokens
+      description: 'Roles: security administrator, holding every role of the account. API keys issued through the credential stop working at once. Recorded as `federated_credential.delete`.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /api-keys:
     get:
       tags: [Service accounts]
       operationId: listApiKeys
       summary: List every API key
-      description: 'Roles: any administrator. Revoked and expired keys are included.'
+      description: 'Roles: any administrator. Revoked and expired keys are included; keys issued through federated credentials are not.'
       responses:
         '200':
           description: The keys.
@@ -6467,7 +6574,7 @@ components:
         rateLimitHits: {type: integer, description: Requests with this key that were rejected with `429` in the last 24 hours.}
     ServiceAccount:
       type: object
-      required: [id, name, email, description, ownerId, status, rateLimit, roles, keys, createdBy, createdAt]
+      required: [id, name, email, description, ownerId, status, rateLimit, roles, keys, federatedCredentials, createdBy, createdAt]
       properties:
         id: {type: string, examples: [usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
@@ -6482,8 +6589,30 @@ components:
         keys:
           type: array
           items: {$ref: '#/components/schemas/ApiKey'}
+        federatedCredentials:
+          type: array
+          items: {$ref: '#/components/schemas/FederatedCredential'}
         createdBy: {type: [string, 'null']}
         createdAt: {type: string, format: date-time}
+    FederatedCredential:
+      type: object
+      required: [id, serviceAccountId, name, issuer, subject, audience, conditions, scopes, createdBy, createdAt, lastUsedAt]
+      properties:
+        id: {type: string, examples: [fic_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        serviceAccountId: {type: string}
+        name: {type: string}
+        issuer: {type: string, format: uri}
+        subject: {type: string}
+        audience: {type: string}
+        conditions:
+          type: object
+          additionalProperties: {type: string}
+        scopes:
+          type: array
+          items: {type: string, enum: [api, scim, registration]}
+        createdBy: {type: [string, 'null']}
+        createdAt: {type: string, format: date-time}
+        lastUsedAt: {type: [string, 'null'], format: date-time, description: The last time a workload exchanged a token through it.}
     AppProvisioning:
       type: object
       required: [appId, baseUrl, enabled, lastSyncAt, lastError, created, updated, deactivated, provisioned, groupIds, groupsCreated, groupsUpdated, groupsDeleted, updatedAt]
@@ -6692,7 +6821,7 @@ components:
       type: object
       required: [error, error_description]
       properties:
-        error: {type: string, enum: [invalid_request, invalid_token, invalid_redirect_uri, invalid_client_metadata, temporarily_unavailable, server_error]}
+        error: {type: string, enum: [invalid_request, invalid_client, invalid_token, invalid_redirect_uri, invalid_client_metadata, temporarily_unavailable, server_error]}
         error_description: {type: string}
     EmailSignIn:
       type: string

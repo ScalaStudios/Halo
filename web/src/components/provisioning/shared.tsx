@@ -43,7 +43,7 @@ export function activeKeys(keys: ApiKey[]) {
   return keys.filter((key) => keyState(key) === "active");
 }
 
-export function lastUsed(keys: ApiKey[]): string | null {
+export function lastUsed(keys: { lastUsedAt: string | null }[]): string | null {
   return (
     keys
       .map((key) => key.lastUsedAt)
