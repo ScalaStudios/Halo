@@ -112,7 +112,14 @@ func (h *handlers) addMember(w http.ResponseWriter, r *http.Request, actor store
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
-	u, err := h.st.GetUser(r.Context(), in.UserID)
+	if err := h.addToGroup(r, actor, g, in.UserID); err != nil {
+		return err
+	}
+	return noContent(w)
+}
+
+func (h *handlers) addToGroup(r *http.Request, actor store.User, g store.Group, userID string) error {
+	u, err := h.st.GetUser(r.Context(), userID)
 	if errors.Is(err, store.ErrNotFound) {
 		return httpx.Invalid("That person does not exist. Refresh the page and pick someone from the directory.")
 	}
@@ -120,18 +127,14 @@ func (h *handlers) addMember(w http.ResponseWriter, r *http.Request, actor store
 		return err
 	}
 	if slices.Contains(u.GroupIDs, g.ID) {
-		return noContent(w)
+		return nil
 	}
-	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+	return h.st.Tx(r.Context(), func(tx *store.Store) error {
 		if err := tx.AddGroupMember(r.Context(), g.ID, u.ID); err != nil {
 			return err
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "group.member.add", Summary: "Added " + u.Name, TargetType: "group", TargetID: g.ID, TargetLabel: g.Name})
 	})
-	if err != nil {
-		return err
-	}
-	return noContent(w)
 }
 
 func (h *handlers) removeMember(w http.ResponseWriter, r *http.Request, actor store.User) error {
@@ -139,11 +142,18 @@ func (h *handlers) removeMember(w http.ResponseWriter, r *http.Request, actor st
 	if err != nil {
 		return err
 	}
-	u, err := h.st.GetUser(r.Context(), r.PathValue("userId"))
+	if err := h.removeFromGroup(r, actor, g, r.PathValue("userId")); err != nil {
+		return err
+	}
+	return noContent(w)
+}
+
+func (h *handlers) removeFromGroup(r *http.Request, actor store.User, g store.Group, userID string) error {
+	u, err := h.st.GetUser(r.Context(), userID)
 	if err != nil {
 		return found(err, "This user")
 	}
-	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+	return h.st.Tx(r.Context(), func(tx *store.Store) error {
 		err := tx.RemoveGroupMember(r.Context(), g.ID, u.ID)
 		if errors.Is(err, store.ErrNotFound) {
 			return httpx.Fail(http.StatusNotFound, "ERR_NOT_FOUND", u.Name+" is not a member of "+g.Name+". Refresh the page to see current members.")
@@ -153,10 +163,6 @@ func (h *handlers) removeMember(w http.ResponseWriter, r *http.Request, actor st
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "group.member.remove", Summary: "Removed " + u.Name, TargetType: "group", TargetID: g.ID, TargetLabel: g.Name})
 	})
-	if err != nil {
-		return err
-	}
-	return noContent(w)
 }
 
 func (h *handlers) getGroup(w http.ResponseWriter, r *http.Request, _ store.User) error {

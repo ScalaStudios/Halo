@@ -154,6 +154,7 @@ var catalog = []eventType{
 	{"user.export", "A person's personal data was downloaded as JSON"},
 	{"user.identity.link", "A person linked an account from an identity provider"},
 	{"user.identity.unlink", "A person unlinked an account from an identity provider"},
+	{"user.import", "An administrator imported people from a CSV file or the import API"},
 	{"user.invite", "A person was invited"},
 	{"user.method.add", "A person added a sign-in method or generated new recovery codes"},
 	{"user.method.delete", "An administrator removed one of a person's sign-in methods"},

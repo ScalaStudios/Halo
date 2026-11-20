@@ -1,7 +1,7 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { Ban, Copy, MonitorX, RotateCcw, ShieldAlert, ShieldCheck, ShieldX, UserPlus, UserRound } from "lucide-react";
+import { Ban, Copy, FileUp, MonitorX, RotateCcw, ShieldAlert, ShieldCheck, ShieldX, UserPlus, UserRound } from "lucide-react";
 import { useState } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { Avatar } from "@/components/ui/avatar";
@@ -13,6 +13,7 @@ import { api } from "@/lib/api/client";
 import { formatDate, pluralize } from "@/lib/format";
 import { STATUS, STRENGTH } from "@/lib/labels";
 import type { Group, User } from "@/lib/types";
+import { ImportDialog } from "./import-dialog";
 import { InviteDialog } from "./invite-dialog";
 import { ResetAuthenticationDialog, SuspendDialog } from "./user-actions";
 
@@ -151,6 +152,7 @@ const views: SavedView[] = [
 export function UsersTable({ users, groups, initialView, inviteOpen, canGrantRoles }: { users: User[]; groups: Group[]; initialView?: string; inviteOpen?: boolean; canGrantRoles: boolean }) {
   const { run, toast, router } = useMutation();
   const [invite, setInvite] = useState(Boolean(inviteOpen));
+  const [importing, setImporting] = useState(false);
   const [resetting, setResetting] = useState<User | null>(null);
   const [suspending, setSuspending] = useState<User[]>([]);
 
@@ -217,12 +219,19 @@ export function UsersTable({ users, groups, initialView, inviteOpen, canGrantRol
           { label: "Suspend", icon: Ban, danger: true, onSelect: suspend },
         ]}
         toolbarEnd={
-          <Button size="sm" variant="primary" onClick={() => setInvite(true)}>
-            <UserPlus aria-hidden="true" size={16} strokeWidth={1.75} />
-            Invite user
-          </Button>
+          <>
+            <Button size="sm" variant="secondary" onClick={() => setImporting(true)}>
+              <FileUp aria-hidden="true" size={16} strokeWidth={1.75} />
+              Import users
+            </Button>
+            <Button size="sm" variant="primary" onClick={() => setInvite(true)}>
+              <UserPlus aria-hidden="true" size={16} strokeWidth={1.75} />
+              Invite user
+            </Button>
+          </>
         }
       />
+      <ImportDialog open={importing} onOpenChange={setImporting} />
       <InviteDialog open={invite} onOpenChange={setInvite} groups={groups} directory={users} canGrantRoles={canGrantRoles} />
       <ResetAuthenticationDialog user={resetting} onClose={() => setResetting(null)} />
       <SuspendDialog users={suspending} onClose={() => setSuspending([])} />

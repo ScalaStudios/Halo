@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"halo/internal/id"
 )
 
@@ -113,6 +115,18 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (User, error) 
 		return User{}, err
 	}
 	return users[0], nil
+}
+
+func (s *Store) UsersByEmail(ctx context.Context, emails []string) ([]User, error) {
+	rows, err := s.db.Query(ctx, `select `+userColumns+` from users where lower(email) = any(select lower(trim(e)) from unnest($1::text[]) e)`, emails)
+	if err != nil {
+		return nil, err
+	}
+	users, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (User, error) { return scanUser(row) })
+	if err != nil {
+		return nil, err
+	}
+	return users, s.decorate(ctx, users)
 }
 
 type NewUser struct {
