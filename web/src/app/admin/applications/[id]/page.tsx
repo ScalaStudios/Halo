@@ -163,7 +163,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
           <div className="flex flex-col gap-6">
             <SectionTitle title="Scopes" description={saml ? undefined : `Scopes ${app.name} can request. Requests for any other scope are rejected.`} />
             {!saml ? (
-              <ScopesForm key={app.scopes.join()} app={app} />
+              <ScopesForm key={`${app.scopes.join()}:${app.requiresConsent}`} app={app} />
             ) : (
               <EmptyState title="SAML applications don't use scopes" description={`${app.name} receives the attributes listed on the Attributes tab in every assertion.`} />
             )}

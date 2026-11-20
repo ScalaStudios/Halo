@@ -55,6 +55,8 @@ var catalog = []eventType{
 	{"collection.create", "An account portal collection was created"},
 	{"collection.delete", "An account portal collection was deleted"},
 	{"collection.update", "An account portal collection's name, applications or groups changed"},
+	{"consent.grant", "A person allowed an application to access the scopes it asked for"},
+	{"consent.revoke", "A person removed an application's access and its tokens were revoked"},
 	{"device.trust", "A device was marked trusted, blocked or unknown"},
 	{"domain.add", "A domain was added for verification"},
 	{"domain.remove", "A domain was removed"},

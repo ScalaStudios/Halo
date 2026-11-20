@@ -1,6 +1,6 @@
 import { Fingerprint, KeyRound, ListOrdered, Mail, Network, RectangleEllipsis, Smartphone, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/badge";
-import type { AuthStrength, Group, JoinPolicy, MethodKind, RiskLevel, SignInEvent, SignInResult, UserStatus } from "./types";
+import type { AuthStrength, Group, JoinPolicy, MethodKind, RiskLevel, Scope, SignInEvent, SignInResult, UserStatus } from "./types";
 
 export const STATUS: Record<UserStatus, { label: string; tone: Tone }> = {
   active: { label: "Active", tone: "success" },
@@ -53,4 +53,16 @@ export function signInUser(event: SignInEvent, names: Record<string, string>): s
 
 export function signInApp(event: SignInEvent, names: Record<string, string>): string {
   return event.appId ? (names[event.appId] ?? "Unknown application") : "Halo";
+}
+
+const SCOPE: Record<string, string> = {
+  openid: "Confirm who you are",
+  profile: "See your name, username and profile picture",
+  email: "See your email address",
+  groups: "See the names of the groups you belong to",
+  offline_access: "Keep access while you're away",
+};
+
+export function scopeLabel(scope: Scope) {
+  return SCOPE[scope.name] ?? (scope.description || scope.name);
 }

@@ -111,6 +111,7 @@ type Application struct {
 
 	RegisteredDynamically bool   `json:"registeredDynamically"`
 	AwaitingApproval      bool   `json:"awaitingApproval"`
+	RequiresConsent       bool   `json:"requiresConsent"`
 	RegistrationHash      []byte `json:"-"`
 }
 

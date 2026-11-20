@@ -447,6 +447,7 @@ function UriList({
 
 export function ScopesForm({ app }: { app: Application }) {
   const [scopes, setScopes] = useState(app.scopes);
+  const [consent, setConsent] = useState(app.requiresConsent);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string>();
   const { pending, run, errorFor, toast } = useMutation();
@@ -470,8 +471,8 @@ export function ScopesForm({ app }: { app: Application }) {
   function save() {
     void run(
       "scopes",
-      () => api(`/applications/${app.id}`, { method: "PATCH", body: { scopes } }),
-      () => toast({ title: "Scopes saved", description: `${app.name} can request them from its next sign-in. Recorded in the audit log.` }),
+      () => api(`/applications/${app.id}`, { method: "PATCH", body: { scopes, requiresConsent: consent } }),
+      () => toast({ title: "Permissions saved", description: `Takes effect from ${app.name}'s next sign-in. Recorded in the audit log.` }),
       "inline",
     );
   }
@@ -497,6 +498,20 @@ export function ScopesForm({ app }: { app: Application }) {
           ),
         ])}
       />
+      {app.type === "service" ? null : (
+        <Field
+          label="Consent screen"
+          hint={consent ? "People see these scopes and allow them before their first sign-in, and again when the application asks for more." : "People sign in without being asked. Suits applications your organization runs."}
+          className="w-full sm:max-w-md"
+        >
+          {(props) => (
+            <Select {...props} value={consent ? "on" : "off"} onChange={(event) => setConsent(event.target.value === "on")}>
+              <option value="on">Ask each person</option>
+              <option value="off">Don&apos;t ask</option>
+            </Select>
+          )}
+        </Field>
+      )}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <Field label="Add a scope" error={error} className="w-full sm:max-w-md">
           {(props) => (
@@ -525,7 +540,7 @@ export function ScopesForm({ app }: { app: Application }) {
         <div className="flex flex-col items-start gap-2 sm:items-end">
           <ActionError message={errorFor("scopes")} />
           <Button variant="primary" loading={pending === "scopes"} onClick={save}>
-            Save scopes
+            Save permissions
           </Button>
         </div>
       </div>

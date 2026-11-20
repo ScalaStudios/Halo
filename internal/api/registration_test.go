@@ -161,7 +161,7 @@ func TestOpenRegistrationGetsNoAdministratorSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !app.RegisteredDynamically || app.AwaitingApproval || app.Status != "active" || app.Type != "web" || app.Protocol != "oidc" {
+	if !app.RegisteredDynamically || !app.RequiresConsent || app.AwaitingApproval || app.Status != "active" || app.Type != "web" || app.Protocol != "oidc" {
 		t.Fatalf("unexpected application: %+v", app)
 	}
 	if len(app.GroupIDs) != 0 || app.Owner != nil || app.TokenPolicy.Exchange || slices.Contains(app.Scopes, "groups") {
@@ -298,6 +298,15 @@ func TestRegistrationManagement(t *testing.T) {
 	if got := decode[registration](t, oauth(t, h, http.MethodPut, path, first.RegistrationAccessToken, update)); got.IDTokenSignedAlg != "ES256" {
 		t.Fatalf("switching only the ID token algorithm: %+v", got)
 	}
+	if updated, err := st.GetApplicationByClientID(ctx, first.ClientID); err != nil || !updated.RequiresConsent {
+		t.Fatalf("the client's own update turned off its consent screen: %+v %v", updated, err)
+	}
+	update["requires_consent"] = false
+	expect(t, oauth(t, h, http.MethodPut, path, first.RegistrationAccessToken, update), http.StatusOK)
+	if updated, err := st.GetApplicationByClientID(ctx, first.ClientID); err != nil || !updated.RequiresConsent {
+		t.Fatalf("the client turned off its consent screen: %+v %v", updated, err)
+	}
+	delete(update, "requires_consent")
 	update["token_endpoint_auth_method"] = "none"
 	oauthError(t, oauth(t, h, http.MethodPut, path, first.RegistrationAccessToken, update), http.StatusBadRequest, "invalid_client_metadata")
 	delete(update, "token_endpoint_auth_method")

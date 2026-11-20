@@ -273,6 +273,14 @@ func TestUpdateApplication(t *testing.T) {
 		changes["redirectUris"] != `["https://grafana.example.com/login"] → ["https://grafana.example.com/login","http://localhost:3000/login"]` || changes["owner"] != `null → "`+owner.ID+`"` || changes["name"] != `"Grafana" → "Dashboards"` {
 		t.Fatalf("application changes: %v", changes)
 	}
+	rec = call(t, h, admin, "PATCH", path, map[string]any{"requiresConsent": true})
+	expect(t, rec, 200)
+	if got := decode[store.Application](t, rec); app.RequiresConsent || !got.RequiresConsent {
+		t.Fatalf("consent screen: %v then %v", app.RequiresConsent, got.RequiresConsent)
+	}
+	if e := lastAudit(t, st); e.Summary != "Updated consent screen" {
+		t.Fatalf("audit: %+v", e)
+	}
 
 	for _, body := range []map[string]any{
 		{"name": ""},
@@ -387,6 +395,7 @@ func TestUpdateApplication(t *testing.T) {
 		t.Fatal(err)
 	}
 	expect(t, call(t, h, admin, "PATCH", "/api/v1/applications/"+saml.ID, map[string]any{"scopes": []string{"openid"}}), 422)
+	expect(t, call(t, h, admin, "PATCH", "/api/v1/applications/"+saml.ID, map[string]any{"requiresConsent": true}), 422)
 	rec = call(t, h, admin, "PATCH", "/api/v1/applications/"+saml.ID, map[string]any{"name": "Slack Enterprise", "description": "Chat"})
 	expect(t, rec, 200)
 	if got := decode[store.Application](t, rec); got.Name != "Slack Enterprise" || !slices.Equal(got.RedirectURIs, []string{"https://example.slack.com/sso/saml"}) {

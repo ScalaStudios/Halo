@@ -599,6 +599,70 @@ paths:
         '400': {$ref: '#/components/responses/BadJSON'}
         '403': {$ref: '#/components/responses/SignInRefused'}
         '404': {$ref: '#/components/responses/TermsExpired'}
+  /auth/consent/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Sign-in]
+      operationId: getConsentRequest
+      summary: Read what an application asks a person to allow
+      description: 'The sign-in page shows this at `/sign-in?consent={id}` when the authorization callback finds the application needs consent: it has `requiresConsent` and the person has not allowed every requested scope yet, or it sent `prompt=consent`. Only the session that completed the sign-in request can read it, until a decision is taken.'
+      security:
+        - session: []
+      responses:
+        '200':
+          description: The application, the person signing in, and the requested scopes with the description of each API resource scope.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [application, email, scopes]
+                properties:
+                  application:
+                    type: object
+                    required: [name, homepage, logoUrl]
+                    properties:
+                      name: {type: string}
+                      homepage: {type: string}
+                      logoUrl: {type: [string, 'null']}
+                  email: {type: string}
+                  scopes:
+                    type: array
+                    items: {$ref: '#/components/schemas/ConsentScope'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/AuthRequestExpired'}
+  /auth/consent:
+    post:
+      tags: [Sign-in]
+      operationId: decideConsent
+      summary: Allow or decline what an application asks for
+      description: 'Allowing remembers the scopes for the person and application, adding to any allowed before, and records `consent.grant`. Declining writes an `interrupted` event to the sign-in log, and the callback then returns `error=access_denied` to the application. A sign-in request takes one decision, from the session that completed it.'
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [authRequest, allow]
+              properties:
+                authRequest: {type: string}
+                allow: {type: boolean}
+      responses:
+        '200':
+          description: Continue at the authorization callback.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [redirect]
+                properties:
+                  redirect: {type: string, examples: ['/oauth2/authorize/callback?id=…']}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+        '404': {$ref: '#/components/responses/AuthRequestExpired'}
   /auth/enroll:
     get:
       tags: [Sign-in]
@@ -1288,6 +1352,35 @@ paths:
                 type: array
                 items: {$ref: '#/components/schemas/SignInEvent'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/consents:
+    get:
+      tags: [Account]
+      operationId: listMyConsents
+      summary: List the applications you allowed to access your account
+      security: *personal
+      responses:
+        '200':
+          description: Your remembered consents, by application name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Consent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/consents/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: The application id.}
+    delete:
+      tags: [Account]
+      operationId: revokeMyConsent
+      summary: Remove an application's access to your account
+      description: 'Forgets the allowed scopes, revokes the access and refresh tokens the application holds for you, and drops your sign-in requests to it that were not exchanged yet, so it asks again at the next sign-in. JWT access tokens stay valid at APIs that check them offline until they expire. Recorded as `consent.revoke`.'
+      security: *personal
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /me/identities:
     get:
       tags: [Account]
@@ -2390,6 +2483,7 @@ paths:
                   type: array
                   items: {type: string}
                   description: Replaces the assigned groups. An empty list removes every assignment.
+                requiresConsent: {type: boolean, description: Not for SAML applications or bookmarks.}
       responses:
         '200': {$ref: '#/components/responses/ApplicationResponse'}
         '400': {$ref: '#/components/responses/BadJSON'}
@@ -5195,7 +5289,7 @@ components:
         source: {type: string}
     Application:
       type: object
-      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval]
+      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent]
       properties:
         id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
@@ -5235,6 +5329,7 @@ components:
         logoUrl: {type: [string, 'null'], description: Path of the logo, or null., examples: ['/api/v1/applications/app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9/logo?v=1790000000']}
         registeredDynamically: {type: boolean, description: The client registered itself at `/oauth2/register` and can change or delete its registration with its registration access token.}
         awaitingApproval: {type: boolean, description: 'The client registered while `clientRegistration` is `approval`, or changed its registration while it is `approval` or while the client is assigned to groups. Its status stays `disabled` until an application administrator enables it.'}
+        requiresConsent: {type: boolean, description: 'People see the requested scopes and allow them before their first sign-in, and again when the application asks for scopes they have not allowed. `prompt=none` then fails with `consent_required`. On for clients that registered themselves, off for applications created in the console. Any OpenID Connect application that sends `prompt=consent` gets the screen regardless.'}
         saml: {$ref: '#/components/schemas/SAMLView'}
     SAMLAttributes:
       type: object
@@ -6014,6 +6109,24 @@ components:
         responseStatus: {type: [integer, 'null']}
         error: {type: string}
         createdAt: {type: string, format: date-time}
+    ConsentScope:
+      type: object
+      required: [name, description]
+      properties:
+        name: {type: string, examples: [email]}
+        description: {type: string, description: 'The API resource''s description of the scope, or empty for the standard OpenID Connect scopes.'}
+    Consent:
+      type: object
+      required: [appId, name, homepage, logoUrl, scopes, grantedAt]
+      properties:
+        appId: {type: string}
+        name: {type: string}
+        homepage: {type: string}
+        logoUrl: {type: [string, 'null']}
+        scopes:
+          type: array
+          items: {$ref: '#/components/schemas/ConsentScope'}
+        grantedAt: {type: string, format: date-time, description: When you last allowed more scopes.}
     ApiScope:
       type: object
       required: [name]
