@@ -35,6 +35,7 @@ var (
 	domainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
 	logoTypes     = []string{"image/png", "image/jpeg", "image/webp"}
 	hexColour     = regexp.MustCompile(`^#[0-9a-f]{6}$`)
+	aaguidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	siteKey       = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
 	lookupTXT     = net.DefaultResolver.LookupTXT
 )
@@ -64,6 +65,7 @@ var fields = []struct {
 	{"sessionLimitAction", "action at the session limit", false},
 	{"sessionLimitCli", "Halo CLI session limit", false},
 	{"sessionLimitGroups", "group session limits", false},
+	{"authenticatorRules", "passkey rules for groups", false},
 	{"approvalActions", "changes that need approval", true},
 	{"emergencyAccessIds", "emergency access accounts", true},
 	{"impersonationGroupIds", "groups whose members can be impersonated", true},
@@ -194,14 +196,29 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	next.ImpersonationGroups = slices.Clone(before.ImpersonationGroups)
 	next.SignUpDomains = slices.Clone(before.SignUpDomains)
 	next.SignUpGroupIDs = slices.Clone(before.SignUpGroupIDs)
+	var rules []store.AuthenticatorRule
 	in := struct {
 		store.Settings
-		BotProtectionSecret string `json:"botProtectionSecret"`
-	}{Settings: next}
+		BotProtectionSecret string                     `json:"botProtectionSecret"`
+		AuthenticatorRules  *[]store.AuthenticatorRule `json:"authenticatorRules"`
+	}{Settings: next, AuthenticatorRules: &rules}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
 	next = in.Settings
+	if in.AuthenticatorRules == nil || rules != nil {
+		next.AuthenticatorRules = []store.AuthenticatorRule{}
+		for _, rule := range rules {
+			aaguids := []string{}
+			for _, a := range rule.AAGUIDs {
+				if a = strings.ToLower(strings.TrimSpace(a)); a != "" && !slices.Contains(aaguids, a) {
+					aaguids = append(aaguids, a)
+				}
+			}
+			rule.AAGUIDs = aaguids
+			next.AuthenticatorRules = append(next.AuthenticatorRules, rule)
+		}
+	}
 	botSecret := strings.TrimSpace(in.BotProtectionSecret)
 	next.BotProtectionSiteKey = strings.TrimSpace(next.BotProtectionSiteKey)
 	next.OrganizationName = strings.TrimSpace(next.OrganizationName)
@@ -278,6 +295,19 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 		}
 		if slices.ContainsFunc(ids, func(id string) bool { return !existing[id] }) {
 			return httpx.Invalid("One of the groups given a session limit no longer exists. Refresh the page and choose again.")
+		}
+	}
+	if !slices.EqualFunc(before.AuthenticatorRules, next.AuthenticatorRules, func(a, b store.AuthenticatorRule) bool { return a.GroupID == b.GroupID }) {
+		ids := make([]string, len(next.AuthenticatorRules))
+		for i, rule := range next.AuthenticatorRules {
+			ids[i] = rule.GroupID
+		}
+		existing, err := h.st.ExistingIDs(ctx, "groups", ids)
+		if err != nil {
+			return err
+		}
+		if slices.ContainsFunc(ids, func(id string) bool { return !existing[id] }) {
+			return httpx.Invalid("One of the groups given passkey rules no longer exists. Refresh the page and choose again.")
 		}
 	}
 	if !slices.Equal(before.SignUpGroupIDs, next.SignUpGroupIDs) {
@@ -469,6 +499,25 @@ func validate(s store.Settings) error {
 			return httpx.Invalid("A group can have only one session limit. Remove the repeated group and save again.")
 		}
 		seen[g.GroupID] = true
+	}
+	ruled := map[string]bool{}
+	for _, rule := range s.AuthenticatorRules {
+		switch {
+		case ruled[rule.GroupID]:
+			return httpx.Invalid("A group can have only one set of passkey rules. Remove the repeated group and save again.")
+		case !between(rule.Minimum, 0, 10):
+			return httpx.Invalid("The number of passkeys and security keys a group needs must be between 0 and 10.")
+		case len(rule.AAGUIDs) > 0 && !rule.Attestation:
+			return httpx.Invalid("Approved models are checked through attestation. Turn on attestation for the group, or clear its approved models.")
+		case len(rule.AAGUIDs) > 100:
+			return httpx.Invalid("List at most 100 approved models for a group.")
+		}
+		ruled[rule.GroupID] = true
+		for _, a := range rule.AAGUIDs {
+			if !aaguidPattern.MatchString(a) {
+				return httpx.Invalid("“" + a + "” is not an AAGUID. Enter each model's AAGUID like cb69481e-8ff7-4039-93ec-0a2729a154a8.")
+			}
+		}
 	}
 	return nil
 }

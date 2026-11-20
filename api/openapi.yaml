@@ -742,7 +742,7 @@ paths:
       tags: [Sign-in]
       operationId: finishEnrollment
       summary: Save the first credential and sign in
-      description: Uses up the link in the same transaction that saves the credential, and sets the `halo_session` cookie.
+      description: Uses up the link in the same transaction that saves the credential, and sets the `halo_session` cookie. A key that breaks the passkey rules of one of the person's groups is refused with `403 ERR_AUTHENTICATOR_NOT_ALLOWED`, and the link stays usable.
       security: []
       requestBody:
         required: true
@@ -761,6 +761,7 @@ paths:
         '400': {$ref: '#/components/responses/RegistrationFailed'}
         '403': {$ref: '#/components/responses/SignInRefused'}
         '404': {$ref: '#/components/responses/LinkExpired'}
+        '503': {$ref: '#/components/responses/MetadataUnavailable'}
   /auth/sign-up:
     post:
       tags: [Sign-in]
@@ -848,7 +849,7 @@ paths:
       tags: [Sign-in]
       operationId: finishSignUp
       summary: Save the passkey and confirm the email address
-      description: 'Uses up the link in the same transaction that confirms the address and keeps the passkey, and records `user.sign_up` in the audit log. When `signUp` is `open`, creates an active account with a confirmed address, adds it to the assigned groups in `signUpGroupIds` and no others, gives it no roles, and signs in like `/auth/enroll/finish`. When it is `approval`, no account or session exists yet: the sign-up waits under `/sign-ups` and the response is `{"pending": true}`.'
+      description: 'Uses up the link in the same transaction that confirms the address and keeps the passkey, and records `user.sign_up` in the audit log. When `signUp` is `open`, creates an active account with a confirmed address, adds it to the assigned groups in `signUpGroupIds` and no others, gives it no roles, and signs in like `/auth/enroll/finish`. When it is `approval`, no account or session exists yet: the sign-up waits under `/sign-ups` and the response is `{"pending": true}`. The passkey rules of the groups in `signUpGroupIds` apply, and a key that breaks them is refused with `403 ERR_AUTHENTICATOR_NOT_ALLOWED`.'
       security: []
       requestBody:
         required: true
@@ -876,6 +877,7 @@ paths:
         '400': {$ref: '#/components/responses/RegistrationFailed'}
         '403': {$ref: '#/components/responses/SignUpRefused'}
         '404': {$ref: '#/components/responses/SignUpOff'}
+        '503': {$ref: '#/components/responses/MetadataUnavailable'}
         '409':
           description: '`ERR_ACCOUNT_EXISTS`: an account with the address was created after the sign-up started.'
           content:
@@ -1003,6 +1005,7 @@ paths:
       tags: [Account]
       operationId: beginAddPasskey
       summary: Start registering another passkey or security key
+      description: Asks the authenticator for direct attestation when one of your groups needs it under `authenticatorRules`.
       security: &personal
         - session: []
         - cliAccessToken: []
@@ -1046,7 +1049,8 @@ paths:
               schema: {$ref: '#/components/schemas/Method'}
         '400': {$ref: '#/components/responses/RegistrationFailed'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
-        '403': {$ref: '#/components/responses/CrossSite'}
+        '403': {$ref: '#/components/responses/AuthenticatorRefused'}
+        '503': {$ref: '#/components/responses/MetadataUnavailable'}
   /me/methods/{id}:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -1061,7 +1065,11 @@ paths:
         '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/CrossSite'}
         '404': {$ref: '#/components/responses/NotFound'}
-        '409': {$ref: '#/components/responses/LastMethod'}
+        '409':
+          description: '`ERR_LAST_METHOD`: it is your last way to sign in. Recovery codes do not count. `ERR_KEY_MINIMUM`: removing this passkey or security key would leave fewer keys that meet your groups'' passkey rules than the highest `minimum` among them.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
   /me/avatar:
     put:
       tags: [Account]
@@ -1256,6 +1264,29 @@ paths:
                 properties:
                   allowed: {type: boolean}
                   secondFactor: {type: boolean}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/passkey-rules:
+    get:
+      tags: [Account]
+      operationId: getMyPasskeyRules
+      summary: See the passkey rules that apply to you
+      description: Combines the `authenticatorRules` of every group you belong to. A new key has to meet the rules of each of them.
+      security: *personal
+      responses:
+        '200':
+          description: The combined rules, and how many of your passkeys and security keys meet them.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [groups, deviceBound, attestation, approvedModels, minimum, keys]
+                properties:
+                  groups: {type: array, items: {type: string}, description: Names of your groups that have passkey rules.}
+                  deviceBound: {type: boolean, description: New keys must stay on one device and can't be synced passkeys.}
+                  attestation: {type: boolean, description: New keys must prove their make and model through attestation verified with the FIDO Metadata Service.}
+                  approvedModels: {type: boolean, description: New keys must be one of the models a group approved.}
+                  minimum: {type: integer, description: The most passkeys and security keys any of your groups asks you to keep. 0 when none do.}
+                  keys: {type: integer, description: How many of your passkeys and security keys meet the rules. Keys added before a rule are counted when their stored flags, attestation type and model meet it.}
         '401': {$ref: '#/components/responses/Unauthenticated'}
     put:
       tags: [Account]
@@ -5159,6 +5190,16 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
+    AuthenticatorRefused:
+      description: '`ERR_AUTHENTICATOR_NOT_ALLOWED`: the key breaks the passkey rules in `authenticatorRules` for one of your groups, and the message names the group and the rule. Also `ERR_CROSS_SITE`.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    MetadataUnavailable:
+      description: '`ERR_METADATA_UNAVAILABLE`: one of the person''s groups needs attestation and Halo could not download the FIDO Metadata Service list. Try again later.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     RegistrationFailed:
       description: '`ERR_CEREMONY_EXPIRED`: the setup step expired; start again. `ERR_REGISTRATION_FAILED`: Halo could not verify the new credential. `ERR_INVALID_JSON`.'
       content:
@@ -6212,6 +6253,19 @@ components:
             properties:
               groupId: {type: string}
               limit: {type: integer, minimum: 1, maximum: 100}
+        authenticatorRules:
+          type: array
+          default: []
+          description: 'Passkey rules for members of these groups, checked whenever a member registers a passkey or security key through the account portal, a setup link or sign-up. A person in several of these groups must meet every rule that applies. Keys registered before a rule keep working.'
+          items:
+            type: object
+            required: [groupId]
+            properties:
+              groupId: {type: string}
+              deviceBound: {type: boolean, default: false, description: 'Refuse passkeys that can sync between devices, such as those kept in iCloud Keychain or Google Password Manager, by their backup eligible flag.'}
+              attestation: {type: boolean, default: false, description: 'Ask for direct attestation and refuse keys whose attestation does not verify against the FIDO Metadata Service, including self attestation and none. Halo downloads the service''s list when it first needs it and again each day, so it needs internet access.'}
+              aaguids: {type: array, maxItems: 100, default: [], items: {type: string, format: uuid}, description: 'Approved models by AAGUID. Empty accepts any model listed in the FIDO Metadata Service. Needs `attestation`.'}
+              minimum: {type: integer, minimum: 0, maximum: 10, default: 0, description: 'Passkeys and security keys that meet the rule a member must keep. Removing a key from your own account below it is refused with `ERR_KEY_MINIMUM`. 0 sets no minimum.'}
         approvalActions:
           type: array
           default: []

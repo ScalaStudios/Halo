@@ -1,13 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Download, ListOrdered, Plus, RectangleEllipsis, RefreshCw, TriangleAlert } from "lucide-react";
+import { Download, ListOrdered, Plus, RectangleEllipsis, RefreshCw, ShieldCheck, TriangleAlert } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { encode } from "uqr";
 import { cancelled, describeFailure, deviceLabel, type Ceremony } from "@/components/auth/passkey";
 import { VerifyCode } from "@/components/auth/verify-code";
 import { LinkedAccounts } from "@/components/federation/linked-accounts";
 import { MethodList } from "@/components/identity/method-list";
+import { joinList } from "@/components/policy/shared";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { CopyField } from "@/components/ui/copy-field";
@@ -18,13 +19,14 @@ import { SectionTitle } from "@/components/ui/section-title";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/api/client";
-import { formatDate, now } from "@/lib/format";
+import { formatDate, now, pluralize } from "@/lib/format";
 import { METHOD } from "@/lib/labels";
 import type { AuthMethod } from "@/lib/types";
 import { createCredential } from "@/lib/webauthn";
 
 type Enrollable = "passkey" | "security-key" | "totp";
 type TotpSetup = { ceremony: string; secret: string; uri: string };
+export type PasskeyRules = { groups: string[]; deviceBound: boolean; attestation: boolean; approvedModels: boolean; minimum: number; keys: number };
 
 const SECTIONS: { kind: Enrollable; title: string; description: string; action: string; empty: string }[] = [
   {
@@ -50,7 +52,17 @@ const SECTIONS: { kind: Enrollable; title: string; description: string; action: 
   },
 ];
 
-export function SecuritySettings({ methods, email, password }: { methods: AuthMethod[]; email: string; password: { allowed: boolean; secondFactor: boolean } }) {
+export function SecuritySettings({
+  methods,
+  email,
+  password,
+  rules,
+}: {
+  methods: AuthMethod[];
+  email: string;
+  password: { allowed: boolean; secondFactor: boolean };
+  rules: PasskeyRules;
+}) {
   const router = useRouter();
   const toast = useToast();
   const [adding, setAdding] = useState<"passkey" | "security-key" | null>(null);
@@ -103,6 +115,7 @@ export function SecuritySettings({ methods, email, password }: { methods: AuthMe
 
   return (
     <div className="flex flex-col gap-12">
+      {rules.groups.length > 0 ? <PasskeyRulesNote rules={rules} /> : null}
       {SECTIONS.map((section) => {
         const list = methods.filter((m) => m.kind === section.kind);
         return (
@@ -193,6 +206,40 @@ export function SecuritySettings({ methods, email, password }: { methods: AuthMe
       {changingPassword ? <PasswordDialog email={email} replacing={current !== undefined} onClose={() => setChangingPassword(false)} onSaved={changed} /> : null}
       {codes ? <RecoveryCodesDialog codes={codes.codes} replaced={codes.replaced} email={email} onClose={() => setCodes(null)} /> : null}
     </div>
+  );
+}
+
+function PasskeyRulesNote({ rules }: { rules: PasskeyRules }) {
+  const titleId = useId();
+  const needs = [rules.deviceBound && "stay on one device", rules.attestation && "prove their make and model", rules.approvedModels && "be a model your administrator approved"].filter(
+    (need): need is string => typeof need === "string",
+  );
+  const short = rules.minimum - rules.keys;
+  return (
+    <section aria-labelledby={titleId} className="flex items-start gap-4 rounded-lg border border-border bg-surface p-4 sm:px-6">
+      <span className="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-sunken text-fg-2">
+        <ShieldCheck aria-hidden="true" size={20} strokeWidth={1.75} />
+      </span>
+      <div className="flex min-w-0 flex-col gap-1">
+        <h2 id={titleId} className="text-body-sm font-semibold text-fg">
+          Passkey rules for {joinList(rules.groups, "and")}
+        </h2>
+        {needs.length ? <p className="text-body-sm text-fg-3">New passkeys and security keys must {joinList(needs, "and")}.</p> : null}
+        {rules.minimum > 0 ? (
+          <p className="tnum text-body-sm text-fg-3">
+            Keep at least {pluralize(rules.minimum, "passkey or security key that meets", "passkeys or security keys that meet")} these rules.
+          </p>
+        ) : null}
+        {short > 0 ? (
+          <p className="flex items-start gap-2 text-body-sm text-warning">
+            <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0" />
+            <span className="tnum">
+              You have {rules.keys} that {rules.keys === 1 ? "meets" : "meet"} them. Add {short} more.
+            </span>
+          </p>
+        ) : null}
+      </div>
+    </section>
   );
 }
 

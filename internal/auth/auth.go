@@ -51,6 +51,7 @@ type handler struct {
 	mailer mail.Mailer
 	cfg    config.Config
 	gate   *approval.Gate
+	trust  *trustList
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
@@ -71,7 +72,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	if mailer == nil {
 		mailer = mail.Log{}
 	}
-	h := &handler{st: d.Store, auth: d.Auth, wa: wa, policy: policy, mailer: mailer, cfg: d.Config, gate: approval.New(d)}
+	h := &handler{st: d.Store, auth: d.Auth, wa: wa, policy: policy, mailer: mailer, cfg: d.Config, gate: approval.New(d), trust: &trustList{}}
 	for pattern, fn := range map[string]httpx.HandlerFunc{
 		"GET /api/v1/auth/request/{id}":          h.authRequest,
 		"POST /api/v1/auth/passkey/begin":        h.passkeyBegin,
@@ -100,6 +101,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		"POST /api/v1/me/reauthenticate/begin":   h.reauthBegin,
 		"POST /api/v1/me/reauthenticate":         h.reauthenticate,
 		"GET /api/v1/me/password":                h.myPassword,
+		"GET /api/v1/me/passkey-rules":           h.myPasskeyRules,
 		"PUT /api/v1/me/password":                h.setMyPassword,
 		"GET /api/v1/me/sessions":                h.sessions,
 		"DELETE /api/v1/me/sessions/{id}":        h.revokeSession,

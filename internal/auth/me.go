@@ -51,6 +51,20 @@ func (h *handler) removeMethod(w http.ResponseWriter, r *http.Request) error {
 	}) {
 		return errLastMethod
 	}
+	settings, err := h.st.Settings(ctx)
+	if err != nil {
+		return err
+	}
+	rules := settings.AuthenticatorRulesFor(u)
+	if minimum := minimumKeys(rules); minimum > 0 {
+		keys, err := h.compliantKeys(ctx, u, rules)
+		if err != nil {
+			return err
+		}
+		if slices.Contains(keys, methodID) && len(keys) <= minimum {
+			return httpx.Fail(http.StatusConflict, "ERR_KEY_MINIMUM", "Your organization asks you to keep at least "+keyCount(minimum)+" that meet its rules, so this one can't be removed. Add another first.")
+		}
+	}
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
 		if err := tx.DeleteMethod(ctx, u.ID, methodID); err != nil {
 			return err
