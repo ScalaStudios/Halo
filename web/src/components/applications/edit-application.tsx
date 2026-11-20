@@ -323,6 +323,49 @@ export function AuthenticationForm({ app, resources, children }: { app: Applicat
   );
 }
 
+export function SignInFrequencyForm({ app }: { app: Pick<Application, "id" | "name" | "protocol" | "maxAuthAge"> }) {
+  const [age, setAge] = useState(split(app.maxAuthAge));
+  const [error, setError] = useState<string>();
+  const { pending, run, errorFor, toast } = useMutation();
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    const invalid = wholeNumber(age);
+    setError(invalid);
+    if (invalid) return;
+    void run(
+      "frequency",
+      () => api(`/applications/${app.id}`, { method: "PATCH", body: { maxAuthAge: toSeconds(age) } }),
+      () => toast({ title: "Sign-in frequency saved", description: `${app.name} uses it from the next sign-in. Recorded in the audit log.` }),
+      "inline",
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Sign-in frequency"
+        description={
+          app.protocol === "saml"
+            ? `People who signed in to Halo longer ago than this sign in again before ${app.name} gets an assertion. Other applications keep single sign-on.`
+            : `People who signed in to Halo longer ago than this sign in again before ${app.name} gets a token, and its refresh tokens stop working. Other applications keep single sign-on.`
+        }
+      />
+      <form onSubmit={submit} noValidate>
+        <CardBody className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <DurationField label="Sign in again after" hint="1 minute to 90 days. Set 0 to follow the organization's session lifetime." value={age} onChange={setAge} error={error} />
+        </CardBody>
+        <div className="flex flex-wrap items-center justify-end gap-4 border-t border-border px-6 py-4">
+          <ActionError message={errorFor("frequency")} />
+          <Button type="submit" variant="primary" loading={pending === "frequency"}>
+            Save sign-in frequency
+          </Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
+
 function DurationField({ label, hint, value, onChange, error }: { label: string; hint: string; value: Duration; onChange: (value: Duration) => void; error?: string }) {
   return (
     <Field label={label} hint={hint} error={error}>

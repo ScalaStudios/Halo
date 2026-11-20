@@ -598,8 +598,9 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 			Exchange        *bool     `json:"exchange"`
 			ExchangeFrom    *[]string `json:"exchangeFrom"`
 		} `json:"tokenPolicy"`
-		Owner    *string   `json:"owner"`
-		GroupIDs *[]string `json:"groupIds"`
+		MaxAuthAge *int      `json:"maxAuthAge"`
+		Owner      *string   `json:"owner"`
+		GroupIDs   *[]string `json:"groupIds"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -607,8 +608,11 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	if app.Protocol == "saml" && (in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil) {
 		return httpx.Invalid(app.Name + " signs in with SAML, so it has no redirect URIs, scopes or token lifetimes. Change its ACS URLs in the SAML settings.")
 	}
-	if app.Protocol == "bookmark" && (in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil) {
-		return httpx.Invalid(app.Name + " is a bookmark, so it has no redirect URIs, scopes or token lifetimes.")
+	if app.Protocol == "bookmark" && (in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil || in.MaxAuthAge != nil) {
+		return httpx.Invalid(app.Name + " is a bookmark, so it has no redirect URIs, scopes, token lifetimes or sign-in frequency.")
+	}
+	if app.Type == "service" && in.MaxAuthAge != nil {
+		return httpx.Invalid(app.Name + " is a service application. Nobody signs in to it, so it has no sign-in frequency.")
 	}
 	next, changed := app, []string{}
 	for _, f := range []struct {
@@ -678,6 +682,13 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		if t := next.TokenPolicy; t.AccessTokenTTL != before.AccessTokenTTL || t.RefreshTokenTTL != before.RefreshTokenTTL || t.IDTokenTTL != before.IDTokenTTL {
 			changed = append(changed, "token lifetimes")
 		}
+	}
+	if in.MaxAuthAge != nil && *in.MaxAuthAge != app.MaxAuthAge {
+		if age := *in.MaxAuthAge; age != 0 && (age < 60 || age > 90*86400) {
+			return httpx.Invalid("Sign-in frequency must be between 1 minute and 90 days (60 to 7776000 seconds). Use 0 to follow the organization's session lifetime.")
+		}
+		next.MaxAuthAge = *in.MaxAuthAge
+		changed = append(changed, "sign-in frequency")
 	}
 	current := ""
 	if app.Owner != nil {

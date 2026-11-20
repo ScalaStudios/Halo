@@ -3,7 +3,7 @@ import { ArrowLeft, MonitorSmartphone, ScrollText, UsersRound } from "lucide-rea
 import { AvatarEditor } from "@/components/account/avatar-editor";
 import { AppActions, DangerZone } from "@/components/applications/app-actions";
 import { CredentialList } from "@/components/applications/credentials";
-import { AuthenticationForm, ScopesForm } from "@/components/applications/edit-application";
+import { AuthenticationForm, ScopesForm, SignInFrequencyForm } from "@/components/applications/edit-application";
 import { SamlAttributesForm, SamlConnectionFields, SamlSettingsForm } from "@/components/applications/saml";
 import { APP_STATUS, PROTOCOL_LABEL, SetupGuideCard, statusKey, TYPE_LABEL } from "@/components/applications/shared";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
@@ -153,7 +153,12 @@ export default async function ApplicationPage({ params, searchParams }: { params
 
       <div key={tab} className="animate-enter">
         {tab === "overview" ? <OverviewTab app={app} issuer={org.issuer} /> : null}
-        {tab === "authentication" ? <AuthenticationTab app={app} resources={resources} /> : null}
+        {tab === "authentication" ? (
+          <div className="flex flex-col gap-6">
+            <AuthenticationTab app={app} resources={resources} />
+            {service ? null : <SignInFrequencyForm key={app.maxAuthAge} app={app} />}
+          </div>
+        ) : null}
         {tab === "permissions" ? (
           <div className="flex flex-col gap-6">
             <SectionTitle title="Scopes" description={saml ? undefined : `Scopes ${app.name} can request. Requests for any other scope are rejected.`} />

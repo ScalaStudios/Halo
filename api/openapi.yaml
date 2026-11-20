@@ -548,7 +548,7 @@ paths:
         '200': {$ref: '#/components/responses/SignedIn'}
         '400': {$ref: '#/components/responses/BadJSON'}
         '401':
-          description: '`ERR_UNAUTHENTICATED`: no session. `ERR_REAUTH_REQUIRED`: the application sent `prompt=login`, or a `max_age` shorter than the session''s age.'
+          description: '`ERR_UNAUTHENTICATED`: no session. `ERR_REAUTH_REQUIRED`: the application sent `prompt=login`, or the session is older than the request''s `max_age` or the application''s `maxAuthAge` allows.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -743,7 +743,11 @@ paths:
         - session: []
       responses:
         '200': {$ref: '#/components/responses/DeviceDecision'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401':
+          description: '`ERR_UNAUTHENTICATED`: no session. `ERR_REAUTH_REQUIRED`: the session is older than the application''s `maxAuthAge` allows; sign in again, then approve.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
         '403':
           description: '`ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED`, `ERR_SESSION_LIMIT`, `ERR_TERMS_REQUIRED` (accept the terms of use with `POST /me/terms/{id}/accept` first) or `ERR_CROSS_SITE`.'
           content:
@@ -2206,7 +2210,7 @@ paths:
       tags: [Applications]
       operationId: updateApplication
       summary: Change an application
-      description: 'Roles: application administrator. Send only the fields to change. SAML applications accept only name, description, homepage, owner and groupIds. OpenID Connect applications must keep the `openid` scope.'
+      description: 'Roles: application administrator. Send only the fields to change. SAML applications accept only name, description, homepage, maxAuthAge, owner and groupIds. OpenID Connect applications must keep the `openid` scope.'
       requestBody:
         required: true
         content:
@@ -2239,6 +2243,7 @@ paths:
                       type: array
                       items: {type: string}
                       description: Replaces the API resources, by id, whose access tokens the application may exchange. Each must be an existing API resource. An empty list accepts no tokens.
+                maxAuthAge: {type: integer, minimum: 0, maximum: 7776000, description: 'Seconds, 60 or more. 0 turns it off. Service applications and bookmarks have none.'}
                 owner: {type: string, description: Id of a person. An empty string removes the owner.}
                 groupIds:
                   type: array
@@ -5039,7 +5044,7 @@ components:
         source: {type: string}
     Application:
       type: object
-      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, setupGuide, logoUrl, registeredDynamically, awaitingApproval]
+      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval]
       properties:
         id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
@@ -5074,6 +5079,7 @@ components:
         signIns7d: {type: integer}
         failureRate7d: {type: number, description: Percentage of failed sign-ins in the past 7 days.}
         tokenPolicy: {$ref: '#/components/schemas/TokenPolicy'}
+        maxAuthAge: {type: integer, description: 'Sign-in frequency in seconds, 0 when off. A person who signed in to Halo longer ago signs in again before the application gets a code, assertion or device approval, `prompt=none` returns `login_required`, and refresh tokens are refused with `invalid_grant`. A shorter `max_age` in the request still applies. Access tokens already issued last until they expire.'}
         setupGuide: {type: string}
         logoUrl: {type: [string, 'null'], description: Path of the logo, or null., examples: ['/api/v1/applications/app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9/logo?v=1790000000']}
         registeredDynamically: {type: boolean, description: The client registered itself at `/oauth2/register` and can change or delete its registration with its registration access token.}

@@ -359,6 +359,22 @@ func TestAuthRequestCompletion(t *testing.T) {
 		t.Fatalf("continue: %d %+v", status, out)
 	}
 	e.expect(signedIn, "POST", "/api/v1/auth/continue", map[string]any{"authRequest": second}, http.StatusNotFound, "ERR_AUTH_REQUEST_EXPIRED")
+
+	zero := 0
+	if _, err := e.st.CreateAuthRequest(ctx, store.AuthRequest{ID: "arq_third", ClientID: app.ClientID, RedirectURI: app.RedirectURIs[0], Scopes: []string{"openid"}, ResponseType: "code", MaxAge: &zero}); err != nil {
+		t.Fatal(err)
+	}
+	e.expect(signedIn, "POST", "/api/v1/auth/continue", map[string]any{"authRequest": "arq_third"}, http.StatusUnauthorized, "ERR_REAUTH_REQUIRED")
+	if status, redirect, _ := e.passkey(signedIn, d, d.cred, "arq_third"); status != http.StatusOK || redirect != "/oauth2/authorize/callback?id=arq_third" {
+		t.Fatalf("sign in again: %d %s", status, redirect)
+	}
+	before, err := e.st.GetAuthRequest(ctx, second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after, err := e.st.GetAuthRequest(ctx, "arq_third"); err != nil || after.SessionID == nil || *after.SessionID == *before.SessionID {
+		t.Fatalf("signing in again must start a new session: %v %v", after.SessionID, err)
+	}
 }
 
 func TestMethodsAndRecoveryCodes(t *testing.T) {

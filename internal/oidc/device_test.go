@@ -313,6 +313,30 @@ func TestDeviceApprovalTerms(t *testing.T) {
 	}
 }
 
+func TestDeviceSignInFrequency(t *testing.T) {
+	h := newInfra(t, nil)
+	ctx := context.Background()
+	_, refresh := h.signInCLI()
+	time.Sleep(1100 * time.Millisecond)
+	cli, err := h.st.GetApplicationByClientID(ctx, halooidc.CLIClientID)
+	h.must(err)
+	cli.MaxAuthAge = 1
+	h.must(h.st.UpdateApplication(ctx, cli))
+
+	if r := h.refresh(refresh); r.status != http.StatusBadRequest || r.body["error"] != "invalid_grant" {
+		t.Fatalf("refresh past the sign-in frequency: %d %v", r.status, r.body)
+	}
+	_, userCode := h.startDevice("openid")
+	if r := h.send(http.MethodPost, "/api/v1/device/"+userCode+"/approve", nil, cookie(h.token)); r.status != http.StatusUnauthorized || r.body["error"].(map[string]any)["code"] != "ERR_REAUTH_REQUIRED" {
+		t.Fatalf("approve with a session past the sign-in frequency: %d %v", r.status, r.body)
+	}
+	_, fresh, err := h.st.CreateSession(ctx, store.NewSession{UserID: h.user.ID, Method: "totp"})
+	h.must(err)
+	if r := h.send(http.MethodPost, "/api/v1/device/"+userCode+"/approve", nil, cookie(fresh)); r.status != http.StatusOK {
+		t.Fatalf("approve after signing in again: %d %v", r.status, r.body)
+	}
+}
+
 func TestAPIResources(t *testing.T) {
 	h := newInfra(t, nil)
 	ctx := context.Background()
