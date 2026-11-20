@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Check, FileKey, KeyRound, ServerCog, type LucideIcon } from "lucide-react";
+import { Bookmark, Check, FileKey, KeyRound, ServerCog, type LucideIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { ActionError } from "@/components/ui/action-error";
@@ -16,7 +16,7 @@ import { endpoints, setupGuide } from "@/lib/setup-guides";
 import { SamlConnectionFields } from "./saml";
 import { SecretWarning, SetupGuideCard, TYPE_ICON } from "./shared";
 
-type Protocol = "oidc" | "saml" | "oauth";
+type Protocol = "oidc" | "saml" | "oauth" | "bookmark";
 type Source = "values" | "metadata";
 type Platform = "web" | "spa" | "native";
 type Template = { value: string; label: string; uri: string; entityId?: string; guide: string; platform?: Platform; hint?: string; more?: string[]; scopes?: string[] };
@@ -26,6 +26,7 @@ const PROTOCOLS: Option<Protocol>[] = [
   { value: "oidc", label: "OpenID Connect", description: "Sign-in for web, single-page and command-line apps. Use this unless the app only supports SAML.", icon: KeyRound },
   { value: "saml", label: "SAML 2.0", description: "Sign-in for applications that only support SAML, like AWS IAM Identity Center and Slack.", icon: FileKey },
   { value: "oauth", label: "OAuth 2.0 service", description: "Machine-to-machine access with client credentials. Nobody signs in.", icon: ServerCog },
+  { value: "bookmark", label: "Bookmark", description: "A link in the account portal, like an intranet page, status page or helpdesk. Nobody signs in through Halo.", icon: Bookmark },
 ];
 
 const PLATFORMS: Option<Platform>[] = [
@@ -112,7 +113,7 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
   const [errors, setErrors] = useState<{ name?: string; uri?: string; address?: string; slug?: string; entityId?: string; metadata?: string }>({});
   const [created, setCreated] = useState<{ application: SamlApplication; clientSecret: string | null } | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
-  const { pending, run, errorFor } = useMutation();
+  const { pending, run, errorFor, router, toast } = useMutation();
 
   const steps = protocol === "oidc" ? ["Protocol", "Platform", "Details"] : protocol === "saml" ? ["Protocol", "Service provider", "Details"] : ["Protocol", "Details"];
   const current = steps[step];
@@ -152,6 +153,10 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
       submitSaml();
       return;
     }
+    if (protocol === "bookmark") {
+      submitBookmark();
+      return;
+    }
     const next = {
       name: name.trim() ? undefined : "Enter a name. People see it on the Halo sign-in screen.",
       uri: needsUri && !aether ? uriError(uri) : undefined,
@@ -175,6 +180,29 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
           },
         }),
       setCreated,
+      "inline",
+    );
+  }
+
+  function submitBookmark() {
+    const url = address.trim();
+    const next = {
+      name: name.trim() ? undefined : "Enter a name. People see it in their account portal.",
+      address: !url
+        ? "Enter the address the bookmark opens, like https://status.example.com."
+        : /^https?:\/\/[^/\s]+/.test(url)
+          ? undefined
+          : "Enter a full address that starts with https:// or http://, like https://status.example.com.",
+    };
+    setErrors(next);
+    if (next.name || next.address) return;
+    void run(
+      "create",
+      () => api<{ application: SamlApplication }>("/applications", { body: { name: name.trim(), protocol, homepage: url } }),
+      ({ application }) => {
+        toast({ title: `${application.name} created`, description: "Assign groups so people see it in their account portal." });
+        router.push(`/admin/applications/${application.id}?tab=users`);
+      },
       "inline",
     );
   }
@@ -352,7 +380,18 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
               </Field>
             </div>
           ) : null}
-          {current === "Details" && protocol !== "saml" ? (
+          {current === "Details" && protocol === "bookmark" ? (
+            <div className="flex flex-col gap-6">
+              <h2 className="text-h4 text-fg">Bookmark details</h2>
+              <Field label="Name" error={errors.name}>
+                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Status page" />}
+              </Field>
+              <Field label="URL" error={errors.address} hint="The address the bookmark opens. Add a logo and assign groups after you create it.">
+                {(props) => <Input {...props} type="url" mono value={address} onChange={(e) => setAddress(e.target.value)} placeholder="https://status.example.com" />}
+              </Field>
+            </div>
+          ) : null}
+          {current === "Details" && (protocol === "oidc" || protocol === "oauth") ? (
             <div className="flex flex-col gap-6">
               <h2 className="text-h4 text-fg">Application details</h2>
               <Field label="Name" error={errors.name}>
@@ -395,7 +434,7 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
             </Button>
           )}
           <Button type="submit" variant="primary" loading={pending === "create"}>
-            {current === "Details" ? "Create application" : "Continue"}
+            {current === "Details" ? (protocol === "bookmark" ? "Create bookmark" : "Create application") : "Continue"}
           </Button>
         </div>
       </form>

@@ -25,6 +25,7 @@ type AppSummary = {
   clientId: string;
   homepage: string;
   saml: boolean;
+  bookmark: boolean;
   disabled: boolean;
   hasSecret: boolean;
 };
@@ -38,10 +39,12 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Link href={`/admin/applications/${app.id}#setup-guide`} className={buttonClasses("secondary", "sm")}>
-        <BookOpen aria-hidden="true" size={16} strokeWidth={1.75} />
-        View setup guide
-      </Link>
+      {app.bookmark ? null : (
+        <Link href={`/admin/applications/${app.id}#setup-guide`} className={buttonClasses("secondary", "sm")}>
+          <BookOpen aria-hidden="true" size={16} strokeWidth={1.75} />
+          View setup guide
+        </Link>
+      )}
       {app.hasSecret ? (
         <Button size="sm" variant="secondary" onClick={() => setRotate(true)}>
           <RefreshCw aria-hidden="true" size={16} strokeWidth={1.75} />
@@ -63,15 +66,17 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
               Open {new URL(app.homepage).host}
             </MenuItem>
           ) : null}
-          <MenuItem
-            icon={Copy}
-            onSelect={() => {
-              void navigator.clipboard?.writeText(app.clientId);
-              toast({ title: app.saml ? "Entity ID copied" : "Client ID copied", description: app.clientId });
-            }}
-          >
-            Copy {idLabel}
-          </MenuItem>
+          {app.bookmark ? null : (
+            <MenuItem
+              icon={Copy}
+              onSelect={() => {
+                void navigator.clipboard?.writeText(app.clientId);
+                toast({ title: app.saml ? "Entity ID copied" : "Client ID copied", description: app.clientId });
+              }}
+            >
+              Copy {idLabel}
+            </MenuItem>
+          )}
           <MenuSeparator />
           <MenuItem icon={Power} onSelect={() => router.push(`/admin/applications/${app.id}#danger-zone`)}>
             {app.disabled ? "Enable application" : "Disable application"}

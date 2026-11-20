@@ -43,7 +43,7 @@ export type Group = {
   createdAt: string;
 };
 
-export type Protocol = "oidc" | "saml" | "oauth";
+export type Protocol = "oidc" | "saml" | "oauth" | "bookmark";
 export type AppType = "web" | "spa" | "native" | "service";
 
 export type Credential = {
@@ -79,6 +79,14 @@ export type Application = {
   tokenPolicy: { accessTokenTtl: number; refreshTokenTtl: number; idTokenTtl: number; rotation: boolean };
   setupGuide: "grafana" | "forgejo" | "aether" | "generic-oidc" | "generic-saml" | "kubernetes" | "aws-iam-identity-center" | "slack";
   logoUrl: string | null;
+};
+
+export type Collection = {
+  id: string;
+  name: string;
+  applicationIds: string[];
+  groupIds: string[];
+  createdAt: string;
 };
 
 export type Session = {

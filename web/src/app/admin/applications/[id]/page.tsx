@@ -41,22 +41,28 @@ export default async function ApplicationPage({ params, searchParams }: { params
   ]);
 
   const saml = app.protocol === "saml";
+  const bookmark = app.protocol === "bookmark";
   const service = app.type === "service";
   const owner = users.find((u) => u.id === app.owner);
   const appGroups = groups.filter((g) => app.groupIds.includes(g.id));
   const assigned = new Set(users.filter((u) => u.appIds.includes(app.id)).map((u) => u.id));
   const appSessions = service ? [] : sessions.filter((s) => assigned.has(s.userId)).sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
 
-  const tabs = [
-    { id: "overview", label: "Overview" },
-    { id: "authentication", label: "Authentication" },
-    { id: "permissions", label: "Permissions", count: app.scopes.length },
-    { id: "claims", label: saml ? "Attributes" : "Claims", count: app.claims.length },
-    { id: "users", label: "Users & groups", count: appGroups.length },
-    { id: "credentials", label: "Credentials", count: app.credentials.length },
-    { id: "sessions", label: "Sessions", count: appSessions.length },
-    { id: "logs", label: "Logs", count: appSignIns.length },
-  ];
+  const tabs = bookmark
+    ? [
+        { id: "overview", label: "Overview" },
+        { id: "users", label: "Users & groups", count: appGroups.length },
+      ]
+    : [
+        { id: "overview", label: "Overview" },
+        { id: "authentication", label: "Authentication" },
+        { id: "permissions", label: "Permissions", count: app.scopes.length },
+        { id: "claims", label: saml ? "Attributes" : "Claims", count: app.claims.length },
+        { id: "users", label: "Users & groups", count: appGroups.length },
+        { id: "credentials", label: "Credentials", count: app.credentials.length },
+        { id: "sessions", label: "Sessions", count: appSessions.length },
+        { id: "logs", label: "Logs", count: appSignIns.length },
+      ];
 
   return (
     <div className="flex flex-col gap-8">
@@ -89,17 +95,18 @@ export default async function ApplicationPage({ params, searchParams }: { params
               clientId: app.clientId,
               homepage: app.homepage,
               saml,
+              bookmark,
               disabled: app.status === "disabled",
-              hasSecret: !saml && (app.type === "web" || app.type === "service"),
+              hasSecret: !saml && !bookmark && (app.type === "web" || app.type === "service"),
             }}
             directory={users}
           />
         </header>
         <DescriptionList
-          className="grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 xl:grid-cols-6"
+          className={`grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 ${bookmark ? "xl:grid-cols-4" : "xl:grid-cols-6"}`}
           items={[
             { label: "Protocol", value: PROTOCOL_LABEL[app.protocol] },
-            { label: "Type", value: TYPE_LABEL[app.type] },
+            ...(bookmark ? [] : [{ label: "Type", value: TYPE_LABEL[app.type] }]),
             {
               label: "Status",
               value: (
@@ -110,14 +117,18 @@ export default async function ApplicationPage({ params, searchParams }: { params
               ),
             },
             { label: "Users", value: <span className="tnum">{app.userCount}</span> },
-            {
-              label: "Sign-ins (7 days)",
-              value: (
-                <span className="tnum">
-                  {app.signIns7d.toLocaleString("en-US")} <span className="text-fg-3">· {app.failureRate7d}% failed</span>
-                </span>
-              ),
-            },
+            ...(bookmark
+              ? []
+              : [
+                  {
+                    label: "Sign-ins (7 days)",
+                    value: (
+                      <span className="tnum">
+                        {app.signIns7d.toLocaleString("en-US")} <span className="text-fg-3">· {app.failureRate7d}% failed</span>
+                      </span>
+                    ),
+                  },
+                ]),
             {
               label: "Owner",
               value: owner ? (
@@ -186,7 +197,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
               description={
                 service
                   ? `${app.name} authenticates as itself with client credentials. No people or groups are assigned.`
-                  : `${pluralize(app.userCount, "person", "people")} can sign in to ${app.name} through ${pluralize(appGroups.length, "group")}.`
+                  : `${pluralize(app.userCount, "person", "people")} ${bookmark ? "see" : "can sign in to"} ${app.name} through ${pluralize(appGroups.length, "group")}.`
               }
               action={
                 service ? undefined : (
@@ -215,7 +226,13 @@ export default async function ApplicationPage({ params, searchParams }: { params
               <EmptyState
                 icon={UsersRound}
                 title="No groups assigned"
-                description={service ? "Service applications get access through scopes, not group membership." : `Nobody can sign in to ${app.name} until a group is assigned.`}
+                description={
+                  service
+                    ? "Service applications get access through scopes, not group membership."
+                    : bookmark
+                      ? `Nobody sees ${app.name} in their account portal until a group is assigned.`
+                      : `Nobody can sign in to ${app.name} until a group is assigned.`
+                }
               />
             )}
           </div>
@@ -297,6 +314,19 @@ export default async function ApplicationPage({ params, searchParams }: { params
 function OverviewTab({ app, issuer }: { app: SamlApplication; issuer: string }) {
   const saml = app.protocol === "saml";
   const urls = endpoints(issuer);
+  if (app.protocol === "bookmark") {
+    return (
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <Card className="min-w-0 xl:col-span-5">
+          <CardHeader title="Bookmark" description={`Opens from the account portal of everyone assigned to ${app.name}. Nobody signs in to it through Halo.`} />
+          <CardBody>
+            <CopyField label="URL" value={app.homepage} />
+          </CardBody>
+        </Card>
+        <DangerZone id={app.id} name={app.name} disabled={app.status === "disabled"} className="xl:col-span-12" />
+      </div>
+    );
+  }
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
       <Card className="min-w-0 xl:col-span-5">

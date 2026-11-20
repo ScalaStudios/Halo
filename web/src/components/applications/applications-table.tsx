@@ -43,7 +43,8 @@ const columns: ColumnDef<Application, any>[] = [
     header: "Type",
     filterFn: facetFilter,
     meta: { label: "Type" },
-    cell: ({ row }) => <span className="whitespace-nowrap">{TYPE_LABEL[row.original.type]}</span>,
+    cell: ({ row }) =>
+      row.original.protocol === "bookmark" ? <span className="text-fg-3">—</span> : <span className="whitespace-nowrap">{TYPE_LABEL[row.original.type]}</span>,
   },
   {
     id: "status",

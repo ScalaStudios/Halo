@@ -13,7 +13,7 @@ export const APP_STATUS: Record<Application["status"], { label: string; tone: To
   disabled: { label: "Disabled", tone: "neutral" },
 };
 
-export const PROTOCOL_LABEL = { oidc: "OpenID Connect", saml: "SAML 2.0", oauth: "OAuth 2.0" } as const;
+export const PROTOCOL_LABEL = { oidc: "OpenID Connect", saml: "SAML 2.0", oauth: "OAuth 2.0", bookmark: "Bookmark" } as const;
 export const TYPE_LABEL = { web: "Web", spa: "Single-page", native: "Native / CLI", service: "Service" } as const;
 
 export const TYPE_ICON: Record<AppType, LucideIcon> = { web: AppWindow, spa: PanelsTopLeft, native: Terminal, service: ServerCog };

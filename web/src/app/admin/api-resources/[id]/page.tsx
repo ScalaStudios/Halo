@@ -23,7 +23,7 @@ export default async function ApiResourcePage({ params }: { params: Promise<{ id
     apiGet<Application[]>("/applications"),
     apiGet<Organization>("/organization"),
   ]);
-  const grantable = applications.filter((a) => a.protocol !== "saml").map((a) => ({ id: a.id, name: a.name }));
+  const grantable = applications.filter((a) => a.protocol === "oidc" || a.protocol === "oauth").map((a) => ({ id: a.id, name: a.name }));
 
   return (
     <div className="flex flex-col gap-8">
