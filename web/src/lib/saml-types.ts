@@ -2,6 +2,8 @@ import type { Application } from "@/lib/types";
 
 export type NameIdFormat = "email" | "persistent" | "unspecified";
 
+export type SamlEncryption = "off" | "aes256-gcm" | "aes256-cbc";
+
 export type SamlAttributes = { email: string; name: string; givenName: string; familyName: string; groups: string };
 
 export type SamlConnection = {
@@ -20,6 +22,8 @@ export type SamlSettings = {
   signResponse: boolean;
   attributes: SamlAttributes;
   metadataXml: string;
+  encryption: SamlEncryption;
+  encryptionCertificate: string;
   idp: SamlConnection;
 };
 

@@ -2,7 +2,11 @@ package saml_test
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
 	"encoding/xml"
@@ -18,7 +22,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/beevik/etree"
 	"github.com/crewjam/saml"
+	"github.com/crewjam/saml/xmlenc"
 
 	"halo/internal/access"
 	"halo/internal/config"
@@ -63,6 +69,47 @@ func attribute(a *saml.Assertion, name string) []string {
 		}
 	}
 	return values
+}
+
+type aes256GCM struct{}
+
+func (aes256GCM) Algorithm() string { return "http://www.w3.org/2009/xmlenc11#aes256-gcm" }
+
+func (aes256GCM) Decrypt(key any, el *etree.Element) ([]byte, error) {
+	secret, err := xmlenc.Decrypt(key, el.FindElement("./KeyInfo/EncryptedKey"))
+	if err != nil {
+		return nil, err
+	}
+	block, err := aes.NewCipher(secret)
+	if err != nil {
+		return nil, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	ciphertext, err := base64.StdEncoding.DecodeString(el.FindElement("./CipherData/CipherValue").Text())
+	if err != nil {
+		return nil, err
+	}
+	return gcm.Open(nil, ciphertext[:gcm.NonceSize()], ciphertext[gcm.NonceSize():], nil)
+}
+
+func keyPair(t *testing.T) (*rsa.PrivateKey, *x509.Certificate, string) {
+	t.Helper()
+	keyDER, certDER, err := halosaml.NewKey("sp.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := x509.ParsePKCS8PrivateKey(keyDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key.(*rsa.PrivateKey), cert, string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}))
 }
 
 func TestIdentityProvider(t *testing.T) {
@@ -198,7 +245,7 @@ func TestIdentityProvider(t *testing.T) {
 		t.Fatalf("an expired request must be refused: %d", old.Code)
 	}
 
-	must(st.SetSAMLSettings(ctx, app.ID, entityID, []string{acsURL.String()}, store.SAMLSettings{NameIDFormat: "persistent", SignResponse: true, Attributes: store.SAMLAttributes{Email: "mail", Groups: "memberOf"}}))
+	must(st.SetSAMLSettings(ctx, app.ID, entityID, []string{acsURL.String()}, store.SAMLSettings{NameIDFormat: "persistent", SignResponse: true, Encryption: "off", Attributes: store.SAMLAttributes{Email: "mail", Groups: "memberOf"}}))
 	posted, err := sp.MakeAuthenticationRequest(sp.GetSSOBindingLocation(saml.HTTPPostBinding), saml.HTTPPostBinding, saml.HTTPPostBinding)
 	must(err)
 	form := url.Values{"SAMLRequest": {fields(string(posted.Post("relay-2")))["SAMLRequest"]}, "RelayState": {"relay-2"}}
@@ -209,6 +256,38 @@ func TestIdentityProvider(t *testing.T) {
 	}
 	if signed.Response == nil || signed.Assertion.Signature == nil {
 		t.Fatal("signResponse must sign the whole response")
+	}
+
+	xmlenc.RegisterDecrypter(aes256GCM{})
+	spKey, spCert, spPEM := keyPair(t)
+	otherKey, _, _ := keyPair(t)
+	decrypting := *sp
+	decrypting.Key, decrypting.Certificate = spKey, spCert
+	wrongKey := decrypting
+	wrongKey.Key = otherKey
+	encrypted := store.DefaultSAMLSettings()
+	encrypted.EncryptionCertificate = spPEM
+	for _, method := range []string{"aes256-gcm", "aes256-cbc"} {
+		encrypted.Encryption = method
+		must(st.SetSAMLSettings(ctx, app.ID, entityID, []string{acsURL.String()}, encrypted))
+		rec := call("GET", redirect.String(), passkey, nil)
+		raw, err := base64.StdEncoding.DecodeString(fields(rec.Body.String())["SAMLResponse"])
+		must(err)
+		if !strings.Contains(string(raw), "<saml:EncryptedAssertion") || strings.Contains(string(raw), "<saml:Assertion") || strings.Contains(string(raw), ada.Email) {
+			t.Fatalf("%s: the assertion must only be sent encrypted: %s", method, raw)
+		}
+		if _, err := wrongKey.ParseXMLResponse(raw, []string{request.ID}, *acsURL); err == nil {
+			t.Fatalf("%s: a different service provider key must not decrypt the assertion", method)
+		}
+		a, _, _ := assertion(rec, &decrypting, request.ID)
+		if a.Subject.NameID.Value != ada.Email || !slices.Equal(attribute(a, "groups"), []string{"Support"}) || !slices.Equal(attribute(a, "email"), []string{ada.Email}) {
+			t.Fatalf("%s: decrypted assertion %+v %+v", method, a.Subject.NameID, a.AttributeStatements)
+		}
+	}
+	encrypted.Encryption = "off"
+	must(st.SetSAMLSettings(ctx, app.ID, entityID, []string{acsURL.String()}, encrypted))
+	if a, signed, _ := assertion(call("GET", redirect.String(), passkey, nil), sp, request.ID); a.Subject.NameID.Value != ada.Email || signed.Assertion.Signature == nil {
+		t.Fatal("with encryption off, the signed assertion is sent unencrypted even when a certificate is saved")
 	}
 	must(st.SetSAMLSettings(ctx, app.ID, entityID, []string{acsURL.String()}, store.DefaultSAMLSettings()))
 
@@ -263,12 +342,52 @@ func TestParseMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entityID, urls, err := halosaml.ParseMetadata(string(raw))
-	if err != nil || entityID != "https://wiki.example.com" || !slices.Equal(urls, []string{acs.String()}) {
-		t.Fatalf("got %q %v %v", entityID, urls, err)
+	entityID, urls, certificate, err := halosaml.ParseMetadata(string(raw))
+	if err != nil || entityID != "https://wiki.example.com" || !slices.Equal(urls, []string{acs.String()}) || certificate != "" {
+		t.Fatalf("got %q %v %q %v", entityID, urls, certificate, err)
 	}
-	if _, _, err := halosaml.ParseMetadata("<html></html>"); err == nil {
+	if _, _, _, err := halosaml.ParseMetadata("<html></html>"); err == nil {
 		t.Fatal("non-metadata XML must be rejected")
+	}
+
+	key, cert, certPEM := keyPair(t)
+	sp := (&saml.ServiceProvider{EntityID: "https://wiki.example.com", AcsURL: *acs, Key: key, Certificate: cert}).Metadata()
+	own := sp.SPSSODescriptors[0].KeyDescriptors
+	encryptionCertificate := func(descriptors ...saml.KeyDescriptor) string {
+		t.Helper()
+		md := *sp
+		md.SPSSODescriptors = slices.Clone(sp.SPSSODescriptors)
+		md.SPSSODescriptors[0].KeyDescriptors = descriptors
+		raw, err := xml.Marshal(md)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, certificate, err := halosaml.ParseMetadata(string(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return certificate
+	}
+	signed := func(use string, notAfter time.Time) (saml.KeyDescriptor, string) {
+		template := &x509.Certificate{NotBefore: time.Now().AddDate(-2, 0, 0), NotAfter: notAfter}
+		der, err := x509.CreateCertificate(rand.Reader, template, template, key.Public(), key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return saml.KeyDescriptor{Use: use, KeyInfo: saml.KeyInfo{X509Data: saml.X509Data{X509Certificates: []saml.X509Certificate{{Data: base64.StdEncoding.EncodeToString(der)}}}}},
+			strings.TrimSpace(string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})))
+	}
+	if got := encryptionCertificate(own...); got != strings.TrimSpace(certPEM) {
+		t.Fatalf("encryption certificate from metadata: %q", got)
+	}
+	expired, _ := signed("encryption", time.Now().AddDate(0, 0, -1))
+	if got := encryptionCertificate(expired); got != "" {
+		t.Fatalf("an expired encryption certificate must be skipped: %q", got)
+	}
+	rollover, rolloverPEM := signed("encryption", time.Now().AddDate(20, 0, 0))
+	signing, _ := signed("signing", time.Now().AddDate(30, 0, 0))
+	if got := encryptionCertificate(append(slices.Clone(own), expired, rollover, signing)...); got != rolloverPEM {
+		t.Fatalf("during a rollover the encryption certificate that lasts longest must be used: %q", got)
 	}
 }
 

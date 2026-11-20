@@ -10,7 +10,7 @@ import { CopyField } from "@/components/ui/copy-field";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
-import { NAME_ID_FORMATS, type NameIdFormat, type SamlAttributes, type SamlConnection, type SamlSettings } from "@/lib/saml-types";
+import { NAME_ID_FORMATS, type NameIdFormat, type SamlAttributes, type SamlConnection, type SamlEncryption, type SamlSettings } from "@/lib/saml-types";
 import { ExpiryText } from "./shared";
 
 const SOURCES: { key: keyof SamlAttributes; label: string; source: string }[] = [
@@ -20,6 +20,12 @@ const SOURCES: { key: keyof SamlAttributes; label: string; source: string }[] = 
   { key: "familyName", label: "Family name", source: "user.name (after the first word)" },
   { key: "groups", label: "Groups", source: "user.groups (every group)" },
 ];
+
+const ENCRYPTIONS: Record<SamlEncryption, { label: string; hint: string }> = {
+  off: { label: "Don't encrypt", hint: "The assertion is signed, and anything with access to the browser can read its attributes." },
+  "aes256-gcm": { label: "AES-256-GCM", hint: "Only the service provider can read the assertion. Halo sends the key with RSA-OAEP." },
+  "aes256-cbc": { label: "AES-256-CBC", hint: "For service providers that don't support AES-GCM. Halo sends the key with RSA-OAEP." },
+};
 
 export function SamlConnectionFields({ idp }: { idp: SamlConnection }) {
   return (
@@ -49,6 +55,8 @@ export function SamlSettingsForm({ appId, appName, saml }: { appId: string; appN
   const [acsUrls, setAcsUrls] = useState(saml.acsUrls.join("\n"));
   const [format, setFormat] = useState<NameIdFormat>(saml.nameIdFormat);
   const [signResponse, setSignResponse] = useState(saml.signResponse);
+  const [encryption, setEncryption] = useState<SamlEncryption>(saml.encryption);
+  const [certificate, setCertificate] = useState(saml.encryptionCertificate);
   const { pending, run, errorFor, toast } = useMutation();
 
   function submit(event: FormEvent) {
@@ -56,7 +64,18 @@ export function SamlSettingsForm({ appId, appName, saml }: { appId: string; appN
     const urls = acsUrls.split("\n").map((url) => url.trim()).filter(Boolean);
     void run(
       "settings",
-      () => api(`/applications/${appId}/saml`, { method: "PUT", body: { entityId: entityId.trim(), acsUrls: urls, nameIdFormat: format, signResponse } }),
+      () =>
+        api(`/applications/${appId}/saml`, {
+          method: "PUT",
+          body: {
+            entityId: entityId.trim(),
+            acsUrls: urls,
+            nameIdFormat: format,
+            signResponse,
+            encryption,
+            encryptionCertificate: encryption === "off" ? undefined : certificate,
+          },
+        }),
       () => toast({ title: "SAML settings saved", description: `${appName} gets them on its next sign-in. Recorded in the audit log.` }),
       "inline",
     );
@@ -64,7 +83,7 @@ export function SamlSettingsForm({ appId, appName, saml }: { appId: string; appN
 
   return (
     <Card>
-      <CardHeader title="SAML settings" description={`How Halo builds and signs assertions for ${appName}. Signatures use RSA-SHA256; single logout is not supported.`} />
+      <CardHeader title="SAML settings" description={`How Halo builds, signs and encrypts assertions for ${appName}. Signatures use RSA-SHA256; single logout is not supported.`} />
       <form onSubmit={submit} noValidate>
         <CardBody className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <Field label="Entity ID" hint="The service provider's issuer, from its SAML settings or metadata.">
@@ -92,6 +111,36 @@ export function SamlSettingsForm({ appId, appName, saml }: { appId: string; appN
               </Select>
             )}
           </Field>
+          <Field label="Assertion encryption" hint={ENCRYPTIONS[encryption].hint}>
+            {(props) => (
+              <Select {...props} value={encryption} onChange={(event) => setEncryption(event.target.value as SamlEncryption)}>
+                {(Object.keys(ENCRYPTIONS) as SamlEncryption[]).map((key) => (
+                  <option key={key} value={key}>
+                    {ENCRYPTIONS[key].label}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          {encryption === "off" ? null : (
+            <Field
+              label="Encryption certificate"
+              hint={`The service provider's X.509 certificate in PEM, from its metadata under KeyDescriptor use="encryption". It needs an RSA key and must not have expired.`}
+              className="md:col-span-2"
+            >
+              {(props) => (
+                <Textarea
+                  {...props}
+                  mono
+                  rows={6}
+                  spellCheck={false}
+                  placeholder="-----BEGIN CERTIFICATE-----"
+                  value={certificate}
+                  onChange={(event) => setCertificate(event.target.value)}
+                />
+              )}
+            </Field>
+          )}
         </CardBody>
         <div className="flex flex-wrap items-center justify-end gap-4 border-t border-border px-6 py-4">
           <ActionError message={errorFor("settings")} />

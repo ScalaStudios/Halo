@@ -1,12 +1,17 @@
 package saml
 
 import (
+	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	"encoding/xml"
 	"errors"
@@ -20,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/beevik/etree"
 	"github.com/crewjam/saml"
 
 	"halo/internal/access"
@@ -34,6 +40,11 @@ var nameIDFormats = map[string]string{
 	"email":       "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
 	"persistent":  "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
 	"unspecified": "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified",
+}
+
+var encryptionMethods = map[string]string{
+	"aes256-gcm": "http://www.w3.org/2009/xmlenc11#aes256-gcm",
+	"aes256-cbc": "http://www.w3.org/2001/04/xmlenc#aes256-cbc",
 }
 
 var (
@@ -93,23 +104,105 @@ func Fingerprint(der []byte) string {
 	return strings.Join(hex, ":")
 }
 
-func ParseMetadata(raw string) (string, []string, error) {
+func ParseMetadata(raw string) (string, []string, string, error) {
 	var ed saml.EntityDescriptor
 	if err := xml.Unmarshal([]byte(raw), &ed); err != nil || ed.EntityID == "" {
-		return "", nil, errors.New("Halo couldn't read the metadata. Paste the complete <EntityDescriptor> document the application provides for its SAML service provider.")
+		return "", nil, "", errors.New("Halo couldn't read the metadata. Paste the complete <EntityDescriptor> document the application provides for its SAML service provider.")
 	}
 	var acs []string
+	var newest *x509.Certificate
+	var certificate string
 	for _, sp := range ed.SPSSODescriptors {
 		for _, service := range sp.AssertionConsumerServices {
 			if service.Binding == saml.HTTPPostBinding {
 				acs = append(acs, service.Location)
 			}
 		}
+		for _, kd := range sp.KeyDescriptors {
+			if kd.Use != "encryption" {
+				continue
+			}
+			for _, data := range kd.KeyInfo.X509Data.X509Certificates {
+				cert, normalized, err := EncryptionCertificate(data.Data)
+				if err == nil && time.Now().Before(cert.NotAfter) && (newest == nil || cert.NotAfter.After(newest.NotAfter)) {
+					newest, certificate = cert, normalized
+				}
+			}
+		}
 	}
 	if len(acs) == 0 {
-		return "", nil, errors.New("The metadata has no AssertionConsumerService with the HTTP-POST binding, which Halo uses to send SAML responses. Enter the ACS URL yourself instead.")
+		return "", nil, "", errors.New("The metadata has no AssertionConsumerService with the HTTP-POST binding, which Halo uses to send SAML responses. Enter the ACS URL yourself instead.")
 	}
-	return ed.EntityID, acs, nil
+	return ed.EntityID, acs, certificate, nil
+}
+
+func EncryptionCertificate(raw string) (*x509.Certificate, string, error) {
+	der := []byte(raw)
+	if block, _ := pem.Decode(der); block != nil {
+		der = block.Bytes
+	} else {
+		der, _ = base64.StdEncoding.DecodeString(strings.Join(strings.Fields(raw), ""))
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, "", errors.New("Halo couldn't read the encryption certificate. Paste the service provider's X.509 certificate in PEM format, starting with -----BEGIN CERTIFICATE-----.")
+	}
+	if key, ok := cert.PublicKey.(*rsa.PublicKey); !ok || key.N.BitLen() < 2048 {
+		return nil, "", errors.New("The encryption certificate needs an RSA key of at least 2048 bits, because Halo sends the assertion key with RSA-OAEP. Ask the service provider for an RSA certificate.")
+	}
+	return cert, strings.TrimSpace(string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}))), nil
+}
+
+func encrypt(assertion *etree.Element, method, certificate string) (*etree.Element, error) {
+	cert, _, err := EncryptionCertificate(certificate)
+	if err != nil {
+		return nil, err
+	}
+	doc := etree.NewDocument()
+	doc.SetRoot(assertion)
+	plaintext, err := doc.WriteToBytes()
+	if err != nil {
+		return nil, err
+	}
+	key := make([]byte, 32)
+	rand.Read(key)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	var ciphertext []byte
+	if method == "aes256-cbc" {
+		padding := aes.BlockSize - len(plaintext)%aes.BlockSize
+		plaintext = append(plaintext, bytes.Repeat([]byte{byte(padding)}, padding)...)
+		ciphertext = make([]byte, aes.BlockSize+len(plaintext))
+		rand.Read(ciphertext[:aes.BlockSize])
+		cipher.NewCBCEncrypter(block, ciphertext[:aes.BlockSize]).CryptBlocks(ciphertext[aes.BlockSize:], plaintext)
+	} else {
+		gcm, err := cipher.NewGCMWithRandomNonce(block)
+		if err != nil {
+			return nil, err
+		}
+		ciphertext = gcm.Seal(nil, nil, plaintext, nil)
+	}
+	wrapped, err := rsa.EncryptOAEP(sha1.New(), rand.Reader, cert.PublicKey.(*rsa.PublicKey), key, nil)
+	if err != nil {
+		return nil, err
+	}
+	encrypted := etree.NewElement("saml:EncryptedAssertion")
+	data := encrypted.CreateElement("xenc:EncryptedData")
+	data.CreateAttr("xmlns:xenc", "http://www.w3.org/2001/04/xmlenc#")
+	data.CreateAttr("Type", "http://www.w3.org/2001/04/xmlenc#Element")
+	data.CreateElement("xenc:EncryptionMethod").CreateAttr("Algorithm", encryptionMethods[method])
+	keyInfo := data.CreateElement("ds:KeyInfo")
+	keyInfo.CreateAttr("xmlns:ds", "http://www.w3.org/2000/09/xmldsig#")
+	encryptedKey := keyInfo.CreateElement("xenc:EncryptedKey")
+	transport := encryptedKey.CreateElement("xenc:EncryptionMethod")
+	transport.CreateAttr("Algorithm", "http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p")
+	transport.CreateElement("ds:DigestMethod").CreateAttr("Algorithm", "http://www.w3.org/2000/09/xmldsig#sha1")
+	encryptedKey.CreateElement("ds:KeyInfo").CreateElement("ds:X509Data").CreateElement("ds:X509Certificate").SetText(base64.StdEncoding.EncodeToString(cert.Raw))
+	encryptedKey.CreateElement("xenc:CipherData").CreateElement("xenc:CipherValue").SetText(base64.StdEncoding.EncodeToString(wrapped))
+	data.CreateElement("xenc:CipherData").CreateElement("xenc:CipherValue").SetText(base64.StdEncoding.EncodeToString(ciphertext))
+	return encrypted, nil
 }
 
 func endpoint(cfg config.Config, name string) *url.URL {
@@ -397,6 +490,16 @@ func (f *flow) MakeAssertion(req *saml.IdpAuthnRequest, session *saml.Session) e
 	req.Assertion.AuthnStatements[0].SubjectLocality.Address = ip
 	if len(session.CustomAttributes) == 0 {
 		req.Assertion.AttributeStatements = nil
+	}
+	if err := req.MakeAssertionEl(); err != nil {
+		return err
+	}
+	if f.settings.Encryption != "off" {
+		encrypted, err := encrypt(req.AssertionEl, f.settings.Encryption, f.settings.EncryptionCertificate)
+		if err != nil {
+			return err
+		}
+		req.AssertionEl = encrypted
 	}
 	if err := req.MakeResponse(); err != nil {
 		return err

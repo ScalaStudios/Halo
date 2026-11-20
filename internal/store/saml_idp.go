@@ -21,14 +21,16 @@ type SAMLAttributes struct {
 }
 
 type SAMLSettings struct {
-	NameIDFormat string         `json:"nameIdFormat"`
-	SignResponse bool           `json:"signResponse"`
-	Attributes   SAMLAttributes `json:"attributes"`
-	MetadataXML  string         `json:"metadataXml"`
+	NameIDFormat          string         `json:"nameIdFormat"`
+	SignResponse          bool           `json:"signResponse"`
+	Attributes            SAMLAttributes `json:"attributes"`
+	MetadataXML           string         `json:"metadataXml"`
+	Encryption            string         `json:"encryption"`
+	EncryptionCertificate string         `json:"encryptionCertificate"`
 }
 
 func DefaultSAMLSettings() SAMLSettings {
-	return SAMLSettings{NameIDFormat: "email", Attributes: SAMLAttributes{Email: "email", Name: "name", GivenName: "given_name", FamilyName: "family_name", Groups: "groups"}}
+	return SAMLSettings{NameIDFormat: "email", Encryption: "off", Attributes: SAMLAttributes{Email: "email", Name: "name", GivenName: "given_name", FamilyName: "family_name", Groups: "groups"}}
 }
 
 func SAMLClaims(s SAMLSettings) []Claim {
@@ -53,8 +55,8 @@ func SAMLClaims(s SAMLSettings) []Claim {
 
 func (s *Store) SAMLSettings(ctx context.Context, appID string) (SAMLSettings, error) {
 	var settings SAMLSettings
-	err := s.db.QueryRow(ctx, `select name_id_format, sign_response, attributes, metadata_xml from saml_service_providers where app_id = $1`, appID).
-		Scan(&settings.NameIDFormat, &settings.SignResponse, &settings.Attributes, &settings.MetadataXML)
+	err := s.db.QueryRow(ctx, `select name_id_format, sign_response, attributes, metadata_xml, encryption, encryption_certificate from saml_service_providers where app_id = $1`, appID).
+		Scan(&settings.NameIDFormat, &settings.SignResponse, &settings.Attributes, &settings.MetadataXML, &settings.Encryption, &settings.EncryptionCertificate)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DefaultSAMLSettings(), nil
 	}
@@ -70,9 +72,10 @@ func (s *Store) SetSAMLSettings(ctx context.Context, appID, entityID string, acs
 		if tag.RowsAffected() == 0 {
 			return ErrNotFound
 		}
-		_, err = tx.db.Exec(ctx, `insert into saml_service_providers (app_id, name_id_format, sign_response, attributes, metadata_xml) values ($1, $2, $3, $4, $5)
-			on conflict (app_id) do update set name_id_format = excluded.name_id_format, sign_response = excluded.sign_response, attributes = excluded.attributes, metadata_xml = excluded.metadata_xml, updated_at = now()`,
-			appID, settings.NameIDFormat, settings.SignResponse, settings.Attributes, settings.MetadataXML)
+		_, err = tx.db.Exec(ctx, `insert into saml_service_providers (app_id, name_id_format, sign_response, attributes, metadata_xml, encryption, encryption_certificate) values ($1, $2, $3, $4, $5, $6, $7)
+			on conflict (app_id) do update set name_id_format = excluded.name_id_format, sign_response = excluded.sign_response, attributes = excluded.attributes, metadata_xml = excluded.metadata_xml,
+			encryption = excluded.encryption, encryption_certificate = excluded.encryption_certificate, updated_at = now()`,
+			appID, settings.NameIDFormat, settings.SignResponse, settings.Attributes, settings.MetadataXML, settings.Encryption, settings.EncryptionCertificate)
 		return err
 	})
 }

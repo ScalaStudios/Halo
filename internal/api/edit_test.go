@@ -2,13 +2,22 @@ package api_test
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"net/url"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	halosaml "halo/internal/saml"
 	"halo/internal/store"
 )
 
@@ -333,4 +342,47 @@ func TestUpdateApplication(t *testing.T) {
 	if got := decode[store.Application](t, rec); got.Name != "Slack Enterprise" || !slices.Equal(got.RedirectURIs, []string{"https://example.slack.com/sso/saml"}) {
 		t.Fatalf("saml app: %+v", got)
 	}
+
+	samlPath := "/api/v1/applications/" + saml.ID + "/saml"
+	keyDER, certDER, err := halosaml.NewKey("sp.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, _ := x509.ParsePKCS8PrivateKey(keyDER)
+	pemOf := func(der []byte) string {
+		return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+	}
+	template := &x509.Certificate{NotBefore: time.Now().AddDate(-2, 0, 0), NotAfter: time.Now().AddDate(-1, 0, 0)}
+	expiredDER, _ := x509.CreateCertificate(rand.Reader, template, template, key.(*rsa.PrivateKey).Public(), key)
+	ecKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	template.NotAfter = time.Now().AddDate(1, 0, 0)
+	ecDER, _ := x509.CreateCertificate(rand.Reader, template, template, ecKey.Public(), ecKey)
+	for _, body := range []map[string]any{
+		{"encryption": "aes256-gcm"},
+		{"encryption": "aes128-cbc", "encryptionCertificate": pemOf(certDER)},
+		{"encryption": "aes256-gcm", "encryptionCertificate": "not a certificate"},
+		{"encryption": "aes256-gcm", "encryptionCertificate": pemOf(expiredDER)},
+		{"encryption": "aes256-gcm", "encryptionCertificate": pemOf(ecDER)},
+		{"encryptionCertificate": pemOf(expiredDER)},
+	} {
+		expect(t, call(t, h, admin, "PUT", samlPath, body), 422)
+	}
+	rec = call(t, h, admin, "PUT", samlPath, map[string]any{"encryption": "aes256-gcm", "encryptionCertificate": base64.StdEncoding.EncodeToString(certDER)})
+	expect(t, rec, 200)
+	if got := decode[struct {
+		SAML store.SAMLSettings `json:"saml"`
+	}](t, rec).SAML; got.Encryption != "aes256-gcm" || got.EncryptionCertificate != strings.TrimSpace(pemOf(certDER)) {
+		t.Fatalf("encryption settings: %+v", got)
+	}
+	settings, err := st.SAMLSettings(ctx, saml.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.EncryptionCertificate = strings.TrimSpace(pemOf(expiredDER))
+	if err := st.SetSAMLSettings(ctx, saml.ID, saml.ClientID, saml.RedirectURIs, settings); err != nil {
+		t.Fatal(err)
+	}
+	expect(t, call(t, h, admin, "PUT", samlPath, map[string]any{"attributes": store.DefaultSAMLSettings().Attributes, "encryptionCertificate": pemOf(expiredDER)}), 200)
+	expect(t, call(t, h, admin, "PUT", samlPath, map[string]any{"encryption": "aes256-cbc"}), 422)
+	expect(t, call(t, h, admin, "PUT", samlPath, map[string]any{"encryption": "off"}), 200)
 }
