@@ -435,6 +435,52 @@ func TestSessionLimitSettings(t *testing.T) {
 	}
 }
 
+func TestPasskeyRuleSettings(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	security := e.person("sam@example.com", "security_admin")
+	admins, err := e.st.CreateGroup(ctx, store.NewGroup{Name: "Administrators", Kind: "assigned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	yubikey, titan := "cb69481e-8ff7-4039-93ec-0a2729a154a8", "42b4fb4a-2866-43b2-9bf7-6c6669c2e5d3"
+	rules := func(r ...map[string]any) map[string]any { return map[string]any{"authenticatorRules": r} }
+
+	for _, body := range []map[string]any{
+		rules(map[string]any{"groupId": admins.ID, "minimum": 11}),
+		rules(map[string]any{"groupId": admins.ID, "aaguids": []string{yubikey}}),
+		rules(map[string]any{"groupId": admins.ID, "attestation": true, "aaguids": []string{"yubikey"}}),
+		rules(map[string]any{"groupId": "grp_missing", "deviceBound": true}),
+		rules(map[string]any{"groupId": admins.ID}, map[string]any{"groupId": admins.ID}),
+	} {
+		e.expect(e.call(security, "PATCH", "/api/v1/settings", body), 422)
+	}
+	got := decode[settingsResponse](t, e.expect(e.call(security, "PATCH", "/api/v1/settings", rules(map[string]any{
+		"groupId": admins.ID, "deviceBound": true, "attestation": true, "aaguids": []string{" " + strings.ToUpper(yubikey), yubikey}, "minimum": 2,
+	})), 200))
+	want := []store.AuthenticatorRule{{GroupID: admins.ID, DeviceBound: true, Attestation: true, AAGUIDs: []string{yubikey}, Minimum: 2}}
+	if !reflect.DeepEqual(got.Settings.AuthenticatorRules, want) {
+		t.Fatalf("passkey rules: %+v", got.Settings.AuthenticatorRules)
+	}
+	got = decode[settingsResponse](t, e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"sessionHours": 9}), 200))
+	if !reflect.DeepEqual(got.Settings.AuthenticatorRules, want) {
+		t.Fatalf("an unrelated change touched the passkey rules: %+v", got.Settings.AuthenticatorRules)
+	}
+	got = decode[settingsResponse](t, e.expect(e.call(security, "PATCH", "/api/v1/settings", rules(map[string]any{"groupId": admins.ID, "attestation": true, "aaguids": []string{titan}})), 200))
+	want = []store.AuthenticatorRule{{GroupID: admins.ID, Attestation: true, AAGUIDs: []string{titan}}}
+	if !reflect.DeepEqual(got.Settings.AuthenticatorRules, want) {
+		t.Fatalf("replacing the passkey rules: %+v", got.Settings.AuthenticatorRules)
+	}
+	audit, _ := e.st.ListAudit(ctx, 1)
+	if c := audit[0].Changes; audit[0].Summary != "Changed the passkey rules for groups" || len(c) != 1 || !strings.Contains(string(c[0].Before), yubikey) || !strings.Contains(string(c[0].After), titan) {
+		t.Fatalf("audit: %+v", audit[0])
+	}
+	got = decode[settingsResponse](t, e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"authenticatorRules": nil}), 200))
+	if got.Settings.AuthenticatorRules == nil || len(got.Settings.AuthenticatorRules) != 0 {
+		t.Fatalf("clearing the passkey rules: %+v", got.Settings.AuthenticatorRules)
+	}
+}
+
 func TestBotProtectionSettings(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()

@@ -1,20 +1,24 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/page-header";
-import { SecuritySettings } from "@/components/account/security-settings";
+import { SecuritySettings, type PasskeyRules } from "@/components/account/security-settings";
 import { apiGet } from "@/lib/api/server";
 import type { User } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Security" };
 
 export default async function SecurityPage() {
-  const [user, password] = await Promise.all([apiGet<User>("/me"), apiGet<{ allowed: boolean; secondFactor: boolean }>("/me/password")]);
+  const [user, password, rules] = await Promise.all([
+    apiGet<User>("/me"),
+    apiGet<{ allowed: boolean; secondFactor: boolean }>("/me/password"),
+    apiGet<PasskeyRules>("/me/passkey-rules"),
+  ]);
   return (
     <div className="flex flex-col gap-12">
       <PageHeader size="large"
         title="Security"
         description="How you prove it's you. Keep at least two passkeys or security keys so losing one device doesn't lock you out."
       />
-      <SecuritySettings methods={user.methods} email={user.email} password={password} />
+      <SecuritySettings methods={user.methods} email={user.email} password={password} rules={rules} />
     </div>
   );
 }

@@ -141,11 +141,11 @@ func (h *handler) signUpBegin(w http.ResponseWriter, r *http.Request) error {
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
-	su, _, err := h.pendingSignUp(r, in.Token)
+	su, settings, err := h.pendingSignUp(r, in.Token)
 	if err != nil {
 		return err
 	}
-	return h.registerBegin(w, r, store.User{ID: su.UserID, Email: su.Email, Name: su.Name}, "", nil)
+	return h.registerBegin(w, r, store.User{ID: su.UserID, Email: su.Email, Name: su.Name, GroupIDs: settings.SignUpGroupIDs}, "", nil)
 }
 
 func (h *handler) signUpFinish(w http.ResponseWriter, r *http.Request) error {
@@ -162,7 +162,7 @@ func (h *handler) signUpFinish(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	cred, err := h.registerFinish(r, store.User{ID: su.UserID, Email: su.Email, Name: su.Name}, in.Ceremony, in.Credential, in.Label)
+	cred, err := h.registerFinish(r, store.User{ID: su.UserID, Email: su.Email, Name: su.Name, GroupIDs: settings.SignUpGroupIDs}, in.Ceremony, in.Credential, in.Label)
 	if err != nil {
 		return err
 	}

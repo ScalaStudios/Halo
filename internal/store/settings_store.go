@@ -47,6 +47,8 @@ type Settings struct {
 	SessionLimitCLI    bool                `json:"sessionLimitCli"`
 	SessionLimitGroups []GroupSessionLimit `json:"sessionLimitGroups"`
 
+	AuthenticatorRules []AuthenticatorRule `json:"authenticatorRules"`
+
 	ApprovalActions    []string `json:"approvalActions"`
 	EmergencyAccessIDs []string `json:"emergencyAccessIds"`
 	ReauthMinutes      int      `json:"reauthMinutes"`
@@ -78,6 +80,14 @@ type GroupSessionLimit struct {
 	Limit   int    `json:"limit"`
 }
 
+type AuthenticatorRule struct {
+	GroupID     string   `json:"groupId"`
+	DeviceBound bool     `json:"deviceBound"`
+	Attestation bool     `json:"attestation"`
+	AAGUIDs     []string `json:"aaguids"`
+	Minimum     int      `json:"minimum"`
+}
+
 var DefaultSettings = Settings{
 	SessionHours:         int(SessionLifetime / time.Hour),
 	LockoutThreshold:     5,
@@ -92,6 +102,7 @@ var DefaultSettings = Settings{
 	EmailSignIn:          "link",
 	SessionLimitAction:   "refuse",
 	SessionLimitGroups:   []GroupSessionLimit{},
+	AuthenticatorRules:   []AuthenticatorRule{},
 	ApprovalActions:      []string{},
 	EmergencyAccessIDs:   []string{},
 	ImpersonationGroups:  []string{},
@@ -219,6 +230,16 @@ func (s Settings) SessionLimitFor(u User) int {
 		return s.SessionLimit
 	}
 	return limit
+}
+
+func (s Settings) AuthenticatorRulesFor(u User) []AuthenticatorRule {
+	var rules []AuthenticatorRule
+	for _, rule := range s.AuthenticatorRules {
+		if slices.Contains(u.GroupIDs, rule.GroupID) {
+			rules = append(rules, rule)
+		}
+	}
+	return rules
 }
 
 func (s Settings) ClientRegistrationOn() bool {

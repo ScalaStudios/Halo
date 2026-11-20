@@ -121,6 +121,10 @@ func (h *handler) registerBegin(w http.ResponseWriter, r *http.Request, u store.
 	if err != nil {
 		return err
 	}
+	settings, err := h.st.Settings(r.Context())
+	if err != nil {
+		return err
+	}
 	user := waUser{u, creds}
 	selection := protocol.AuthenticatorSelection{
 		ResidentKey:        protocol.ResidentKeyRequirementRequired,
@@ -130,9 +134,14 @@ func (h *handler) registerBegin(w http.ResponseWriter, r *http.Request, u store.
 	if kind == "security-key" {
 		selection.AuthenticatorAttachment = protocol.CrossPlatform
 	}
-	creation, session, err := h.wa.BeginRegistration(user,
+	options := []webauthn.RegistrationOption{
 		webauthn.WithAuthenticatorSelection(selection),
-		webauthn.WithExclusions(webauthn.Credentials(user.WebAuthnCredentials()).CredentialDescriptors()))
+		webauthn.WithExclusions(webauthn.Credentials(user.WebAuthnCredentials()).CredentialDescriptors()),
+	}
+	if requiresAttestation(settings.AuthenticatorRulesFor(u)) {
+		options = append(options, webauthn.WithConveyancePreference(protocol.PreferDirectAttestation))
+	}
+	creation, session, err := h.wa.BeginRegistration(user, options...)
 	if err != nil {
 		return err
 	}
@@ -155,6 +164,9 @@ func (h *handler) registerFinish(r *http.Request, u store.User, ceremonyID strin
 	cred, err := h.wa.CreateCredential(waUser{user: u}, *c.Session, parsed)
 	if err != nil {
 		return store.WebAuthnCredential{}, errRegistration
+	}
+	if err := h.checkAuthenticator(r.Context(), u, cred); err != nil {
+		return store.WebAuthnCredential{}, err
 	}
 	transports := make([]string, len(cred.Transport))
 	for i, t := range cred.Transport {

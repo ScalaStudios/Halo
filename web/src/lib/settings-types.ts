@@ -29,6 +29,7 @@ export type Settings = {
   sessionLimitAction: "refuse" | "end-oldest";
   sessionLimitCli: boolean;
   sessionLimitGroups: { groupId: string; limit: number }[];
+  authenticatorRules: { groupId: string; deviceBound: boolean; attestation: boolean; aaguids: string[]; minimum: number }[];
   approvalActions: ApprovalAction[];
   emergencyAccessIds: string[];
   impersonationGroupIds: string[];

@@ -1,6 +1,6 @@
 "use client";
 
-import { TriangleAlert } from "lucide-react";
+import { Plus, Trash2, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { SecretWarning } from "@/components/applications/shared";
 import { useMutation } from "@/components/console/use-mutation";
@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
-import { Checkbox, Field, Select } from "@/components/ui/input";
+import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api/client";
 import { pluralize } from "@/lib/format";
@@ -140,6 +140,7 @@ export function MethodSettings({ methods, settings, groups }: { methods: MethodS
       </p>
       {magicLinks ? <SignInEmails settings={settings} /> : null}
       {methods.some((m) => m.method === "password" && m.enabled) ? <PasswordRules settings={settings} groups={groups} /> : null}
+      {methods.some((m) => (m.method === "passkey" || m.method === "security-key") && m.enabled) ? <PasskeyRules settings={settings} groups={groups} /> : null}
       <Dialog
         open={confirming?.method === "password" && !confirming.enabled}
         onOpenChange={(open) => {
@@ -302,6 +303,141 @@ function PasswordRules({ settings, groups }: { settings: Settings; groups: Optio
             <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>
               Save password rules
             </Button>
+          </div>
+        </form>
+      </CardBody>
+    </Card>
+  );
+}
+
+type PasskeyRule = Settings["authenticatorRules"][number];
+type PasskeyRuleRow = Omit<PasskeyRule, "aaguids" | "minimum"> & { aaguids: string; minimum: string };
+
+const AAGUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function aaguidList(text: string) {
+  return [...new Set(text.toLowerCase().split(/[\s,]+/).filter(Boolean))];
+}
+
+function ruleProblem(row: PasskeyRuleRow) {
+  const minimum = Number(row.minimum);
+  const invalid = row.attestation ? aaguidList(row.aaguids).find((a) => !AAGUID.test(a)) : undefined;
+  if (!row.groupId) return "Choose a group, or remove these rules.";
+  if (row.minimum.trim() === "" || !Number.isInteger(minimum) || minimum < 0 || minimum > 10) return "Enter a whole number of keys between 0 and 10.";
+  if (invalid) return `“${invalid}” is not an AAGUID. Enter each model like cb69481e-8ff7-4039-93ec-0a2729a154a8.`;
+  if (!row.deviceBound && !row.attestation && minimum === 0) return "Choose at least one rule for this group, or remove it.";
+  return undefined;
+}
+
+function PasskeyRules({ settings, groups }: { settings: Settings; groups: Option[] }) {
+  const { saving, failure, save } = useSaveSettings();
+  const saved = settings.authenticatorRules.filter((rule) => groups.some((g) => g.id === rule.groupId));
+  const [rows, setRows] = useState<PasskeyRuleRow[]>(() => saved.map((rule) => ({ ...rule, aaguids: rule.aaguids.join("\n"), minimum: String(rule.minimum) })));
+  const [attempted, setAttempted] = useState(false);
+  const rules: PasskeyRule[] = rows.map((row) => ({
+    groupId: row.groupId,
+    deviceBound: row.deviceBound,
+    attestation: row.attestation,
+    aaguids: row.attestation ? aaguidList(row.aaguids) : [],
+    minimum: Number(row.minimum),
+  }));
+  const dirty = JSON.stringify(rules) !== JSON.stringify(saved);
+  const groupName = (id: string) => groups.find((g) => g.id === id)?.name ?? "this group";
+
+  function update(index: number, change: Partial<PasskeyRuleRow>) {
+    setRows((current) => current.map((row, i) => (i === index ? { ...row, ...change } : row)));
+  }
+
+  function submit() {
+    setAttempted(true);
+    if (rows.some((row) => ruleProblem(row))) return;
+    void save({ authenticatorRules: rules }, "Passkey rules saved", "New passkeys and security keys follow them within 30 seconds. Keys people already have keep working.");
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Passkey rules"
+        description="Limit which passkeys and security keys members of a group can add. Someone in several of these groups must meet the rules of each. Keys added before a rule keep working."
+      />
+      <CardBody>
+        <form
+          noValidate
+          className="flex max-w-xl flex-col gap-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+        >
+          {rows.length === 0 ? <p className="text-body-sm text-fg-3">No group has passkey rules, so everyone can add any passkey or security key.</p> : null}
+          {rows.map((row, index) => (
+            <fieldset key={index} className="flex flex-col gap-4 rounded-lg border border-border p-4">
+              <legend className="sr-only">Rules for {groupName(row.groupId)}</legend>
+              <div className="flex items-center gap-3">
+                <Select aria-label={`Group ${index + 1}`} value={row.groupId} onChange={(event) => update(index, { groupId: event.target.value })}>
+                  <option value="">Choose a group</option>
+                  {groups
+                    .filter((g) => g.id === row.groupId || !rows.some((other) => other.groupId === g.id))
+                    .map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                </Select>
+                <Button size="icon-sm" variant="quiet" aria-label={`Remove the rules for ${groupName(row.groupId)}`} onClick={() => setRows((current) => current.filter((_, i) => i !== index))}>
+                  <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
+                </Button>
+              </div>
+              <label className="flex cursor-pointer items-start gap-3">
+                <Checkbox className="mt-0.5" checked={row.deviceBound} onChange={(event) => update(index, { deviceBound: event.target.checked })} />
+                <span className="flex flex-col">
+                  <span className="text-body-sm text-fg">Only keys that stay on one device</span>
+                  <span className="text-caption text-fg-3">Refuses passkeys that sync between devices, such as those in iCloud Keychain or Google Password Manager. Security keys qualify.</span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-3">
+                <Checkbox className="mt-0.5" checked={row.attestation} onChange={(event) => update(index, { attestation: event.target.checked })} />
+                <span className="flex flex-col">
+                  <span className="text-body-sm text-fg">Only certified models</span>
+                  <span className="text-caption text-fg-3">
+                    Each new key must prove its make and model, checked against the FIDO Metadata Service, so counterfeit keys and keys that hide their model are refused. Halo downloads the service&apos;s list once a day, so it needs internet access.
+                  </span>
+                </span>
+              </label>
+              {row.attestation ? (
+                <Field label="Approved models" hint="One AAGUID per line, from the key maker or the FIDO Metadata Service. Leave empty to accept any certified model.">
+                  {(props) => <Textarea {...props} mono rows={3} value={row.aaguids} onChange={(event) => update(index, { aaguids: event.target.value })} />}
+                </Field>
+              ) : null}
+              <Field label="Keys each member keeps" hint="Members can't remove a key that would leave them with fewer that meet these rules. 0 for no minimum.">
+                {(props) => (
+                  <div className="flex items-center gap-3">
+                    <div className="w-24">
+                      <Input {...props} type="number" inputMode="numeric" min={0} max={10} step={1} className="tnum" value={row.minimum} onChange={(event) => update(index, { minimum: event.target.value })} />
+                    </div>
+                    <span className="text-body-sm text-fg-3">keys</span>
+                  </div>
+                )}
+              </Field>
+              <FieldError>{attempted ? ruleProblem(row) : undefined}</FieldError>
+            </fieldset>
+          ))}
+          <div>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={rows.length >= groups.length}
+              onClick={() => setRows((current) => [...current, { groupId: "", deviceBound: true, attestation: false, aaguids: "", minimum: "0" }])}
+            >
+              <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
+              Add group rules
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>
+              Save passkey rules
+            </Button>
+            <ActionError message={failure} />
           </div>
         </form>
       </CardBody>
