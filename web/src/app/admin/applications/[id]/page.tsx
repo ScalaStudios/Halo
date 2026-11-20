@@ -201,7 +201,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
               }
               action={
                 service ? undefined : (
-                  <AddToGroup name={app.name} appId={app.id} assigned={app.groupIds} groups={groups} />
+                  <AddToGroup name={app.name} appId={app.id} assigned={app.groupIds} groups={groups} bookmark={bookmark} />
                 )
               }
             />
@@ -219,7 +219,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
                   <span key="m" className="tnum">
                     {group.memberCount}
                   </span>,
-                  <RemoveFromGroup key="r" name={app.name} appId={app.id} assigned={app.groupIds} group={group} />,
+                  <RemoveFromGroup key="r" name={app.name} appId={app.id} assigned={app.groupIds} group={group} bookmark={bookmark} />,
                 ])}
               />
             ) : (
@@ -323,7 +323,7 @@ function OverviewTab({ app, issuer }: { app: SamlApplication; issuer: string }) 
             <CopyField label="URL" value={app.homepage} />
           </CardBody>
         </Card>
-        <DangerZone id={app.id} name={app.name} disabled={app.status === "disabled"} className="xl:col-span-12" />
+        <DangerZone id={app.id} name={app.name} disabled={app.status === "disabled"} bookmark className="xl:col-span-12" />
       </div>
     );
   }

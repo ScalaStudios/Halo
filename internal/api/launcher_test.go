@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 
 	"halo/internal/store"
@@ -100,6 +101,9 @@ func TestCollections(t *testing.T) {
 
 	rec = call(t, h, admin, "PUT", "/api/v1/collections/"+c.ID, map[string]any{"name": "Tools", "applicationIds": []string{wiki.ID}, "groupIds": []string{}})
 	expect(t, rec, 200)
+	if !strings.Contains(rec.Body.String(), `"groupIds":[]`) {
+		t.Fatalf("empty groups must be an empty list: %s", rec.Body)
+	}
 	if got := decode[store.Collection](t, rec); got.Name != "Tools" || !slices.Equal(got.ApplicationIDs, []string{wiki.ID}) || len(got.GroupIDs) != 0 {
 		t.Fatalf("updated: %+v", got)
 	}

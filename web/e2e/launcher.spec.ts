@@ -40,6 +40,8 @@ test("an administrator adds a bookmark to a collection and a person marks it as 
   await expect(page.getByRole("heading", { level: 1, name: bookmarkName })).toBeVisible();
   const bookmarkId = new URL(page.url()).pathname.split("/").at(-1) ?? "";
   await json(await admin.put(`/api/v1/applications/${bookmarkId}/groups`, { data: { groupIds: [groupId] } }));
+  await page.goto(`/admin/applications/${bookmarkId}`);
+  await expect(page.getByText("https://status.example.com", { exact: true })).toBeVisible();
 
   await page.goto("/admin/collections");
   await page.getByRole("button", { name: "Create collection" }).first().click();
@@ -61,4 +63,12 @@ test("an administrator adds a bookmark to a collection and a person marks it as 
   await favourites.getByRole("button", { name: `Options for ${bookmarkName}` }).click();
   await page.getByRole("menuitem", { name: "Remove from favourites" }).click();
   await expect(favourites.getByRole("link", { name: new RegExp(bookmarkName) })).toHaveCount(0);
+
+  const others = page.getByRole("region", { name: "Other applications" }).getByRole("listitem");
+  const first = (await others.nth(0).getByRole("link").getAttribute("href")) ?? "";
+  const second = (await others.nth(1).getByRole("link").getAttribute("href")) ?? "";
+  await others.nth(0).getByRole("button", { name: /^Options for / }).click();
+  await page.getByRole("menuitem", { name: "Move later" }).click();
+  await expect(others.nth(0).getByRole("link")).toHaveAttribute("href", second);
+  await expect(others.nth(1).getByRole("link")).toHaveAttribute("href", first);
 });
