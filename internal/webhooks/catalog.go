@@ -59,6 +59,8 @@ var catalog = []eventType{
 	{"domain.add", "A domain was added for verification"},
 	{"domain.remove", "A domain was removed"},
 	{"domain.verify", "A domain was verified with a DNS TXT record"},
+	{"email_template.reset", "An email went back to Halo's default subject and body"},
+	{"email_template.update", "An email's custom subject and body were saved"},
 	{"group.create", "A group was created"},
 	{"group.delete", "A group was deleted"},
 	{"group.join.deny", "A group owner declined a request to join a group"},

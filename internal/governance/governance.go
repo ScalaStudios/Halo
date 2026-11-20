@@ -173,9 +173,9 @@ func (h *handler) assignedGroups(ctx context.Context, ids []string) ([]store.Gro
 	return groups, nil
 }
 
-func (h *handler) send(ctx context.Context, to, subject, text string) {
-	if err := h.mailer.Send(ctx, mail.Message{To: to, Subject: subject, Text: text}); err != nil {
-		slog.WarnContext(ctx, "governance email not sent", "to", to, "subject", subject, "error", err)
+func (h *handler) send(ctx context.Context, m mail.Message) {
+	if err := h.mailer.Send(ctx, m); err != nil {
+		slog.WarnContext(ctx, "governance email not sent", "to", m.To, "subject", m.Subject, "error", err)
 	}
 }
 

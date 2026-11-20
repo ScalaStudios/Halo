@@ -105,6 +105,10 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("POST /api/v1/domains", nil, h.addDomain)
 	route("POST /api/v1/domains/{id}/verify", nil, h.verifyDomain)
 	route("DELETE /api/v1/domains/{id}", nil, h.deleteDomain)
+	route("GET /api/v1/email-templates", readers, h.listEmailTemplates)
+	route("PUT /api/v1/email-templates/{kind}", nil, h.saveEmailTemplate)
+	route("DELETE /api/v1/email-templates/{kind}", nil, h.resetEmailTemplate)
+	route("POST /api/v1/email-templates/{kind}/preview", readers, h.previewEmailTemplate)
 	route("GET /api/v1/export", nil, h.export)
 	mux.HandleFunc("GET /api/v1/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml")

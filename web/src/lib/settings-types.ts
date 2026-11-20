@@ -34,6 +34,18 @@ export type Settings = {
   clientRegistration: "off" | "open" | "token" | "approval";
 };
 
+export type EmailTemplateText = { subject: string; body: string };
+
+export type EmailTemplate = {
+  kind: string;
+  label: string;
+  description: string;
+  variables: { name: string; description: string; example: string }[];
+  required?: string;
+  default: EmailTemplateText;
+  custom: EmailTemplateText | null;
+};
+
 export type ApprovalAction = "global-admin" | "policy-disable" | "password-sign-in" | "identity-providers";
 
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "failed" | "expired";
