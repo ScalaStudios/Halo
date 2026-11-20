@@ -12,7 +12,9 @@ info:
 
     **Roles.** Each operation states the roles it requires. A global administrator passes every role check. "Any administrator" means security, user, helpdesk or application administrator, or auditor.
 
-    **Errors.** Every error is `{"error": {"code": "ERR_…", "message": "…"}}`. Match on `code`; show `message` to people. Besides the codes listed per operation, any request can fail with `500` and `ERR_INTERNAL`, and unknown routes answer `404` with `ERR_NO_ROUTE`. Requests with a method other than GET, HEAD or OPTIONS that come from another website get `403` with `ERR_CROSS_SITE`.
+    **Errors.** Every error is `{"error": {"code": "ERR_…", "message": "…"}}`. Match on `code`; show `message` to people. Besides the codes listed per operation, any request can fail with `500` and `ERR_INTERNAL`, requests over the rate limit get `429` with `ERR_RATE_LIMITED`, and unknown routes answer `404` with `ERR_NO_ROUTE`. Requests with a method other than GET, HEAD or OPTIONS that come from another website get `403` with `ERR_CROSS_SITE`.
+
+    **Rate limits.** Requests with an API key or a session are counted in one-minute windows that start on the minute: up to 600 per API key by default, set per service account with `rateLimit`, and up to 1,200 per session. SCIM requests under `/scim/v2` are counted apart, up to 3,000 per API key. Counted responses carry the `RateLimit-Policy` and `RateLimit` fields of draft-ietf-httpapi-ratelimit-headers, such as `RateLimit-Policy: "api";q=600;w=60` and `RateLimit: "api";r=598;t=42`. Over the limit, the response is `429` with `ERR_RATE_LIMITED` and `Retry-After` in seconds.
 
     **Conventions.** Bodies are JSON with camelCase names, at most 1 MiB, and unknown fields are rejected. Times are RFC 3339. Ids are a prefix and a 26-character ULID, such as `usr_01J9Z…`.
 servers:
@@ -2697,7 +2699,7 @@ paths:
     patch:
       tags: [Service accounts]
       operationId: updateServiceAccount
-      summary: Rename, re-own, disable or enable a service account
+      summary: Rename, re-own, rate-limit, disable or enable a service account
       description: 'Roles: security administrator. Disabling stops every key of the account. Any change other than disabling requires that you hold every role of the account.'
       requestBody:
         required: true
@@ -2709,6 +2711,7 @@ paths:
                 name: {type: string, maxLength: 200}
                 description: {type: string, maxLength: 2000}
                 ownerId: {type: string}
+                rateLimit: {type: integer, minimum: 1, maximum: 100000, description: Requests per minute that each of the account's API keys may send to the management API.}
                 disabled: {type: boolean}
       responses:
         '200': {$ref: '#/components/responses/ServiceAccountResponse'}
@@ -4567,7 +4570,7 @@ components:
         resolvedAt: {type: [string, 'null'], format: date-time}
     ApiKey:
       type: object
-      required: [id, serviceAccountId, serviceAccountName, label, prefix, scopes, createdBy, createdAt, expiresAt, lastUsedAt, revokedAt]
+      required: [id, serviceAccountId, serviceAccountName, label, prefix, scopes, createdBy, createdAt, expiresAt, lastUsedAt, revokedAt, rateLimitHits]
       properties:
         id: {type: string, examples: [key_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         serviceAccountId: {type: string}
@@ -4582,9 +4585,10 @@ components:
         expiresAt: {type: [string, 'null'], format: date-time}
         lastUsedAt: {type: [string, 'null'], format: date-time}
         revokedAt: {type: [string, 'null'], format: date-time}
+        rateLimitHits: {type: integer, description: Requests with this key that were rejected with `429` in the last 24 hours.}
     ServiceAccount:
       type: object
-      required: [id, name, email, description, ownerId, status, roles, keys, createdBy, createdAt]
+      required: [id, name, email, description, ownerId, status, rateLimit, roles, keys, createdBy, createdAt]
       properties:
         id: {type: string, examples: [usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
@@ -4592,6 +4596,7 @@ components:
         description: {type: string}
         ownerId: {type: [string, 'null']}
         status: {type: string, enum: [active, suspended], description: '`suspended` when disabled.'}
+        rateLimit: {type: integer, examples: [600], description: Requests per minute that each of the account's API keys may send to the management API.}
         roles:
           type: array
           items: {$ref: '#/components/schemas/RoleKey'}
