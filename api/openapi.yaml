@@ -17,7 +17,7 @@ info:
 
     **Errors.** Every error is `{"error": {"code": "ERR_…", "message": "…"}}`. Match on `code`; show `message` to people. Besides the codes listed per operation, any request can fail with `500` and `ERR_INTERNAL`, requests over the rate limit get `429` with `ERR_RATE_LIMITED`, and unknown routes answer `404` with `ERR_NO_ROUTE`. Requests with a method other than GET, HEAD or OPTIONS that come from another website get `403` with `ERR_CROSS_SITE`.
 
-    **Rate limits.** Requests with an API key or a session are counted in one-minute windows that start on the minute: up to 600 per API key by default, set per service account with `rateLimit`, and up to 1,200 per session. SCIM requests under `/scim/v2` are counted apart, up to 3,000 per API key. Counted responses carry the `RateLimit-Policy` and `RateLimit` fields of draft-ietf-httpapi-ratelimit-headers, such as `RateLimit-Policy: "api";q=600;w=60` and `RateLimit: "api";r=598;t=42`. Over the limit, the response is `429` with `ERR_RATE_LIMITED` and `Retry-After` in seconds.
+    **Rate limits.** Requests with an API key or a session are counted in one-minute windows that start on the minute: up to 600 per API key by default, set per service account with `rateLimit`, and up to 1,200 per session. SCIM requests under `/scim/v2` are counted apart, up to 3,000 per API key. Imports and bulk actions, `/users/import`, `/users/bulk/*` and `/groups/{id}/members/bulk/*`, are also counted apart under `bulk`, up to 20 requests per session or API key. Counted responses carry the `RateLimit-Policy` and `RateLimit` fields of draft-ietf-httpapi-ratelimit-headers, such as `RateLimit-Policy: "api";q=600;w=60` and `RateLimit: "api";r=598;t=42`. Over the limit, the response is `429` with `ERR_RATE_LIMITED` and `Retry-After` in seconds.
 
     **Conventions.** Bodies are JSON with camelCase names, at most 1 MiB, and unknown fields are rejected. Times are RFC 3339. Ids are a prefix and a 26-character ULID, such as `usr_01J9Z…`.
 servers:
@@ -2040,6 +2040,110 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /users/import:
+    post:
+      tags: [Users]
+      operationId: importUsers
+      summary: Import people from a CSV file or JSON
+      description: 'Roles: user administrator. Creates each valid row as an invited person with a setup link, exactly like `POST /users`, in one transaction, and records `user.invite` for each person and one `user.import` summary. Rows with a problem are skipped and reported. Imports never grant administrator roles: a `roles` column is refused and a `roles` field is an unknown field. Send `dryRun=true` first to validate every row without writing anything. Up to 500 rows and 1 MiB per request. Counted under the `bulk` rate limit.'
+      parameters:
+        - name: dryRun
+          in: query
+          description: Validate every row and return the result without creating anyone.
+          schema: {type: boolean, default: false}
+        - name: sendInvitations
+          in: query
+          description: Email each new person their setup link. When false, the invitations are held and Halo emails nothing; share each `enrollUrl` yourself, or create a new link later with reset authentication.
+          schema: {type: boolean, default: false}
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema:
+              type: string
+              description: 'UTF-8 CSV with a header row; a byte order mark is ignored. Columns, matched without regard to case, spaces, hyphens or underscores: `email` and `name` (required), `title`, `department`, `location`, `manager email` and `groups`. Separate several groups with semicolons, by name or id. The manager is a person already in Halo or another row in the file. Blank rows are skipped. Values are stored as plain text.'
+              examples: ["email,name,title,manager email,groups\nsam@example.com,Sam Lee,Engineer,ana@example.com,Engineering;On-call\n"]
+          application/json:
+            schema:
+              type: object
+              required: [people]
+              properties:
+                people:
+                  type: array
+                  maxItems: 500
+                  items: {$ref: '#/components/schemas/ImportPerson'}
+      responses:
+        '200':
+          description: 'One result per row, in the order received. After a dry run nothing has changed; otherwise every row without an `error` was created.'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [dryRun, ready, skipped, rows]
+                properties:
+                  dryRun: {type: boolean}
+                  ready: {type: integer, description: Rows without a problem; created unless this was a dry run.}
+                  skipped: {type: integer, description: Rows with a problem; never created.}
+                  rows:
+                    type: array
+                    items:
+                      allOf:
+                        - {$ref: '#/components/schemas/ImportPerson'}
+                        - type: object
+                          required: [row, emailed]
+                          properties:
+                            row: {type: integer, description: The line in the CSV file, or the position in `people` counting from 1.}
+                            error: {$ref: '#/components/schemas/ItemError'}
+                            userId: {type: string, description: Set once the person is created.}
+                            enrollUrl: {type: string, format: uri, description: The new person's setup link.}
+                            expiresAt: {type: string, format: date-time}
+                            emailed: {type: boolean, description: True when Halo emailed the setup link.}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413':
+          description: '`ERR_TOO_LARGE`: the CSV file is larger than 1 MiB.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /users/bulk/suspend:
+    post:
+      tags: [Users]
+      operationId: bulkSuspendUsers
+      summary: Suspend many people
+      description: 'Roles: user or security administrator. Runs the checks of `POST /users/{id}/suspend` for each person, in its own transaction with its own `user.suspend` audit event, so one refusal does not stop the rest. Counted under the `bulk` rate limit.'
+      requestBody: {$ref: '#/components/requestBodies/BulkUserIds'}
+      responses:
+        '200': {$ref: '#/components/responses/BulkResults'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /users/bulk/restore:
+    post:
+      tags: [Users]
+      operationId: bulkRestoreUsers
+      summary: Restore many suspended people
+      description: 'Roles: user administrator. Runs `POST /users/{id}/restore` for each person, with a result per person. Counted under the `bulk` rate limit.'
+      requestBody: {$ref: '#/components/requestBodies/BulkUserIds'}
+      responses:
+        '200': {$ref: '#/components/responses/BulkResults'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /users/bulk/revoke-sessions:
+    post:
+      tags: [Users]
+      operationId: bulkRevokeUserSessions
+      summary: End many people's sessions
+      description: 'Roles: user, helpdesk or security administrator. Runs `POST /users/{id}/revoke-sessions` for each person, with a result per person. Counted under the `bulk` rate limit.'
+      requestBody: {$ref: '#/components/requestBodies/BulkUserIds'}
+      responses:
+        '200': {$ref: '#/components/responses/BulkResults'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /users/{id}:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -2730,6 +2834,38 @@ paths:
       description: 'Roles: user administrator, or an owner of the group.'
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DynamicGroup'}
+  /groups/{id}/members/bulk/add:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Groups]
+      operationId: bulkAddGroupMembers
+      summary: Add many people to an assigned group
+      description: 'Roles: user administrator, or an owner of the group. Runs `POST /groups/{id}/members` for each person, with a result per person. The whole request is refused with `404`, `403` or `409` when the group is missing, not yours or dynamic. Counted under the `bulk` rate limit.'
+      requestBody: {$ref: '#/components/requestBodies/BulkUserIds'}
+      responses:
+        '200': {$ref: '#/components/responses/BulkResults'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DynamicGroup'}
+  /groups/{id}/members/bulk/remove:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Groups]
+      operationId: bulkRemoveGroupMembers
+      summary: Remove many people from an assigned group
+      description: 'Roles: user administrator, or an owner of the group. Runs `DELETE /groups/{id}/members/{userId}` for each person, with a result per person. Counted under the `bulk` rate limit.'
+      requestBody: {$ref: '#/components/requestBodies/BulkUserIds'}
+      responses:
+        '200': {$ref: '#/components/responses/BulkResults'}
+        '400': {$ref: '#/components/responses/BadJSON'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -5308,6 +5444,20 @@ components:
       description: How many events to return, 1 to 1000. Defaults to 500.
       schema: {type: integer, minimum: 1, maximum: 1000, default: 500}
   requestBodies:
+    BulkUserIds:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [userIds]
+            properties:
+              userIds:
+                type: array
+                minItems: 1
+                maxItems: 500
+                description: Repeated ids are handled once.
+                items: {type: string}
     CodeSignIn:
       required: true
       content:
@@ -5743,6 +5893,25 @@ components:
             properties:
               approved: {type: boolean}
               application: {type: string, examples: [Halo CLI]}
+    BulkResults:
+      description: One result per distinct id. `422` with `ERR_INVALID` when `userIds` is empty or has more than 500 ids.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [succeeded, failed, results]
+            properties:
+              succeeded: {type: integer}
+              failed: {type: integer}
+              results:
+                type: array
+                items:
+                  type: object
+                  required: [id, ok]
+                  properties:
+                    id: {type: string}
+                    ok: {type: boolean}
+                    error: {$ref: '#/components/schemas/ItemError'}
     Revoked:
       description: The number of sessions ended.
       content:
@@ -5875,6 +6044,27 @@ components:
           properties:
             code: {type: string, examples: [ERR_NOT_FOUND]}
             message: {type: string, examples: [This user was not found. It may have been deleted.]}
+    ItemError:
+      type: object
+      description: Why this item was refused, with the same code and message the single-item request returns.
+      required: [code, message]
+      properties:
+        code: {type: string, examples: [ERR_FORBIDDEN]}
+        message: {type: string}
+    ImportPerson:
+      type: object
+      required: [email, name]
+      properties:
+        email: {type: string, format: email, maxLength: 254}
+        name: {type: string, maxLength: 200}
+        title: {type: string, maxLength: 200}
+        department: {type: string, maxLength: 200}
+        location: {type: string, maxLength: 200}
+        managerEmail: {type: string, description: A person already in Halo or another row of the same import.}
+        groups:
+          type: array
+          description: Names or ids of assigned groups.
+          items: {type: string}
     AuthRequestId:
       type: string
       description: The id of an application's sign-in request, from the `authRequest` query parameter of the sign-in page. Omit it to sign in to Halo itself.

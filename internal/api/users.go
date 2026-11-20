@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -174,44 +175,30 @@ func (h *handlers) inviteUser(w http.ResponseWriter, r *http.Request, actor stor
 		}
 	}
 
+	summary := ""
+	if in.Guest {
+		summary = "Invited guest " + name + " <" + email + ">, sponsored by " + sponsor.Name + " until " + guestUntil.UTC().Format("2 Jan 2006, 15:04 UTC")
+	}
 	var user store.User
 	var token string
 	var expires time.Time
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 		var err error
-		user, err = tx.CreateUser(r.Context(), store.NewUser{
+		user, token, expires, err = h.invite(r, tx, actor, store.NewUser{
 			Email:      email,
 			Name:       name,
 			Title:      strings.TrimSpace(in.Title),
 			Department: strings.TrimSpace(in.Department),
 			Location:   strings.TrimSpace(in.Location),
 			ManagerID:  managerID,
-			Status:     "invited",
 			Roles:      roles,
 			GroupIDs:   groupIDs(groups),
 			Guest:      in.Guest,
 			SponsorID:  sponsorID,
 			ExpiresAt:  guestUntil,
-		})
-		if errors.Is(err, store.ErrConflict) {
-			return conflict("Someone with the email " + email + " already exists. Open their profile instead of inviting them again.")
-		}
-		if err != nil {
+		}, summary)
+		if err != nil || len(roles) == 0 {
 			return err
-		}
-		token, expires, err = tx.CreateEnrollmentToken(r.Context(), user.ID, "invite", &actor.ID)
-		if err != nil {
-			return err
-		}
-		summary := "Invited " + user.Name + " <" + user.Email + ">"
-		if in.Guest {
-			summary = "Invited guest " + user.Name + " <" + user.Email + ">, sponsored by " + sponsor.Name + " until " + guestUntil.UTC().Format("2 Jan 2006, 15:04 UTC")
-		}
-		if err := record(r, tx, actor, store.AuditEvent{Action: "user.invite", Summary: summary, TargetType: "user", TargetID: user.ID, TargetLabel: user.Name}); err != nil {
-			return err
-		}
-		if len(roles) == 0 {
-			return nil
 		}
 		event := roleEvent(user, labels)
 		event.Changes = store.Diff(map[string][]string{"roles": {}}, map[string][]string{"roles": roles})
@@ -228,10 +215,33 @@ func (h *handlers) inviteUser(w http.ResponseWriter, r *http.Request, actor stor
 	return httpx.JSON(w, http.StatusCreated, map[string]any{"user": user, "enrollUrl": link, "expiresAt": expires, "emailed": emailed})
 }
 
-func (h *handlers) suspendUser(w http.ResponseWriter, r *http.Request, actor store.User) error {
-	target, err := h.user(r)
+func (h *handlers) invite(r *http.Request, tx *store.Store, actor store.User, in store.NewUser, summary string) (store.User, string, time.Time, error) {
+	in.Status = "invited"
+	user, err := tx.CreateUser(r.Context(), in)
+	if errors.Is(err, store.ErrConflict) {
+		return user, "", time.Time{}, conflict("Someone with the email " + in.Email + " already exists. Open their profile instead of inviting them again.")
+	}
 	if err != nil {
+		return user, "", time.Time{}, err
+	}
+	token, expires, err := tx.CreateEnrollmentToken(r.Context(), user.ID, "invite", &actor.ID)
+	if err != nil {
+		return user, "", time.Time{}, err
+	}
+	return user, token, expires, record(r, tx, actor, store.AuditEvent{Action: "user.invite", Summary: cmp.Or(summary, "Invited "+user.Name+" <"+user.Email+">"), TargetType: "user", TargetID: user.ID, TargetLabel: user.Name})
+}
+
+func (h *handlers) suspendUser(w http.ResponseWriter, r *http.Request, actor store.User) error {
+	if err := h.suspend(r, actor, r.PathValue("id")); err != nil {
 		return err
+	}
+	return h.respondUser(w, r, r.PathValue("id"))
+}
+
+func (h *handlers) suspend(r *http.Request, actor store.User, userID string) error {
+	target, err := h.st.GetUser(r.Context(), userID)
+	if err != nil {
+		return found(err, "This user")
 	}
 	if target.ID == actor.ID {
 		return httpx.Invalid("You cannot suspend your own account. Ask another administrator if this account must be locked.")
@@ -250,7 +260,7 @@ func (h *handlers) suspendUser(w http.ResponseWriter, r *http.Request, actor sto
 			return httpx.Invalid(target.Name + " is the last active global administrator. Make someone else a global administrator before suspending them.")
 		}
 	}
-	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+	return h.st.Tx(r.Context(), func(tx *store.Store) error {
 		if err := tx.SetUserStatus(r.Context(), target.ID, "suspended"); err != nil {
 			return err
 		}
@@ -260,16 +270,19 @@ func (h *handlers) suspendUser(w http.ResponseWriter, r *http.Request, actor sto
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "user.suspend", Summary: "Suspended the account and ended " + plural(revoked, "session"), TargetType: "user", TargetID: target.ID, TargetLabel: target.Name})
 	})
-	if err != nil {
-		return err
-	}
-	return h.respondUser(w, r, target.ID)
 }
 
 func (h *handlers) restoreUser(w http.ResponseWriter, r *http.Request, actor store.User) error {
-	target, err := h.user(r)
-	if err != nil {
+	if err := h.restore(r, actor, r.PathValue("id")); err != nil {
 		return err
+	}
+	return h.respondUser(w, r, r.PathValue("id"))
+}
+
+func (h *handlers) restore(r *http.Request, actor store.User, userID string) error {
+	target, err := h.st.GetUser(r.Context(), userID)
+	if err != nil {
+		return found(err, "This user")
 	}
 	if err := guardAdmin(actor, target); err != nil {
 		return err
@@ -284,22 +297,26 @@ func (h *handlers) restoreUser(w http.ResponseWriter, r *http.Request, actor sto
 	if target.LastSignInAt == nil && len(target.Methods) == 0 {
 		status = "invited"
 	}
-	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+	return h.st.Tx(r.Context(), func(tx *store.Store) error {
 		if err := tx.SetUserStatus(r.Context(), target.ID, status); err != nil {
 			return err
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "user.restore", Summary: "Restored access", TargetType: "user", TargetID: target.ID, TargetLabel: target.Name})
 	})
-	if err != nil {
-		return err
-	}
-	return h.respondUser(w, r, target.ID)
 }
 
 func (h *handlers) revokeUserSessions(w http.ResponseWriter, r *http.Request, actor store.User) error {
-	target, err := h.user(r)
+	revoked, err := h.revokeSessions(r, actor, r.PathValue("id"))
 	if err != nil {
 		return err
+	}
+	return httpx.JSON(w, http.StatusOK, map[string]int{"revoked": revoked})
+}
+
+func (h *handlers) revokeSessions(r *http.Request, actor store.User, userID string) (int, error) {
+	target, err := h.st.GetUser(r.Context(), userID)
+	if err != nil {
+		return 0, found(err, "This user")
 	}
 	keep := ""
 	if current, ok := httpx.CurrentSession(r); ok && target.ID == actor.ID {
@@ -314,10 +331,7 @@ func (h *handlers) revokeUserSessions(w http.ResponseWriter, r *http.Request, ac
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "session.revoke", Summary: "Ended " + plural(revoked, "session"), TargetType: "user", TargetID: target.ID, TargetLabel: target.Name})
 	})
-	if err != nil {
-		return err
-	}
-	return httpx.JSON(w, http.StatusOK, map[string]int{"revoked": revoked})
+	return revoked, err
 }
 
 func (h *handlers) resetAuthentication(w http.ResponseWriter, r *http.Request, actor store.User) error {

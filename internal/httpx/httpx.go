@@ -58,23 +58,25 @@ type HandlerFunc func(w http.ResponseWriter, r *http.Request) error
 
 func Handle(fn HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		err := fn(w, r)
-		if err == nil {
-			return
+		if err := fn(w, r); err != nil {
+			e := Problem(r, err)
+			JSON(w, e.Status, map[string]any{"error": e})
 		}
-		var e *Error
-		if !errors.As(err, &e) {
-			if errors.Is(err, store.ErrNotFound) {
-				e = NotFound("The item")
-			} else if errors.Is(err, store.ErrConflict) {
-				e = Fail(http.StatusConflict, "ERR_CONFLICT", "Something with the same name or address already exists.")
-			} else {
-				slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "error", err)
-				e = Fail(http.StatusInternalServerError, "ERR_INTERNAL", "Halo could not complete the request. Try again; if it keeps failing, check the server log.")
-			}
-		}
-		JSON(w, e.Status, map[string]any{"error": e})
 	}
+}
+
+func Problem(r *http.Request, err error) *Error {
+	var e *Error
+	switch {
+	case errors.As(err, &e):
+		return e
+	case errors.Is(err, store.ErrNotFound):
+		return NotFound("The item")
+	case errors.Is(err, store.ErrConflict):
+		return Fail(http.StatusConflict, "ERR_CONFLICT", "Something with the same name or address already exists.")
+	}
+	slog.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "error", err)
+	return Fail(http.StatusInternalServerError, "ERR_INTERNAL", "Halo could not complete the request. Try again; if it keeps failing, check the server log.")
 }
 
 func JSON(w http.ResponseWriter, status int, body any) error {
@@ -268,6 +270,7 @@ func KeyScopes(r *http.Request) ([]string, bool) {
 const (
 	sessionRateLimit = 1200
 	scimRateLimit    = 3000
+	bulkRateLimit    = 20
 )
 
 func (a *Auth) Throttle(w http.ResponseWriter, r *http.Request, scope string) *Error {
@@ -282,6 +285,9 @@ func (a *Auth) Throttle(w http.ResponseWriter, r *http.Request, scope string) *E
 	}
 	if subject == "" {
 		return nil
+	}
+	if scope == "bulk" {
+		limit = bulkRateLimit
 	}
 	n, reset, err := a.Store.CountRequest(r.Context(), subject, scope, limit, time.Minute)
 	if err != nil {
