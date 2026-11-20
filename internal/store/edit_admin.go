@@ -39,7 +39,10 @@ func (s *Store) UpdateGroup(ctx context.Context, g Group) error {
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return nil
+	if g.JoinPolicy != "request" {
+		_, err = s.db.Exec(ctx, `delete from group_join_requests where group_id = $1`, g.ID)
+	}
+	return err
 }
 
 type GroupUse struct {
