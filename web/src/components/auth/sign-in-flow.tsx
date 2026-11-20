@@ -44,7 +44,7 @@ export function sameOrigin(path: string | undefined) {
   if (!path) return null;
   try {
     const url = new URL(path, window.location.origin);
-    return url.origin === window.location.origin ? url.pathname + url.search + url.hash : null;
+    return url.origin === window.location.origin ? url.href : null;
   } catch {
     return null;
   }
