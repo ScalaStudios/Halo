@@ -98,7 +98,7 @@ export type Application = {
   createdAt: string;
   signIns7d: number;
   failureRate7d: number;
-  tokenPolicy: { accessTokenTtl: number; refreshTokenTtl: number; idTokenTtl: number; rotation: boolean; exchange: boolean; exchangeFrom: string[] };
+  tokenPolicy: { accessTokenTtl: number; refreshTokenTtl: number; idTokenTtl: number; idTokenAlg: SigningAlgorithm; rotation: boolean; exchange: boolean; exchangeFrom: string[] };
   setupGuide: "grafana" | "forgejo" | "aether" | "generic-oidc" | "generic-saml" | "kubernetes" | "aws-iam-identity-center" | "slack";
   logoUrl: string | null;
   registeredDynamically: boolean;
@@ -169,3 +169,11 @@ export type Overview = {
   failureRates: { appId: string; appName: string; failureRate7d: number }[];
   counts: { users: number; activeUsers: number; applications: number; activeApplications: number };
 };
+
+export type SigningAlgorithm = "RS256" | "ES256" | "EdDSA";
+
+export const SIGNING_ALGORITHMS: [SigningAlgorithm, string][] = [
+  ["RS256", "RS256 (RSA)"],
+  ["ES256", "ES256 (P-256)"],
+  ["EdDSA", "EdDSA (Ed25519)"],
+];

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,6 +44,7 @@ type clientMetadata struct {
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
 	ApplicationType         string   `json:"application_type"`
 	Scope                   string   `json:"scope"`
+	IDTokenSignedAlg        string   `json:"id_token_signed_response_alg"`
 }
 
 type registeredClient struct {
@@ -149,6 +151,10 @@ func (m *clientMetadata) check(allowed []string) (string, []string, error) {
 	default:
 		return "", nil, invalid(`Set token_endpoint_auth_method to "client_secret_basic", "client_secret_post" or "none".`)
 	}
+	m.IDTokenSignedAlg = cmp.Or(m.IDTokenSignedAlg, "RS256")
+	if !slices.Contains(store.SigningAlgorithms, m.IDTokenSignedAlg) {
+		return "", nil, invalid(`Set id_token_signed_response_alg to "RS256", "ES256" or "EdDSA".`)
+	}
 	if len(m.RedirectURIs) == 0 || len(m.RedirectURIs) > 10 {
 		return "", nil, httpx.Fail(http.StatusBadRequest, "invalid_redirect_uri", "Register between 1 and 10 redirect URIs.")
 	}
@@ -213,6 +219,7 @@ func (h *registrar) describe(app store.Application) registeredClient {
 			TokenEndpointAuthMethod: method,
 			ApplicationType:         kind,
 			Scope:                   strings.Join(app.Scopes, " "),
+			IDTokenSignedAlg:        app.TokenPolicy.IDTokenAlg,
 		},
 	}
 }
@@ -263,6 +270,7 @@ func (h *registrar) register(w http.ResponseWriter, r *http.Request) error {
 			Scopes:           scopes,
 			RegistrationHash: secret.Hash(token),
 			AwaitingApproval: awaiting,
+			IDTokenAlg:       in.IDTokenSignedAlg,
 		})
 		if err != nil {
 			return err
@@ -336,7 +344,8 @@ func (h *registrar) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	next := app
 	next.Name, next.Homepage, next.RedirectURIs, next.PostLogoutURIs, next.Scopes = in.ClientName, in.ClientURI, in.RedirectURIs, nonNil(in.PostLogoutRedirectURIs), scopes
-	if next.Name == app.Name && next.Homepage == app.Homepage && slices.Equal(next.RedirectURIs, app.RedirectURIs) && slices.Equal(next.PostLogoutURIs, app.PostLogoutURIs) && slices.Equal(next.Scopes, app.Scopes) {
+	next.TokenPolicy.IDTokenAlg = in.IDTokenSignedAlg
+	if next.TokenPolicy.IDTokenAlg == app.TokenPolicy.IDTokenAlg && next.Name == app.Name && next.Homepage == app.Homepage && slices.Equal(next.RedirectURIs, app.RedirectURIs) && slices.Equal(next.PostLogoutURIs, app.PostLogoutURIs) && slices.Equal(next.Scopes, app.Scopes) {
 		return httpx.JSON(w, http.StatusOK, h.describe(app))
 	}
 	err = h.st.Tx(ctx, func(tx *store.Store) error {

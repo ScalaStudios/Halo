@@ -24,6 +24,7 @@ type APIResource struct {
 	Identifier     string             `json:"identifier"`
 	Description    string             `json:"description"`
 	AccessTokenTTL int                `json:"accessTokenTtl"`
+	AccessTokenAlg string             `json:"accessTokenAlg"`
 	Scopes         []APIScope         `json:"scopes"`
 	Grants         []APIResourceGrant `json:"grants"`
 	CreatedAt      time.Time          `json:"createdAt"`
@@ -31,7 +32,7 @@ type APIResource struct {
 }
 
 func (s *Store) ListAPIResources(ctx context.Context) ([]APIResource, error) {
-	rows, err := s.db.Query(ctx, `select id, name, identifier, description, access_token_ttl, created_at, updated_at from api_resources order by lower(name)`)
+	rows, err := s.db.Query(ctx, `select id, name, identifier, description, access_token_ttl, access_token_alg, created_at, updated_at from api_resources order by lower(name)`)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +40,7 @@ func (s *Store) ListAPIResources(ctx context.Context) ([]APIResource, error) {
 	index := map[string]int{}
 	for rows.Next() {
 		r := APIResource{Scopes: []APIScope{}, Grants: []APIResourceGrant{}}
-		if err := rows.Scan(&r.ID, &r.Name, &r.Identifier, &r.Description, &r.AccessTokenTTL, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, &r.Identifier, &r.Description, &r.AccessTokenTTL, &r.AccessTokenAlg, &r.CreatedAt, &r.UpdatedAt); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -105,10 +106,13 @@ func (s *Store) SaveAPIResource(ctx context.Context, r APIResource) (APIResource
 	for i, scope := range r.Scopes {
 		names[i] = scope.Name
 	}
+	if r.AccessTokenAlg == "" {
+		r.AccessTokenAlg = "RS256"
+	}
 	err := s.Tx(ctx, func(tx *Store) error {
-		_, err := tx.db.Exec(ctx, `insert into api_resources (id, name, identifier, description, access_token_ttl) values ($1, $2, $3, $4, $5)
-			on conflict (id) do update set name = excluded.name, identifier = excluded.identifier, description = excluded.description, access_token_ttl = excluded.access_token_ttl, updated_at = now()`,
-			r.ID, strings.TrimSpace(r.Name), r.Identifier, r.Description, r.AccessTokenTTL)
+		_, err := tx.db.Exec(ctx, `insert into api_resources (id, name, identifier, description, access_token_ttl, access_token_alg) values ($1, $2, $3, $4, $5, $6)
+			on conflict (id) do update set name = excluded.name, identifier = excluded.identifier, description = excluded.description, access_token_ttl = excluded.access_token_ttl, access_token_alg = excluded.access_token_alg, updated_at = now()`,
+			r.ID, strings.TrimSpace(r.Name), r.Identifier, r.Description, r.AccessTokenTTL, r.AccessTokenAlg)
 		if err != nil {
 			return conflict(err)
 		}
@@ -155,13 +159,14 @@ func (s *Store) SetAPIResourceGrant(ctx context.Context, resourceID, appID strin
 type GrantedResource struct {
 	Identifier     string
 	AccessTokenTTL int
+	AccessTokenAlg string
 	Scopes         []string
 }
 
 func (s *Store) GrantedResources(ctx context.Context, clientID string) ([]GrantedResource, error) {
-	rows, err := s.db.Query(ctx, `select r.identifier, r.access_token_ttl, array_agg(g.scope order by g.scope) from api_resource_grants g
+	rows, err := s.db.Query(ctx, `select r.identifier, r.access_token_ttl, r.access_token_alg, array_agg(g.scope order by g.scope) from api_resource_grants g
 		join api_resources r on r.id = g.resource_id join applications a on a.id = g.app_id
-		where a.client_id = $1 group by r.identifier, r.access_token_ttl order by r.identifier`, clientID)
+		where a.client_id = $1 group by r.identifier, r.access_token_ttl, r.access_token_alg order by r.identifier`, clientID)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +174,7 @@ func (s *Store) GrantedResources(ctx context.Context, clientID string) ([]Grante
 	var granted []GrantedResource
 	for rows.Next() {
 		var g GrantedResource
-		if err := rows.Scan(&g.Identifier, &g.AccessTokenTTL, &g.Scopes); err != nil {
+		if err := rows.Scan(&g.Identifier, &g.AccessTokenTTL, &g.AccessTokenAlg, &g.Scopes); err != nil {
 			return nil, err
 		}
 		granted = append(granted, g)

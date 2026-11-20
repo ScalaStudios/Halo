@@ -15,7 +15,7 @@ import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
 import { formatDuration } from "@/lib/format";
 import type { ApiResource } from "@/lib/infra-types";
-import type { Application, User } from "@/lib/types";
+import { SIGNING_ALGORITHMS, type Application, type SigningAlgorithm, type User } from "@/lib/types";
 import { uriError } from "./new-application-flow";
 
 const SCOPES: Record<string, string> = {
@@ -162,6 +162,7 @@ export function AuthenticationForm({ app, resources, children }: { app: Applicat
   const [postLogout, setPostLogout] = useState(app.postLogoutUris);
   const [access, setAccess] = useState(split(policy.accessTokenTtl));
   const [idToken, setIdToken] = useState(split(policy.idTokenTtl));
+  const [idTokenAlg, setIdTokenAlg] = useState(policy.idTokenAlg);
   const [refresh, setRefresh] = useState(split(policy.refreshTokenTtl));
   const [rotation, setRotation] = useState(policy.rotation);
   const [exchange, setExchange] = useState(policy.exchange);
@@ -190,7 +191,7 @@ export function AuthenticationForm({ app, resources, children }: { app: Applicat
     if (next.access || next.id || next.refresh || next.redirects || [...next.redirect, ...next.postLogout].some(Boolean)) return;
     const tokenPolicy = service
       ? { accessTokenTtl: toSeconds(access), exchange, exchangeFrom }
-      : { accessTokenTtl: toSeconds(access), idTokenTtl: toSeconds(idToken), refreshTokenTtl: toSeconds(refresh), rotation, exchange, exchangeFrom };
+      : { accessTokenTtl: toSeconds(access), idTokenTtl: toSeconds(idToken), idTokenAlg, refreshTokenTtl: toSeconds(refresh), rotation, exchange, exchangeFrom };
     void run(
       "authentication",
       () =>
@@ -222,6 +223,20 @@ export function AuthenticationForm({ app, resources, children }: { app: Applicat
                   <Select {...props} disabled={refreshOff} value={rotation ? "on" : "off"} onChange={(event) => setRotation(event.target.value === "on")}>
                     <option value="on">On</option>
                     <option value="off">Off</option>
+                  </Select>
+                )}
+              </Field>
+              <Field
+                label="ID token signing"
+                hint={idTokenAlg === "RS256" ? "Every OpenID Connect library accepts RS256." : `Check that ${app.name} accepts ${idTokenAlg} first. ID tokens it already has keep verifying.`}
+              >
+                {(props) => (
+                  <Select {...props} value={idTokenAlg} onChange={(event) => setIdTokenAlg(event.target.value as SigningAlgorithm)}>
+                    {SIGNING_ALGORITHMS.map(([alg, label]) => (
+                      <option key={alg} value={alg}>
+                        {label}
+                      </option>
+                    ))}
                   </Select>
                 )}
               </Field>

@@ -2231,6 +2231,7 @@ paths:
                   properties:
                     accessTokenTtl: {type: integer, minimum: 60, maximum: 86400}
                     idTokenTtl: {type: integer, minimum: 60, maximum: 86400, description: Services may use 0.}
+                    idTokenAlg: {type: string, enum: [RS256, ES256, EdDSA], description: The algorithm ID tokens for this application are signed with.}
                     refreshTokenTtl: {type: integer, minimum: 0, maximum: 7776000, description: 0 stops issuing refresh tokens.}
                     rotation: {type: boolean}
                     exchange: {type: boolean, description: Lets a web or service application exchange people's access tokens at the token endpoint. Single-page and native applications can't turn it on.}
@@ -3909,7 +3910,7 @@ paths:
       tags: [Settings]
       operationId: rotateSigningKey
       summary: Create a new OpenID Connect signing key
-      description: 'Roles: global administrator. The new RS256 key signs tokens from now on. Previous keys stay in the JWKS for 7 days so tokens they signed still verify, then an hourly job retires them. Writes an audit event.'
+      description: 'Roles: global administrator. Creates a new key for RS256 and for every other algorithm with a signing key, in one transaction; each new key signs tokens of its algorithm from now on. Previous keys stay in the JWKS for 7 days so tokens they signed still verify, then an hourly job retires them. Writes an audit event.'
       responses:
         '200': {$ref: '#/components/responses/SigningKeysResponse'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -4542,6 +4543,7 @@ components:
               identifier: {type: string, format: uri, maxLength: 300, description: 'The audience access tokens carry in `aud`.', examples: [https://billing.example.com]}
               description: {type: string, maxLength: 500}
               accessTokenTtl: {type: integer, minimum: 60, maximum: 86400}
+              accessTokenAlg: {type: string, enum: [RS256, ES256, EdDSA], description: 'The algorithm access tokens addressed to this API are signed with. Defaults to RS256 on create and keeps the current value on update. One token can''t be addressed to APIs with different algorithms; such a request fails with `invalid_target`.'}
               scopes:
                 type: array
                 minItems: 1
@@ -5016,11 +5018,12 @@ components:
         lastUsedAt: {type: [string, 'null'], format: date-time}
     TokenPolicy:
       type: object
-      required: [accessTokenTtl, refreshTokenTtl, idTokenTtl, rotation, exchange, exchangeFrom]
+      required: [accessTokenTtl, refreshTokenTtl, idTokenTtl, idTokenAlg, rotation, exchange, exchangeFrom]
       properties:
         accessTokenTtl: {type: integer, description: Seconds.}
         refreshTokenTtl: {type: integer, description: Seconds. 0 means no refresh tokens.}
         idTokenTtl: {type: integer, description: Seconds.}
+        idTokenAlg: {type: string, enum: [RS256, ES256, EdDSA], description: 'The algorithm ID tokens are signed with. Halo creates the first key of an algorithm when it first signs with it.'}
         rotation: {type: boolean, description: Replace the refresh token on every use.}
         exchange: {type: boolean, description: 'Allow the urn:ietf:params:oauth:grant-type:token-exchange grant (RFC 8693). The application swaps a person''s access token for one to an API it has scopes on, with itself in the act claim.'}
         exchangeFrom:
@@ -5757,6 +5760,7 @@ components:
         token_endpoint_auth_method: {type: string, enum: [client_secret_basic, client_secret_post, none], default: client_secret_basic, description: '`none` registers a public client that must use PKCE.'}
         application_type: {type: string, enum: [web, native], default: web, description: '`native` needs `token_endpoint_auth_method` `none`.'}
         scope: {type: string, description: 'Space-separated. Halo keeps only `openid`, `profile` and `email` and always includes `openid`.', examples: [openid profile email]}
+        id_token_signed_response_alg: {type: string, enum: [RS256, ES256, EdDSA], default: RS256, description: 'Any other value is refused with `invalid_client_metadata`.'}
     ClientRegistration:
       allOf:
         - {$ref: '#/components/schemas/ClientMetadata'}
@@ -5828,13 +5832,14 @@ components:
         description: {type: string, maxLength: 200}
     ApiResource:
       type: object
-      required: [id, name, identifier, description, accessTokenTtl, scopes, grants, createdAt, updatedAt]
+      required: [id, name, identifier, description, accessTokenTtl, accessTokenAlg, scopes, grants, createdAt, updatedAt]
       properties:
         id: {type: string}
         name: {type: string}
         identifier: {type: string, format: uri}
         description: {type: string}
         accessTokenTtl: {type: integer}
+        accessTokenAlg: {type: string, enum: [RS256, ES256, EdDSA]}
         scopes:
           type: array
           items: {$ref: '#/components/schemas/ApiScope'}
@@ -5931,8 +5936,8 @@ components:
       required: [kid, algorithm, active, createdAt, retiresAt, retiredAt]
       properties:
         kid: {type: string, description: The key id in the JWKS and in the `kid` header of tokens.}
-        algorithm: {type: string, examples: [RS256]}
-        active: {type: boolean, description: True for the key that signs new tokens.}
+        algorithm: {type: string, enum: [RS256, ES256, EdDSA]}
+        active: {type: boolean, description: True for the newest key of its algorithm, which signs new tokens.}
         createdAt: {type: string, format: date-time}
         retiresAt: {type: [string, 'null'], format: date-time, description: 'For a replaced key, when it leaves the JWKS: 7 days after the next key was created.'}
         retiredAt: {type: [string, 'null'], format: date-time, description: When the key left the JWKS.}

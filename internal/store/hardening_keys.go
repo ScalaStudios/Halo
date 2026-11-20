@@ -24,7 +24,7 @@ type SigningKeyInfo struct {
 }
 
 func (s *Store) ListSigningKeyInfo(ctx context.Context) ([]SigningKeyInfo, error) {
-	rows, err := s.db.Query(ctx, `select id, algorithm, created_at, retired_at, lag(created_at) over (order by created_at desc) from signing_keys order by created_at desc`)
+	rows, err := s.db.Query(ctx, `select id, algorithm, created_at, retired_at, lag(created_at) over (partition by algorithm order by created_at desc) from signing_keys order by created_at desc`)
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +43,7 @@ func (s *Store) ListSigningKeyInfo(ctx context.Context) ([]SigningKeyInfo, error
 
 func (s *Store) RetireSigningKeys(ctx context.Context, now time.Time) error {
 	_, err := s.db.Exec(ctx, `update signing_keys k set retired_at = $1 where retired_at is null
-		and exists (select 1 from signing_keys n where n.created_at > k.created_at and n.created_at < $2)`, now, now.Add(-SigningKeyOverlap))
+		and exists (select 1 from signing_keys n where n.algorithm = k.algorithm and n.created_at > k.created_at and n.created_at < $2)`, now, now.Add(-SigningKeyOverlap))
 	return err
 }
 

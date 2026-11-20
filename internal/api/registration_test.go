@@ -88,6 +88,7 @@ type registration struct {
 	GrantTypes              []string `json:"grant_types"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
 	Scope                   string   `json:"scope"`
+	IDTokenSignedAlg        string   `json:"id_token_signed_response_alg"`
 }
 
 func tokenError(t *testing.T, h http.Handler, clientID, secret string) string {
@@ -153,7 +154,7 @@ func TestOpenRegistrationGetsNoAdministratorSettings(t *testing.T) {
 	if reg.ClientSecret == "" || reg.ClientSecretExpiresAt == 0 || !strings.HasPrefix(reg.RegistrationAccessToken, "hlr_") || reg.TokenEndpointAuthMethod != "client_secret_basic" {
 		t.Fatalf("incomplete registration response: %s", rec.Body)
 	}
-	if reg.Scope != "openid email" || reg.RegistrationClientURI != "http://localhost:3200/oauth2/register/"+reg.ClientID {
+	if reg.Scope != "openid email" || reg.IDTokenSignedAlg != "RS256" || reg.RegistrationClientURI != "http://localhost:3200/oauth2/register/"+reg.ClientID {
 		t.Fatalf("scope %q, registration_client_uri %q", reg.Scope, reg.RegistrationClientURI)
 	}
 	app, err := st.GetApplicationByClientID(ctx, reg.ClientID)
@@ -170,11 +171,11 @@ func TestOpenRegistrationGetsNoAdministratorSettings(t *testing.T) {
 		t.Fatalf("audit: %+v", e)
 	}
 
-	public := decode[registration](t, oauth(t, h, http.MethodPost, "/oauth2/register", "", map[string]any{"redirect_uris": []string{"http://127.0.0.1:8123/cb"}, "token_endpoint_auth_method": "none", "application_type": "native"}))
-	if public.ClientSecret != "" || public.ClientName != "127.0.0.1:8123" {
+	public := decode[registration](t, oauth(t, h, http.MethodPost, "/oauth2/register", "", map[string]any{"redirect_uris": []string{"http://127.0.0.1:8123/cb"}, "token_endpoint_auth_method": "none", "application_type": "native", "id_token_signed_response_alg": "EdDSA"}))
+	if public.ClientSecret != "" || public.ClientName != "127.0.0.1:8123" || public.IDTokenSignedAlg != "EdDSA" {
 		t.Fatalf("public client: %+v", public)
 	}
-	if native, _ := st.GetApplicationByClientID(ctx, public.ClientID); native.Type != "native" || len(native.Credentials) != 0 {
+	if native, _ := st.GetApplicationByClientID(ctx, public.ClientID); native.Type != "native" || len(native.Credentials) != 0 || native.TokenPolicy.IDTokenAlg != "EdDSA" {
 		t.Fatalf("native client: %+v", native)
 	}
 }
@@ -212,6 +213,8 @@ func TestRegistrationRejectsUnsafeMetadata(t *testing.T) {
 		{"multi-line name", valid(map[string]any{"client_name": "Tool\nPayroll"}), "invalid_client_metadata"},
 		{"long name", valid(map[string]any{"client_name": strings.Repeat("n", 201)}), "invalid_client_metadata"},
 		{"oversize metadata", valid(map[string]any{"software_statement": strings.Repeat("x", 17<<10)}), "invalid_client_metadata"},
+		{"HS256 ID tokens", valid(map[string]any{"id_token_signed_response_alg": "HS256"}), "invalid_client_metadata"},
+		{"unsigned ID tokens", valid(map[string]any{"id_token_signed_response_alg": "none"}), "invalid_client_metadata"},
 		{"not json", "redirect_uris=https://tool.example.com/callback", "invalid_client_metadata"},
 	}
 	for _, c := range cases {
@@ -290,6 +293,10 @@ func TestRegistrationManagement(t *testing.T) {
 	}
 	if e := latestAudit(t, st); e.Action != "application.registration.update" || e.ActorID != nil {
 		t.Fatalf("audit: %+v", e)
+	}
+	update["id_token_signed_response_alg"] = "ES256"
+	if got := decode[registration](t, oauth(t, h, http.MethodPut, path, first.RegistrationAccessToken, update)); got.IDTokenSignedAlg != "ES256" {
+		t.Fatalf("switching only the ID token algorithm: %+v", got)
 	}
 	update["token_endpoint_auth_method"] = "none"
 	oauthError(t, oauth(t, h, http.MethodPut, path, first.RegistrationAccessToken, update), http.StatusBadRequest, "invalid_client_metadata")

@@ -15,7 +15,7 @@ import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
 import { formatDuration, pluralize } from "@/lib/format";
 import type { ApiResource, ApiScope } from "@/lib/infra-types";
-import type { Application } from "@/lib/types";
+import { SIGNING_ALGORITHMS, type Application, type SigningAlgorithm } from "@/lib/types";
 
 const LIFETIMES = [300, 900, 3600, 14400, 28800, 86400];
 
@@ -87,6 +87,7 @@ function ResourceDialog({ resource, onClose }: { resource: ApiResource | null; o
   const [identifier, setIdentifier] = useState(resource?.identifier ?? "");
   const [description, setDescription] = useState(resource?.description ?? "");
   const [ttl, setTtl] = useState(resource?.accessTokenTtl ?? 900);
+  const [alg, setAlg] = useState<SigningAlgorithm>(resource?.accessTokenAlg ?? "RS256");
   const [scopes, setScopes] = useState<ApiScope[]>(resource?.scopes ?? [{ name: "", description: "" }]);
   const [errors, setErrors] = useState<{ name?: string; identifier?: string; scopes?: string }>({});
   const lifetimes = LIFETIMES.includes(ttl) ? LIFETIMES : [...LIFETIMES, ttl].sort((a, b) => a - b);
@@ -104,7 +105,7 @@ function ResourceDialog({ resource, onClose }: { resource: ApiResource | null; o
     };
     setErrors(next);
     if (next.name || next.identifier || next.scopes) return;
-    const body = { name: name.trim(), identifier: identifier.trim(), description: description.trim(), accessTokenTtl: ttl, scopes: named };
+    const body = { name: name.trim(), identifier: identifier.trim(), description: description.trim(), accessTokenTtl: ttl, accessTokenAlg: alg, scopes: named };
     void run(
       "save",
       () => (resource ? api<ApiResource>(`/api-resources/${resource.id}`, { method: "PUT", body }) : api<ApiResource>("/api-resources", { body })),
@@ -155,6 +156,17 @@ function ResourceDialog({ resource, onClose }: { resource: ApiResource | null; o
                 {lifetimes.map((seconds) => (
                   <option key={seconds} value={seconds}>
                     {formatDuration(seconds)}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label="Access token signing" hint={alg === "RS256" ? "Every JWT library accepts RS256." : `Check that the API accepts ${alg} first. Tokens it already has keep verifying.`}>
+            {(props) => (
+              <Select {...props} value={alg} onChange={(event) => setAlg(event.target.value as SigningAlgorithm)}>
+                {SIGNING_ALGORITHMS.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
                   </option>
                 ))}
               </Select>

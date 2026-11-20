@@ -11,14 +11,14 @@ import (
 	"halo/internal/secret"
 )
 
-const appColumns = `id, name, description, protocol, app_type, status, client_id, homepage, redirect_uris, post_logout_uris, scopes, access_token_ttl, refresh_token_ttl, id_token_ttl, refresh_rotation, token_exchange,
+const appColumns = `id, name, description, protocol, app_type, status, client_id, homepage, redirect_uris, post_logout_uris, scopes, access_token_ttl, refresh_token_ttl, id_token_ttl, id_token_alg, refresh_rotation, token_exchange,
 	array(select x.resource_id from app_exchange_sources x where x.app_id = applications.id order by x.resource_id), setup_guide, owner_id, created_at, logo_updated_at, registration_hash, awaiting_approval`
 
 func scanApp(row rowScanner) (Application, error) {
 	var a Application
 	var logo *time.Time
 	err := row.Scan(&a.ID, &a.Name, &a.Description, &a.Protocol, &a.Type, &a.Status, &a.ClientID, &a.Homepage, &a.RedirectURIs, &a.PostLogoutURIs, &a.Scopes,
-		&a.TokenPolicy.AccessTokenTTL, &a.TokenPolicy.RefreshTokenTTL, &a.TokenPolicy.IDTokenTTL, &a.TokenPolicy.Rotation, &a.TokenPolicy.Exchange, &a.TokenPolicy.ExchangeFrom, &a.SetupGuide, &a.Owner, &a.CreatedAt, &logo, &a.RegistrationHash, &a.AwaitingApproval)
+		&a.TokenPolicy.AccessTokenTTL, &a.TokenPolicy.RefreshTokenTTL, &a.TokenPolicy.IDTokenTTL, &a.TokenPolicy.IDTokenAlg, &a.TokenPolicy.Rotation, &a.TokenPolicy.Exchange, &a.TokenPolicy.ExchangeFrom, &a.SetupGuide, &a.Owner, &a.CreatedAt, &logo, &a.RegistrationHash, &a.AwaitingApproval)
 	a.RegisteredDynamically = a.RegistrationHash != nil
 	if logo != nil {
 		path := AppLogos.Path(a.ID, *logo)
@@ -86,6 +86,7 @@ type NewApplication struct {
 	ClientID         string
 	RegistrationHash []byte
 	AwaitingApproval bool
+	IDTokenAlg       string
 }
 
 func (s *Store) CreateApplication(ctx context.Context, in NewApplication) (Application, error) {
@@ -99,6 +100,9 @@ func (s *Store) CreateApplication(ctx context.Context, in NewApplication) (Appli
 	}
 	if in.SetupGuide == "" {
 		in.SetupGuide = "generic-oidc"
+	}
+	if in.IDTokenAlg == "" {
+		in.IDTokenAlg = "RS256"
 	}
 	if in.RedirectURIs == nil {
 		in.RedirectURIs = []string{}
@@ -115,9 +119,9 @@ func (s *Store) CreateApplication(ctx context.Context, in NewApplication) (Appli
 		status = "disabled"
 	}
 	err = s.Tx(ctx, func(tx *Store) error {
-		_, err := tx.db.Exec(ctx, `insert into applications (id, name, description, protocol, app_type, client_id, homepage, redirect_uris, post_logout_uris, scopes, setup_guide, owner_id, access_token_ttl, id_token_ttl, refresh_token_ttl, registration_hash, awaiting_approval, status) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+		_, err := tx.db.Exec(ctx, `insert into applications (id, name, description, protocol, app_type, client_id, homepage, redirect_uris, post_logout_uris, scopes, setup_guide, owner_id, access_token_ttl, id_token_ttl, refresh_token_ttl, registration_hash, awaiting_approval, status, id_token_alg) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
 			appID, strings.TrimSpace(in.Name), in.Description, in.Protocol, in.Type, clientID, in.Homepage, in.RedirectURIs, in.PostLogoutURIs, in.Scopes, in.SetupGuide, in.OwnerID,
-			settings.AccessTokenMinutes*60, settings.IDTokenMinutes*60, settings.RefreshTokenHours*3600, in.RegistrationHash, in.AwaitingApproval, status)
+			settings.AccessTokenMinutes*60, settings.IDTokenMinutes*60, settings.RefreshTokenHours*3600, in.RegistrationHash, in.AwaitingApproval, status, in.IDTokenAlg)
 		if err != nil {
 			return conflict(err)
 		}

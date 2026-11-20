@@ -19,12 +19,12 @@ type Rotation = "oidc" | "saml";
 const ROTATION: Record<Rotation, { path: string; title: string; description: string; confirm: string; done: string; result: string }> = {
   oidc: {
     path: "/signing-keys/rotate",
-    title: "Rotate the token signing key?",
+    title: "Rotate the token signing keys?",
     description:
-      "Halo signs every new ID token and access token with a new key from now on. The current key stays published at /oauth2/keys for 7 days, so tokens it already signed keep verifying, and then Halo retires it. Applications pick up the new key from /oauth2/keys on their own.",
-    confirm: "Rotate signing key",
-    done: "Signing key rotated",
-    result: "New tokens use the new key. The previous key stays published for 7 days.",
+      "Halo creates a new key for each signing algorithm in use and signs every new ID token and access token with it. The current keys stay published at /oauth2/keys for 7 days, so tokens they already signed keep verifying, and then Halo retires them. Applications pick up the new keys from /oauth2/keys on their own.",
+    confirm: "Rotate signing keys",
+    done: "Signing keys rotated",
+    result: "New tokens use the new keys. The previous keys stay published for 7 days.",
   },
   saml: {
     path: "/saml/certificate/rotate",
@@ -73,10 +73,10 @@ export function SigningKeys({ keys, canRotate }: { keys: Keys; canRotate: boolea
                 OpenID Connect
               </h3>
               <p className="text-body-sm text-fg-3">
-                Published at <code className="font-mono text-code-sm text-fg-2">/oauth2/keys</code>. Previous keys stay published for 7 days after a rotation.
+                Published at <code className="font-mono text-code-sm text-fg-2">/oauth2/keys</code>, one signing key per algorithm. Previous keys stay published for 7 days after a rotation.
               </p>
             </div>
-            {rotateButton("oidc", "Rotate key")}
+            {rotateButton("oidc", "Rotate keys")}
           </div>
           {keys.oidc.length === 0 ? (
             <p className="rounded-lg border border-border px-6 py-4 text-body-sm text-fg-3">

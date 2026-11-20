@@ -46,7 +46,7 @@ Not built yet: LDAP directory sync and pushing groups over outbound SCIM. See th
 
 | Standard | Status | How Halo uses it |
 | --- | --- | --- |
-| OpenID Connect Core 1.0 and Discovery 1.0 | Implemented | ID tokens signed with RS256, userinfo, `prompt` and `max_age`, discovery at `/.well-known/openid-configuration`, and RP-initiated logout |
+| OpenID Connect Core 1.0 and Discovery 1.0 | Implemented | ID tokens signed with RS256, ES256 or EdDSA, userinfo, `prompt` and `max_age`, discovery at `/.well-known/openid-configuration`, and RP-initiated logout |
 | OAuth 2.0 (RFC 6749) | Implemented | Authorization code, refresh token and client credentials grants; refresh tokens rotate by default, and a used one is rejected |
 | PKCE (RFC 7636) | Implemented | `S256`, required for single-page and native applications |
 | Device Authorization Grant (RFC 8628) | Implemented | Used by `halo login` to sign people in on the command line |

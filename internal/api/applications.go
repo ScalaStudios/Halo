@@ -593,6 +593,7 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 			AccessTokenTTL  *int      `json:"accessTokenTtl"`
 			RefreshTokenTTL *int      `json:"refreshTokenTtl"`
 			IDTokenTTL      *int      `json:"idTokenTtl"`
+			IDTokenAlg      *string   `json:"idTokenAlg"`
 			Rotation        *bool     `json:"rotation"`
 			Exchange        *bool     `json:"exchange"`
 			ExchangeFrom    *[]string `json:"exchangeFrom"`
@@ -648,6 +649,13 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 			if f.value != nil {
 				*f.field = *f.value
 			}
+		}
+		if p.IDTokenAlg != nil && *p.IDTokenAlg != before.IDTokenAlg {
+			if !slices.Contains(store.SigningAlgorithms, *p.IDTokenAlg) {
+				return httpx.Invalid("Sign ID tokens with RS256, ES256 or EdDSA.")
+			}
+			next.TokenPolicy.IDTokenAlg = *p.IDTokenAlg
+			changed = append(changed, "ID token signing algorithm")
 		}
 		if p.Rotation != nil {
 			next.TokenPolicy.Rotation = *p.Rotation

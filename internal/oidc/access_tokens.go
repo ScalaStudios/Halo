@@ -17,11 +17,11 @@ var errAccessToken = errors.New("the access token is not a valid, active Halo CL
 func AccessTokenResolver(st *store.Store) httpx.AccessTokenResolver {
 	s := &storage{st: st}
 	return func(ctx context.Context, token string) (store.User, error) {
-		jws, err := jose.ParseSigned(token, []jose.SignatureAlgorithm{jose.RS256})
+		jws, err := jose.ParseSigned(token, signatureAlgorithms)
 		if err != nil || len(jws.Signatures) != 1 {
 			return store.User{}, errAccessToken
 		}
-		keys, err := s.signingKeys(ctx)
+		keys, err := s.signingKeys(ctx, jose.RS256)
 		if err != nil {
 			return store.User{}, err
 		}
@@ -29,7 +29,7 @@ func AccessTokenResolver(st *store.Store) httpx.AccessTokenResolver {
 		if i < 0 {
 			return store.User{}, errAccessToken
 		}
-		payload, err := jws.Verify(&keys[i].key.PublicKey)
+		payload, err := jws.Verify(keys[i].key.Public())
 		if err != nil {
 			return store.User{}, errAccessToken
 		}

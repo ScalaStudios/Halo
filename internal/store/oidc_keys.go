@@ -7,6 +7,8 @@ import (
 	"halo/internal/id"
 )
 
+var SigningAlgorithms = []string{"RS256", "ES256", "EdDSA"}
+
 type SigningKey struct {
 	ID         string
 	Algorithm  string

@@ -56,6 +56,25 @@ func TestSigningKeyEndpoints(t *testing.T) {
 		t.Fatalf("rotation audit: %+v", audit[0])
 	}
 
+	ec, err := st.CreateSigningKey(ctx, "ES256", []byte("unused"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec = call(t, h, global, "POST", "/api/v1/signing-keys/rotate", nil)
+	expect(t, rec, 200)
+	active := map[string]int{}
+	for _, k := range decode[signingKeys](t, rec).OIDC {
+		if k.Active {
+			active[k.Algorithm]++
+		}
+		if k.ID == ec.ID && (k.Active || k.RetiresAt == nil) {
+			t.Fatalf("the ES256 key was not rotated: %+v", k)
+		}
+	}
+	if len(active) != 2 || active["RS256"] != 1 || active["ES256"] != 1 {
+		t.Fatalf("rotation must replace the key of every algorithm in use: %v", active)
+	}
+
 	expect(t, call(t, h, global, "POST", "/api/v1/saml/certificate/rotate", nil), 200)
 	rec = call(t, h, global, "POST", "/api/v1/saml/certificate/rotate", nil)
 	expect(t, rec, 200)

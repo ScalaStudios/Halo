@@ -66,6 +66,7 @@ type TokenPolicy struct {
 	AccessTokenTTL  int      `json:"accessTokenTtl"`
 	RefreshTokenTTL int      `json:"refreshTokenTtl"`
 	IDTokenTTL      int      `json:"idTokenTtl"`
+	IDTokenAlg      string   `json:"idTokenAlg"`
 	Rotation        bool     `json:"rotation"`
 	Exchange        bool     `json:"exchange"`
 	ExchangeFrom    []string `json:"exchangeFrom"`
