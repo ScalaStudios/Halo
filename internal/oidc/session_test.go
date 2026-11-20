@@ -311,6 +311,57 @@ func TestSignInFrequency(t *testing.T) {
 	}
 }
 
+func TestAuthorizeHintsRouteSignIn(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx := context.Background()
+	partner, err := h.st.SaveIdentityProvider(ctx, store.IdentityProvider{Kind: "oidc", Name: "Partner SSO", Issuer: "https://sso.partner.example", ClientID: "halo", Scopes: []string{"openid"},
+		Enabled: true, RouteByDomain: true, AllowedDomains: []string{"partner.example"}, JITGroupIDs: []string{}}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	signIn := func(hints url.Values) (string, string) {
+		t.Helper()
+		q := url.Values{"client_id": {h.app.ClientID}, "redirect_uri": {callback}, "response_type": {"code"}, "scope": {"openid"}, "state": {"st-1"},
+			"code_challenge": {oidc.NewSHACodeChallenge(pkceSecret)}, "code_challenge_method": {"S256"}}
+		for k, v := range hints {
+			q[k] = v
+		}
+		status, location := h.get("/oauth2/authorize?"+q.Encode(), "")
+		if status != http.StatusFound || location.Path != "/sign-in" {
+			t.Fatalf("authorize: %d %s", status, location)
+		}
+		res, err := http.Get(h.srv.URL + "/api/v1/auth/request/" + location.Query().Get("authRequest"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var out struct {
+			LoginHint string            `json:"loginHint"`
+			Provider  map[string]string `json:"provider"`
+		}
+		if err := json.NewDecoder(res.Body).Decode(&out); err != nil || res.StatusCode != http.StatusOK {
+			t.Fatalf("auth request: %d %v", res.StatusCode, err)
+		}
+		return out.LoginHint, out.Provider["id"]
+	}
+	for _, c := range []struct {
+		hints     url.Values
+		loginHint string
+		provider  string
+	}{
+		{url.Values{"domain_hint": {"Partner.Example"}}, "", partner.ID},
+		{url.Values{"login_hint": {"ada@partner.example"}}, "ada@partner.example", partner.ID},
+		{url.Values{"domain_hint": {"partner.example"}, "login_hint": {"ada@example.com"}}, "ada@example.com", partner.ID},
+		{url.Values{"domain_hint": {"example.com"}, "login_hint": {"ada@partner.example"}}, "ada@partner.example", ""},
+		{url.Values{"login_hint": {"ada@example.com"}}, "ada@example.com", ""},
+		{nil, "", ""},
+	} {
+		if loginHint, provider := signIn(c.hints); loginHint != c.loginHint || provider != c.provider {
+			t.Fatalf("%v: login hint %q, provider %q", c.hints, loginHint, provider)
+		}
+	}
+}
+
 func TestPasswordAMR(t *testing.T) {
 	h := newHarness(t, nil)
 	for _, c := range []struct {

@@ -10,6 +10,7 @@ export type IdentityProvider = {
   scopes: string[];
   enabled: boolean;
   showOnSignIn: boolean;
+  routeByDomain: boolean;
   allowedDomains: string[];
   jit: boolean;
   jitGroupIds: string[];

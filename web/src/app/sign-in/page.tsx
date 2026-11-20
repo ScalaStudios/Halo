@@ -4,6 +4,7 @@ import { AuthFrame } from "@/components/auth/auth-frame";
 import { ConsentStep } from "@/components/auth/consent";
 import { apiPeek } from "@/lib/api/server";
 import { SignInFlow } from "@/components/auth/sign-in-flow";
+import type { SignInProvider } from "@/lib/federation-types";
 import type { Challenge, Settings } from "@/lib/settings-types";
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
@@ -25,7 +26,7 @@ export default async function SignInPage({ searchParams }: Props) {
   }
   const authRequest = typeof params.authRequest === "string" ? params.authRequest : undefined;
   const [request, methods] = await Promise.all([
-    authRequest ? apiPeek<{ application: { name: string; logoUrl: string | null } }>(`/auth/request/${encodeURIComponent(authRequest)}`) : null,
+    authRequest ? apiPeek<{ application: { name: string; logoUrl: string | null }; loginHint: string; provider?: SignInProvider }>(`/auth/request/${encodeURIComponent(authRequest)}`) : null,
     apiPeek<{ methods: string[]; emailSignIn: Settings["emailSignIn"]; challenge: Challenge | null; signUp: boolean }>("/auth/methods"),
   ]);
   return (
@@ -42,6 +43,8 @@ export default async function SignInPage({ searchParams }: Props) {
         challenge={methods.data?.challenge ?? null}
         signUp={methods.data?.signUp ?? false}
         terms={typeof params.terms === "string" ? params.terms : undefined}
+        loginHint={request?.data?.loginHint}
+        route={request?.data?.provider ?? null}
       />
     </AuthFrame>
   );

@@ -11,16 +11,17 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { Spinner } from "@/components/ui/spinner";
 import { api, ApiError } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
+import type { SignInProvider } from "@/lib/federation-types";
 import { METHOD } from "@/lib/labels";
 import type { Challenge, Settings } from "@/lib/settings-types";
 import { getAssertion } from "@/lib/webauthn";
 import { ChallengeCheck } from "./challenge";
 import { cancelled, describeFailure, usePasskeySupport, type Ceremony } from "./passkey";
-import { federationProblem, ProviderButtons, useSignInProviders } from "./providers";
+import { federationProblem, ProviderButtons, providerStartUrl, useSignInProviders } from "./providers";
 import { TermsStep, type SignedIn } from "./terms";
 import { VerifyCode } from "./verify-code";
 
-type Step = "loading" | "start" | "choose" | "passkey" | "security-key" | "code" | "recovery" | "access-pass" | "enroll" | "password" | "new-password" | "second-factor" | "inbox" | "terms" | "done" | "expired";
+type Step = "loading" | "redirect" | "start" | "choose" | "passkey" | "security-key" | "code" | "recovery" | "access-pass" | "enroll" | "password" | "new-password" | "second-factor" | "inbox" | "terms" | "done" | "expired";
 type Choice = "passkey" | "security-key" | "totp" | "password" | "recovery-codes" | "magic-link" | "access-pass";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -65,6 +66,8 @@ export function SignInFlow({
   challenge,
   signUp,
   terms,
+  loginHint,
+  route,
 }: {
   authRequest?: string;
   app: string | null;
@@ -77,6 +80,8 @@ export function SignInFlow({
   challenge: Challenge | null;
   signUp: boolean;
   terms?: string;
+  loginHint?: string;
+  route: SignInProvider | null;
 }) {
   const optionsId = useId();
   const emailRef = useRef<HTMLInputElement>(null);
@@ -87,10 +92,11 @@ export function SignInFlow({
   const providers = useSignInProviders();
   const failure = useSearchParams().get("error");
   const [step, setStep] = useState<Step>(
-    terms ? "terms" : requestExpired || failure === "ERR_AUTH_REQUEST_EXPIRED" ? "expired" : authRequest && signedIn && !failure ? "loading" : "start",
+    terms ? "terms" : requestExpired || failure === "ERR_AUTH_REQUEST_EXPIRED" ? "expired" : authRequest && signedIn && !failure ? "loading" : route && !failure ? "redirect" : "start",
   );
   const [termsCeremony, setTermsCeremony] = useState(terms ?? "");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(loginHint && EMAIL.test(loginHint) ? loginHint : "");
+  const [routed, setRouted] = useState(route?.name ?? "");
   const [methods, setMethods] = useState<Choice[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(() => federationProblem(failure));
@@ -126,10 +132,25 @@ export function SignInFlow({
       .then(finish)
       .catch((error) => {
         if (expired(error)) return setStep("expired");
-        if (!(error instanceof ApiError && error.status === 401)) setNotice(describeFailure(error));
+        const unauthenticated = error instanceof ApiError && error.status === 401;
+        if (unauthenticated && route) return follow(route, true);
+        if (!unauthenticated) setNotice(describeFailure(error));
         setStep("start");
       });
   }, [step, authRequest]);
+
+  useEffect(() => {
+    if (step === "redirect" && !checked.current && route) follow(route, true);
+  }, [step, route]);
+
+  function follow(provider: SignInProvider, replace = false) {
+    checked.current = true;
+    setRouted(provider.name);
+    setStep("redirect");
+    const url = providerStartUrl(provider.id, authRequest, next);
+    if (replace) window.location.replace(url);
+    else window.location.assign(url);
+  }
 
   function settle(token?: string) {
     const pending = solver.current;
@@ -260,7 +281,8 @@ export function SignInFlow({
     if (!validEmail()) return;
     setBusy(true);
     try {
-      const result = await api<{ methods: Choice[] }>("/auth/identify", { body: { email: email.trim() } });
+      const result = await api<{ methods: Choice[]; provider?: SignInProvider }>("/auth/identify", { body: { email: email.trim() } });
+      if (result.provider) return follow(result.provider);
       setMethods(result.methods.filter((kind) => supported || (kind !== "passkey" && kind !== "security-key" && kind !== "access-pass")));
       setNotice(null);
       setStep("choose");
@@ -356,10 +378,10 @@ export function SignInFlow({
 
   return (
     <div key={step} className="flex animate-enter flex-col gap-8">
-      {step === "loading" || step === "enroll" ? (
+      {step === "loading" || step === "enroll" || step === "redirect" ? (
         <div role="status" className="flex items-center justify-center gap-3 text-body-sm text-fg-3">
           <Spinner size={20} />
-          {step === "enroll" ? "Opening passkey setup" : app ? `Continuing to ${app}` : "Checking your session"}
+          {step === "enroll" ? "Opening passkey setup" : step === "redirect" ? `Continuing to ${routed}` : app ? `Continuing to ${app}` : "Checking your session"}
         </div>
       ) : null}
 

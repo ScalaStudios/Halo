@@ -19,6 +19,7 @@ type AuthRequest struct {
 	Prompt              []string
 	MaxAge              *int
 	LoginHint           string
+	DomainHint          string
 	UserID              *string
 	SessionID           *string
 	AuthTime            *time.Time
@@ -32,12 +33,12 @@ type AuthRequest struct {
 
 const AuthRequestLifetime = 15 * time.Minute
 
-const authRequestColumns = `id, client_id, redirect_uri, scopes, state, nonce, response_type, response_mode, code_challenge, code_challenge_method, prompt, max_age, login_hint, user_id, session_id, auth_time, amr, done, code, consent, created_at, expires_at`
+const authRequestColumns = `id, client_id, redirect_uri, scopes, state, nonce, response_type, response_mode, code_challenge, code_challenge_method, prompt, max_age, login_hint, domain_hint, user_id, session_id, auth_time, amr, done, code, consent, created_at, expires_at`
 
 func scanAuthRequest(row rowScanner) (AuthRequest, error) {
 	var a AuthRequest
 	err := row.Scan(&a.ID, &a.ClientID, &a.RedirectURI, &a.Scopes, &a.State, &a.Nonce, &a.ResponseType, &a.ResponseMode, &a.CodeChallenge, &a.CodeChallengeMethod,
-		&a.Prompt, &a.MaxAge, &a.LoginHint, &a.UserID, &a.SessionID, &a.AuthTime, &a.AMR, &a.Done, &a.Code, &a.Consent, &a.CreatedAt, &a.ExpiresAt)
+		&a.Prompt, &a.MaxAge, &a.LoginHint, &a.DomainHint, &a.UserID, &a.SessionID, &a.AuthTime, &a.AMR, &a.Done, &a.Code, &a.Consent, &a.CreatedAt, &a.ExpiresAt)
 	return a, err
 }
 
@@ -51,9 +52,9 @@ func (s *Store) CreateAuthRequest(ctx context.Context, a AuthRequest) (AuthReque
 	if a.AMR == nil {
 		a.AMR = []string{}
 	}
-	row := s.db.QueryRow(ctx, `insert into oidc_auth_requests (id, client_id, redirect_uri, scopes, state, nonce, response_type, response_mode, code_challenge, code_challenge_method, prompt, max_age, login_hint, user_id, session_id, auth_time, amr, done, expires_at)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) returning `+authRequestColumns,
-		a.ID, a.ClientID, a.RedirectURI, a.Scopes, a.State, a.Nonce, a.ResponseType, a.ResponseMode, a.CodeChallenge, a.CodeChallengeMethod, a.Prompt, a.MaxAge, a.LoginHint, a.UserID, a.SessionID, a.AuthTime, a.AMR, a.Done, a.ExpiresAt)
+	row := s.db.QueryRow(ctx, `insert into oidc_auth_requests (id, client_id, redirect_uri, scopes, state, nonce, response_type, response_mode, code_challenge, code_challenge_method, prompt, max_age, login_hint, domain_hint, user_id, session_id, auth_time, amr, done, expires_at)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) returning `+authRequestColumns,
+		a.ID, a.ClientID, a.RedirectURI, a.Scopes, a.State, a.Nonce, a.ResponseType, a.ResponseMode, a.CodeChallenge, a.CodeChallengeMethod, a.Prompt, a.MaxAge, a.LoginHint, a.DomainHint, a.UserID, a.SessionID, a.AuthTime, a.AMR, a.Done, a.ExpiresAt)
 	return scanAuthRequest(row)
 }
 

@@ -377,3 +377,91 @@ func TestCreateIdentityProviderAnswersCreated(t *testing.T) {
 		t.Fatalf("update: %d", status)
 	}
 }
+
+func TestHomeRealmDiscovery(t *testing.T) {
+	e := newFederationEnv(t)
+	ctx := context.Background()
+	fake := newFakeProvider(t)
+	partner := e.provider(store.IdentityProvider{Kind: "oidc", Name: "Partner SSO", Issuer: fake.srv.URL, AllowedDomains: []string{"partner.example"}, RouteByDomain: true})
+	partner.ShowOnSignIn = false
+	if _, err := e.st.SaveIdentityProvider(ctx, partner, ""); err != nil {
+		t.Fatal(err)
+	}
+	retired := e.provider(store.IdentityProvider{Kind: "oidc", Name: "Retired SSO", Issuer: fake.srv.URL, AllowedDomains: []string{"retired.example"}, RouteByDomain: true})
+	retired.Enabled = false
+	if _, err := e.st.SaveIdentityProvider(ctx, retired, ""); err != nil {
+		t.Fatal(err)
+	}
+	e.provider(store.IdentityProvider{Kind: "oidc", Name: "Acme SSO", Issuer: fake.srv.URL})
+	ada, err := e.st.CreateUser(ctx, store.NewUser{Email: "ada@partner.example", Name: "Ada Lovelace", Status: "active"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.withAuthenticator(ada)
+	if _, err := e.st.CreateUser(ctx, store.NewUser{Email: "bob@partner.example", Name: "Bob", Status: "suspended"}); err != nil {
+		t.Fatal(err)
+	}
+
+	identify := func(email string) string {
+		t.Helper()
+		var raw json.RawMessage
+		if status := e.do(client(), "POST", "/api/v1/auth/identify", map[string]string{"email": email}, &raw); status != http.StatusOK {
+			t.Fatalf("identify %s: %d", email, status)
+		}
+		return string(raw)
+	}
+	routed := identify("ada@partner.example")
+	for _, email := range []string{"Bob@Partner.Example", "nobody@partner.example"} {
+		if got := identify(email); got != routed {
+			t.Fatalf("routing must not depend on the account: %s answered %s, ada answered %s", email, got, routed)
+		}
+	}
+	var out struct {
+		Methods  []string          `json:"methods"`
+		Provider map[string]string `json:"provider"`
+	}
+	if err := json.Unmarshal([]byte(routed), &out); err != nil || out.Provider["id"] != partner.ID || out.Provider["name"] != "Partner SSO" || len(out.Methods) != 0 {
+		t.Fatalf("routed identify: %s %v", routed, err)
+	}
+	for _, email := range []string{"dev@example.com", "dev@retired.example"} {
+		out.Provider = nil
+		if err := json.Unmarshal([]byte(identify(email)), &out); err != nil || out.Provider != nil || !slices.Equal(out.Methods, []string{"passkey", "totp"}) {
+			t.Fatalf("%s falls back to the usual methods: %+v %v", email, out, err)
+		}
+	}
+
+	fake.claims = map[string]any{"sub": "partner-1", "email": "ada@partner.example", "email_verified": true}
+	if location := e.federate(client(), partner.ID, ""); location != "/account" {
+		t.Fatalf("a routed provider without a button signs people in: %s", location)
+	}
+
+	admin, err := e.st.CreateUser(ctx, store.NewUser{Email: "sec@example.com", Name: "Sec", Status: "active", Roles: []string{"security_admin"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, token, err := e.st.CreateSession(ctx, store.NewSession{UserID: admin.ID, Method: "passkey"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := client()
+	base, _ := url.Parse(e.srv.URL)
+	c.Jar.SetCookies(base, []*http.Cookie{{Name: httpx.SessionCookie, Value: token}})
+	body := map[string]any{"kind": "oidc", "name": "Second SSO", "issuer": fake.srv.URL, "clientId": "halo", "routeByDomain": true}
+	e.expect(c, "POST", "/api/v1/identity-providers", body, http.StatusUnprocessableEntity, "ERR_INVALID")
+	body["allowedDomains"] = []string{"Partner.Example"}
+	e.expect(c, "POST", "/api/v1/identity-providers", body, http.StatusUnprocessableEntity, "ERR_INVALID")
+	body["allowedDomains"] = []string{"retired.example"}
+	e.expect(c, "POST", "/api/v1/identity-providers", body, http.StatusUnprocessableEntity, "ERR_INVALID")
+	update := map[string]any{"kind": "oidc", "name": "Partner SSO", "issuer": fake.srv.URL, "clientId": "halo", "enabled": true, "allowedDomains": []string{"partner.example"}, "routeByDomain": true}
+	var saved store.IdentityProvider
+	if status := e.do(c, "PUT", "/api/v1/identity-providers/"+partner.ID, update, &saved); status != http.StatusOK || !saved.RouteByDomain {
+		t.Fatalf("a provider does not conflict with itself: %d %+v", status, saved)
+	}
+	update["routeByDomain"] = false
+	if status := e.do(c, "PUT", "/api/v1/identity-providers/"+partner.ID, update, &saved); status != http.StatusOK || saved.RouteByDomain {
+		t.Fatalf("turn off routing: %d %+v", status, saved)
+	}
+	if audit, err := e.st.ListAudit(ctx, 1); err != nil || audit[0].Action != "identity_provider.update" || audit[0].Summary != "Changed the identity provider's email domain routing" {
+		t.Fatalf("audit: %+v %v", audit, err)
+	}
+}
