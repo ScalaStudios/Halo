@@ -65,6 +65,7 @@ var fields = []struct {
 	{"sessionLimitGroups", "group session limits", false},
 	{"approvalActions", "changes that need approval", true},
 	{"emergencyAccessIds", "emergency access accounts", true},
+	{"clientRegistration", "client registration", false},
 }
 
 type handler struct {
@@ -347,6 +348,8 @@ func validate(s store.Settings) error {
 		return httpx.Invalid(`Set the action at the session limit to "refuse" or "end-oldest".`)
 	case s.EmailSignIn != "link" && s.EmailSignIn != "code" && s.EmailSignIn != "both":
 		return httpx.Invalid(`Set the sign-in email to "link", "code" or "both".`)
+	case !slices.Contains([]string{"off", "open", "token", "approval"}, s.ClientRegistration):
+		return httpx.Invalid(`Set client registration to "off", "open", "token" or "approval".`)
 	}
 	seen := map[string]bool{}
 	for _, g := range s.SessionLimitGroups {

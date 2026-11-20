@@ -67,7 +67,109 @@ tags:
     description: The SSH certificate authority, principal mappings and issued certificates.
   - name: Development
     description: Routes that exist only with HALO_DEV=1.
+  - name: Client registration
+    description: 'OAuth dynamic client registration (RFC 7591) and management (RFC 7592) at `/oauth2/register`, outside `/api/v1`. Off unless `clientRegistration` allows it. Errors are `{"error": "…", "error_description": "…"}`. Registered clients use the authorization code flow with the `openid`, `profile` and `email` scopes, get no groups, API grants or token exchange, and sign nobody in until an application administrator assigns groups.'
 paths:
+  /oauth2/register:
+    servers:
+      - url: /
+    post:
+      tags: [Client registration]
+      operationId: registerClient
+      summary: Register an OAuth client
+      description: 'Anonymous when `clientRegistration` is `open` or `approval`; needs an initial access token when it is `token`. Limited to 20 requests from one IP address per clock hour, rejected ones included. With `approval`, the client is created disabled with `awaitingApproval`. Recorded as `application.register`.'
+      security:
+        - {}
+        - initialAccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ClientMetadata'}
+      responses:
+        '201':
+          description: The registered client, its secret and its registration access token. They are shown only once.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClientRegistration'}
+        '400':
+          description: '`invalid_redirect_uri` or `invalid_client_metadata`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '401':
+          description: '`invalid_token`: the initial access token is missing, unknown, or lacks the `registration` scope.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '404':
+          description: '`invalid_request`: client registration is off.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '429':
+          description: '`temporarily_unavailable`, with `Retry-After` in seconds.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+  /oauth2/register/{clientId}:
+    servers:
+      - url: /
+    parameters:
+      - {name: clientId, in: path, required: true, schema: {type: string}}
+    get:
+      tags: [Client registration]
+      operationId: readClientRegistration
+      summary: Read a client's registration
+      security:
+        - registrationAccessToken: []
+      responses:
+        '200':
+          description: The client's current metadata, without its secret or registration access token.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClientRegistration'}
+        '401': {$ref: '#/components/responses/RegistrationTokenInvalid'}
+        '404': {$ref: '#/components/responses/RegistrationOff'}
+    put:
+      tags: [Client registration]
+      operationId: updateClientRegistration
+      summary: Replace a client's metadata
+      description: 'Send every field, with `client_id`; omitted fields are cleared. The client keeps its `token_endpoint_auth_method` and `application_type`, and its scopes can only narrow to `openid`, `profile`, `email` and those an administrator added. When `clientRegistration` is `approval` or the client is assigned to groups, a change disables the client and sets `awaitingApproval` until an application administrator approves it again. Recorded as `application.registration.update`.'
+      security:
+        - registrationAccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - {$ref: '#/components/schemas/ClientMetadata'}
+                - {type: object, required: [client_id, redirect_uris], properties: {client_id: {type: string}}}
+      responses:
+        '200':
+          description: The updated metadata.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClientRegistration'}
+        '400':
+          description: '`invalid_request`, `invalid_redirect_uri` or `invalid_client_metadata`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '401': {$ref: '#/components/responses/RegistrationTokenInvalid'}
+        '404': {$ref: '#/components/responses/RegistrationOff'}
+    delete:
+      tags: [Client registration]
+      operationId: deleteClientRegistration
+      summary: Delete a client
+      description: Deletes the application, its credentials and group assignments. Recorded as `application.registration.delete`.
+      security:
+        - registrationAccessToken: []
+      responses:
+        '204': {description: Deleted.}
+        '401': {$ref: '#/components/responses/RegistrationTokenInvalid'}
+        '404': {$ref: '#/components/responses/RegistrationOff'}
   /organization:
     get:
       tags: [Organization]
@@ -2216,7 +2318,7 @@ paths:
       tags: [Applications]
       operationId: enableApplication
       summary: Allow sign-in again
-      description: 'Roles: application administrator.'
+      description: 'Roles: application administrator. For a client with `awaitingApproval`, this approves it and records `application.registration.approve`.'
       responses:
         '200': {$ref: '#/components/responses/ApplicationResponse'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -3329,7 +3431,7 @@ paths:
                 scopes:
                   type: array
                   minItems: 1
-                  items: {type: string, enum: [api, scim]}
+                  items: {type: string, enum: [api, scim, registration]}
                 expiresAt: {type: [string, 'null'], format: date-time, description: Omit or send null for a key that does not expire.}
       responses:
         '201':
@@ -4099,6 +4201,14 @@ components:
       type: http
       scheme: bearer
       description: An API key of a service account, starting with `hlk_`, with the `api` scope. Requests act with the service account's roles.
+    initialAccessToken:
+      type: http
+      scheme: bearer
+      description: An API key with the `registration` scope. Required by `/oauth2/register` when `clientRegistration` is `token`.
+    registrationAccessToken:
+      type: http
+      scheme: bearer
+      description: The `registration_access_token`, starting with `hlr_`, that `/oauth2/register` returned for the client.
     cliAccessToken:
       type: http
       scheme: bearer
@@ -4346,6 +4456,16 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
+    RegistrationTokenInvalid:
+      description: '`invalid_token`: the registration access token is missing or does not belong to this client.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/OAuthError'}
+    RegistrationOff:
+      description: '`invalid_request`: client registration is off.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/OAuthError'}
     Unauthenticated:
       description: '`ERR_UNAUTHENTICATED`: no valid session or key.'
       content:
@@ -4791,7 +4911,7 @@ components:
         source: {type: string}
     Application:
       type: object
-      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, setupGuide, logoUrl]
+      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, setupGuide, logoUrl, registeredDynamically, awaitingApproval]
       properties:
         id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
@@ -4828,6 +4948,8 @@ components:
         tokenPolicy: {$ref: '#/components/schemas/TokenPolicy'}
         setupGuide: {type: string}
         logoUrl: {type: [string, 'null'], description: Path of the logo, or null., examples: ['/api/v1/applications/app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9/logo?v=1790000000']}
+        registeredDynamically: {type: boolean, description: The client registered itself at `/oauth2/register` and can change or delete its registration with its registration access token.}
+        awaitingApproval: {type: boolean, description: 'The client registered while `clientRegistration` is `approval`, or changed its registration while it is `approval` or while the client is assigned to groups. Its status stays `disabled` until an application administrator enables it.'}
         saml: {$ref: '#/components/schemas/SAMLView'}
     SAMLAttributes:
       type: object
@@ -5323,7 +5445,7 @@ components:
         prefix: {type: string, description: The first 12 characters of the key.}
         scopes:
           type: array
-          items: {type: string, enum: [api, scim]}
+          items: {type: string, enum: [api, scim, registration]}
         createdBy: {type: [string, 'null']}
         createdAt: {type: string, format: date-time}
         expiresAt: {type: [string, 'null'], format: date-time}
@@ -5442,6 +5564,50 @@ components:
           maxItems: 5
           items: {type: string}
           description: People whose changes skip approval. Each use is recorded as `approval.bypass` in the audit log and emailed to the other global administrators.
+        clientRegistration: {type: string, enum: ['off', open, token, approval], default: 'off', description: 'Who can register OAuth clients at `/oauth2/register`: nobody, anyone, clients that send an API key with the `registration` scope as the initial access token, or anyone with each new or changed client disabled until an application administrator approves it.'}
+    ClientMetadata:
+      type: object
+      description: 'Client metadata from RFC 7591. Halo ignores fields it does not list here. Requests are at most 16 KB.'
+      properties:
+        client_name: {type: string, maxLength: 200, description: One line. Defaults to the host of the first redirect URI.}
+        client_uri: {type: string, format: uri, maxLength: 200}
+        redirect_uris:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: {type: string, format: uri, description: 'An absolute https:// address without a fragment; http:// only for localhost and 127.0.0.1.'}
+        post_logout_redirect_uris:
+          type: array
+          maxItems: 10
+          items: {type: string, format: uri}
+        grant_types:
+          type: array
+          items: {type: string, enum: [authorization_code, refresh_token]}
+          description: Must include `authorization_code`. Any other grant type is refused with `invalid_client_metadata`.
+        response_types:
+          type: array
+          items: {type: string, enum: [code]}
+        token_endpoint_auth_method: {type: string, enum: [client_secret_basic, client_secret_post, none], default: client_secret_basic, description: '`none` registers a public client that must use PKCE.'}
+        application_type: {type: string, enum: [web, native], default: web, description: '`native` needs `token_endpoint_auth_method` `none`.'}
+        scope: {type: string, description: 'Space-separated. Halo keeps only `openid`, `profile` and `email` and always includes `openid`.', examples: [openid profile email]}
+    ClientRegistration:
+      allOf:
+        - {$ref: '#/components/schemas/ClientMetadata'}
+        - type: object
+          required: [client_id, client_id_issued_at, registration_client_uri, redirect_uris, grant_types, response_types, token_endpoint_auth_method, application_type, scope]
+          properties:
+            client_id: {type: string, examples: [hl_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+            client_id_issued_at: {type: integer, description: Unix time.}
+            client_secret: {type: string, description: 'Only in the registration response, for confidential clients.'}
+            client_secret_expires_at: {type: integer, description: 'Unix time, with `client_secret`.'}
+            registration_access_token: {type: string, description: 'Only in the registration response. Send it as a bearer token to `registration_client_uri`.'}
+            registration_client_uri: {type: string, format: uri}
+    OAuthError:
+      type: object
+      required: [error, error_description]
+      properties:
+        error: {type: string, enum: [invalid_request, invalid_token, invalid_redirect_uri, invalid_client_metadata, temporarily_unavailable, server_error]}
+        error_description: {type: string}
     EmailSignIn:
       type: string
       enum: [link, code, both]

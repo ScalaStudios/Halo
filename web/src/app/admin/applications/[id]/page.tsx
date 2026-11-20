@@ -5,7 +5,7 @@ import { AppActions, DangerZone } from "@/components/applications/app-actions";
 import { CredentialList } from "@/components/applications/credentials";
 import { AuthenticationForm, ScopesForm } from "@/components/applications/edit-application";
 import { SamlAttributesForm, SamlConnectionFields, SamlSettingsForm } from "@/components/applications/saml";
-import { APP_STATUS, PROTOCOL_LABEL, SetupGuideCard, TYPE_LABEL } from "@/components/applications/shared";
+import { APP_STATUS, PROTOCOL_LABEL, SetupGuideCard, statusKey, TYPE_LABEL } from "@/components/applications/shared";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
 import { SessionsTable } from "@/components/monitoring/sessions-table";
 import { SignInRows } from "@/components/monitoring/sign-in-rows";
@@ -78,9 +78,10 @@ export default async function ApplicationPage({ params, searchParams }: { params
             <div className="flex min-w-0 flex-col gap-1">
               <div className="flex flex-wrap items-center gap-3">
                 <h1 className="text-h2 text-fg">{app.name}</h1>
-                <Badge tone={APP_STATUS[app.status].tone} dot>
-                  {APP_STATUS[app.status].label}
+                <Badge tone={APP_STATUS[statusKey(app)].tone} dot>
+                  {APP_STATUS[statusKey(app)].label}
                 </Badge>
+                {app.registeredDynamically ? <Badge tone="info">Registered dynamically</Badge> : null}
               </div>
               <p className="text-body text-fg-3">
                 {PROTOCOL_LABEL[app.protocol]}
@@ -99,6 +100,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
               saml,
               bookmark,
               disabled: app.status === "disabled",
+              awaitingApproval: app.awaitingApproval,
               hasSecret: !saml && !bookmark && (app.type === "web" || app.type === "service"),
             }}
             directory={users}
@@ -113,8 +115,8 @@ export default async function ApplicationPage({ params, searchParams }: { params
               label: "Status",
               value: (
                 <span className="inline-flex items-center gap-2">
-                  <StatusDot tone={APP_STATUS[app.status].tone} />
-                  {APP_STATUS[app.status].label}
+                  <StatusDot tone={APP_STATUS[statusKey(app)].tone} />
+                  {APP_STATUS[statusKey(app)].label}
                 </span>
               ),
             },

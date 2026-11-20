@@ -32,7 +32,7 @@ func TestLauncher(t *testing.T) {
 		return a
 	}
 	wiki, grafana, ledger, old := app("wiki", "bookmark", eng.ID), app("grafana", "oidc", eng.ID), app("ledger", "bookmark", finance.ID), app("old", "bookmark", eng.ID)
-	must(e.st.SetApplicationStatus(ctx, old.ID, "disabled"))
+	must(e.st.SetApplicationStatus(ctx, old.ID, "disabled", false))
 	engineering, err := e.st.SaveCollection(ctx, "", "Engineering", []string{wiki.ID, grafana.ID, ledger.ID, old.ID}, []string{eng.ID})
 	must(err)
 	_, err = e.st.SaveCollection(ctx, "", "Finance", []string{wiki.ID, ledger.ID}, []string{finance.ID})

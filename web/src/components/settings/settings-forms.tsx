@@ -280,6 +280,59 @@ export function SecurityForm({ settings, canEdit }: { settings: Settings; canEdi
   );
 }
 
+const REGISTRATION: Record<Settings["clientRegistration"], { label: string; hint: string }> = {
+  off: { label: "Nobody", hint: "Only administrators register applications, in the console or with the API." },
+  token: { label: "Clients with an initial access token", hint: "Clients send an API key with the Client registration scope. Create one on a service account and give it to the tools you trust." },
+  approval: { label: "Anyone, after approval", hint: "Anyone who can reach Halo can register a client. It stays disabled until an application administrator approves it." },
+  open: { label: "Anyone", hint: "Anyone who can reach Halo can register a client. It still signs nobody in until you assign it to groups." },
+};
+
+export function ClientRegistrationForm({ settings, issuer, canEdit }: { settings: Settings; issuer: string; canEdit: boolean }) {
+  const { saving, failure, save } = useSaveSettings();
+  const [mode, setMode] = useState(settings.clientRegistration);
+
+  return (
+    <Card>
+      <CardHeader
+        title="Client registration"
+        description="Lets OAuth clients register themselves (RFC 7591) and change or delete their registration with the access token they receive (RFC 7592). They get only the openid, profile and email scopes, and never groups, API grants or token exchange. A client assigned to groups that changes its registration waits for approval again."
+      />
+      <CardBody>
+        <form
+          className="flex max-w-xl flex-col gap-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save({ clientRegistration: mode }, mode === "off" ? "Client registration turned off" : "Client registration saved", "Every Halo server follows the change within 30 seconds.");
+          }}
+        >
+          <Field label="Who can register clients" hint={REGISTRATION[mode].hint}>
+            {(props) => (
+              <Select {...props} disabled={!canEdit} value={mode} onChange={(event) => setMode(event.target.value as Settings["clientRegistration"])}>
+                {(Object.keys(REGISTRATION) as Settings["clientRegistration"][]).map((value) => (
+                  <option key={value} value={value}>
+                    {REGISTRATION[value].label}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          {mode === "off" ? null : <CopyField label="Registration endpoint" value={`${issuer}/oauth2/register`} hint="Clients also find it as registration_endpoint in the discovery document." />}
+          {canEdit ? (
+            <div className="flex flex-wrap items-center gap-4">
+              <Button type="submit" variant="primary" loading={saving} disabled={mode === settings.clientRegistration}>
+                Save client registration
+              </Button>
+              <ActionError message={failure} />
+            </div>
+          ) : (
+            <ReadOnlyNote>Only security and global administrators can change client registration.</ReadOnlyNote>
+          )}
+        </form>
+      </CardBody>
+    </Card>
+  );
+}
+
 function sessionCount(value: string, min: number) {
   const n = Number(value);
   return value.trim() !== "" && Number.isInteger(n) && n >= min && n <= 100;

@@ -12,13 +12,14 @@ import (
 )
 
 const appColumns = `id, name, description, protocol, app_type, status, client_id, homepage, redirect_uris, post_logout_uris, scopes, access_token_ttl, refresh_token_ttl, id_token_ttl, refresh_rotation, token_exchange,
-	array(select x.resource_id from app_exchange_sources x where x.app_id = applications.id order by x.resource_id), setup_guide, owner_id, created_at, logo_updated_at`
+	array(select x.resource_id from app_exchange_sources x where x.app_id = applications.id order by x.resource_id), setup_guide, owner_id, created_at, logo_updated_at, registration_hash, awaiting_approval`
 
 func scanApp(row rowScanner) (Application, error) {
 	var a Application
 	var logo *time.Time
 	err := row.Scan(&a.ID, &a.Name, &a.Description, &a.Protocol, &a.Type, &a.Status, &a.ClientID, &a.Homepage, &a.RedirectURIs, &a.PostLogoutURIs, &a.Scopes,
-		&a.TokenPolicy.AccessTokenTTL, &a.TokenPolicy.RefreshTokenTTL, &a.TokenPolicy.IDTokenTTL, &a.TokenPolicy.Rotation, &a.TokenPolicy.Exchange, &a.TokenPolicy.ExchangeFrom, &a.SetupGuide, &a.Owner, &a.CreatedAt, &logo)
+		&a.TokenPolicy.AccessTokenTTL, &a.TokenPolicy.RefreshTokenTTL, &a.TokenPolicy.IDTokenTTL, &a.TokenPolicy.Rotation, &a.TokenPolicy.Exchange, &a.TokenPolicy.ExchangeFrom, &a.SetupGuide, &a.Owner, &a.CreatedAt, &logo, &a.RegistrationHash, &a.AwaitingApproval)
+	a.RegisteredDynamically = a.RegistrationHash != nil
 	if logo != nil {
 		path := AppLogos.Path(a.ID, *logo)
 		a.LogoURL = &path
@@ -71,18 +72,20 @@ func (s *Store) GetApplicationByClientID(ctx context.Context, clientID string) (
 }
 
 type NewApplication struct {
-	Name           string
-	Description    string
-	Protocol       string
-	Type           string
-	Homepage       string
-	RedirectURIs   []string
-	PostLogoutURIs []string
-	Scopes         []string
-	GroupIDs       []string
-	SetupGuide     string
-	OwnerID        *string
-	ClientID       string
+	Name             string
+	Description      string
+	Protocol         string
+	Type             string
+	Homepage         string
+	RedirectURIs     []string
+	PostLogoutURIs   []string
+	Scopes           []string
+	GroupIDs         []string
+	SetupGuide       string
+	OwnerID          *string
+	ClientID         string
+	RegistrationHash []byte
+	AwaitingApproval bool
 }
 
 func (s *Store) CreateApplication(ctx context.Context, in NewApplication) (Application, error) {
@@ -107,10 +110,14 @@ func (s *Store) CreateApplication(ctx context.Context, in NewApplication) (Appli
 	if err != nil {
 		return Application{}, err
 	}
+	status := "active"
+	if in.AwaitingApproval {
+		status = "disabled"
+	}
 	err = s.Tx(ctx, func(tx *Store) error {
-		_, err := tx.db.Exec(ctx, `insert into applications (id, name, description, protocol, app_type, client_id, homepage, redirect_uris, post_logout_uris, scopes, setup_guide, owner_id, access_token_ttl, id_token_ttl, refresh_token_ttl) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		_, err := tx.db.Exec(ctx, `insert into applications (id, name, description, protocol, app_type, client_id, homepage, redirect_uris, post_logout_uris, scopes, setup_guide, owner_id, access_token_ttl, id_token_ttl, refresh_token_ttl, registration_hash, awaiting_approval, status) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
 			appID, strings.TrimSpace(in.Name), in.Description, in.Protocol, in.Type, clientID, in.Homepage, in.RedirectURIs, in.PostLogoutURIs, in.Scopes, in.SetupGuide, in.OwnerID,
-			settings.AccessTokenMinutes*60, settings.IDTokenMinutes*60, settings.RefreshTokenHours*3600)
+			settings.AccessTokenMinutes*60, settings.IDTokenMinutes*60, settings.RefreshTokenHours*3600, in.RegistrationHash, in.AwaitingApproval, status)
 		if err != nil {
 			return conflict(err)
 		}
@@ -127,9 +134,9 @@ func (s *Store) CreateApplication(ctx context.Context, in NewApplication) (Appli
 	return s.GetApplication(ctx, appID)
 }
 
-func (s *Store) SetApplicationStatus(ctx context.Context, appID, status string) error {
+func (s *Store) SetApplicationStatus(ctx context.Context, appID, status string, awaiting bool) error {
 	var clientID string
-	err := s.db.QueryRow(ctx, `update applications set status = $2, updated_at = now() where id = $1 returning client_id`, appID, status).Scan(&clientID)
+	err := s.db.QueryRow(ctx, `update applications set status = $2, awaiting_approval = $3, updated_at = now() where id = $1 returning client_id`, appID, status, awaiting).Scan(&clientID)
 	if err != nil {
 		return notFound(err)
 	}

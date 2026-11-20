@@ -105,6 +105,10 @@ type Application struct {
 	TokenPolicy    TokenPolicy  `json:"tokenPolicy"`
 	SetupGuide     string       `json:"setupGuide"`
 	LogoURL        *string      `json:"logoUrl"`
+
+	RegisteredDynamically bool   `json:"registeredDynamically"`
+	AwaitingApproval      bool   `json:"awaitingApproval"`
+	RegistrationHash      []byte `json:"-"`
 }
 
 type Session struct {

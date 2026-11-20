@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookOpen, Copy, Ellipsis, ExternalLink, Pencil, Power, RefreshCw, Trash2 } from "lucide-react";
+import { BookOpen, Check, Copy, Ellipsis, ExternalLink, Pencil, Power, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { ActionError } from "@/components/ui/action-error";
@@ -27,18 +27,37 @@ type AppSummary = {
   saml: boolean;
   bookmark: boolean;
   disabled: boolean;
+  awaitingApproval: boolean;
   hasSecret: boolean;
 };
 
 export function AppActions({ app, directory }: { app: AppSummary; directory: User[] }) {
   const router = useRouter();
   const toast = useToast();
+  const { pending, run } = useMutation();
   const [rotate, setRotate] = useState(false);
   const [editing, setEditing] = useState(false);
   const idLabel = app.saml ? "entity ID" : "client ID";
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {app.awaitingApproval ? (
+        <Button
+          size="sm"
+          variant="primary"
+          loading={pending === "approve"}
+          onClick={() =>
+            void run(
+              "approve",
+              () => api(`/applications/${app.id}/enable`, { method: "POST" }),
+              () => toast({ title: `${app.name} approved`, description: "Assign groups to it so people can sign in." }),
+            )
+          }
+        >
+          <Check aria-hidden="true" size={16} strokeWidth={1.75} />
+          Approve
+        </Button>
+      ) : null}
       {app.bookmark ? null : (
         <Link href={`/admin/applications/${app.id}#setup-guide`} className={buttonClasses("secondary", "sm")}>
           <BookOpen aria-hidden="true" size={16} strokeWidth={1.75} />

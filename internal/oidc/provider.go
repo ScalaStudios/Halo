@@ -85,6 +85,9 @@ func New(d httpx.Deps) (http.Handler, error) {
 			c.ResponseTypesSupported = []string{string(oidc.ResponseTypeCode)}
 			c.GrantTypesSupported = slices.DeleteFunc(c.GrantTypesSupported, func(g oidc.GrantType) bool { return g == oidc.GrantTypeImplicit || g == oidc.GrantTypeBearer })
 			c.IntrospectionEndpointAuthSigningAlgValuesSupported, c.RevocationEndpointAuthSigningAlgValuesSupported = nil, nil
+			if settings, err := d.Store.Settings(r.Context()); err == nil && settings.ClientRegistrationOn() {
+				c.RegistrationEndpoint = d.Config.Issuer() + "/oauth2/register"
+			}
 			body, _ = json.Marshal(c)
 		}
 		maps.Copy(w.Header(), rec.Header())

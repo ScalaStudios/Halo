@@ -306,9 +306,9 @@ func TestIdentityProvider(t *testing.T) {
 		}
 	}
 	refused(call("GET", redirect.String(), session(bob.ID, "passkey"), nil), "You don't have access to Helpdesk", "User is not assigned to this application.", bob.ID)
-	must(st.SetApplicationStatus(ctx, app.ID, "disabled"))
+	must(st.SetApplicationStatus(ctx, app.ID, "disabled", false))
 	refused(call("GET", redirect.String(), passkey, nil), "Helpdesk is turned off", "The application is disabled.", ada.ID)
-	must(st.SetApplicationStatus(ctx, app.ID, "active"))
+	must(st.SetApplicationStatus(ctx, app.ID, "active", false))
 	engine.decision = access.Decision{Effect: access.Block, Policy: "Block Tor", Reason: "Sign-ins from Tor exit nodes are blocked."}
 	refused(call("GET", redirect.String(), passkey, nil), "access policy blocked", "Policy “Block Tor”: Sign-ins from Tor exit nodes are blocked.", ada.ID)
 	engine.decision = access.Decision{Effect: access.RequirePhishingResistant, Policy: "Strong sign-in", Reason: "Helpdesk needs phishing-resistant sign-in."}

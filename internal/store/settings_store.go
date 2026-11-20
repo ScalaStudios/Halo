@@ -49,6 +49,8 @@ type Settings struct {
 
 	ApprovalActions    []string `json:"approvalActions"`
 	EmergencyAccessIDs []string `json:"emergencyAccessIds"`
+
+	ClientRegistration string `json:"clientRegistration"`
 }
 
 type GroupSessionLimit struct {
@@ -72,6 +74,7 @@ var DefaultSettings = Settings{
 	SessionLimitGroups:   []GroupSessionLimit{},
 	ApprovalActions:      []string{},
 	EmergencyAccessIDs:   []string{},
+	ClientRegistration:   "off",
 }
 
 const settingsTTL = 30 * time.Second
@@ -162,6 +165,10 @@ func (s Settings) SessionLimitFor(u User) int {
 		return s.SessionLimit
 	}
 	return limit
+}
+
+func (s Settings) ClientRegistrationOn() bool {
+	return slices.Contains([]string{"open", "token", "approval"}, s.ClientRegistration)
 }
 
 func (s Settings) PasswordAllowed(u User) bool {
