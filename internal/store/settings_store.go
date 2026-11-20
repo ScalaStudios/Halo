@@ -51,6 +51,13 @@ type Settings struct {
 	EmergencyAccessIDs []string `json:"emergencyAccessIds"`
 
 	ClientRegistration string `json:"clientRegistration"`
+
+	EmailTemplates map[string]EmailTemplate `json:"emailTemplates,omitempty"`
+}
+
+type EmailTemplate struct {
+	Subject string `json:"subject"`
+	Body    string `json:"body"`
 }
 
 type GroupSessionLimit struct {
@@ -144,6 +151,17 @@ func (s *Store) SaveSettingValues(ctx context.Context, values map[string]json.Ra
 		}
 	}
 	return nil
+}
+
+func (s *Store) SaveEmailTemplate(ctx context.Context, kind string, t EmailTemplate) error {
+	value, _ := json.Marshal(map[string]EmailTemplate{kind: t})
+	_, err := s.db.Exec(ctx, `insert into settings (key, value) values ('emailTemplates', $1) on conflict (key) do update set value = settings.value || excluded.value, updated_at = now()`, value)
+	return err
+}
+
+func (s *Store) ResetEmailTemplate(ctx context.Context, kind string) (bool, error) {
+	tag, err := s.db.Exec(ctx, `update settings set value = value - $1::text, updated_at = now() where key = 'emailTemplates' and value ? $1::text`, kind)
+	return err == nil && tag.RowsAffected() > 0, err
 }
 
 func (s *Store) ForgetSettings() {

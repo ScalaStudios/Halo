@@ -5,9 +5,16 @@ import (
 	"time"
 )
 
-func greeting(name string) string {
+func firstName(name string) string {
 	if first := strings.Fields(name); len(first) > 0 {
-		return "Hi " + first[0] + ",\n\n"
+		return first[0]
+	}
+	return ""
+}
+
+func greeting(name string) string {
+	if first := firstName(name); first != "" {
+		return "Hi " + first + ",\n\n"
 	}
 	return "Hi,\n\n"
 }
@@ -17,38 +24,29 @@ func expiry(t time.Time) string {
 }
 
 func Invite(to, name, inviter, link string, expires time.Time) Message {
-	return Message{To: to, Subject: "Set up your Halo account", Text: greeting(name) +
-		inviter + " invited you to Halo, where you sign in to your work applications with a passkey instead of a password.\n\n" +
-		"Set up your passkey with this link:\n\n" + link + "\n\n" +
-		"The link works once and expires " + expiry(expires) + ". If you weren't expecting an invitation, you can ignore this email."}
+	return build("invite", to, map[string]string{"Name": firstName(name), "Administrator": inviter, "Link": link, "Expires": expiry(expires)})
 }
 
 func Reset(to, name, admin, link string, expires time.Time) Message {
-	return Message{To: to, Subject: "Reset how you sign in to Halo", Text: greeting(name) +
-		admin + " reset how you sign in to Halo. Your passkeys, security keys, authenticator apps and recovery codes no longer work, and you were signed out everywhere.\n\n" +
-		"Set up a new passkey with this link:\n\n" + link + "\n\n" +
-		"The link works once and expires " + expiry(expires) + ". If you didn't expect this, contact your administrator before you use it."}
+	return build("reset", to, map[string]string{"Name": firstName(name), "Administrator": admin, "Link": link, "Expires": expiry(expires)})
 }
 
 func MagicLink(to, name, app, link, code string) Message {
-	target, browser := "Halo", ""
-	if app != "" {
-		target, browser = app, " Open it in the browser where you started signing in."
-	}
+	vars := map[string]string{"Name": firstName(name), "Application": app, "Link": link, "Code": code}
 	if code == "" {
-		return Message{To: to, Subject: "Your Halo sign-in link", Text: greeting(name) +
-			"Open this link to sign in to " + target + ":\n\n" + link + "\n\n" +
-			"It works once and expires in 10 minutes." + browser + " If you didn't ask to sign in, you can ignore this email."}
+		return build("magic_link", to, vars)
 	}
-	text := greeting(name) + "Enter this code on the sign-in page to sign in to " + target + ":\n\n" + code + "\n\n"
-	ending := "It works once and expires in 10 minutes."
-	if link != "" {
-		where := ":"
-		if app != "" {
-			where = " in the browser where you started signing in:"
-		}
-		text += "Or open this link" + where + "\n\n" + link + "\n\n"
-		ending = "Each works once and expires in 10 minutes."
+	return build("magic_code", to, vars)
+}
+
+func AccessRequested(to, requester, requesterEmail, pkg, duration, reason, link string) Message {
+	return build("access_request", to, map[string]string{"Requester": requester, "RequesterEmail": requesterEmail, "Package": pkg, "Duration": duration, "Reason": reason, "Link": link})
+}
+
+func AccessDecided(to string, approved bool, approver, pkg, expires, groups, note, link string) Message {
+	vars := map[string]string{"Approver": approver, "Package": pkg, "Expires": expires, "Groups": groups, "Note": note, "Link": link}
+	if approved {
+		return build("access_approved", to, vars)
 	}
-	return Message{To: to, Subject: "Your Halo sign-in code", Text: text + ending + " Don't share the code with anyone. If you didn't ask to sign in, you can ignore this email."}
+	return build("access_denied", to, vars)
 }

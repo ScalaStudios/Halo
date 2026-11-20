@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"halo/internal/httpx"
+	"halo/internal/mail"
 	"halo/internal/store"
 )
 
@@ -281,16 +282,12 @@ func (h *handler) notifyApprovers(ctx context.Context, req store.AccessRequest) 
 		slog.WarnContext(ctx, "could not look up approvers to email", "request", req.ID, "error", err)
 		return
 	}
-	text := fmt.Sprintf("%s (%s) requested the access package %s %s.", req.Requester.Name, req.Requester.Email, req.Package.Name, durationText(req.DurationDays))
-	if req.Justification != "" {
-		text += "\n\nReason: " + req.Justification
-	}
 	for _, c := range contacts {
 		link := h.cfg.Issuer() + "/account/access"
 		if c.Admin {
 			link = h.cfg.Issuer() + "/admin/requests"
 		}
-		h.send(ctx, c.Email, req.Requester.Name+" requests "+req.Package.Name, text+"\n\nApprove or deny it in Halo: "+link)
+		h.send(ctx, mail.AccessRequested(c.Email, req.Requester.Name, req.Requester.Email, req.Package.Name, durationText(req.DurationDays), req.Justification, link))
 	}
 }
 
@@ -299,20 +296,11 @@ func (h *handler) notifyRequester(ctx context.Context, req store.AccessRequest) 
 	if req.DecidedBy != nil {
 		decider = req.DecidedBy.Name
 	}
-	subject := "Your request for " + req.Package.Name + " was denied"
-	text := decider + " denied your request for " + req.Package.Name + "."
-	if req.Status == "approved" {
-		subject = "Your request for " + req.Package.Name + " was approved"
-		text = decider + " approved your request for " + req.Package.Name + ". You have access until it is revoked."
-		if req.ExpiresAt != nil {
-			text = decider + " approved your request for " + req.Package.Name + ". You have access until " + formatTime(*req.ExpiresAt) + "."
-		}
-		text += "\n\nGroups: " + names(req.Groups) + ". Applications pick up the change the next time you sign in to them."
+	expires := ""
+	if req.ExpiresAt != nil {
+		expires = formatTime(*req.ExpiresAt)
 	}
-	if req.DecisionNote != "" {
-		text += "\n\nNote from " + decider + ": " + req.DecisionNote
-	}
-	h.send(ctx, req.Requester.Email, subject, text+"\n\nSee your requests: "+h.cfg.Issuer()+"/account/access")
+	h.send(ctx, mail.AccessDecided(req.Requester.Email, req.Status == "approved", decider, req.Package.Name, expires, names(req.Groups), req.DecisionNote, h.cfg.Issuer()+"/account/access"))
 }
 
 func expireGrants(ctx context.Context, st *store.Store, now time.Time) error {

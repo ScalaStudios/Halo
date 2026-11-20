@@ -3769,6 +3769,89 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /email-templates:
+    get:
+      tags: [Settings]
+      operationId: listEmailTemplates
+      summary: List the email templates
+      description: 'Roles: any administrator. Each email Halo sends for invitations, resets, sign-in links and codes and access requests, with its variables, Halo''s default subject and body, and the custom subject and body when one is saved.'
+      responses:
+        '200':
+          description: The email templates.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/EmailTemplate'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /email-templates/{kind}:
+    parameters:
+      - {$ref: '#/components/parameters/EmailTemplateKind'}
+    put:
+      tags: [Settings]
+      operationId: saveEmailTemplate
+      summary: Save a custom subject and body
+      description: 'Roles: global administrator. Halo renders the template with example values before saving and refuses variables the email does not have and anything other than `{{.Variable}}` and `{{if .Variable}}…{{else}}…{{end}}`. Values are inserted as plain text and never run as template code. Writes an `email_template.update` audit event.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EmailTemplateText'}
+      responses:
+        '200':
+          description: The email template with the saved custom subject and body.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EmailTemplate'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Settings]
+      operationId: resetEmailTemplate
+      summary: Go back to Halo's default subject and body
+      description: 'Roles: global administrator. Writes an `email_template.reset` audit event when a custom template was removed.'
+      responses:
+        '200':
+          description: The email template without a custom subject and body.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EmailTemplate'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /email-templates/{kind}/preview:
+    parameters:
+      - {$ref: '#/components/parameters/EmailTemplateKind'}
+    post:
+      tags: [Settings]
+      operationId: previewEmailTemplate
+      summary: Render a subject and body with example values
+      description: 'Roles: any administrator. Applies the same checks as saving, uses the organization name, and adds the footer every email ends with. Saves nothing.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EmailTemplateText'}
+      responses:
+        '200':
+          description: The rendered email.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [subject, text]
+                properties:
+                  subject: {type: string}
+                  text: {type: string}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /export:
     get:
       tags: [Settings]
@@ -4229,6 +4312,11 @@ components:
       in: path
       required: true
       schema: {type: string}
+    EmailTemplateKind:
+      name: kind
+      in: path
+      required: true
+      schema: {type: string, enum: [invite, reset, magic_link, magic_code, access_request, access_approved, access_denied]}
     UserId:
       name: userId
       in: path
@@ -5574,6 +5662,40 @@ components:
           items: {type: string}
           description: People whose changes skip approval. Each use is recorded as `approval.bypass` in the audit log and emailed to the other global administrators.
         clientRegistration: {type: string, enum: ['off', open, token, approval], default: 'off', description: 'Who can register OAuth clients at `/oauth2/register`: nobody, anyone, clients that send an API key with the `registration` scope as the initial access token, or anyone with each new or changed client disabled until an application administrator approves it.'}
+        emailTemplates:
+          type: object
+          readOnly: true
+          additionalProperties: {$ref: '#/components/schemas/EmailTemplateText'}
+          description: Custom email subjects and bodies by template kind, left out when there are none. Change them through `/email-templates/{kind}`.
+    EmailTemplateText:
+      type: object
+      required: [subject, body]
+      properties:
+        subject: {type: string, maxLength: 200, description: 'One line.', examples: ['Welcome to {{.Organization}}']}
+        body: {type: string, maxLength: 10000, description: 'Plain text. Halo adds a footer with the organization name.', examples: ['Hi {{if .Name}}{{.Name}}{{else}}there{{end}}, set up your account: {{.Link}}']}
+    EmailTemplate:
+      type: object
+      required: [kind, label, description, variables, default, custom]
+      properties:
+        kind: {type: string, enum: [invite, reset, magic_link, magic_code, access_request, access_approved, access_denied]}
+        label: {type: string, examples: [Invitation]}
+        description: {type: string}
+        variables:
+          type: array
+          items:
+            type: object
+            required: [name, description, example]
+            properties:
+              name: {type: string, examples: [Link]}
+              description: {type: string}
+              example: {type: string, description: The value previews and the check on save use.}
+        required: {type: string, description: 'A variable the body must use, such as `Link` for an invitation or `Code` for a sign-in code.'}
+        default: {$ref: '#/components/schemas/EmailTemplateText'}
+        custom:
+          oneOf:
+            - {$ref: '#/components/schemas/EmailTemplateText'}
+            - {type: 'null'}
+          description: The saved subject and body, or null when Halo sends its default.
     ClientMetadata:
       type: object
       description: 'Client metadata from RFC 7591. Halo ignores fields it does not list here. Requests are at most 16 KB.'

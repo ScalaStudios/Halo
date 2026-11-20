@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
@@ -26,6 +27,8 @@ type Message struct {
 	Subject string
 	Text    string
 	HTML    string
+	kind    string
+	vars    map[string]string
 }
 
 type Mailer interface {
@@ -66,8 +69,35 @@ func organization(ctx context.Context, cfg config.Config, st *store.Store) strin
 	return cfg.Organization
 }
 
+func footer(org string) string {
+	return "\n\nHalo · " + org + "\n"
+}
+
+func (o *Outbox) customise(ctx context.Context, m Message, org string) Message {
+	t, ok := Lookup(m.kind)
+	if !ok {
+		return m
+	}
+	settings, _ := o.st.Settings(ctx)
+	custom, ok := settings.EmailTemplates[m.kind]
+	if !ok {
+		return m
+	}
+	vars := maps.Clone(m.vars)
+	vars["Organization"] = org
+	subject, text, err := t.Render(custom, vars)
+	if err != nil {
+		slog.WarnContext(ctx, "custom email template not used, sent Halo's default", "template", m.kind, "error", err)
+		return m
+	}
+	m.Subject, m.Text = subject, text
+	return m
+}
+
 func (o *Outbox) Send(ctx context.Context, m Message) error {
-	msg, err := o.st.QueueMail(ctx, m.To, m.Subject, m.Text+"\n\nHalo · "+organization(ctx, o.cfg, o.st)+"\n", m.HTML, o.Configured())
+	org := organization(ctx, o.cfg, o.st)
+	m = o.customise(ctx, m, org)
+	msg, err := o.st.QueueMail(ctx, m.To, m.Subject, m.Text+footer(org), m.HTML, o.Configured())
 	if err != nil {
 		return err
 	}
