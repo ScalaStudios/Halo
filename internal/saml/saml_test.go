@@ -284,7 +284,12 @@ func TestIdentityProvider(t *testing.T) {
 			t.Fatalf("%s: decrypted assertion %+v %+v", method, a.Subject.NameID, a.AttributeStatements)
 		}
 	}
-	encrypted.Encryption = "off"
+	encrypted.EncryptionCertificate = "not a certificate"
+	must(st.SetSAMLSettings(ctx, app.ID, entityID, []string{acsURL.String()}, encrypted))
+	if rec := call("GET", redirect.String(), passkey, nil); rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "SAMLResponse") {
+		t.Fatalf("with encryption on and no usable certificate, sign-in must fail instead of sending the assertion: %d %s", rec.Code, rec.Body)
+	}
+	encrypted.Encryption, encrypted.EncryptionCertificate = "off", spPEM
 	must(st.SetSAMLSettings(ctx, app.ID, entityID, []string{acsURL.String()}, encrypted))
 	if a, signed, _ := assertion(call("GET", redirect.String(), passkey, nil), sp, request.ID); a.Subject.NameID.Value != ada.Email || signed.Assertion.Signature == nil {
 		t.Fatal("with encryption off, the signed assertion is sent unencrypted even when a certificate is saved")
