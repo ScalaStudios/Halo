@@ -65,6 +65,10 @@ export function StatusLabel({ label, tone }: { label: string; tone: Tone }) {
   );
 }
 
+export function RateLimitHits({ hits }: { hits: number }) {
+  return hits ? <span className="tnum text-warning">{hits.toLocaleString("en")}</span> : <span className="text-fg-3">None</span>;
+}
+
 export function ScopeTags({ scopes }: { scopes: KeyScope[] }) {
   return (
     <span className="flex flex-wrap gap-2">

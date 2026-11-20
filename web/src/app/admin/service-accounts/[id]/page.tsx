@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft, Bot, TriangleAlert } from "lucide-react";
-import { AccountActions, KeyTable, RolesCard } from "@/components/provisioning/account-actions";
+import { AccountActions, KeyTable, RateLimitCard, RolesCard } from "@/components/provisioning/account-actions";
 import { ACCOUNT_STATUS, ActivityList, StatusLabel, activeKeys, lastUsed } from "@/components/provisioning/shared";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -88,8 +88,9 @@ export default async function ServiceAccountPage({ params }: { params: Promise<{
       </section>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-        <div className="min-w-0 xl:col-span-5">
+        <div className="flex min-w-0 flex-col gap-6 xl:col-span-5">
           <RolesCard account={account} />
+          <RateLimitCard account={account} />
         </div>
         <Card className="min-w-0 xl:col-span-7">
           <CardHeader title="Activity" description={`Changes made by or to ${account.name}, newest first.`} />

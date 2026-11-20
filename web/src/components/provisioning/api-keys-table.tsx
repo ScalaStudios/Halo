@@ -12,7 +12,7 @@ import { useToast } from "@/components/ui/toast";
 import { formatDate } from "@/lib/format";
 import type { ApiKey } from "@/lib/provisioning-types";
 import { RevokeKeyDialog } from "./account-actions";
-import { KEY_STATE, SCOPES, ScopeTags, StatusLabel, keyState } from "./shared";
+import { KEY_STATE, RateLimitHits, SCOPES, ScopeTags, StatusLabel, keyState } from "./shared";
 
 const columns: ColumnDef<ApiKey, any>[] = [
   {
@@ -75,6 +75,13 @@ const columns: ColumnDef<ApiKey, any>[] = [
     cell: ({ row }) => <span className="tnum whitespace-nowrap text-fg-3">{row.original.lastUsedAt ? <RelativeTime iso={row.original.lastUsedAt} /> : "Never"}</span>,
   },
   {
+    id: "rateLimitHits",
+    accessorFn: (k) => k.rateLimitHits,
+    header: "Rate limited (24 h)",
+    meta: { label: "Rate limited (24 h)", align: "right" },
+    cell: ({ row }) => <RateLimitHits hits={row.original.rateLimitHits} />,
+  },
+  {
     id: "expires",
     accessorFn: (k) => (k.expiresAt ? new Date(k.expiresAt).getTime() : Number.MAX_SAFE_INTEGER),
     header: "Expires",
@@ -104,6 +111,7 @@ export function ApiKeysTable({ keys }: { keys: ApiKey[] }) {
         label="API keys"
         noun={["key", "keys"]}
         storageKey="api-keys"
+        initialVisibility={{ created: false }}
         searchText={(k) => `${k.label} ${k.prefix} ${k.serviceAccountName}`}
         searchPlaceholder="Search label, prefix or service account"
         views={[

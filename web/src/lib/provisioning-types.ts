@@ -13,6 +13,7 @@ export type ApiKey = {
   expiresAt: string | null;
   lastUsedAt: string | null;
   revokedAt: string | null;
+  rateLimitHits: number;
 };
 
 export type ServiceAccount = {
@@ -22,6 +23,7 @@ export type ServiceAccount = {
   description: string;
   ownerId: string | null;
   status: "active" | "suspended";
+  rateLimit: number;
   roles: RoleKey[];
   keys: ApiKey[];
   createdBy: string | null;

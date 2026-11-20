@@ -15,7 +15,7 @@ export default function Loading() {
         </Link>
       }
     >
-      <TableSkeleton columns={8} views={2} facets={2} rows={3} />
+      <TableSkeleton columns={9} views={2} facets={2} rows={3} />
     </PageSkeleton>
   );
 }
