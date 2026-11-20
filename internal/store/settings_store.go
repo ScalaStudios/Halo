@@ -40,6 +40,16 @@ type Settings struct {
 	PasswordSecondFactor bool     `json:"passwordSecondFactor"`
 	PasswordGroupIDs     []string `json:"passwordGroupIds"`
 	PasswordBreachCheck  bool     `json:"passwordBreachCheck"`
+
+	SessionLimit       int                 `json:"sessionLimit"`
+	SessionLimitAction string              `json:"sessionLimitAction"`
+	SessionLimitCLI    bool                `json:"sessionLimitCli"`
+	SessionLimitGroups []GroupSessionLimit `json:"sessionLimitGroups"`
+}
+
+type GroupSessionLimit struct {
+	GroupID string `json:"groupId"`
+	Limit   int    `json:"limit"`
 }
 
 var DefaultSettings = Settings{
@@ -53,6 +63,8 @@ var DefaultSettings = Settings{
 	PasswordSecondFactor: true,
 	PasswordGroupIDs:     []string{},
 	PasswordBreachCheck:  true,
+	SessionLimitAction:   "refuse",
+	SessionLimitGroups:   []GroupSessionLimit{},
 }
 
 const settingsTTL = 30 * time.Second
@@ -115,6 +127,19 @@ func (s *Store) ForgetSettings() {
 
 func (s Settings) SessionLifetime() time.Duration {
 	return time.Duration(s.SessionHours) * time.Hour
+}
+
+func (s Settings) SessionLimitFor(u User) int {
+	limit := 0
+	for _, g := range s.SessionLimitGroups {
+		if slices.Contains(u.GroupIDs, g.GroupID) && (limit == 0 || g.Limit < limit) {
+			limit = g.Limit
+		}
+	}
+	if limit == 0 {
+		return s.SessionLimit
+	}
+	return limit
 }
 
 func (s Settings) PasswordAllowed(u User) bool {

@@ -21,6 +21,7 @@ var (
 	errDeviceAssigned  = httpx.Fail(http.StatusForbidden, "ERR_NOT_ASSIGNED", "You don't have access to this application. Ask your administrator to assign it to you.")
 	errDeviceBlocked   = httpx.Fail(http.StatusForbidden, "ERR_BLOCKED_BY_POLICY", "Your organization's access policy blocked this sign-in. If you think this is wrong, contact your administrator.")
 	errDeviceStrongest = httpx.Fail(http.StatusForbidden, "ERR_STRONGER_AUTH_REQUIRED", "This application requires a passkey or security key. Sign out, sign in with one of those, then approve again.")
+	errDeviceSessions  = httpx.Fail(http.StatusForbidden, "ERR_SESSION_LIMIT", "You're already signed in from the command line on as many devices as your organization allows. Run halo logout on a device you no longer use, or ask your administrator to end one of your sessions, then approve again.")
 )
 
 func ensureCLI(ctx context.Context, st *store.Store) error {
@@ -175,11 +176,23 @@ func (h *deviceHandlers) decide(approve bool) httpx.HandlerFunc {
 			event.Result, event.Reason = "success", ""
 		}
 		err = h.st.Tx(ctx, func(tx *store.Store) error {
+			if approve {
+				if err := tx.MakeRoomForSession(ctx, p.user, true, ""); err != nil {
+					return err
+				}
+			}
 			if err := tx.DecideDeviceAuthorization(ctx, p.device.UserCode, approve, p.user.ID, p.session.Method, p.session.AMR(), p.session.CreatedAt); err != nil {
 				return err
 			}
 			return tx.RecordSignIn(ctx, event)
 		})
+		if errors.Is(err, store.ErrSessionLimit) {
+			event.Result, event.Reason = "failure", store.SessionLimitReason
+			if err := h.st.RecordSignIn(ctx, event); err != nil {
+				return err
+			}
+			return errDeviceSessions
+		}
 		if errors.Is(err, store.ErrNotFound) {
 			return errDeviceCode
 		}

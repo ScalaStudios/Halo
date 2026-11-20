@@ -24,6 +24,10 @@ export type Settings = {
   passwordSecondFactor: boolean;
   passwordGroupIds: string[];
   passwordBreachCheck: boolean;
+  sessionLimit: number;
+  sessionLimitAction: "refuse" | "end-oldest";
+  sessionLimitCli: boolean;
+  sessionLimitGroups: { groupId: string; limit: number }[];
 };
 
 export type SettingsResponse = {

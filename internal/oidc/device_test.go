@@ -245,6 +245,64 @@ func TestDeviceApprovalPolicy(t *testing.T) {
 	}
 }
 
+func TestDeviceSessionLimit(t *testing.T) {
+	h := newInfra(t, nil)
+	ctx := context.Background()
+	org := func(change func(*store.Settings)) {
+		s, err := h.st.Settings(ctx)
+		h.must(err)
+		change(&s)
+		h.must(h.st.SaveSettings(ctx, s))
+		h.st.ForgetSettings()
+	}
+	approve := func(userCode string) result {
+		return h.send(http.MethodPost, "/api/v1/device/"+userCode+"/approve", nil, cookie(h.token))
+	}
+	login := func() {
+		deviceCode, userCode := h.startDevice("openid offline_access")
+		if r := approve(userCode); r.status != http.StatusOK {
+			t.Fatalf("approve: %d %v", r.status, r.body)
+		}
+		if r := h.poll(deviceCode); r.status != http.StatusOK {
+			t.Fatalf("token: %d %v", r.status, r.body)
+		}
+	}
+
+	org(func(s *store.Settings) { s.SessionLimit = 1 })
+	login()
+	login()
+
+	org(func(s *store.Settings) { s.SessionLimitCLI = true })
+	deviceCode, userCode := h.startDevice("openid offline_access")
+	if r := approve(userCode); r.status != http.StatusForbidden || r.body["error"].(map[string]any)["code"] != "ERR_SESSION_LIMIT" {
+		t.Fatalf("approve over the limit: %d %v", r.status, r.body)
+	}
+	org(func(s *store.Settings) { s.SessionLimitAction = "end-oldest" })
+	if r := approve(userCode); r.status != http.StatusOK {
+		t.Fatalf("approve after ending the oldest: %d %v", r.status, r.body)
+	}
+	if r := h.poll(deviceCode); r.status != http.StatusOK {
+		t.Fatalf("token: %d %v", r.status, r.body)
+	}
+
+	sessions, err := h.st.ListSessions(ctx, h.user.ID)
+	h.must(err)
+	clients := slices.DeleteFunc(slices.Clone(sessions), func(s store.Session) bool { return s.Client == "" })
+	if len(sessions) != 2 || len(clients) != 1 {
+		t.Fatalf("sessions: %+v", sessions)
+	}
+	events, err := h.st.ListSignIns(ctx, store.SignInFilter{UserID: h.user.ID})
+	h.must(err)
+	results := []string{}
+	for _, e := range slices.Backward(events) {
+		results = append(results, e.Result+": "+e.Reason)
+	}
+	want := []string{"success: ", "success: ", "failure: " + store.SessionLimitReason, "ended: " + store.SessionEndedReason, "ended: " + store.SessionEndedReason, "success: "}
+	if !slices.Equal(results, want) {
+		t.Fatalf("sign-in log: %v", results)
+	}
+}
+
 func TestAPIResources(t *testing.T) {
 	h := newInfra(t, nil)
 	ctx := context.Background()
