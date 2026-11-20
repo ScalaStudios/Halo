@@ -1,0 +1,95 @@
+{{- if .Values.postgresql.enabled }}
+{{- $ctx := dict "root" . "component" "postgresql" -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "halo.fullname" . }}-postgresql
+  labels:
+    {{- include "halo.labels" $ctx | nindent 4 }}
+spec:
+  serviceName: {{ include "halo.fullname" . }}-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "halo.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "halo.labels" $ctx | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      enableServiceLinks: false
+      securityContext:
+        {{- toYaml .Values.postgresql.podSecurityContext | nindent 8 }}
+      containers:
+        - name: postgresql
+          image: {{ include "halo.image" (dict "root" . "image" .Values.postgresql.image) }}
+          imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
+          env:
+            - name: POSTGRES_USER
+              value: halo
+            - name: POSTGRES_DB
+              value: halo
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "postgresql.existingSecret is required when postgresql.enabled is true" .Values.postgresql.existingSecret }}
+                  key: {{ .Values.postgresql.passwordKey }}
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgresql
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, halo, -d, halo]
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: postgresql
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.postgresql.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.postgresql.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        {{- with .Values.postgresql.persistence.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.persistence.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "halo.fullname" . }}-postgresql
+  labels:
+    {{- include "halo.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    {{- include "halo.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql
+{{- end }}

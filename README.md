@@ -194,7 +194,7 @@ Self-hosted Halo runs on your own infrastructure and needs no external service. 
 - **Back up two things.** The database, and `HALO_SECRET_KEY`, which encrypts signing keys and other stored secrets. A backup cannot be restored without the key that was in use when it was taken.
 - **Run one Halo server.** Some background jobs, such as outbound SCIM, access expiry and lifecycle rules, run in every server process without coordinating with other processes.
 - **Email is optional.** Without an SMTP server, administrators pass invite and reset links on themselves. With one, Halo emails them, and people can sign in with magic links.
-- **Kubernetes.** There is no Helm chart yet. [Self-hosting](https://halo.scala.gg/docs/self-hosting#other-ways-to-run-halo) lists what any other deployment needs.
+- **Kubernetes.** A Helm chart in [`deploy/helm/halo`](deploy/helm/halo) deploys the server and the web interface, with an optional PostgreSQL, and reads `HALO_SECRET_KEY` and the database URL from an existing Secret. [Its README](deploy/helm/halo/README.md) covers installation and upgrades.
 
 ## Halo Cloud
 
@@ -212,7 +212,6 @@ Known limitations today:
 
 - One organization per installation.
 - Run a single Halo server; see [Self-hosting](#self-hosting).
-- There is no Helm chart yet.
 - No metrics endpoint; the server logs requests and errors as structured text.
 - Halo has not been through OpenID Connect conformance testing or an independent security audit.
 
