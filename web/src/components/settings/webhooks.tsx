@@ -50,7 +50,7 @@ function covers(pattern: string, type: string) {
   return pattern === type || (pattern.endsWith(".*") && type.startsWith(pattern.slice(0, -1)));
 }
 
-function EventPicker({ families, value, onChange }: { families: WebhookEventFamily[]; value: string[]; onChange: (value: string[]) => void }) {
+export function EventPicker({ families, value, onChange }: { families: WebhookEventFamily[]; value: string[]; onChange: (value: string[]) => void }) {
   const id = useId();
   const [query, setQuery] = useState("");
   const covered = (type: string) => value.some((p) => covers(p, type));

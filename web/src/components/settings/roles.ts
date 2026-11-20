@@ -28,7 +28,7 @@ export const CAPABILITIES: Record<RoleKey, string[]> = {
     "Turn sign-in methods on and off, set device trust, resolve risk events",
     "Suspend people and end their sessions",
     "Manage service accounts and API keys",
-    "Change security defaults and webhook endpoints",
+    "Change security defaults, webhook endpoints and notification rules",
   ],
   user_admin: [
     "Invite, suspend and restore people",

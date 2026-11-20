@@ -1,3 +1,5 @@
+import type { RoleKey } from "./provisioning-types";
+
 export type Theme = {
   accent: string;
   background: string;
@@ -120,13 +122,34 @@ export type Webhook = {
   lastDeliveryAt: string | null;
 };
 
+export type NotificationDestination = "webhook" | "slack" | "discord";
+
+export type NotificationRule = {
+  id: string;
+  name: string;
+  destination: NotificationDestination;
+  host: string;
+  events: string[];
+  minRisk: "" | "low" | "medium" | "high";
+  role: "" | RoleKey;
+  threshold: number;
+  windowMinutes: number;
+  quietMinutes: number;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastSentAt: string | null;
+  lastStatus: DeliveryStatus | null;
+};
+
 export type WebhookEventFamily = { family: string; types: { type: string; description: string }[] };
 
 export type DeliveryStatus = "pending" | "delivered" | "failed";
 
 export type WebhookDelivery = {
   id: string;
-  endpointId: string;
+  endpointId?: string;
+  ruleId?: string;
   eventId: string;
   eventType: string;
   body: string;
