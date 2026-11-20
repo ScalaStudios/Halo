@@ -30,9 +30,9 @@ func TestSessionLimit(t *testing.T) {
 	e.org(func(s *store.Settings) { s.SessionLimit = 2 })
 	laptop, phone := client(), client()
 	signInWith(laptop)
+	signInWith(laptop)
 	signInWith(phone)
 	e.expect(client(), "POST", "/api/v1/auth/password", signIn, http.StatusForbidden, "ERR_SESSION_LIMIT")
-	signInWith(phone)
 
 	e.org(func(s *store.Settings) { s.SessionLimitAction = "end-oldest" })
 	tablet := client()
@@ -64,7 +64,7 @@ func TestSessionLimit(t *testing.T) {
 	}
 
 	ended := "ended: " + store.SessionEndedReason
-	want := []string{"success: ", "success: ", "failure: " + store.SessionLimitReason, "success: ", ended, ended, "success: ", ended, ended, "success: "}
+	want := []string{"success: ", "success: ", "success: ", "failure: " + store.SessionLimitReason, ended, "success: ", ended, ended, "success: "}
 	if got := e.reasons(ada); !slices.Equal(got, want) {
 		t.Fatalf("sign-in log:\n%s", strings.Join(got, "\n"))
 	}
