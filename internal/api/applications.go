@@ -22,6 +22,8 @@ const (
 	rotationGrace  = 24 * time.Hour
 )
 
+var errBookmarkURL = httpx.Invalid("Enter the URL the bookmark opens, for example https://status.example.com.")
+
 var setupGuides = []string{"grafana", "forgejo", "aether", "generic-oidc", "kubernetes", "generic-saml", "aws-iam-identity-center", "slack"}
 
 func (h *handlers) application(r *http.Request) (store.Application, error) {
@@ -248,16 +250,24 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 	}
 	switch in.Protocol {
 	case "oidc", "oauth":
-	case "saml":
+	case "saml", "bookmark":
 		in.Type = "web"
 	default:
-		return httpx.Invalid(`Choose a protocol: "oidc" for OpenID Connect sign-in, "oauth" for API access or "saml" for SAML 2.0 sign-in.`)
+		return httpx.Invalid(`Choose a protocol: "oidc" for OpenID Connect sign-in, "oauth" for API access, "saml" for SAML 2.0 sign-in or "bookmark" for a link in the account portal.`)
 	}
 	if !slices.Contains([]string{"web", "spa", "native", "service"}, in.Type) {
 		return httpx.Invalid(`Choose an application type: "web", "spa", "native" or "service".`)
 	}
 	if err := checkHomepage(in.Homepage); err != nil {
 		return err
+	}
+	if in.Protocol == "bookmark" {
+		if in.Homepage == "" {
+			return errBookmarkURL
+		}
+		if len(in.RedirectURIs) > 0 || len(in.PostLogoutURIs) > 0 || len(in.Scopes) > 0 || in.SAML != nil {
+			return httpx.Invalid("A bookmark only opens its URL, so it takes no redirect URIs, scopes or SAML settings.")
+		}
 	}
 	if err := checkRedirects(in.Protocol, in.Type, in.RedirectURIs, in.PostLogoutURIs); err != nil {
 		return err
@@ -317,15 +327,18 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 			if err := tx.SetSAMLSettings(r.Context(), created.ID, entityID, in.RedirectURIs, settings); err != nil {
 				return err
 			}
-		} else if in.Type == "web" || in.Type == "service" {
+		} else if in.Protocol != "bookmark" && (in.Type == "web" || in.Type == "service") {
 			_, value, err := tx.AddClientSecret(r.Context(), created.ID, "Initial", secretLifetime)
 			if err != nil {
 				return err
 			}
 			secret = &value
 		}
-		protocol := map[string]string{"oidc": "OpenID Connect", "oauth": "OAuth", "saml": "SAML"}[in.Protocol]
-		if err := record(r, tx, actor, store.AuditEvent{Action: "application.create", Summary: "Registered " + protocol + " " + in.Type + " application", TargetType: "application", TargetID: created.ID, TargetLabel: created.Name}); err != nil {
+		summary := "Registered " + map[string]string{"oidc": "OpenID Connect", "oauth": "OAuth", "saml": "SAML"}[in.Protocol] + " " + in.Type + " application"
+		if in.Protocol == "bookmark" {
+			summary = "Added a bookmark to " + in.Homepage
+		}
+		if err := record(r, tx, actor, store.AuditEvent{Action: "application.create", Summary: summary, TargetType: "application", TargetID: created.ID, TargetLabel: created.Name}); err != nil {
 			return err
 		}
 		app, err = tx.GetApplication(r.Context(), created.ID)
@@ -351,6 +364,9 @@ func (h *handlers) rotateSecret(w http.ResponseWriter, r *http.Request, actor st
 	}
 	if err := httpx.Decode(r, &in); err != nil && r.ContentLength != 0 {
 		return err
+	}
+	if app.Protocol == "bookmark" {
+		return httpx.Invalid(app.Name + " is a bookmark. Nobody signs in to it through Halo, so it has no client secret.")
 	}
 	if app.Protocol == "saml" || (app.Type != "web" && app.Type != "service") {
 		return httpx.Invalid(app.Name + " is a public client that signs in without a client secret, so there is nothing to rotate.")
@@ -535,6 +551,9 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	if app.Protocol == "saml" && (in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil) {
 		return httpx.Invalid(app.Name + " signs in with SAML, so it has no redirect URIs, scopes or token lifetimes. Change its ACS URLs in the SAML settings.")
 	}
+	if app.Protocol == "bookmark" && (in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil) {
+		return httpx.Invalid(app.Name + " is a bookmark, so it has no redirect URIs, scopes or token lifetimes.")
+	}
 	next, changed := app, []string{}
 	for _, f := range []struct {
 		label string
@@ -619,6 +638,9 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	}
 	if next.Name == "" {
 		return httpx.Invalid("Enter an application name.")
+	}
+	if app.Protocol == "bookmark" && next.Homepage == "" {
+		return errBookmarkURL
 	}
 	if tooLong(200, next.Name, next.Homepage) || tooLong(2000, next.Description) {
 		return httpx.Invalid("Keep the name and homepage under 200 characters and the description under 2,000.")

@@ -1,7 +1,10 @@
 package auth
 
 import (
+	"cmp"
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 
@@ -99,16 +102,17 @@ type myApplication struct {
 	Homepage    string  `json:"homepage"`
 	LaunchURL   string  `json:"launchUrl"`
 	LogoURL     *string `json:"logoUrl"`
+	Favourite   bool    `json:"favourite"`
 }
 
-func (h *handler) applications(w http.ResponseWriter, r *http.Request) error {
-	u, _, err := httpx.RequireUser(r)
+func (h *handler) myApplications(ctx context.Context, u store.User) ([]myApplication, error) {
+	apps, err := h.st.ListApplications(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	apps, err := h.st.ListApplications(r.Context())
+	prefs, err := h.st.AppPreferences(ctx, u.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	out := []myApplication{}
 	for _, a := range apps {
@@ -117,7 +121,95 @@ func (h *handler) applications(w http.ResponseWriter, r *http.Request) error {
 			if a.Protocol == "saml" {
 				launch = "/saml/launch/" + a.ID
 			}
-			out = append(out, myApplication{ID: a.ID, Name: a.Name, Description: a.Description, Homepage: a.Homepage, LaunchURL: launch, LogoURL: a.LogoURL})
+			out = append(out, myApplication{ID: a.ID, Name: a.Name, Description: a.Description, Homepage: a.Homepage, LaunchURL: launch, LogoURL: a.LogoURL, Favourite: prefs[a.ID].Favourite})
+		}
+	}
+	slices.SortStableFunc(out, func(a, b myApplication) int {
+		pa, pb := prefs[a.ID].Position, prefs[b.ID].Position
+		switch {
+		case pa != nil && pb != nil:
+			return cmp.Compare(*pa, *pb)
+		case pa != nil:
+			return -1
+		case pb != nil:
+			return 1
+		}
+		return 0
+	})
+	return out, nil
+}
+
+func (h *handler) applications(w http.ResponseWriter, r *http.Request) error {
+	u, _, err := httpx.RequireUser(r)
+	if err != nil {
+		return err
+	}
+	out, err := h.myApplications(r.Context(), u)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, out)
+}
+
+func (h *handler) arrangeApplications(w http.ResponseWriter, r *http.Request) error {
+	u, _, err := httpx.RequireUser(r)
+	if err != nil {
+		return err
+	}
+	var in struct {
+		Order      []string `json:"order"`
+		Favourites []string `json:"favourites"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	mine, err := h.myApplications(r.Context(), u)
+	if err != nil {
+		return err
+	}
+	for _, appID := range slices.Concat(in.Order, in.Favourites) {
+		if !slices.ContainsFunc(mine, func(a myApplication) bool { return a.ID == appID }) {
+			return httpx.Invalid(fmt.Sprintf("%q is not one of your applications. Refresh the page and try again.", appID))
+		}
+	}
+	if err := h.st.SetAppPreferences(r.Context(), u.ID, in.Order, in.Favourites); err != nil {
+		return err
+	}
+	return h.applications(w, r)
+}
+
+type myCollection struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	ApplicationIDs []string `json:"applicationIds"`
+}
+
+func (h *handler) collections(w http.ResponseWriter, r *http.Request) error {
+	u, _, err := httpx.RequireUser(r)
+	if err != nil {
+		return err
+	}
+	all, err := h.st.ListCollections(r.Context())
+	if err != nil {
+		return err
+	}
+	mine, err := h.myApplications(r.Context(), u)
+	if err != nil {
+		return err
+	}
+	out := []myCollection{}
+	for _, c := range all {
+		if !slices.ContainsFunc(c.GroupIDs, func(groupID string) bool { return slices.Contains(u.GroupIDs, groupID) }) {
+			continue
+		}
+		visible := []string{}
+		for _, a := range mine {
+			if slices.Contains(c.ApplicationIDs, a.ID) {
+				visible = append(visible, a.ID)
+			}
+		}
+		if len(visible) > 0 {
+			out = append(out, myCollection{ID: c.ID, Name: c.Name, ApplicationIDs: visible})
 		}
 	}
 	return httpx.JSON(w, http.StatusOK, out)

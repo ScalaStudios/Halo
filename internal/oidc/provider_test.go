@@ -215,6 +215,11 @@ func TestAuthorizationCodeFlow(t *testing.T) {
 	if r := authorize(disabled.ClientID, "https://wiki.example.com/cb", true); r.status != http.StatusBadRequest || r.location != "" {
 		t.Fatalf("disabled app: %d %q", r.status, r.location)
 	}
+	bookmark, err := st.CreateApplication(ctx, store.NewApplication{Name: "Intranet", Protocol: "bookmark", Type: "web", Homepage: "https://intranet.example.com", RedirectURIs: []string{"https://intranet.example.com/cb"}, GroupIDs: []string{group.ID}})
+	must(err)
+	if r := authorize(bookmark.ClientID, "https://intranet.example.com/cb", true); r.status != http.StatusBadRequest || r.location != "" {
+		t.Fatalf("bookmark used as an OpenID Connect client: %d %q", r.status, r.location)
+	}
 	spa, err := st.CreateApplication(ctx, store.NewApplication{Name: "Dashboard", Protocol: "oidc", Type: "spa", RedirectURIs: []string{"https://dash.example.com/cb"}, GroupIDs: []string{group.ID}})
 	must(err)
 	if r := authorize(spa.ClientID, "https://dash.example.com/cb", false); r.status != http.StatusFound || !strings.Contains(r.location, "error=invalid_request") {

@@ -93,6 +93,8 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		"DELETE /api/v1/me/sessions/{id}":        h.revokeSession,
 		"POST /api/v1/me/sessions/revoke-others": h.revokeOtherSessions,
 		"GET /api/v1/me/applications":            h.applications,
+		"PUT /api/v1/me/applications":            h.arrangeApplications,
+		"GET /api/v1/me/collections":             h.collections,
 		"GET /api/v1/me/groups":                  h.groups,
 		"GET /api/v1/me/sign-ins":                h.signIns,
 		"POST /api/v1/auth/magic-link":           h.magicLink,
