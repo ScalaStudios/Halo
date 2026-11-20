@@ -463,12 +463,16 @@ func TestFilters(t *testing.T) {
 		`userName eq "x' or '1'='1"`:                                                             "",
 		`userName eq "ada@example.com\" or \"1\"=\"1"`:                                           "",
 		`userName co "%" or userName sw "_"`:                                                     "",
+		`title eq "" or title lt "F"`:                                                            ada0,
+		`title ne ""`:                                                                            ada0 + "," + bob0,
+		`schemas eq "urn:ietf:params:scim:schemas:core:2.0:User" and name pr`:                    ada0 + "," + bob0,
+		`schemas eq "` + enterprise + `"`:                                                        ada0,
 	} {
 		if got := e.names("/scim/v2/Users", filter); got != want {
 			t.Errorf("%s: got %q, want %q", filter, got, want)
 		}
 	}
-	for _, filter := range []string{`userName eq`, `nickName eq "x"`, `active eq "yes"`, `userName eq "a" and`, `(userName pr`, `userName) or 1=1 --`, `title gt 3`, `meta.created lt "soon"`} {
+	for _, filter := range []string{`userName eq`, `nickName eq "x"`, `active eq "yes"`, `userName eq "a" and`, `(userName pr`, `userName) or 1=1 --`, `title gt 3`, `meta.created lt "soon"`, `name eq "Ada Lovelace"`} {
 		rec, body := e.call("GET", "/scim/v2/Users?filter="+url.QueryEscape(filter), nil)
 		e.expectError(rec, body, 400, "invalidFilter")
 	}
@@ -491,6 +495,8 @@ func TestFilters(t *testing.T) {
 		`members[display co "lovelace"]`:                                   "Engineers",
 		`not (members pr)`:                                                 "Empty",
 		`members eq "` + bob.ID + `" and not (displayName eq "Engineers")`: "Ops",
+		`members[type eq "User" and value eq "` + ada.ID + `"]`:            "Engineers",
+		`schemas eq "urn:ietf:params:scim:schemas:core:2.0:Group"`:         "Empty,Engineers,Ops",
 	} {
 		if got := e.names("/scim/v2/Groups", filter); got != want {
 			t.Errorf("%s: got %q, want %q", filter, got, want)
@@ -599,4 +605,40 @@ func TestBulk(t *testing.T) {
 	}
 	rec, body = e.call("POST", "/scim/v2/Bulk", "{not json")
 	e.expectError(rec, body, 400, "invalidSyntax")
+}
+
+func TestBulkKeepsOrderPerResource(t *testing.T) {
+	e := setup(t)
+	rec, body := e.call("POST", "/scim/v2/Groups", map[string]any{"displayName": "Order"})
+	e.expect(rec, 201)
+	groupID := body["id"].(string)
+	patch := func(op, path string, value any) map[string]any {
+		return map[string]any{"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"}, "Operations": []map[string]any{{"op": op, "path": path, "value": value}}}
+	}
+	group := "/Groups/" + groupID
+	rec, body = e.call("POST", "/scim/v2/Bulk", map[string]any{"Operations": []map[string]any{
+		{"method": "PATCH", "path": group, "data": patch("add", "members", []map[string]any{{"value": "bulkId:u"}})},
+		{"method": "PATCH", "path": group, "data": patch("remove", "members", nil)},
+		{"method": "POST", "path": "/Users", "bulkId": "u", "data": map[string]any{"userName": "fox@example.com"}},
+		{"method": "POST", "path": "/Users", "bulkId": "v", "data": map[string]any{"userName": "walter@example.com"}},
+		{"method": "PATCH", "path": group, "data": patch("add", "members", []map[string]any{{"value": "bulkId:v"}})},
+		{"method": "PATCH", "path": group, "data": patch("remove", `members[value eq "bulkId:v"]`, nil)},
+		{"method": "PATCH", "path": group, "data": patch("remove", `members[value eq "bulkId:missing"]`, nil)},
+	}})
+	e.expect(rec, 200)
+	results, _ := body["Operations"].([]any)
+	statuses := []string{}
+	for _, r := range results {
+		statuses = append(statuses, r.(map[string]any)["status"].(string))
+	}
+	if strings.Join(statuses, ",") != "200,200,201,201,200,200,409" {
+		t.Fatalf("bulk statuses %v: %s", statuses, rec.Body)
+	}
+	if missing := results[6].(map[string]any); missing["location"] != "http://localhost:3200/scim/v2"+group {
+		t.Fatalf("failed PATCH needs its location: %v", missing)
+	}
+	g, err := e.st.GetSCIMGroup(context.Background(), groupID)
+	if err != nil || len(g.Members) != 0 {
+		t.Fatalf("members after add, remove all, add and remove by bulkId selector: %+v %v", g.Members, err)
+	}
 }

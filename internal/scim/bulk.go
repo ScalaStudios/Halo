@@ -24,7 +24,10 @@ const (
 	maxPayloadSize     = 1 << 20
 )
 
-var bulkPath = regexp.MustCompile(`^/(?:Users|Groups)(?:/([^/?#\s]+))?$`)
+var (
+	bulkPath    = regexp.MustCompile(`^/(?:Users|Groups)(?:/([^/?#\s]+))?$`)
+	selectorRef = regexp.MustCompile(`"bulkId:([^"]*)"`)
+)
 
 type bulkOp struct {
 	Method string          `json:"method"`
@@ -77,16 +80,23 @@ func (s *server) bulk(w http.ResponseWriter, r *http.Request, _ store.User) erro
 	for progress := true; progress && !stopped(); {
 		progress = false
 		var waiting []int
+		blocked := map[string]bool{}
 		for _, i := range pending {
 			if stopped() {
 				break
 			}
-			target, data, ok := resolve(req.Operations[i], ids)
-			if !ok {
+			op := req.Operations[i]
+			resource := op.Path
+			if strings.ToUpper(op.Method) == "POST" {
+				resource = ""
+			}
+			target, data, ok := resolve(op, ids)
+			if !ok || blocked[resource] {
 				waiting = append(waiting, i)
+				blocked[resource] = resource != ""
 				continue
 			}
-			results[i], progress = s.runBulk(r, req.Operations[i], target, data, ids), true
+			results[i], progress = s.runBulk(r, op, target, data, ids), true
 			if results[i].code >= 400 {
 				failed++
 			}
@@ -98,8 +108,13 @@ func (s *server) bulk(w http.ResponseWriter, r *http.Request, _ store.User) erro
 			break
 		}
 		op := req.Operations[i]
-		results[i] = (&bulkResult{Method: strings.ToUpper(op.Method), BulkID: op.BulkID}).fail(fail(http.StatusConflict, "invalidValue",
-			"This operation references a bulkId that no successful POST in this request created, or bulkIds that reference each other in a cycle."))
+		res := &bulkResult{Method: strings.ToUpper(op.Method), BulkID: op.BulkID}
+		if res.Method != "POST" {
+			target, _, _ := resolve(op, ids)
+			res.Location = s.base + cmp.Or(target, op.Path)
+		}
+		results[i] = res.fail(fail(http.StatusConflict, "invalidValue",
+			"This operation references a bulkId that no successful POST in this request created, bulkIds that reference each other in a cycle, or follows such an operation on the same resource."))
 		failed++
 	}
 	ops := []*bulkResult{}
@@ -148,7 +163,16 @@ func substitute(v any, ids map[string]string) (any, bool) {
 	case map[string]any:
 		for k := range t {
 			var resolved bool
-			t[k], resolved = substitute(t[k], ids)
+			if selector, isPath := t[k].(string); isPath && strings.EqualFold(k, "path") {
+				resolved = true
+				t[k] = selectorRef.ReplaceAllStringFunc(selector, func(ref string) string {
+					id, found := ids[selectorRef.FindStringSubmatch(ref)[1]]
+					resolved = resolved && found
+					return strconv.Quote(id)
+				})
+			} else {
+				t[k], resolved = substitute(t[k], ids)
+			}
 			ok = ok && resolved
 		}
 	}
