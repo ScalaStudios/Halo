@@ -42,6 +42,8 @@ var (
 	ErrCrossSite       = Fail(http.StatusForbidden, "ERR_CROSS_SITE", "This request did not come from Halo, so it was blocked. Reload the page and try again.")
 	ErrBadJSON         = Fail(http.StatusBadRequest, "ERR_INVALID_JSON", "The request body is not valid JSON.")
 	ErrImpersonating   = Fail(http.StatusForbidden, "ERR_IMPERSONATING", "You are impersonating someone, so you can only look. End the impersonation to make changes or open applications as yourself.")
+	ErrReauthRequired  = Fail(http.StatusUnauthorized, "ERR_REAUTH_REQUIRED", "Confirm it's you to make this change.")
+	ErrNoReauthMethod  = Fail(http.StatusForbidden, "ERR_REAUTH_UNAVAILABLE", "This change needs you to confirm it's you with a passkey, security key or authenticator app. Add one on your account's Security page, then try again.")
 )
 
 func NotFound(what string) *Error {
@@ -280,6 +282,41 @@ func (a *Auth) RateLimit(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+func RequireRecentSignIn(r *http.Request, st *store.Store) error {
+	if _, viaKey := KeyScopes(r); viaKey {
+		return nil
+	}
+	u, ok := CurrentUser(r)
+	if !ok {
+		return nil
+	}
+	settings, err := st.Settings(r.Context())
+	if err != nil {
+		return err
+	}
+	if sess, ok := CurrentSession(r); ok && time.Since(sess.StrongSignInAt()) < settings.ReauthWindow() {
+		return nil
+	}
+	if !u.CanReauthenticate() {
+		return ErrNoReauthMethod
+	}
+	return ErrReauthRequired
+}
+
+func (a *Auth) RecentSignIn(mux *http.ServeMux, sensitive, ownMethods []string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, pattern := mux.Handler(r)
+		u, _ := CurrentUser(r)
+		if slices.Contains(sensitive, pattern) || slices.Contains(ownMethods, pattern) && u.CanReauthenticate() {
+			if err := RequireRecentSignIn(r, a.Store); err != nil {
+				Handle(func(http.ResponseWriter, *http.Request) error { return err })(w, r)
+				return
+			}
+		}
+		mux.ServeHTTP(w, r)
 	})
 }
 

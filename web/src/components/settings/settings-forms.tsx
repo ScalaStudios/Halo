@@ -174,15 +174,26 @@ export function CustomCssForm({ settings, disabled, canEdit }: { settings: Setti
   );
 }
 
-type NumberKey = "sessionHours" | "lockoutThreshold" | "lockoutMinutes" | "inviteDays" | "accessTokenMinutes" | "idTokenMinutes" | "refreshTokenHours";
+type NumberKey = "sessionHours" | "reauthMinutes" | "lockoutThreshold" | "lockoutMinutes" | "inviteDays" | "accessTokenMinutes" | "idTokenMinutes" | "refreshTokenHours";
 
-type NumberSpec = { key: NumberKey; label: string; unit: string; min: number; max: number; hint: string };
+type NumberSpec = { key: NumberKey; label: string; unit: string; min: number; max: number; hint: string; global?: boolean };
 
 const GROUPS: { title: string; description: string; fields: NumberSpec[] }[] = [
   {
     title: "Sessions",
-    description: "How long someone stays signed in to Halo before signing in again.",
-    fields: [{ key: "sessionHours", label: "Session lifetime", unit: "hours", min: 1, max: 72, hint: "Between 1 and 72. Applies to sign-ins from now on; existing sessions keep their expiry." }],
+    description: "How long someone stays signed in to Halo, and how recent their last passkey sign-in must be for sensitive changes.",
+    fields: [
+      { key: "sessionHours", label: "Session lifetime", unit: "hours", min: 1, max: 72, hint: "Between 1 and 72. Applies to sign-ins from now on; existing sessions keep their expiry." },
+      {
+        key: "reauthMinutes",
+        label: "Confirm identity after",
+        unit: "minutes",
+        min: 1,
+        max: 1440,
+        hint: "Between 1 and 1,440. Granting roles, creating API keys and other sensitive changes ask for a passkey again after this long. Only a global administrator can change it.",
+        global: true,
+      },
+    ],
   },
   {
     title: "Lockout",
@@ -210,7 +221,7 @@ const GROUPS: { title: string; description: string; fields: NumberSpec[] }[] = [
 
 const FIELDS = GROUPS.flatMap((group) => group.fields);
 
-export function SecurityForm({ settings, canEdit }: { settings: Settings; canEdit: boolean }) {
+export function SecurityForm({ settings, canEdit, canEditGlobal }: { settings: Settings; canEdit: boolean; canEditGlobal: boolean }) {
   const { saving, failure, save } = useSaveSettings();
   const [values, setValues] = useState(() => Object.fromEntries(FIELDS.map((f) => [f.key, String(settings[f.key])])) as Record<NumberKey, string>);
   const [errors, setErrors] = useState<Partial<Record<NumberKey, string>>>({});
@@ -253,7 +264,7 @@ export function SecurityForm({ settings, canEdit }: { settings: Settings; canEdi
                         min={f.min}
                         max={f.max}
                         step={1}
-                        disabled={!canEdit}
+                        disabled={!canEdit || (f.global && !canEditGlobal)}
                         className="tnum"
                         value={values[f.key]}
                         onChange={(event) => setValues((current) => ({ ...current, [f.key]: event.target.value }))}

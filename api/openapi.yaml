@@ -10,6 +10,8 @@ info:
 
     **Authentication.** Send either the `halo_session` cookie of a signed-in person, or an API key of a service account as `Authorization: Bearer hlk_…`. API keys work only when they have the `api` scope, act with the roles of their service account, and are ignored on the personal routes under `/me` and on the sign-in routes under `/auth`. The personal routes under `/me/` (with a trailing segment, not `/me` itself) also accept an access token that `halo login` obtained for the built-in Halo CLI application.
 
+    **Re-authentication.** Sensitive operations need a recent strong sign-in when a person calls them with a session: a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, within the last `reauthMinutes` (10 by default). Otherwise they answer `401` with `ERR_REAUTH_REQUIRED`; confirm with `/me/reauthenticate/begin` and `/me/reauthenticate`, then send the same request again. A person with no passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE` instead. API keys are not affected, and an approved change applies without asking the requester again. The sensitive operations are the ones whose `401` response lists `ERR_REAUTH_REQUIRED`: granting or activating administrator roles, creating service accounts and API keys, rotating signing keys, SAML certificates and client secrets, changing access policies, sign-in methods and organization settings, resetting or changing another person's sign-in methods, changing identity providers, exporting the configuration and approving a held change. Adding or removing your own passkey, security key or authenticator app, and creating recovery codes, need it too once you have a passkey, security key or authenticator app.
+
     **Roles.** Each operation states the roles it requires. A global administrator passes every role check. "Any administrator" means security, user, helpdesk or application administrator, or auditor.
 
     **Errors.** Every error is `{"error": {"code": "ERR_…", "message": "…"}}`. Match on `code`; show `message` to people. Besides the codes listed per operation, any request can fail with `500` and `ERR_INTERNAL`, requests over the rate limit get `429` with `ERR_RATE_LIMITED`, and unknown routes answer `404` with `ERR_NO_ROUTE`. Requests with a method other than GET, HEAD or OPTIONS that come from another website get `403` with `ERR_CROSS_SITE`.
@@ -807,7 +809,7 @@ paths:
       responses:
         '200': {$ref: '#/components/responses/Ceremony'}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/CrossSite'}
         '422': {$ref: '#/components/responses/Invalid'}
   /me/passkeys/finish:
@@ -847,7 +849,7 @@ paths:
       security: *personal
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/CrossSite'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/LastMethod'}
@@ -921,7 +923,7 @@ paths:
                   ceremony: {type: string}
                   secret: {type: string, description: Base32 secret.}
                   uri: {type: string, examples: ['otpauth://totp/Halo:sam@example.com?issuer=Halo&secret=…']}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/CrossSite'}
   /me/totp/confirm:
     post:
@@ -976,8 +978,58 @@ paths:
                   codes:
                     type: array
                     items: {type: string}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/CrossSite'}
+  /me/reauthenticate/begin:
+    post:
+      tags: [Account]
+      operationId: beginReauthentication
+      summary: Start confirming it's you before a sensitive change
+      description: With a passkey or security key, answers `passkey` with a WebAuthn ceremony limited to your own credentials. Without one, answers `totp`; send a current authenticator app code to `/me/reauthenticate`.
+      security:
+        - session: []
+      responses:
+        '200':
+          description: How to confirm.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [method]
+                properties:
+                  method: {type: string, enum: [passkey, totp]}
+                  ceremony: {type: string}
+                  options: {type: object, description: WebAuthn credential request options.}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ReauthUnavailable'}
+  /me/reauthenticate:
+    post:
+      tags: [Account]
+      operationId: reauthenticate
+      summary: Confirm it's you before a sensitive change
+      description: Send `ceremony` and `credential` after a `passkey` answer, or `code` after a `totp` answer. Marks the current session as recently confirmed for `reauthMinutes` and records `user.reauthenticate` in the audit log. Wrong codes count towards the lockout.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ceremony: {type: string}
+                credential: {type: object}
+                code: {type: string}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401':
+          description: '`ERR_UNAUTHENTICATED`: no session. `ERR_PASSKEY_REJECTED`: the passkey did not match, or the ceremony expired or belongs to someone else. `ERR_CODE_MISMATCH`: the code did not match or was already used.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403': {$ref: '#/components/responses/ReauthUnavailable'}
+        '429': {$ref: '#/components/responses/TooManyAttempts'}
   /me/password:
     get:
       tags: [Account]
@@ -1504,7 +1556,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/RoleActivation'}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403':
           description: '`ERR_NOT_ELIGIBLE`: you are not eligible for the role. `ERR_CROSS_SITE` on requests from another website.'
           content:
@@ -1564,7 +1616,7 @@ paths:
       tags: [Users]
       operationId: inviteUser
       summary: Invite a person
-      description: 'Roles: user administrator; including `roles` requires global administrator, and `global_admin` is refused while granting it needs approval. Creates the account with status `invited` and a setup link, and emails the link when SMTP is configured.'
+      description: 'Roles: user administrator; including `roles` requires global administrator and a recent strong sign-in, and `global_admin` is refused while granting it needs approval. Creates the account with status `invited` and a setup link, and emails the link when SMTP is configured.'
       requestBody:
         required: true
         content:
@@ -1600,7 +1652,7 @@ paths:
                   expiresAt: {type: string, format: date-time}
                   emailed: {type: boolean, description: True when Halo also emailed the link.}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/Invalid'}
@@ -1905,7 +1957,7 @@ paths:
                   enrollUrl: {type: string, format: uri}
                   expiresAt: {type: string, format: date-time}
                   emailed: {type: boolean}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
   /users/{id}/methods/{methodId}:
@@ -1922,7 +1974,7 @@ paths:
       description: 'Roles: user or helpdesk administrator.'
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
   /users/{id}/password:
@@ -1937,7 +1989,7 @@ paths:
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/Invalid'}
@@ -1964,7 +2016,7 @@ paths:
         '200': {$ref: '#/components/responses/UserResponse'}
         '202': {$ref: '#/components/responses/ApprovalPending'}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/Invalid'}
@@ -1991,7 +2043,7 @@ paths:
         '200': {$ref: '#/components/responses/UserResponse'}
         '202': {$ref: '#/components/responses/ApprovalPending'}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/Invalid'}
@@ -2387,7 +2439,7 @@ paths:
                   credential: {$ref: '#/components/schemas/Credential'}
                   clientSecret: {type: string}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/Invalid'}
@@ -2858,7 +2910,7 @@ paths:
       description: 'Roles: a global administrator who is not the requester, signed in to the console; API keys cannot decide. Applies the saved change once, as the requester. If the target changed since the request, or the change no longer passes validation, nothing is applied, the request becomes `failed`, `approval.fail` is recorded and the response is `ERR_NOT_APPLIED`.'
       responses:
         '200': {$ref: '#/components/responses/ApprovalResponse'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/ApprovalForbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409':
@@ -3074,7 +3126,7 @@ paths:
       responses:
         '201': {$ref: '#/components/responses/PolicyResponse'}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/Invalid'}
@@ -3098,7 +3150,7 @@ paths:
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '422': {$ref: '#/components/responses/Invalid'}
   /policies/simulate:
@@ -3157,7 +3209,7 @@ paths:
         '200': {$ref: '#/components/responses/PolicyResponse'}
         '202': {$ref: '#/components/responses/ApprovalPending'}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
@@ -3170,7 +3222,7 @@ paths:
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
         '202': {$ref: '#/components/responses/ApprovalPending'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
   /network-zones:
@@ -3327,7 +3379,7 @@ paths:
         '204': {$ref: '#/components/responses/NoContent'}
         '202': {$ref: '#/components/responses/ApprovalPending'}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
@@ -3462,7 +3514,7 @@ paths:
       responses:
         '201': {$ref: '#/components/responses/ServiceAccountResponse'}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/Invalid'}
@@ -3526,7 +3578,7 @@ paths:
         '200': {$ref: '#/components/responses/ServiceAccountResponse'}
         '202': {$ref: '#/components/responses/ApprovalPending'}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/Invalid'}
@@ -3564,7 +3616,7 @@ paths:
                   key: {$ref: '#/components/schemas/ApiKey'}
                   secret: {type: string, examples: [hlk_…]}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/Invalid'}
@@ -3715,7 +3767,7 @@ paths:
         '201': {$ref: '#/components/responses/IdentityProviderResponse'}
         '202': {$ref: '#/components/responses/ApprovalPending'}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/Invalid'}
@@ -3732,7 +3784,7 @@ paths:
         '200': {$ref: '#/components/responses/IdentityProviderResponse'}
         '202': {$ref: '#/components/responses/ApprovalPending'}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
@@ -3745,7 +3797,7 @@ paths:
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
         '202': {$ref: '#/components/responses/ApprovalPending'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
   /identity-providers/{id}/enable:
@@ -3759,7 +3811,7 @@ paths:
       responses:
         '200': {$ref: '#/components/responses/IdentityProviderResponse'}
         '202': {$ref: '#/components/responses/ApprovalPending'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
   /identity-providers/{id}/disable:
@@ -3773,7 +3825,7 @@ paths:
       responses:
         '200': {$ref: '#/components/responses/IdentityProviderResponse'}
         '202': {$ref: '#/components/responses/ApprovalPending'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
   /settings:
@@ -3800,7 +3852,7 @@ paths:
         '200': {$ref: '#/components/responses/SettingsResponse'}
         '202': {$ref: '#/components/responses/ApprovalPending'}
         '400': {$ref: '#/components/responses/BadJSON'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '422': {$ref: '#/components/responses/Invalid'}
   /domains:
@@ -3988,7 +4040,7 @@ paths:
                   accessPackages: {type: array, items: {type: object}}
                   accessReviews: {type: array, items: {type: object}}
                   auditEvents: {type: array, items: {type: object}}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
   /signing-keys:
     get:
@@ -4008,7 +4060,7 @@ paths:
       description: 'Roles: global administrator. Creates a new key for RS256 and for every other algorithm with a signing key, in one transaction; each new key signs tokens of its algorithm from now on. Previous keys stay in the JWKS for 7 days so tokens they signed still verify, then an hourly job retires them. Writes an audit event.'
       responses:
         '200': {$ref: '#/components/responses/SigningKeysResponse'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
   /saml/certificate/rotate:
     post:
@@ -4018,7 +4070,7 @@ paths:
       description: 'Roles: global administrator. The new key and certificate sign SAML responses from now on, and the previous certificate is listed with `retiredAt` until you remove it. Update every SAML application with the new certificate. Writes an audit event.'
       responses:
         '200': {$ref: '#/components/responses/SigningKeysResponse'}
-        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
   /saml/certificates/{id}:
     parameters:
@@ -4678,6 +4730,16 @@ components:
           schema: {$ref: '#/components/schemas/OAuthError'}
     Unauthenticated:
       description: '`ERR_UNAUTHENTICATED`: no valid session or key.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ReauthRequired:
+      description: '`ERR_UNAUTHENTICATED`: no valid session or key. `ERR_REAUTH_REQUIRED`: this sensitive change needs a recent strong sign-in; confirm it''s you through `/me/reauthenticate` and send the request again. A person without a passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE`.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ReauthUnavailable:
+      description: '`ERR_REAUTH_UNAVAILABLE`: you have no passkey, security key or authenticator app to confirm with. `ERR_CROSS_SITE`: the request came from another website.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -5819,6 +5881,7 @@ components:
           default: []
           items: {type: string}
           description: Helpdesk administrators can impersonate active members of these groups who hold no administrator role and are not eligible for one. Empty turns impersonation off.
+        reauthMinutes: {type: integer, minimum: 1, maximum: 1440, default: 10, description: 'How long a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, lets a person make sensitive changes before Halo asks them to confirm it''s them again. Only a global administrator can change it.'}
         clientRegistration: {type: string, enum: ['off', open, token, approval], default: 'off', description: 'Who can register OAuth clients at `/oauth2/register`: nobody, anyone, clients that send an API key with the `registration` scope as the initial access token, or anyone with each new or changed client disabled until an application administrator approves it.'}
         emailTemplates:
           type: object

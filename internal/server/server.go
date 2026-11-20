@@ -26,6 +26,42 @@ import (
 	"halo/internal/webhooks"
 )
 
+var sensitiveRoutes = []string{
+	"PUT /api/v1/users/{id}/roles",
+	"PUT /api/v1/users/{id}/eligible-roles",
+	"POST /api/v1/me/role-activations",
+	"POST /api/v1/service-accounts",
+	"PUT /api/v1/service-accounts/{id}/roles",
+	"POST /api/v1/service-accounts/{id}/keys",
+	"POST /api/v1/applications/{id}/secrets",
+	"POST /api/v1/signing-keys/rotate",
+	"POST /api/v1/saml/certificate/rotate",
+	"POST /api/v1/policies",
+	"PUT /api/v1/policies/order",
+	"PUT /api/v1/policies/{id}",
+	"DELETE /api/v1/policies/{id}",
+	"PUT /api/v1/methods/{method}",
+	"PATCH /api/v1/settings",
+	"POST /api/v1/users/{id}/reset-authentication",
+	"PUT /api/v1/users/{id}/password",
+	"DELETE /api/v1/users/{id}/methods/{methodId}",
+	"POST /api/v1/identity-providers",
+	"PUT /api/v1/identity-providers/{id}",
+	"DELETE /api/v1/identity-providers/{id}",
+	"POST /api/v1/identity-providers/{id}/enable",
+	"POST /api/v1/identity-providers/{id}/disable",
+	"GET /api/v1/export",
+	"POST /api/v1/approvals/{id}/approve",
+	"POST /api/v1/impersonations/{id}/start",
+}
+
+var ownMethodRoutes = []string{
+	"POST /api/v1/me/passkeys/begin",
+	"POST /api/v1/me/totp/begin",
+	"POST /api/v1/me/recovery-codes",
+	"DELETE /api/v1/me/methods/{id}",
+}
+
 type App struct {
 	Handler http.Handler
 	Jobs    *jobs.Scheduler
@@ -67,7 +103,7 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 	}
 
 	root := http.NewServeMux()
-	root.Handle("/api/", authn.Resolve(authn.KeyScope("api", authn.RateLimit(authn.SameOrigin(apiMux)))))
+	root.Handle("/api/", authn.Resolve(authn.KeyScope("api", authn.RateLimit(authn.SameOrigin(authn.RecentSignIn(apiMux, sensitiveRoutes, ownMethodRoutes))))))
 	root.Handle("/oauth2/", authn.Resolve(authn.KeyScope("", provider)))
 	registration := api.Registration(deps)
 	root.Handle("/oauth2/register", registration)

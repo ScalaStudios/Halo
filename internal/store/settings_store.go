@@ -49,6 +49,7 @@ type Settings struct {
 
 	ApprovalActions    []string `json:"approvalActions"`
 	EmergencyAccessIDs []string `json:"emergencyAccessIds"`
+	ReauthMinutes      int      `json:"reauthMinutes"`
 
 	ImpersonationGroups []string `json:"impersonationGroupIds"`
 
@@ -90,6 +91,7 @@ var DefaultSettings = Settings{
 	ApprovalActions:      []string{},
 	EmergencyAccessIDs:   []string{},
 	ImpersonationGroups:  []string{},
+	ReauthMinutes:        10,
 	ClientRegistration:   "off",
 }
 
@@ -193,6 +195,10 @@ func (s *Store) ForgetSettings() {
 
 func (s Settings) SessionLifetime() time.Duration {
 	return time.Duration(s.SessionHours) * time.Hour
+}
+
+func (s Settings) ReauthWindow() time.Duration {
+	return time.Duration(s.ReauthMinutes) * time.Minute
 }
 
 func (s Settings) SessionLimitFor(u User) int {
