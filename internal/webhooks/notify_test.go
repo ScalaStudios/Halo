@@ -151,6 +151,11 @@ func TestRuleValidationAndSecrets(t *testing.T) {
 	if plain, err := st.Sealer.Open(rule.URLSealed); err != nil || string(plain) != slackURL {
 		t.Fatalf("sealed URL after update: %q %v", plain, err)
 	}
+	moved := with("url", "")
+	moved["destination"] = "discord"
+	if rec := call(t, h, security, "PUT", "/api/v1/notification-rules/"+created.Rule.ID, moved); rec.Code != 422 {
+		t.Fatalf("changing the destination without a URL: %d %s", rec.Code, rec.Body.String())
+	}
 	if rec := call(t, h, security, "PUT", "/api/v1/notification-rules/"+created.Rule.ID, with("url", "https://chat.example.org/hooks/abc")); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"host":"chat.example.org"`) {
 		t.Fatalf("update replacing the URL: %d %s", rec.Code, rec.Body.String())
 	}

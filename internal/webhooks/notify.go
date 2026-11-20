@@ -286,11 +286,17 @@ func (h *handler) updateRule(w http.ResponseWriter, r *http.Request, actor store
 	ctx := r.Context()
 	var rule store.NotificationRule
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
-		if err := tx.UpdateNotificationRule(ctx, r.PathValue("id"), fields); err != nil {
+		current, err := tx.GetNotificationRule(ctx, r.PathValue("id"))
+		if err != nil {
 			return err
 		}
-		var err error
-		if rule, err = tx.GetNotificationRule(ctx, r.PathValue("id")); err != nil {
+		if fields.URL == "" && fields.Destination != current.Destination {
+			return httpx.Invalid("Enter the webhook URL again when you change where the rule sends messages.")
+		}
+		if err := tx.UpdateNotificationRule(ctx, current.ID, fields); err != nil {
+			return err
+		}
+		if rule, err = tx.GetNotificationRule(ctx, current.ID); err != nil {
 			return err
 		}
 		state := "Updated"

@@ -1,5 +1,6 @@
 import { Fingerprint, IdCard, KeyRound, ListOrdered, Mail, Network, RectangleEllipsis, Smartphone, TicketCheck, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/badge";
+import type { NotificationDestination } from "./settings-types";
 import type { AuthStrength, Group, JoinPolicy, MethodKind, RiskLevel, Scope, SignInEvent, SignInResult, UserStatus } from "./types";
 
 export const STATUS: Record<UserStatus, { label: string; tone: Tone }> = {
@@ -39,6 +40,12 @@ export const RISK: Record<RiskLevel, { label: string; tone: Tone }> = {
   low: { label: "Low", tone: "info" },
   medium: { label: "Medium", tone: "warning" },
   high: { label: "High", tone: "danger" },
+};
+
+export const DESTINATIONS: Record<NotificationDestination, { label: string; placeholder: string }> = {
+  slack: { label: "Slack", placeholder: "https://hooks.slack.com/services/…" },
+  discord: { label: "Discord", placeholder: "https://discord.com/api/webhooks/…" },
+  webhook: { label: "Webhook", placeholder: "https://hooks.example.com/halo" },
 };
 
 export const GROUP_KIND: Record<Group["kind"], string> = { assigned: "Assigned", dynamic: "Rule-based" };
