@@ -34,6 +34,7 @@ var (
 	errBlockedByPolicy = httpx.Fail(http.StatusForbidden, "ERR_BLOCKED_BY_POLICY", "Your organization's access policy blocked this sign-in. If you think this is wrong, contact your administrator.")
 	errStrongerAuth    = httpx.Fail(http.StatusForbidden, "ERR_STRONGER_AUTH_REQUIRED", "This application requires a passkey or security key. Sign in with one of those instead.")
 	errLastMethod      = httpx.Fail(http.StatusConflict, "ERR_LAST_METHOD", "This is your last way to sign in, so it can't be removed. Add another passkey or authenticator app first.")
+	errSessionLimit    = httpx.Fail(http.StatusForbidden, "ERR_SESSION_LIMIT", "You're already signed in on as many devices as your organization allows. Sign out on a device you no longer use, or ask your administrator to end one of your sessions, then try again.")
 )
 
 const notAssignedReason = "User is not assigned to this application."
@@ -203,6 +204,13 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 			if token := httpx.DeviceToken(r); token != "" {
 				device = secret.Hash(token)
 			}
+			replacing := ""
+			if prev, ok := httpx.CurrentSession(r); ok && prev.UserID == u.ID {
+				replacing = prev.ID
+			}
+			if err := tx.MakeRoomForSession(ctx, u, false, replacing); err != nil {
+				return err
+			}
 			created, t, err := tx.CreateSession(ctx, store.NewSession{UserID: u.ID, Method: a.method, SecondFactor: a.secondFactor, IP: httpx.ClientIP(r), UserAgent: r.UserAgent(), DeviceHash: device})
 			if err != nil {
 				return err
@@ -220,6 +228,9 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 		}
 		return tx.RecordSignIn(ctx, a.event(r, "success", ""))
 	})
+	if errors.Is(err, store.ErrSessionLimit) {
+		return h.reject(r, a, store.SessionLimitReason, errSessionLimit)
+	}
 	if errors.Is(err, store.ErrNotFound) {
 		return errRequestExpired
 	}

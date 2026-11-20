@@ -29,6 +29,7 @@ export const RESULT: Record<SignInResult, { label: string; tone: Tone }> = {
   success: { label: "Success", tone: "success" },
   failure: { label: "Failed", tone: "danger" },
   interrupted: { label: "Interrupted", tone: "warning" },
+  ended: { label: "Session ended", tone: "neutral" },
 };
 
 export const RISK: Record<RiskLevel, { label: string; tone: Tone }> = {

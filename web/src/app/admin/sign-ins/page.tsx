@@ -13,7 +13,7 @@ export default async function SignInsPage({ searchParams }: { searchParams: Prom
     apiGet<User[]>("/users"),
     apiGet<Application[]>("/applications"),
   ]);
-  const failed = signIns.filter((e) => e.result !== "success").length;
+  const failed = signIns.filter((e) => e.result === "failure" || e.result === "interrupted").length;
   return (
     <div className="flex flex-col gap-8">
       <PageHeader

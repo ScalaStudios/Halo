@@ -4,7 +4,7 @@ import { ListSkeleton, PageSkeleton, Skeleton, SkeletonText } from "@/components
 export default function Loading() {
   return (
     <PageSkeleton title="Security defaults" description={150} className="max-w-4xl">
-      {[1, 2, 1, 3].map((fields, i) => (
+      {[1, 2, 1, 3, 2].map((fields, i) => (
         <Card key={i}>
           <CardHeader title={<SkeletonText chars={12} />} description={<SkeletonText chars={80} />} />
           <CardBody className="flex flex-wrap gap-6">

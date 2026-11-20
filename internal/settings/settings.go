@@ -55,6 +55,10 @@ var fields = []struct {
 	{"passwordSecondFactor", "second factor for passwords", false},
 	{"passwordGroupIds", "groups that can use passwords", false},
 	{"passwordBreachCheck", "breached password check", false},
+	{"sessionLimit", "session limit", false},
+	{"sessionLimitAction", "action at the session limit", false},
+	{"sessionLimitCli", "Halo CLI session limit", false},
+	{"sessionLimitGroups", "group session limits", false},
 }
 
 type handler struct {
@@ -159,6 +163,7 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	}
 	next := before
 	next.PasswordGroupIDs = slices.Clone(before.PasswordGroupIDs)
+	next.SessionLimitGroups = slices.Clone(before.SessionLimitGroups)
 	if err := httpx.Decode(r, &next); err != nil {
 		return err
 	}
@@ -172,6 +177,9 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	if next.PasswordGroupIDs == nil {
 		next.PasswordGroupIDs = []string{}
 	}
+	if next.SessionLimitGroups == nil {
+		next.SessionLimitGroups = []store.GroupSessionLimit{}
+	}
 	if err := validate(next); err != nil {
 		return err
 	}
@@ -182,6 +190,19 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 		}
 		if slices.ContainsFunc(next.PasswordGroupIDs, func(id string) bool { return !existing[id] }) {
 			return httpx.Invalid("One of the groups chosen for passwords no longer exists. Refresh the page and choose again.")
+		}
+	}
+	if !slices.Equal(before.SessionLimitGroups, next.SessionLimitGroups) {
+		ids := make([]string, len(next.SessionLimitGroups))
+		for i, g := range next.SessionLimitGroups {
+			ids[i] = g.GroupID
+		}
+		existing, err := h.st.ExistingIDs(ctx, "groups", ids)
+		if err != nil {
+			return err
+		}
+		if slices.ContainsFunc(ids, func(id string) bool { return !existing[id] }) {
+			return httpx.Invalid("One of the groups given a session limit no longer exists. Refresh the page and choose again.")
 		}
 	}
 	var old, updated map[string]json.RawMessage
@@ -244,6 +265,20 @@ func validate(s store.Settings) error {
 		return httpx.Invalid("ID tokens must last between 5 and 1,440 minutes (24 hours).")
 	case !between(s.RefreshTokenHours, 1, 2160):
 		return httpx.Invalid("Refresh tokens must last between 1 and 2,160 hours (90 days).")
+	case !between(s.SessionLimit, 0, 100):
+		return httpx.Invalid("The session limit must be between 1 and 100 sessions, or 0 for no limit.")
+	case s.SessionLimitAction != "refuse" && s.SessionLimitAction != "end-oldest":
+		return httpx.Invalid(`Set the action at the session limit to "refuse" or "end-oldest".`)
+	}
+	seen := map[string]bool{}
+	for _, g := range s.SessionLimitGroups {
+		if !between(g.Limit, 1, 100) {
+			return httpx.Invalid("Each group's session limit must be between 1 and 100 sessions.")
+		}
+		if seen[g.GroupID] {
+			return httpx.Invalid("A group can have only one session limit. Remove the repeated group and save again.")
+		}
+		seen[g.GroupID] = true
 	}
 	return nil
 }

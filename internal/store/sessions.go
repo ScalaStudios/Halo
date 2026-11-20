@@ -2,15 +2,24 @@ package store
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"halo/internal/id"
 	"halo/internal/secret"
 )
 
-const SessionLifetime = 12 * time.Hour
+const (
+	SessionLifetime    = 12 * time.Hour
+	SessionLimitReason = "Reached the session limit."
+	SessionEndedReason = "Ended the oldest session to stay within the session limit."
+)
+
+var ErrSessionLimit = errors.New("session limit reached")
 
 type NewSession struct {
 	UserID       string
@@ -122,6 +131,46 @@ func (s *Store) RevokeSession(ctx context.Context, sessionID, userID string) err
 		return ErrNotFound
 	}
 	return s.revokeTokensForSessions(ctx, []string{sessionID})
+}
+
+func (s *Store) MakeRoomForSession(ctx context.Context, u User, cli bool, replacing string) error {
+	settings, err := s.Settings(ctx)
+	if err != nil {
+		return err
+	}
+	limit := settings.SessionLimitFor(u)
+	if limit == 0 || cli && !settings.SessionLimitCLI {
+		return nil
+	}
+	if _, err := s.db.Exec(ctx, `select 1 from users where id = $1 for update`, u.ID); err != nil {
+		return err
+	}
+	rows, err := s.db.Query(ctx, `select `+sessionColumns+` from sessions where user_id = $1 and id <> $2 and (client_id is not null) = $3 and revoked_at is null and expires_at > now() order by created_at`, u.ID, replacing, cli)
+	if err != nil {
+		return err
+	}
+	sessions, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Session, error) { return scanSession(row) })
+	if err != nil || len(sessions) < limit {
+		return err
+	}
+	if settings.SessionLimitAction != "end-oldest" {
+		return ErrSessionLimit
+	}
+	ended := sessions[:len(sessions)-limit+1]
+	ids := make([]string, len(ended))
+	for i, sess := range ended {
+		ids[i] = sess.ID
+	}
+	if _, err := s.revokeSessions(ctx, `id = any($1)`, ids); err != nil {
+		return err
+	}
+	for _, sess := range ended {
+		err := s.RecordSignIn(ctx, SignInEvent{Result: "ended", Method: sess.Method, UserID: &u.ID, Email: u.Email, IP: sess.IP, Location: sess.Location, Device: sess.Browser + " · " + sess.OS, Reason: SessionEndedReason})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) RevokeUserSessions(ctx context.Context, userID, exceptSessionID string) (int, error) {

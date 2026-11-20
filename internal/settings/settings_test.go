@@ -384,3 +384,39 @@ func TestPasswordSettings(t *testing.T) {
 		t.Fatalf("clearing the group list: %+v", got.Settings.PasswordGroupIDs)
 	}
 }
+
+func TestSessionLimitSettings(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	security := e.person("sam@example.com", "security_admin")
+	kiosks, err := e.st.CreateGroup(ctx, store.NewGroup{Name: "Kiosks", Kind: "assigned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, body := range []map[string]any{
+		{"sessionLimit": 101},
+		{"sessionLimit": -1},
+		{"sessionLimitAction": "end-newest"},
+		{"sessionLimitGroups": []map[string]any{{"groupId": kiosks.ID, "limit": 0}}},
+		{"sessionLimitGroups": []map[string]any{{"groupId": kiosks.ID, "limit": 1}, {"groupId": kiosks.ID, "limit": 2}}},
+		{"sessionLimitGroups": []map[string]any{{"groupId": "grp_missing", "limit": 1}}},
+	} {
+		e.expect(e.call(security, "PATCH", "/api/v1/settings", body), 422)
+	}
+	got := decode[settingsResponse](t, e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{
+		"sessionLimit": 3, "sessionLimitAction": "end-oldest", "sessionLimitCli": true, "sessionLimitGroups": []map[string]any{{"groupId": kiosks.ID, "limit": 1}},
+	}), 200))
+	s := got.Settings
+	if s.SessionLimit != 3 || s.SessionLimitAction != "end-oldest" || !s.SessionLimitCLI || !slices.Equal(s.SessionLimitGroups, []store.GroupSessionLimit{{GroupID: kiosks.ID, Limit: 1}}) {
+		t.Fatalf("session limit settings: %+v", s)
+	}
+	audit, _ := e.st.ListAudit(ctx, 1)
+	if audit[0].Summary != "Changed the session limit, action at the session limit, Halo CLI session limit, group session limits" {
+		t.Fatalf("audit: %+v", audit)
+	}
+	got = decode[settingsResponse](t, e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"sessionLimitGroups": nil}), 200))
+	if got.Settings.SessionLimitGroups == nil || len(got.Settings.SessionLimitGroups) != 0 {
+		t.Fatalf("clearing the group limits: %+v", got.Settings.SessionLimitGroups)
+	}
+}

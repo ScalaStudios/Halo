@@ -96,7 +96,7 @@ export type Session = {
   client?: "halo-cli";
 };
 
-export type SignInResult = "success" | "failure" | "interrupted";
+export type SignInResult = "success" | "failure" | "interrupted" | "ended";
 export type RiskLevel = "none" | "low" | "medium" | "high";
 
 export type SignInEvent = {

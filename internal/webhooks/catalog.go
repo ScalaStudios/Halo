@@ -92,6 +92,7 @@ var catalog = []eventType{
 	{"service_account.update", "A service account's settings were changed"},
 	{"session.revoke", "An administrator ended a person's sessions"},
 	{"settings.update", "Organization settings were changed"},
+	{"sign_in.ended", "A session was ended to stay within the session limit"},
 	{"sign_in.failure", "A sign-in failed or was blocked"},
 	{"sign_in.interrupted", "A device sign-in was denied on the confirmation page"},
 	{"sign_in.success", "A person signed in"},

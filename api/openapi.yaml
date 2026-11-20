@@ -331,7 +331,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
         '403':
-          description: '`ERR_SECOND_FACTOR_MISSING`: a second factor is required and the account has no authenticator app. Also `ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED` and `ERR_CROSS_SITE`, as for other sign-in methods.'
+          description: '`ERR_SECOND_FACTOR_MISSING`: a second factor is required and the account has no authenticator app. Also `ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED`, `ERR_SESSION_LIMIT` and `ERR_CROSS_SITE`, as for other sign-in methods.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -555,14 +555,14 @@ paths:
       tags: [Device sign-in]
       operationId: approveDeviceAuthorization
       summary: Approve a device sign-in
-      description: Checks application assignment and the access policies against the current session, records a sign-in event, and lets the waiting device collect its tokens.
+      description: Checks application assignment, the access policies and, when `sessionLimitCli` is on, the session limit against the current session, records a sign-in event, and lets the waiting device collect its tokens.
       security:
         - session: []
       responses:
         '200': {$ref: '#/components/responses/DeviceDecision'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403':
-          description: '`ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED` or `ERR_CROSS_SITE`.'
+          description: '`ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED`, `ERR_SESSION_LIMIT` or `ERR_CROSS_SITE`.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -3806,7 +3806,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     SignInRefused:
-      description: '`ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED` (not in a group assigned to the application), `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED` (a policy requires a passkey or security key), or `ERR_CROSS_SITE`. Refused sign-ins are recorded in the sign-in log.'
+      description: '`ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED` (not in a group assigned to the application), `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED` (a policy requires a passkey or security key), `ERR_SESSION_LIMIT` (the person holds as many sessions as the session limit allows), or `ERR_CROSS_SITE`. Refused sign-ins are recorded in the sign-in log.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -4225,13 +4225,13 @@ components:
         userId: {type: [string, 'null']}
         email: {type: string}
         appId: {type: [string, 'null'], description: Null for sign-ins to Halo itself.}
-        result: {type: string, enum: [success, failure, interrupted]}
+        result: {type: string, enum: [success, failure, interrupted, ended], description: '`ended` records a session that Halo ended to stay within the session limit.'}
         method: {type: string}
         ip: {type: string}
         location: {type: string}
         device: {type: string, examples: [Chrome 130 · macOS]}
         risk: {type: string, enum: [none, low, medium, high]}
-        reason: {type: string, description: Why the sign-in failed.}
+        reason: {type: string, description: Why the sign-in failed or the session ended.}
     AuditEvent:
       type: object
       required: [id, time, actorId, action, summary, targetType, targetId, target, ip]
@@ -4669,6 +4669,18 @@ components:
         passwordSecondFactor: {type: boolean, default: true, description: Ask for an authenticator app code with every password sign-in.}
         passwordGroupIds: {type: array, items: {type: string}, description: Only members of these groups may use a password. Empty allows everyone.}
         passwordBreachCheck: {type: boolean, default: true, description: 'Refuse new passwords that the Have I Been Pwned range API reports as breached. Only the first 5 characters of the password''s SHA-1 hash leave Halo. Turn it off for installations without internet access; when the API is unreachable, Halo accepts the password and logs a warning.'}
+        sessionLimit: {type: integer, minimum: 0, maximum: 100, default: 0, description: 'The most sessions a person may hold at once. 0 sets no limit. Signing in again in a browser that already holds a session of the same person replaces that session in the count.'}
+        sessionLimitAction: {type: string, enum: [refuse, end-oldest], default: refuse, description: 'At the limit, `refuse` turns the new sign-in away with `ERR_SESSION_LIMIT`; `end-oldest` ends the oldest sessions, revokes their tokens and records each in the sign-in log with the result `ended`.'}
+        sessionLimitCli: {type: boolean, default: false, description: 'Also limit sessions that `halo login` starts through the device flow. They are counted separately from browser sessions, against the same limit, and checked when the sign-in is approved. When false they are not limited.'}
+        sessionLimitGroups:
+          type: array
+          description: Limits that replace `sessionLimit` for members of these groups. A person in several of these groups gets the lowest of their limits.
+          items:
+            type: object
+            required: [groupId, limit]
+            properties:
+              groupId: {type: string}
+              limit: {type: integer, minimum: 1, maximum: 100}
     Domain:
       type: object
       required: [id, name, token, createdAt, verifiedAt]

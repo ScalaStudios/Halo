@@ -59,6 +59,14 @@ const GUIDANCE: Record<string, { why: string; next: string }> = {
     why: "Halo saw a counter value lower than the last one, which happens when a credential is copied to another device.",
     next: "Treat it as a possible compromise: revoke the user's sessions, remove the passkey and confirm with the user out of band.",
   },
+  "Reached the session limit.": {
+    why: "The user already had as many sessions as their session limit allows, and Halo is set to refuse new sign-ins at the limit.",
+    next: "End a session the user no longer needs from their profile, or raise the limit under Security defaults. If the user doesn't recognise their sessions, revoke them all and reset their authentication.",
+  },
+  "Ended the oldest session to stay within the session limit.": {
+    why: "The user signed in again while holding as many sessions as their limit allows, so Halo ended their oldest session.",
+    next: "No action needed if the user changed devices. If sessions keep ending, the account may be shared or a session may have been stolen: revoke all sessions and reset the user's authentication.",
+  },
   "Authenticator code did not match. Sign-in blocked by risk policy.": {
     why: "The attempt came from a Tor exit node with no prior history for this user, and the code was wrong.",
     next: "Treat it as a possible credential attack: confirm with the user out of band, revoke their sessions and reset their authenticator.",
@@ -240,7 +248,7 @@ export function SignInsTable({
           if (!next) open(undefined);
         }}
         width="wide"
-        title={selected ? `Sign-in to ${selected.app}` : "Sign-in"}
+        title={selected?.result === "ended" ? "Session ended" : selected ? `Sign-in to ${selected.app}` : "Sign-in"}
         description={selected ? `${selected.user} · ${formatDateTime(selected.time)}` : undefined}
       >
         {selected ? <SignInDetail event={selected} /> : null}
@@ -267,7 +275,7 @@ function SignInDetail({ event }: { event: Row }) {
           <TriangleAlert aria-hidden="true" size={20} strokeWidth={1.75} className={cn("mt-px shrink-0", failed ? "text-danger" : "text-warning")} />
           <dl className="flex min-w-0 flex-col gap-3">
             <div className="flex flex-col gap-1">
-              <dt className="text-label text-fg-3">{failed ? "Sign-in failed" : "Sign-in interrupted"}</dt>
+              <dt className="text-label text-fg-3">{failed ? "Sign-in failed" : event.result === "ended" ? "Session ended" : "Sign-in interrupted"}</dt>
               <dd className="text-body-sm font-semibold text-fg">{event.reason}</dd>
             </div>
             {guidance ? (

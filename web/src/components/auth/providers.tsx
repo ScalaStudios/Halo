@@ -19,6 +19,7 @@ const PROBLEMS: Record<string, string> = {
   ERR_NOT_ASSIGNED: "You don't have access to this application. Ask your administrator to assign it to you.",
   ERR_BLOCKED_BY_POLICY: "Your organization's access policy blocked this sign-in. If you think this is wrong, contact your administrator.",
   ERR_STRONGER_AUTH_REQUIRED: "This application requires a passkey or security key. Sign in with one of those instead.",
+  ERR_SESSION_LIMIT: "You're already signed in on as many devices as your organization allows. Sign out on a device you no longer use, or ask your administrator to end one of your sessions, then try again.",
 };
 
 export function federationProblem(code: string | null) {
