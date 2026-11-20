@@ -34,7 +34,7 @@ const ACTIONS: { value: ApprovalAction; label: string; description: string }[] =
   {
     value: "global-admin",
     label: "Granting the global administrator role",
-    description: "To a person or a service account. Inviting someone or creating a service account with the role is refused; grant it afterwards.",
+    description: "To a person or a service account, or making a person eligible to activate it. Inviting someone or creating a service account with the role is refused; grant it afterwards.",
   },
   { value: "policy-disable", label: "Stopping an enforced access policy", description: "Turning it off, switching it to report-only or deleting it." },
   { value: "password-sign-in", label: "Turning on password sign-in", description: "For the whole organization, under Methods." },
