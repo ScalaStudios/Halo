@@ -251,6 +251,10 @@ func applyRule(ctx context.Context, tx *store.Store, rule store.LifecycleRule, u
 				failed("Could not change " + g.Name + " because it is a rule-based group")
 				continue
 			}
+			if a.Type == "add-to-group" && u.Guest {
+				steps = append(steps, "Did not add "+u.Name+" to "+g.Name+" because guests join only the groups chosen for them")
+				continue
+			}
 			if a.Type == "add-to-group" {
 				added, err := tx.EnsureGroupMember(ctx, g.ID, u.ID)
 				if err != nil {

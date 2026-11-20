@@ -97,14 +97,17 @@ func (h *handlers) userSignIns(w http.ResponseWriter, r *http.Request, _ store.U
 
 func (h *handlers) inviteUser(w http.ResponseWriter, r *http.Request, actor store.User) error {
 	var in struct {
-		Email      string   `json:"email"`
-		Name       string   `json:"name"`
-		Title      string   `json:"title"`
-		Department string   `json:"department"`
-		Location   string   `json:"location"`
-		ManagerID  string   `json:"managerId"`
-		GroupIDs   []string `json:"groupIds"`
-		Roles      []string `json:"roles"`
+		Email      string     `json:"email"`
+		Name       string     `json:"name"`
+		Title      string     `json:"title"`
+		Department string     `json:"department"`
+		Location   string     `json:"location"`
+		ManagerID  string     `json:"managerId"`
+		GroupIDs   []string   `json:"groupIds"`
+		Roles      []string   `json:"roles"`
+		Guest      bool       `json:"guest"`
+		SponsorID  string     `json:"sponsorId"`
+		ExpiresAt  *time.Time `json:"expiresAt"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -116,6 +119,24 @@ func (h *handlers) inviteUser(w http.ResponseWriter, r *http.Request, actor stor
 	roles, labels, err := checkRoles(in.Roles)
 	if err != nil {
 		return err
+	}
+	var sponsor store.User
+	var sponsorID *string
+	var guestUntil *time.Time
+	switch {
+	case in.Guest && len(roles) > 0:
+		return httpx.Invalid("Guests can't hold administrator roles. Invite them without a role.")
+	case in.Guest:
+		if sponsor, err = h.guestSponsor(r.Context(), in.SponsorID, ""); err != nil {
+			return err
+		}
+		until, err := guestExpiry(in.ExpiresAt)
+		if err != nil {
+			return err
+		}
+		sponsorID, guestUntil = &sponsor.ID, &until
+	case in.SponsorID != "" || in.ExpiresAt != nil:
+		return httpx.Invalid(`A sponsor and an end date apply to guests only. Send "guest": true, or leave sponsorId and expiresAt out.`)
 	}
 	if len(roles) > 0 {
 		if _, err := httpx.RequireRole(r); err != nil {
@@ -168,6 +189,9 @@ func (h *handlers) inviteUser(w http.ResponseWriter, r *http.Request, actor stor
 			Status:     "invited",
 			Roles:      roles,
 			GroupIDs:   groupIDs(groups),
+			Guest:      in.Guest,
+			SponsorID:  sponsorID,
+			ExpiresAt:  guestUntil,
 		})
 		if errors.Is(err, store.ErrConflict) {
 			return conflict("Someone with the email " + email + " already exists. Open their profile instead of inviting them again.")
@@ -179,7 +203,11 @@ func (h *handlers) inviteUser(w http.ResponseWriter, r *http.Request, actor stor
 		if err != nil {
 			return err
 		}
-		if err := record(r, tx, actor, store.AuditEvent{Action: "user.invite", Summary: "Invited " + user.Name + " <" + user.Email + ">", TargetType: "user", TargetID: user.ID, TargetLabel: user.Name}); err != nil {
+		summary := "Invited " + user.Name + " <" + user.Email + ">"
+		if in.Guest {
+			summary = "Invited guest " + user.Name + " <" + user.Email + ">, sponsored by " + sponsor.Name + " until " + guestUntil.UTC().Format("2 Jan 2006, 15:04 UTC")
+		}
+		if err := record(r, tx, actor, store.AuditEvent{Action: "user.invite", Summary: summary, TargetType: "user", TargetID: user.ID, TargetLabel: user.Name}); err != nil {
 			return err
 		}
 		if len(roles) == 0 {
@@ -246,6 +274,9 @@ func (h *handlers) restoreUser(w http.ResponseWriter, r *http.Request, actor sto
 	}
 	if target.Status != "suspended" {
 		return conflict(target.Name + " is not suspended, so there is nothing to restore.")
+	}
+	if target.Expired() {
+		return conflict(target.Name + "'s guest access ended " + target.ExpiresAt.UTC().Format("2 Jan 2006, 15:04 UTC") + ". Extend it first, then restore the account.")
 	}
 	status := "active"
 	if target.LastSignInAt == nil && len(target.Methods) == 0 {
@@ -439,6 +470,9 @@ func (h *handlers) setRoles(w http.ResponseWriter, r *http.Request, actor store.
 	if err != nil {
 		return err
 	}
+	if err := refuseGuestRoles(target, roles); err != nil {
+		return err
+	}
 	if target.ID == actor.ID && slices.ContainsFunc(roles, func(role string) bool { return !target.HasRole(role) || activated(target, role) }) {
 		return httpx.Fail(http.StatusForbidden, "ERR_FORBIDDEN", "You cannot give yourself a role, including one you activated. Ask another global administrator to do it.")
 	}
@@ -493,6 +527,9 @@ func (h *handlers) setEligibleRoles(w http.ResponseWriter, r *http.Request, acto
 	if err != nil {
 		return err
 	}
+	if err := refuseGuestRoles(target, roles); err != nil {
+		return err
+	}
 	summary := "Removed every eligible role"
 	if len(labels) > 0 {
 		summary = "Set eligible roles to " + strings.Join(labels, ", ")
@@ -533,6 +570,13 @@ func checkRoles(keys []string) ([]string, []string, error) {
 		}
 	}
 	return roles, labels, nil
+}
+
+func refuseGuestRoles(target store.User, roles []string) error {
+	if target.Guest && len(roles) > 0 {
+		return httpx.Invalid(target.Name + " is a guest, and guests can't hold or be eligible for administrator roles.")
+	}
+	return nil
 }
 
 func roleEvent(target store.User, labels []string) store.AuditEvent {

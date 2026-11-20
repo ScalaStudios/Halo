@@ -32,6 +32,7 @@ type AccessReview struct {
 type ReviewItem struct {
 	User      NamedRef   `json:"user"`
 	Title     string     `json:"title"`
+	Guest     bool       `json:"guest"`
 	Decision  *string    `json:"decision"`
 	Note      string     `json:"note"`
 	DecidedBy *NamedRef  `json:"decidedBy"`
@@ -94,14 +95,14 @@ func (s *Store) GetAccessReview(ctx context.Context, reviewID string) (AccessRev
 		return AccessReview{}, ErrNotFound
 	}
 	review := list[0]
-	rows, err := s.db.Query(ctx, `select json_build_object('id', u.id, 'name', u.name, 'email', u.email), u.title, i.decision, i.note, `+govRef("d")+`, i.decided_at, i.outcome
+	rows, err := s.db.Query(ctx, `select json_build_object('id', u.id, 'name', u.name, 'email', u.email), u.title, u.guest, i.decision, i.note, `+govRef("d")+`, i.decided_at, i.outcome
 		from access_review_items i join users u on u.id = i.user_id left join users d on d.id = i.decided_by where i.review_id = $1 order by lower(u.name), u.id`, reviewID)
 	if err != nil {
 		return AccessReview{}, err
 	}
 	review.Items, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (ReviewItem, error) {
 		var i ReviewItem
-		return i, row.Scan(&i.User, &i.Title, &i.Decision, &i.Note, &i.DecidedBy, &i.DecidedAt, &i.Outcome)
+		return i, row.Scan(&i.User, &i.Title, &i.Guest, &i.Decision, &i.Note, &i.DecidedBy, &i.DecidedAt, &i.Outcome)
 	})
 	return review, err
 }

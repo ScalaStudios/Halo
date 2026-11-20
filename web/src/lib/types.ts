@@ -35,6 +35,9 @@ export type User = {
   createdAt: string;
   lastSignInAt: string | null;
   avatarUrl: string | null;
+  guest: boolean;
+  sponsor: NamedRef | null;
+  expiresAt: string | null;
   impersonation?: Impersonation;
 };
 

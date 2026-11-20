@@ -58,3 +58,7 @@ func AccessDecided(to string, approved bool, approver, pkg, expires, groups, not
 	}
 	return build("access_denied", to, vars)
 }
+
+func GuestExpiring(to, guest, guestEmail, link string, expires time.Time) Message {
+	return build("guest_expiring", to, map[string]string{"Guest": guest, "GuestEmail": guestEmail, "Expires": expiry(expires), "Link": link})
+}

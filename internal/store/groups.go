@@ -66,7 +66,7 @@ func (s *Store) dynamicGroups(ctx context.Context, args ...any) (string, []any, 
 		}
 		match += " else false end"
 	}
-	return `with dynamic as (select g.id, g.created_at, u.id as user_id from groups g cross join users u where ` + match + `) `, c.Args, nil
+	return `with dynamic as (select g.id, g.created_at, u.id as user_id from groups g cross join users u where not u.guest and (` + match + `)) `, c.Args, nil
 }
 
 func (s *Store) CheckRule(ctx context.Context, groupID, src string) error {
@@ -86,7 +86,7 @@ func (s *Store) MatchRule(ctx context.Context, groupID, src string) ([]string, e
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.Query(ctx, `select u.id from users u where `+where, c.Args...)
+	rows, err := s.db.Query(ctx, `select u.id from users u where not u.guest and (`+where+`)`, c.Args...)
 	if err != nil {
 		return nil, err
 	}

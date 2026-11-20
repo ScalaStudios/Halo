@@ -34,7 +34,7 @@ var variables = map[string]Variable{
 	"Organization":   {"Organization", "Your organization's name.", "Fernway Systems"},
 	"Administrator":  {"Administrator", "The administrator who sent the email.", "Grace Hopper"},
 	"Link":           {"Link", "The link the person opens.", "https://halo.example.com/2f9c4e"},
-	"Expires":        {"Expires", "When the link or pass stops working.", "4 March 2026, 14:00 UTC"},
+	"Expires":        {"Expires", "When the link, pass or guest access stops working.", "4 March 2026, 14:00 UTC"},
 	"Application":    {"Application", "The application the person is signing in to. Empty when they sign in to Halo itself.", "Grafana"},
 	"Code":           {"Code", "The six-digit sign-in code.", "482913"},
 	"Requester":      {"Requester", "The person who asked for access.", "Sam Lee"},
@@ -45,6 +45,8 @@ var variables = map[string]Variable{
 	"Approver":       {"Approver", "The person who approved or denied the request.", "Grace Hopper"},
 	"Groups":         {"Groups", "The groups the approval added the person to.", "Finance and Payroll"},
 	"Note":           {"Note", "The approver's note. Empty when they left none.", "Ends with the quarter"},
+	"Guest":          {"Guest", "The guest whose access is ending.", "Sam Lee"},
+	"GuestEmail":     {"GuestEmail", "The guest's email address.", "sam@partner.example"},
 }
 
 func uses(names ...string) []Variable {
@@ -120,6 +122,12 @@ var Templates = []Template{
 		Default: store.EmailTemplate{Subject: "A temporary access pass was created for you", Body: greetingLine +
 			"{{.Administrator}} created a temporary access pass for your Halo account. It lets you set up a new passkey and stops working {{.Expires}}.\n\n" +
 			"Halo never sends the pass by email, so expect it from {{.Administrator}} in person or by phone. If you didn't ask for one, contact your administrator."},
+	},
+	{
+		Kind: "guest_expiring", Label: "Guest access ending", Description: "Sent to a guest's sponsor before the guest's access ends, or to global administrators when the sponsor is no longer active.",
+		Variables: uses("Guest", "GuestEmail", "Expires", "Link", "Organization"),
+		Default: store.EmailTemplate{Subject: "Guest access for {{.Guest}} ends soon", Body: "The guest account of {{.Guest}} ({{.GuestEmail}}) stops working {{.Expires}}, and Halo suspends it then.\n\n" +
+			"If they still need access, extend it in Halo: {{.Link}}\n\nIf they don't, you don't need to do anything."},
 	},
 }
 

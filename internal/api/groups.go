@@ -356,15 +356,17 @@ func (h *handlers) joinGroup(w http.ResponseWriter, r *http.Request, u store.Use
 	if slices.Contains(u.GroupIDs, g.ID) {
 		return httpx.JSON(w, http.StatusOK, status)
 	}
-	switch g.JoinPolicy {
-	case "open":
+	switch {
+	case g.JoinPolicy == "open" && u.Guest:
+		return httpx.Fail(http.StatusForbidden, "ERR_FORBIDDEN", "Guests can't join groups by themselves. Ask your sponsor or an owner of "+g.Name+" to add you.")
+	case g.JoinPolicy == "open":
 		err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 			if err := tx.AddGroupMember(r.Context(), g.ID, u.ID); err != nil {
 				return err
 			}
 			return record(r, tx, u, store.AuditEvent{Action: "group.member.add", Summary: u.Name + " joined", TargetType: "group", TargetID: g.ID, TargetLabel: g.Name})
 		})
-	case "request":
+	case g.JoinPolicy == "request":
 		status["status"] = "requested"
 		err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 			if added, err := tx.RequestToJoinGroup(r.Context(), g.ID, u.ID); err != nil || !added {
@@ -482,7 +484,7 @@ func (h *handlers) myJoinableGroups(w http.ResponseWriter, r *http.Request, u st
 	}
 	out := []joinableGroup{}
 	for _, g := range all {
-		if g.JoinPolicy != "closed" && !slices.Contains(u.GroupIDs, g.ID) {
+		if g.JoinPolicy != "closed" && !(u.Guest && g.JoinPolicy == "open") && !slices.Contains(u.GroupIDs, g.ID) {
 			out = append(out, joinableGroup{g, slices.Contains(requested, g.ID)})
 		}
 	}
