@@ -40,5 +40,9 @@ export type AppProvisioning = {
   updated: number;
   deactivated: number;
   provisioned: number;
+  groupIds: string[];
+  groupsCreated: number;
+  groupsUpdated: number;
+  groupsDeleted: number;
   updatedAt: string;
 };

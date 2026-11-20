@@ -213,7 +213,7 @@ function CollectionDialog({ collection, applications, groups, onClose }: { colle
   );
 }
 
-function Checklist({
+export function Checklist({
   legend,
   hint,
   items,

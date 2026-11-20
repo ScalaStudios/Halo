@@ -232,18 +232,22 @@ func (s *Store) UpdateSCIMGroup(ctx context.Context, groupID, name string, exter
 }
 
 type AppProvisioning struct {
-	AppID       string     `json:"appId"`
-	BaseURL     string     `json:"baseUrl"`
-	Enabled     bool       `json:"enabled"`
-	LastSyncAt  *time.Time `json:"lastSyncAt"`
-	LastError   string     `json:"lastError"`
-	Created     int        `json:"created"`
-	Updated     int        `json:"updated"`
-	Deactivated int        `json:"deactivated"`
-	Provisioned int        `json:"provisioned"`
-	UpdatedAt   time.Time  `json:"updatedAt"`
-	AppStatus   string     `json:"-"`
-	TokenSealed []byte     `json:"-"`
+	AppID         string     `json:"appId"`
+	BaseURL       string     `json:"baseUrl"`
+	Enabled       bool       `json:"enabled"`
+	LastSyncAt    *time.Time `json:"lastSyncAt"`
+	LastError     string     `json:"lastError"`
+	Created       int        `json:"created"`
+	Updated       int        `json:"updated"`
+	Deactivated   int        `json:"deactivated"`
+	Provisioned   int        `json:"provisioned"`
+	GroupIDs      []string   `json:"groupIds"`
+	GroupsCreated int        `json:"groupsCreated"`
+	GroupsUpdated int        `json:"groupsUpdated"`
+	GroupsDeleted int        `json:"groupsDeleted"`
+	UpdatedAt     time.Time  `json:"updatedAt"`
+	AppStatus     string     `json:"-"`
+	TokenSealed   []byte     `json:"-"`
 }
 
 type ProvisionedUser struct {
@@ -252,13 +256,20 @@ type ProvisionedUser struct {
 	Active   bool
 }
 
+type ProvisionedGroup struct {
+	RemoteID string
+	Name     string
+	Members  []string
+}
+
 const appProvisioningQuery = `select p.app_id, p.base_url, p.enabled, p.last_sync_at, p.last_error, p.created_count, p.updated_count, p.deactivated_count,
-	(select count(*) from app_provisioned_users pu where pu.app_id = p.app_id and pu.active), p.updated_at, a.status, p.token_sealed
+	(select count(*) from app_provisioned_users pu where pu.app_id = p.app_id and pu.active),
+	array(select g.id from groups g where g.id = any(p.group_ids) order by g.name), p.groups_created_count, p.groups_updated_count, p.groups_deleted_count, p.updated_at, a.status, p.token_sealed
 	from app_provisioning p join applications a on a.id = p.app_id`
 
 func scanAppProvisioning(row rowScanner) (AppProvisioning, error) {
 	var p AppProvisioning
-	err := row.Scan(&p.AppID, &p.BaseURL, &p.Enabled, &p.LastSyncAt, &p.LastError, &p.Created, &p.Updated, &p.Deactivated, &p.Provisioned, &p.UpdatedAt, &p.AppStatus, &p.TokenSealed)
+	err := row.Scan(&p.AppID, &p.BaseURL, &p.Enabled, &p.LastSyncAt, &p.LastError, &p.Created, &p.Updated, &p.Deactivated, &p.Provisioned, &p.GroupIDs, &p.GroupsCreated, &p.GroupsUpdated, &p.GroupsDeleted, &p.UpdatedAt, &p.AppStatus, &p.TokenSealed)
 	return p, err
 }
 
@@ -298,9 +309,15 @@ func (s *Store) SaveAppProvisioning(ctx context.Context, appID, baseURL string, 
 	return err
 }
 
-func (s *Store) RecordProvisioningRun(ctx context.Context, appID string, created, updated, deactivated int, lastError string) error {
-	_, err := s.db.Exec(ctx, `update app_provisioning set last_sync_at = now(), created_count = $2, updated_count = $3, deactivated_count = $4, last_error = $5 where app_id = $1`,
-		appID, created, updated, deactivated, lastError)
+func (s *Store) SetProvisioningGroups(ctx context.Context, appID string, groupIDs []string) error {
+	_, err := s.db.Exec(ctx, `update app_provisioning set group_ids = $2, updated_at = now() where app_id = $1`, appID, groupIDs)
+	return err
+}
+
+func (s *Store) RecordProvisioningRun(ctx context.Context, appID string, created, updated, deactivated, groupsCreated, groupsUpdated, groupsDeleted int, lastError string) error {
+	_, err := s.db.Exec(ctx, `update app_provisioning set last_sync_at = now(), created_count = $2, updated_count = $3, deactivated_count = $4,
+		groups_created_count = $5, groups_updated_count = $6, groups_deleted_count = $7, last_error = $8 where app_id = $1`,
+		appID, created, updated, deactivated, groupsCreated, groupsUpdated, groupsDeleted, lastError)
 	return err
 }
 
@@ -326,5 +343,35 @@ func (s *Store) SaveProvisionedUser(ctx context.Context, appID, userID string, u
 	_, err := s.db.Exec(ctx, `insert into app_provisioned_users (app_id, user_id, remote_id, attributes_hash, active) values ($1, $2, $3, $4, $5)
 		on conflict (app_id, user_id) do update set remote_id = excluded.remote_id, attributes_hash = excluded.attributes_hash, active = excluded.active, synced_at = now()`,
 		appID, userID, u.RemoteID, u.Hash, u.Active)
+	return err
+}
+
+func (s *Store) ListProvisionedGroups(ctx context.Context, appID string) (map[string]ProvisionedGroup, error) {
+	rows, err := s.db.Query(ctx, `select group_id, remote_id, display_name, members from app_provisioned_groups where app_id = $1`, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	groups := map[string]ProvisionedGroup{}
+	for rows.Next() {
+		var groupID string
+		var g ProvisionedGroup
+		if err := rows.Scan(&groupID, &g.RemoteID, &g.Name, &g.Members); err != nil {
+			return nil, err
+		}
+		groups[groupID] = g
+	}
+	return groups, rows.Err()
+}
+
+func (s *Store) SaveProvisionedGroup(ctx context.Context, appID, groupID string, g ProvisionedGroup) error {
+	_, err := s.db.Exec(ctx, `insert into app_provisioned_groups (app_id, group_id, remote_id, display_name, members) values ($1, $2, $3, $4, $5)
+		on conflict (app_id, group_id) do update set remote_id = excluded.remote_id, display_name = excluded.display_name, members = excluded.members, synced_at = now()`,
+		appID, groupID, g.RemoteID, g.Name, g.Members)
+	return err
+}
+
+func (s *Store) DeleteProvisionedGroup(ctx context.Context, appID, groupID string) error {
+	_, err := s.db.Exec(ctx, `delete from app_provisioned_groups where app_id = $1 and group_id = $2`, appID, groupID)
 	return err
 }

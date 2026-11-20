@@ -12,17 +12,18 @@ import { SectionTitle } from "@/components/ui/section-title";
 import { apiGet } from "@/lib/api/server";
 import { formatRelative, pluralize } from "@/lib/format";
 import type { AppProvisioning, ServiceAccount } from "@/lib/provisioning-types";
-import type { Application, AuditEvent, Organization } from "@/lib/types";
+import type { Application, AuditEvent, Group, Organization } from "@/lib/types";
 
 export const metadata = { title: "Provisioning" };
 
 export default async function ProvisioningPage() {
-  const [org, accounts, audit, applications, configs] = await Promise.all([
+  const [org, accounts, audit, applications, configs, groups] = await Promise.all([
     apiGet<Organization>("/organization"),
     apiGet<ServiceAccount[]>("/service-accounts"),
     apiGet<AuditEvent[]>("/audit"),
     apiGet<Application[]>("/applications"),
     apiGet<AppProvisioning[]>("/provisioning/applications"),
+    apiGet<Group[]>("/groups"),
   ]);
   const connectors = accounts
     .map((account) => ({ account, keys: activeKeys(account.keys).filter((key) => key.scopes.includes("scim")) }))
@@ -120,9 +121,9 @@ export default async function ProvisioningPage() {
       <section className="flex flex-col gap-6">
         <SectionTitle
           title="Outbound"
-          description={`Every 2 minutes Halo creates accounts for people assigned to an application, updates changed profiles and deactivates people who lose access or are suspended. ${on} of ${pluralize(apps.length, "application")} on.`}
+          description={`Every 2 minutes Halo creates accounts for people assigned to an application, updates changed profiles, deactivates people who lose access or are suspended, and keeps the groups you choose in step. ${on} of ${pluralize(apps.length, "application")} on.`}
         />
-        <OutboundTable apps={apps} />
+        <OutboundTable apps={apps} groups={groups} />
       </section>
     </div>
   );

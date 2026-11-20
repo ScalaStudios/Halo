@@ -2,6 +2,7 @@
 
 import { PlugZap, RefreshCw, Settings2 } from "lucide-react";
 import { useState } from "react";
+import { Checklist } from "@/components/applications/collections-table";
 import { PROTOCOL_LABEL } from "@/components/applications/shared";
 import { useMutation } from "@/components/console/use-mutation";
 import { Button } from "@/components/ui/button";
@@ -11,9 +12,10 @@ import { Checkbox, Field, Input } from "@/components/ui/input";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, pluralize } from "@/lib/format";
+import { GROUP_KIND } from "@/lib/labels";
 import type { AppProvisioning } from "@/lib/provisioning-types";
-import type { Protocol } from "@/lib/types";
+import type { Group, Protocol } from "@/lib/types";
 import { StatusLabel } from "./shared";
 
 export type OutboundApp = { id: string; name: string; protocol: Protocol; config: AppProvisioning | null };
@@ -25,7 +27,11 @@ function status(config: AppProvisioning | null) {
   return { label: "On", tone: "success" as const };
 }
 
-export function OutboundTable({ apps }: { apps: OutboundApp[] }) {
+function pushesGroups(config: AppProvisioning) {
+  return config.groupIds.length > 0 || config.groupsDeleted > 0;
+}
+
+export function OutboundTable({ apps, groups }: { apps: OutboundApp[]; groups: Group[] }) {
   const { pending, run, toast } = useMutation();
   const [configuring, setConfiguring] = useState<OutboundApp | null>(null);
 
@@ -49,7 +55,10 @@ export function OutboundTable({ apps }: { apps: OutboundApp[] }) {
         toast(
           result.lastError
             ? { title: `Some changes to ${app.name} failed`, description: result.lastError, tone: "danger" }
-            : { title: `${app.name} is up to date`, description: `${result.created} created, ${result.updated} updated, ${result.deactivated} deactivated.` },
+            : {
+                title: `${app.name} is up to date`,
+                description: `${result.created} created, ${result.updated} updated, ${result.deactivated} deactivated.${pushesGroups(result) ? ` Groups: ${result.groupsCreated} created, ${result.groupsUpdated} updated, ${result.groupsDeleted} deleted.` : ""}`,
+              },
         ),
     );
   }
@@ -74,8 +83,9 @@ export function OutboundTable({ apps }: { apps: OutboundApp[] }) {
                 </span>
               ) : null}
             </span>,
-            <span key="p" className="tnum">
-              {config ? config.provisioned : "—"}
+            <span key="p" className="flex flex-col">
+              <span className="tnum">{config ? config.provisioned : "—"}</span>
+              {config && config.groupIds.length > 0 ? <span className="whitespace-nowrap text-caption text-fg-3">{pluralize(config.groupIds.length, "group")}</span> : null}
             </span>,
             config?.lastSyncAt ? (
               <span key="l" className="flex flex-col whitespace-nowrap" title={formatDateTime(config.lastSyncAt)}>
@@ -83,6 +93,11 @@ export function OutboundTable({ apps }: { apps: OutboundApp[] }) {
                 <span className="text-caption text-fg-3">
                   {config.created} created · {config.updated} updated · {config.deactivated} deactivated
                 </span>
+                {pushesGroups(config) ? (
+                  <span className="text-caption text-fg-3">
+                    Groups: {config.groupsCreated} created · {config.groupsUpdated} updated · {config.groupsDeleted} deleted
+                  </span>
+                ) : null}
               </span>
             ) : (
               <span key="l" className="text-fg-3">
@@ -110,16 +125,17 @@ export function OutboundTable({ apps }: { apps: OutboundApp[] }) {
           ];
         })}
       />
-      <ConfigureDialog key={configuring?.id ?? "closed"} app={configuring} onClose={() => setConfiguring(null)} />
+      <ConfigureDialog key={configuring?.id ?? "closed"} app={configuring} groups={groups} onClose={() => setConfiguring(null)} />
     </>
   );
 }
 
-function ConfigureDialog({ app, onClose }: { app: OutboundApp | null; onClose: () => void }) {
+function ConfigureDialog({ app, groups, onClose }: { app: OutboundApp | null; groups: Group[]; onClose: () => void }) {
   const configured = Boolean(app?.config);
   const [baseUrl, setBaseUrl] = useState(app?.config?.baseUrl ?? "");
   const [token, setToken] = useState("");
   const [enabled, setEnabled] = useState(app?.config?.enabled ?? true);
+  const [groupIds, setGroupIds] = useState<string[]>(app?.config?.groupIds ?? []);
   const [errors, setErrors] = useState<{ baseUrl?: string; token?: string }>({});
   const { pending, run, errorFor, toast } = useMutation();
 
@@ -133,12 +149,14 @@ function ConfigureDialog({ app, onClose }: { app: OutboundApp | null; onClose: (
     if (next.baseUrl || next.token) return;
     void run(
       "save",
-      () => api<AppProvisioning>(`/provisioning/applications/${app.id}`, { method: "PUT", body: { baseUrl: baseUrl.trim(), token: token.trim(), enabled } }),
+      () => api<AppProvisioning>(`/provisioning/applications/${app.id}`, { method: "PUT", body: { baseUrl: baseUrl.trim(), token: token.trim(), enabled, groupIds } }),
       () => {
         onClose();
         toast({
           title: `Provisioning saved for ${app.name}`,
-          description: enabled ? "Halo pushes assigned people every 2 minutes. Use Test to check the connection." : "Provisioning is paused. Nothing is pushed until you turn it on.",
+          description: enabled
+            ? `Halo pushes assigned people${groupIds.length > 0 ? ` and ${pluralize(groupIds.length, "group")}` : ""} every 2 minutes. Use Test to check the connection.`
+            : "Provisioning is paused. Nothing is pushed until you turn it on.",
         });
       },
       "inline",
@@ -151,7 +169,7 @@ function ConfigureDialog({ app, onClose }: { app: OutboundApp | null; onClose: (
       onOpenChange={(next) => (next ? undefined : onClose())}
       error={errorFor("save")}
       title={configured ? `Edit provisioning for ${app?.name}` : `Set up provisioning for ${app?.name}`}
-      description="Halo creates accounts for people assigned to the application, updates them when their profile changes and deactivates them when they lose access."
+      description="Halo creates accounts for people assigned to the application, updates them when their profile changes and deactivates them when they lose access. It can also push the groups you choose."
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -182,6 +200,15 @@ function ConfigureDialog({ app, onClose }: { app: OutboundApp | null; onClose: (
         >
           {(props) => <Input {...props} mono type="password" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} />}
         </Field>
+        {groups.length > 0 ? (
+          <Checklist
+            legend="Groups to push"
+            hint={`Halo keeps these groups and their members in step in ${app?.name}. People who are not provisioned are left out. Unchecking a group deletes it in ${app?.name} at the next sync.`}
+            items={groups.map((g) => ({ id: g.id, label: g.name, detail: GROUP_KIND[g.kind] }))}
+            value={groupIds}
+            onChange={setGroupIds}
+          />
+        ) : null}
         <label className="flex cursor-pointer items-start gap-3">
           <Checkbox className="mt-0.5" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
           <span className="flex flex-col">

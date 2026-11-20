@@ -32,7 +32,7 @@ Halo works in the same space as hosted services such as Microsoft Entra ID, Okta
 | **Sign-in** | Passkeys and security keys (WebAuthn), authenticator apps (TOTP), single-use recovery codes, and magic links or one-time codes by email. Sign-in through Google, Microsoft Entra ID, GitHub or any OpenID Connect provider, with account linking and accounts created on first sign-in. |
 | **Single sign-on** | An OpenID Connect provider and OAuth 2.0 authorization server for web, single-page, native and machine-to-machine applications. A SAML 2.0 identity provider with service provider metadata import and IdP-initiated sign-in. |
 | **Directory** | People with profiles and managers, assigned groups with owners and self-service joining, rule-based groups such as `user.department == "Engineering"`, service accounts, devices, and six administrative roles. |
-| **Provisioning** | A SCIM 2.0 server, tested with the request formats of Okta and Microsoft Entra ID, so either of them or an HR system can provision people into Halo; and outbound SCIM that creates, updates and deactivates accounts in your applications. |
+| **Provisioning** | A SCIM 2.0 server, tested with the request formats of Okta and Microsoft Entra ID, so either of them or an HR system can provision people into Halo; and outbound SCIM that creates, updates and deactivates accounts in your applications and keeps the groups you choose in step. |
 | **Access policies** | Conditional access by person, group, application, network zone, device trust, sign-in risk and sign-in method, with effects that allow, block, require a passkey or security key, or require accepting versioned terms of use, report-only mode and a simulator. |
 | **Governance** | Access packages that people request, with approvers, justifications and time limits; access reviews that can remove access automatically when they complete; administrator roles that eligible people activate for a few hours with a reason; and joiner, mover and leaver rules. |
 | **Infrastructure access** | An SSH certificate authority that issues short-lived certificates to people in mapped groups, through `halo login` and `halo ssh-cert`. |
@@ -40,7 +40,7 @@ Halo works in the same space as hosted services such as Microsoft Entra ID, Okta
 | **Administration** | An admin console whose home page shows the directory, your roles, open risk events and shortcuts, a self-service account portal with profile pictures, organization branding, sign-in methods you can switch off, email over SMTP with retries, JSON export, and rotation of client secrets, signing keys and `HALO_SECRET_KEY`. |
 | **Developers** | A REST API described by an OpenAPI 3.1 document, API keys for service accounts, API resources with their own scopes and JWT access tokens, and setup guides with ready-made configuration for common applications. |
 
-Not built yet: LDAP directory sync and pushing groups over outbound SCIM. See the [roadmap](#roadmap).
+Not built yet: LDAP directory sync. See the [roadmap](#roadmap).
 
 ## Supported standards
 
@@ -206,7 +206,6 @@ Planned:
 
 - Halo Cloud, the hosted version
 - LDAP directory sync
-- Pushing groups over outbound SCIM
 
 Known limitations today:
 
