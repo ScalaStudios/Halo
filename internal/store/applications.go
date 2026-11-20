@@ -314,6 +314,9 @@ func claimsFor(a Application) []Claim {
 	if a.Protocol == "saml" {
 		return SAMLClaims(DefaultSAMLSettings())
 	}
+	if a.Protocol == "bookmark" {
+		return []Claim{}
+	}
 	if a.Type == "service" {
 		return []Claim{{Name: "sub", Source: "client.id"}, {Name: "scope", Source: "granted scopes"}}
 	}

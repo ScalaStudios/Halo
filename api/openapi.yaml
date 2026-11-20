@@ -36,7 +36,7 @@ tags:
   - name: Groups
     description: Assigned and rule-based groups and their members.
   - name: Applications
-    description: OpenID Connect, OAuth and SAML applications, their secrets and group assignments.
+    description: OpenID Connect, OAuth and SAML applications, bookmarks, their secrets and group assignments, and the collections that group them in the account portal.
   - name: Activity
     description: Sessions, the sign-in log, the audit log and the overview.
   - name: Access packages
@@ -866,16 +866,72 @@ paths:
     get:
       tags: [Account]
       operationId: listMyApplications
-      summary: List the active applications you can sign in to
+      summary: List the active applications and bookmarks you can open
       security: *personal
       responses:
         '200':
-          description: Your applications.
+          description: Your applications in the order you arranged them. Applications you never placed come last, by name.
           content:
             application/json:
               schema:
                 type: array
                 items: {$ref: '#/components/schemas/MyApplication'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    put:
+      tags: [Account]
+      operationId: arrangeMyApplications
+      summary: Set the order of your applications and which are favourites
+      description: Replaces your arrangement. Every ID must be one of your active applications.
+      security: *personal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                order:
+                  type: array
+                  description: Application IDs in the order you want them. Applications left out come after these, by name.
+                  items: {type: string}
+                favourites:
+                  type: array
+                  description: Application IDs to mark as favourites. Every other application stops being a favourite.
+                  items: {type: string}
+      responses:
+        '200':
+          description: Your applications in their new order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/MyApplication'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /me/collections:
+    get:
+      tags: [Account]
+      operationId: listMyCollections
+      summary: List the collections assigned to your groups
+      description: Each collection lists only the active applications you can open, in your order. Collections with none of them are left out.
+      security: *personal
+      responses:
+        '200':
+          description: Your collections, by name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, name, applicationIds]
+                  properties:
+                    id: {type: string}
+                    name: {type: string}
+                    applicationIds:
+                      type: array
+                      items: {type: string}
         '401': {$ref: '#/components/responses/Unauthenticated'}
   /me/groups:
     get:
@@ -1634,7 +1690,7 @@ paths:
       tags: [Applications]
       operationId: createApplication
       summary: Register an application
-      description: 'Roles: application administrator. OpenID Connect web applications and services get a client secret, returned once. SAML applications take their settings in `saml` and are always `web`.'
+      description: 'Roles: application administrator. OpenID Connect web applications and services get a client secret, returned once. SAML applications take their settings in `saml` and are always `web`. Bookmarks only open their `homepage` from the account portal, have no sign-in protocol and are always `web`.'
       requestBody:
         required: true
         content:
@@ -1645,9 +1701,9 @@ paths:
               properties:
                 name: {type: string, maxLength: 200}
                 description: {type: string, maxLength: 2000}
-                protocol: {type: string, enum: [oidc, oauth, saml]}
+                protocol: {type: string, enum: [oidc, oauth, saml, bookmark]}
                 type: {type: string, enum: [web, spa, native, service]}
-                homepage: {type: string, format: uri}
+                homepage: {type: string, format: uri, description: 'Required for bookmarks: the http or https address the bookmark opens.'}
                 redirectUris:
                   type: array
                   description: Required for OpenID Connect applications other than services. https only, except http://localhost and http://127.0.0.1.
@@ -1946,6 +2002,62 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /collections:
+    get:
+      tags: [Applications]
+      operationId: listCollections
+      summary: List the account portal collections
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The collections, by name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Collection'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Applications]
+      operationId: createCollection
+      summary: Create a collection
+      description: 'Roles: application administrator. Members of the groups see the collection as a section of their account portal, with the applications in it they can open.'
+      requestBody: {$ref: '#/components/requestBodies/CollectionInput'}
+      responses:
+        '201': {$ref: '#/components/responses/CollectionResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /collections/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Applications]
+      operationId: updateCollection
+      summary: Replace a collection's name, applications and groups
+      description: 'Roles: application administrator. Send every field; omitted lists become empty.'
+      requestBody: {$ref: '#/components/requestBodies/CollectionInput'}
+      responses:
+        '200': {$ref: '#/components/responses/CollectionResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Applications]
+      operationId: deleteCollection
+      summary: Delete a collection
+      description: 'Roles: application administrator. The applications and groups are not changed.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /sessions:
     get:
       tags: [Activity]
@@ -3585,6 +3697,23 @@ components:
             type: object
             properties:
               note: {type: string, maxLength: 2000, description: Shown to the requester.}
+    CollectionInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name]
+            properties:
+              name: {type: string, maxLength: 100}
+              applicationIds:
+                type: array
+                description: Any application or bookmark except OAuth services.
+                items: {type: string}
+              groupIds:
+                type: array
+                description: Assigned or rule-based groups whose members see the collection.
+                items: {type: string}
     AccessPackageInput:
       required: true
       content:
@@ -3886,6 +4015,11 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Application'}
+    CollectionResponse:
+      description: The collection.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Collection'}
     AccessPackageResponse:
       description: The package.
       content:
@@ -4116,7 +4250,7 @@ components:
         id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
         description: {type: string}
-        protocol: {type: string, enum: [oidc, oauth, saml]}
+        protocol: {type: string, enum: [oidc, oauth, saml, bookmark]}
         type: {type: string, enum: [web, spa, native, service]}
         status: {type: string, enum: [active, disabled]}
         clientId: {type: string, description: 'The client ID, such as `hl_…`, or the entity ID for SAML applications.'}
@@ -4195,7 +4329,7 @@ components:
             certificateExpiresAt: {type: string, format: date-time}
     MyApplication:
       type: object
-      required: [id, name, description, homepage, launchUrl, logoUrl]
+      required: [id, name, description, homepage, launchUrl, logoUrl, favourite]
       properties:
         id: {type: string}
         name: {type: string}
@@ -4203,6 +4337,20 @@ components:
         homepage: {type: string}
         launchUrl: {type: string, description: 'The homepage, or `/saml/launch/{id}` for SAML applications.'}
         logoUrl: {type: [string, 'null']}
+        favourite: {type: boolean}
+    Collection:
+      type: object
+      required: [id, name, applicationIds, groupIds, createdAt]
+      properties:
+        id: {type: string, examples: [col_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        name: {type: string, maxLength: 100}
+        applicationIds:
+          type: array
+          items: {type: string}
+        groupIds:
+          type: array
+          items: {type: string}
+        createdAt: {type: string, format: date-time}
     Session:
       type: object
       required: [id, userId, device, os, browser, ip, location, method, createdAt, lastActiveAt]

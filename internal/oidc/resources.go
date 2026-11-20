@@ -214,8 +214,8 @@ func (h *resourceHandlers) grant(w http.ResponseWriter, r *http.Request, actor s
 	if err != nil {
 		return err
 	}
-	if app.Protocol == "saml" {
-		return httpx.Invalid(app.Name + " signs in with SAML, which has no access tokens. Grant API scopes to OpenID Connect or OAuth applications.")
+	if app.Protocol != "oidc" && app.Protocol != "oauth" {
+		return httpx.Invalid(app.Name + " doesn't use OpenID Connect or OAuth, so it has no access tokens. Grant API scopes to OpenID Connect or OAuth applications.")
 	}
 	var in struct {
 		Scopes *[]string `json:"scopes"`

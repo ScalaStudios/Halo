@@ -59,7 +59,7 @@ func deref[T any](p *T) T {
 }
 
 func usable(app store.Application, err error) (store.Application, error) {
-	if errors.Is(err, store.ErrNotFound) || err == nil && (app.Status != "active" || app.Protocol == "saml") {
+	if errors.Is(err, store.ErrNotFound) || err == nil && (app.Status != "active" || app.Protocol != "oidc" && app.Protocol != "oauth") {
 		return store.Application{}, oidc.ErrInvalidClient().WithDescription("The application does not exist, is disabled, or does not use OpenID Connect.")
 	}
 	return app, err
