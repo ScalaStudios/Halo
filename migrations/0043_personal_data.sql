@@ -1,0 +1,2 @@
+alter table audit_events drop constraint audit_events_actor_id_fkey;
+alter table sign_in_events drop constraint sign_in_events_impersonator_id_fkey;

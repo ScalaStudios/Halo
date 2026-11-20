@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"halo/internal/approval"
+	"halo/internal/avatars"
 	"halo/internal/config"
 	"halo/internal/httpx"
 	"halo/internal/mail"
@@ -17,11 +18,12 @@ import (
 var readers = []string{"security_admin", "user_admin", "helpdesk_admin", "app_admin", "auditor"}
 
 type handlers struct {
-	st     *store.Store
-	cfg    config.Config
-	mailer mail.Mailer
-	gate   *approval.Gate
-	auth   *httpx.Auth
+	st            *store.Store
+	cfg           config.Config
+	mailer        mail.Mailer
+	gate          *approval.Gate
+	auth          *httpx.Auth
+	removePicture func(context.Context, string) error
 }
 
 type handler func(http.ResponseWriter, *http.Request, store.User) error
@@ -31,7 +33,11 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	if mailer == nil {
 		mailer = mail.New(d.Config, d.Store)
 	}
-	h := &handlers{st: d.Store, cfg: d.Config, mailer: mailer, gate: approval.New(d), auth: d.Auth}
+	removePicture, err := avatars.PictureRemover(d)
+	if err != nil {
+		return err
+	}
+	h := &handlers{st: d.Store, cfg: d.Config, mailer: mailer, gate: approval.New(d), auth: d.Auth, removePicture: removePicture}
 	route := func(pattern string, roles []string, fn handler) {
 		mux.Handle(pattern, httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
 			actor, err := httpx.RequireRole(r, roles...)
@@ -55,6 +61,8 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("GET /api/v1/users/{id}", readers, h.getUser)
 	route("GET /api/v1/users/{id}/sessions", readers, h.userSessions)
 	route("GET /api/v1/users/{id}/sign-ins", readers, h.userSignIns)
+	route("GET /api/v1/users/{id}/export", nil, h.exportUser)
+	signedIn("GET /api/v1/me/export", h.exportMe)
 	route("POST /api/v1/users", []string{"user_admin"}, h.inviteUser)
 	route("POST /api/v1/users/{id}/suspend", []string{"user_admin", "security_admin"}, h.suspendUser)
 	route("POST /api/v1/users/{id}/restore", []string{"user_admin"}, h.restoreUser)
@@ -69,6 +77,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	signedIn("PUT /api/v1/users/{id}/guest", h.updateGuest)
 	signedIn("GET /api/v1/me/guests", h.mySponsoredGuests)
 	route("POST /api/v1/users/{id}/impersonations", []string{"helpdesk_admin"}, h.requestImpersonation)
+	route("DELETE /api/v1/users/{id}", nil, h.deleteUser)
 	route("GET /api/v1/impersonations", readers, h.listImpersonations)
 	route("POST /api/v1/impersonations/{id}/start", []string{"helpdesk_admin"}, h.startImpersonation)
 	mux.Handle("POST /api/v1/impersonations/{id}/end", httpx.Handle(h.endImpersonation))

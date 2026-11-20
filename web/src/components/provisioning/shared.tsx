@@ -98,7 +98,7 @@ export function ActivityList({ events, actorNames, empty }: { events: AuditEvent
           <span className="flex flex-wrap items-center gap-2 text-caption text-fg-3">
             <Tag>{event.action}</Tag>
             <span title={formatDateTime(event.time)}>
-              {(event.actorId && actorNames[event.actorId]) || "Halo"} · <RelativeTime iso={event.time} />
+              {event.actorId ? (actorNames[event.actorId] ?? event.actorId) : "Halo"} · <RelativeTime iso={event.time} />
             </span>
           </span>
         </li>

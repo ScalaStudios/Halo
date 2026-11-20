@@ -3,20 +3,32 @@
 import { Download } from "lucide-react";
 import { useMutation } from "@/components/console/use-mutation";
 import { ActionError } from "@/components/ui/action-error";
-import { Button } from "@/components/ui/button";
+import { Button, type ButtonSize, type ButtonVariant } from "@/components/ui/button";
 import { send } from "@/lib/api/client";
 
-async function fetchExport() {
-  const res = await send("/export", {}, "Halo could not build the export. Try again.");
+async function fetchExport(path: string) {
+  const res = await send(path, {}, "Halo could not build the export. Try again.");
   const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? "halo-export.json";
   return { name, blob: await res.blob() };
 }
 
-export function ExportButton({ disabled }: { disabled: boolean }) {
+export function ExportButton({
+  disabled,
+  path = "/export",
+  label = "Download export",
+  variant = "primary",
+  size,
+}: {
+  disabled?: boolean;
+  path?: string;
+  label?: string;
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+}) {
   const { pending, run, errorFor, toast } = useMutation();
 
   function download() {
-    void run("export", fetchExport, ({ name, blob }) => {
+    void run("export", () => fetchExport(path), ({ name, blob }) => {
       const url = URL.createObjectURL(blob);
       Object.assign(document.createElement("a"), { href: url, download: name }).click();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
@@ -26,9 +38,9 @@ export function ExportButton({ disabled }: { disabled: boolean }) {
 
   return (
     <>
-      <Button variant="primary" loading={pending === "export"} disabled={disabled} onClick={download}>
+      <Button variant={variant} size={size} loading={pending === "export"} disabled={disabled} onClick={download}>
         <Download aria-hidden="true" size={16} strokeWidth={1.75} />
-        Download export
+        {label}
       </Button>
       <ActionError message={errorFor("export")} className="mt-3" />
     </>

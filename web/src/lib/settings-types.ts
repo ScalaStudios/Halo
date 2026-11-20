@@ -60,7 +60,7 @@ export type EmailTemplate = {
 
 export type Challenge = { provider: "turnstile" | "hcaptcha"; siteKey: string };
 
-export type ApprovalAction = "global-admin" | "policy-disable" | "password-sign-in" | "identity-providers" | "impersonation";
+export type ApprovalAction = "global-admin" | "policy-disable" | "password-sign-in" | "identity-providers" | "impersonation" | "user-deletion";
 
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "failed" | "expired";
 

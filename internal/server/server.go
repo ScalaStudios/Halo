@@ -57,6 +57,8 @@ var sensitiveRoutes = []string{
 	"GET /api/v1/export",
 	"POST /api/v1/approvals/{id}/approve",
 	"POST /api/v1/impersonations/{id}/start",
+	"GET /api/v1/users/{id}/export",
+	"DELETE /api/v1/users/{id}",
 }
 
 var ownMethodRoutes = []string{
