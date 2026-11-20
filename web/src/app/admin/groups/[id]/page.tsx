@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AppWindow, ArrowLeft, UserRoundCog, UsersRound } from "lucide-react";
-import { APP_STATUS, PROTOCOL_LABEL } from "@/components/applications/shared";
+import { APP_STATUS, PROTOCOL_LABEL, statusKey } from "@/components/applications/shared";
 import { AddMembers, DeleteGroup, EditGroupButton, EditOwners, GroupMembersTable } from "@/components/directory/group-detail";
 import { StatusDot, Tag } from "@/components/ui/badge";
 import { DescriptionList } from "@/components/ui/description-list";
@@ -133,8 +133,8 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
               </Link>,
               PROTOCOL_LABEL[app.protocol],
               <span key="s" className="inline-flex items-center gap-2">
-                <StatusDot tone={APP_STATUS[app.status].tone} />
-                {APP_STATUS[app.status].label}
+                <StatusDot tone={APP_STATUS[statusKey(app)].tone} />
+                {APP_STATUS[statusKey(app)].label}
               </span>,
               <span key="u" className="tnum">
                 {app.userCount}

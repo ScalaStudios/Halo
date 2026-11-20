@@ -319,7 +319,7 @@ func TestEndSession(t *testing.T) {
 			t.Errorf("return to %q: %d %s, want %s", next, status, location, want)
 		}
 	}
-	if err := h.st.SetApplicationStatus(ctx, h.app.ID, "disabled"); err != nil {
+	if err := h.st.SetApplicationStatus(ctx, h.app.ID, "disabled", false); err != nil {
 		t.Fatal(err)
 	}
 	if _, location := h.get("/oauth2/logout/return?next="+url.QueryEscape(loggedOut), ""); location.String() != "/signed-out" {

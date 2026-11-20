@@ -31,6 +31,7 @@ export type Settings = {
   sessionLimitGroups: { groupId: string; limit: number }[];
   approvalActions: ApprovalAction[];
   emergencyAccessIds: string[];
+  clientRegistration: "off" | "open" | "token" | "approval";
 };
 
 export type ApprovalAction = "global-admin" | "policy-disable" | "password-sign-in" | "identity-providers";

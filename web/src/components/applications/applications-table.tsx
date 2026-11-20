@@ -5,13 +5,13 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { AppWindow, Copy, Plus, Power, Trash2 } from "lucide-react";
 import { useMutation } from "@/components/console/use-mutation";
 import { Avatar } from "@/components/ui/avatar";
-import { StatusDot } from "@/components/ui/badge";
+import { Badge, StatusDot } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { DataTable, facetFilter, type SavedView } from "@/components/ui/data-table";
 import { api } from "@/lib/api/client";
 import { pluralize } from "@/lib/format";
 import type { Application } from "@/lib/types";
-import { APP_STATUS, credentialState, ExpiryText, PROTOCOL_LABEL, soonestExpiry, TYPE_LABEL } from "./shared";
+import { APP_STATUS, credentialState, ExpiryText, PROTOCOL_LABEL, soonestExpiry, statusKey, TYPE_LABEL } from "./shared";
 
 const columns: ColumnDef<Application, any>[] = [
   {
@@ -23,7 +23,10 @@ const columns: ColumnDef<Application, any>[] = [
       <span className="flex max-w-72 min-w-60 items-center gap-3">
         <Avatar name={row.original.name} src={row.original.logoUrl} size="md" square />
         <span className="flex min-w-0 flex-col">
-          <span className="truncate font-medium text-fg">{row.original.name}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate font-medium text-fg">{row.original.name}</span>
+            {row.original.registeredDynamically ? <Badge tone="info">Dynamic</Badge> : null}
+          </span>
           <span className="truncate text-caption text-fg-3">{row.original.description}</span>
         </span>
       </span>
@@ -48,14 +51,14 @@ const columns: ColumnDef<Application, any>[] = [
   },
   {
     id: "status",
-    accessorFn: (a) => a.status,
+    accessorFn: statusKey,
     header: "Status",
     filterFn: facetFilter,
     meta: { label: "Status" },
     cell: ({ row }) => (
       <span className="inline-flex items-center gap-2 whitespace-nowrap">
-        <StatusDot tone={APP_STATUS[row.original.status].tone} />
-        {APP_STATUS[row.original.status].label}
+        <StatusDot tone={APP_STATUS[statusKey(row.original)].tone} />
+        {APP_STATUS[statusKey(row.original)].label}
       </span>
     ),
   },
@@ -93,6 +96,7 @@ const views: SavedView[] = [
   { id: "saml", label: "SAML", filters: [{ id: "protocol", value: ["saml"] }] },
   { id: "expiring", label: "Expiring credentials", filters: [{ id: "credentials", value: ["expiring"] }] },
   { id: "disabled", label: "Disabled", filters: [{ id: "status", value: ["disabled"] }] },
+  { id: "awaiting", label: "Awaiting approval", filters: [{ id: "status", value: ["awaiting"] }] },
 ];
 
 export function ApplicationsTable({ applications, initialView }: { applications: Application[]; initialView?: string }) {

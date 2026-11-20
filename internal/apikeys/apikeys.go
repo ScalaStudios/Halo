@@ -16,7 +16,7 @@ import (
 var (
 	readers = []string{"security_admin", "user_admin", "helpdesk_admin", "app_admin", "auditor"}
 	writers = []string{"security_admin"}
-	scopes  = []string{"api", "scim"}
+	scopes  = []string{"api", "scim", "registration"}
 )
 
 func Resolver(st *store.Store) httpx.KeyResolver {
@@ -333,14 +333,14 @@ func (h *handlers) createKey(w http.ResponseWriter, r *http.Request, actor store
 	granted := []string{}
 	for _, scope := range in.Scopes {
 		if !slices.Contains(scopes, scope) {
-			return httpx.Invalid(fmt.Sprintf("%q is not a scope. Use api for the management API or scim for SCIM provisioning.", scope))
+			return httpx.Invalid(fmt.Sprintf("%q is not a scope. Use api for the management API, scim for SCIM provisioning or registration for OAuth client registration.", scope))
 		}
 		if !slices.Contains(granted, scope) {
 			granted = append(granted, scope)
 		}
 	}
 	if len(granted) == 0 {
-		return httpx.Invalid(`Choose at least one scope: "api" for the management API or "scim" for SCIM provisioning.`)
+		return httpx.Invalid(`Choose at least one scope: "api" for the management API, "scim" for SCIM provisioning or "registration" for OAuth client registration.`)
 	}
 	if in.ExpiresAt != nil && !in.ExpiresAt.After(time.Now()) {
 		return httpx.Invalid("The expiry date is in the past. Pick a future date, or leave it empty for a key that does not expire.")

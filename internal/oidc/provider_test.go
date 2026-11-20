@@ -211,7 +211,7 @@ func TestAuthorizationCodeFlow(t *testing.T) {
 	}
 	disabled, err := st.CreateApplication(ctx, store.NewApplication{Name: "Wiki", Protocol: "oidc", Type: "web", RedirectURIs: []string{"https://wiki.example.com/cb"}, GroupIDs: []string{group.ID}})
 	must(err)
-	must(st.SetApplicationStatus(ctx, disabled.ID, "disabled"))
+	must(st.SetApplicationStatus(ctx, disabled.ID, "disabled", false))
 	if r := authorize(disabled.ClientID, "https://wiki.example.com/cb", true); r.status != http.StatusBadRequest || r.location != "" {
 		t.Fatalf("disabled app: %d %q", r.status, r.location)
 	}

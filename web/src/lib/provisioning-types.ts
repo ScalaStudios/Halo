@@ -1,5 +1,5 @@
 export type RoleKey = "global_admin" | "security_admin" | "user_admin" | "helpdesk_admin" | "app_admin" | "auditor";
-export type KeyScope = "api" | "scim";
+export type KeyScope = "api" | "scim" | "registration";
 
 export type ApiKey = {
   id: string;

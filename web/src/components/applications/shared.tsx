@@ -8,10 +8,15 @@ import { daysUntil, formatDate, pluralize } from "@/lib/format";
 import type { SetupGuide } from "@/lib/setup-guides";
 import type { Application, AppType } from "@/lib/types";
 
-export const APP_STATUS: Record<Application["status"], { label: string; tone: Tone }> = {
+export const APP_STATUS: Record<Application["status"] | "awaiting", { label: string; tone: Tone }> = {
   active: { label: "Active", tone: "success" },
   disabled: { label: "Disabled", tone: "neutral" },
+  awaiting: { label: "Awaiting approval", tone: "warning" },
 };
+
+export function statusKey(app: Pick<Application, "status" | "awaitingApproval">) {
+  return app.awaitingApproval ? "awaiting" : app.status;
+}
 
 export const PROTOCOL_LABEL = { oidc: "OpenID Connect", saml: "SAML 2.0", oauth: "OAuth 2.0", bookmark: "Bookmark" } as const;
 export const TYPE_LABEL = { web: "Web", spa: "Single-page", native: "Native / CLI", service: "Service" } as const;

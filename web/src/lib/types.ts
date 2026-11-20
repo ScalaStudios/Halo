@@ -101,6 +101,8 @@ export type Application = {
   tokenPolicy: { accessTokenTtl: number; refreshTokenTtl: number; idTokenTtl: number; rotation: boolean; exchange: boolean; exchangeFrom: string[] };
   setupGuide: "grafana" | "forgejo" | "aether" | "generic-oidc" | "generic-saml" | "kubernetes" | "aws-iam-identity-center" | "slack";
   logoUrl: string | null;
+  registeredDynamically: boolean;
+  awaitingApproval: boolean;
 };
 
 export type Collection = {

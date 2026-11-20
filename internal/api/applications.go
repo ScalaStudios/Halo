@@ -425,17 +425,19 @@ func (h *handlers) revokeSecret(w http.ResponseWriter, r *http.Request, actor st
 }
 
 func (h *handlers) setApplicationStatus(status string) handler {
-	action, summary := "application.enable", "Enabled sign-in"
-	if status == "disabled" {
-		action, summary = "application.disable", "Disabled sign-in"
-	}
 	return func(w http.ResponseWriter, r *http.Request, actor store.User) error {
 		app, err := h.application(r)
 		if err != nil {
 			return err
 		}
+		action, summary := "application.enable", "Enabled sign-in"
+		if status == "disabled" {
+			action, summary = "application.disable", "Disabled sign-in"
+		} else if app.AwaitingApproval {
+			action, summary = "application.registration.approve", "Approved the dynamically registered client"
+		}
 		err = h.st.Tx(r.Context(), func(tx *store.Store) error {
-			if err := tx.SetApplicationStatus(r.Context(), app.ID, status); err != nil {
+			if err := tx.SetApplicationStatus(r.Context(), app.ID, status, false); err != nil {
 				return err
 			}
 			return record(r, tx, actor, store.AuditEvent{Action: action, Summary: summary, TargetType: "application", TargetID: app.ID, TargetLabel: app.Name})

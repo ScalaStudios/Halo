@@ -17,6 +17,7 @@ export const ROLES: Record<RoleKey, { label: string; description: string }> = {
 export const SCOPES: Record<KeyScope, { label: string; description: string }> = {
   api: { label: "Management API", description: "Everything the service account's roles allow under /api/v1." },
   scim: { label: "SCIM provisioning", description: "Create, update and deactivate people and groups under /scim/v2." },
+  registration: { label: "Client registration", description: "Register OAuth clients at /oauth2/register when client registration asks for an initial access token." },
 };
 
 export const ACCOUNT_STATUS: Record<ServiceAccount["status"], { label: string; tone: Tone }> = {
