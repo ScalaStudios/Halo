@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"encoding/xml"
 	"errors"
 	"net/url"
 	"reflect"
@@ -16,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	crewjam "github.com/crewjam/saml"
 
 	halosaml "halo/internal/saml"
 	"halo/internal/store"
@@ -385,4 +388,25 @@ func TestUpdateApplication(t *testing.T) {
 	expect(t, call(t, h, admin, "PUT", samlPath, map[string]any{"attributes": store.DefaultSAMLSettings().Attributes, "encryptionCertificate": pemOf(expiredDER)}), 200)
 	expect(t, call(t, h, admin, "PUT", samlPath, map[string]any{"encryption": "aes256-cbc"}), 422)
 	expect(t, call(t, h, admin, "PUT", samlPath, map[string]any{"encryption": "off"}), 200)
+
+	acs, _ := url.Parse("https://example.slack.com/sso/saml")
+	cert, _ := x509.ParseCertificate(certDER)
+	imported := func(sp *crewjam.ServiceProvider) store.SAMLSettings {
+		t.Helper()
+		raw, err := xml.Marshal(sp.Metadata())
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := call(t, h, admin, "PUT", samlPath, map[string]any{"metadataXml": string(raw)})
+		expect(t, rec, 200)
+		return decode[struct {
+			SAML store.SAMLSettings `json:"saml"`
+		}](t, rec).SAML
+	}
+	if got := imported(&crewjam.ServiceProvider{EntityID: "https://slack.com", AcsURL: *acs, Key: key.(*rsa.PrivateKey), Certificate: cert}); got.Encryption != "off" || got.EncryptionCertificate != strings.TrimSpace(pemOf(certDER)) {
+		t.Fatalf("metadata import must take the encryption certificate without turning encryption on: %+v", got)
+	}
+	if got := imported(&crewjam.ServiceProvider{EntityID: "https://slack.com", AcsURL: *acs}); got.EncryptionCertificate != strings.TrimSpace(pemOf(certDER)) {
+		t.Fatalf("metadata without an encryption certificate must keep the saved one: %+v", got)
+	}
 }
