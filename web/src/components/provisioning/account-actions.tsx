@@ -17,7 +17,7 @@ import { api } from "@/lib/api/client";
 import { formatDate, pluralize } from "@/lib/format";
 import type { ApiKey, KeyScope, RoleKey, ServiceAccount } from "@/lib/provisioning-types";
 import { RoleCheckboxes } from "./service-accounts-table";
-import { KEY_STATE, ROLES, SCOPES, ScopeTags, StatusLabel, activeKeys, canProvision, keyState } from "./shared";
+import { KEY_STATE, ROLES, RateLimitHits, SCOPES, ScopeTags, StatusLabel, activeKeys, canProvision, keyState } from "./shared";
 
 const EXPIRY = [
   { value: "30", label: "30 days" },
@@ -302,6 +302,96 @@ export function RolesCard({ account }: { account: ServiceAccount }) {
   );
 }
 
+export function RateLimitCard({ account }: { account: ServiceAccount }) {
+  const [editing, setEditing] = useState(false);
+  const [limit, setLimit] = useState(String(account.rateLimit));
+  const [invalid, setInvalid] = useState<string>();
+  const { pending, run, errorFor, clearError, toast } = useMutation();
+
+  function close() {
+    clearError();
+    setInvalid(undefined);
+    setEditing(false);
+  }
+
+  function save() {
+    const next = Number(limit);
+    if (!Number.isInteger(next) || next < 1 || next > 100_000) {
+      setInvalid("Enter a whole number between 1 and 100,000.");
+      return;
+    }
+    setInvalid(undefined);
+    void run(
+      "rate-limit",
+      () => api<ServiceAccount>(`/service-accounts/${account.id}`, { method: "PATCH", body: { rateLimit: next } }),
+      () => {
+        close();
+        toast({ title: "Rate limit updated", description: `${account.name}'s keys are limited to ${pluralize(next, "request")} per minute each. Recorded in the audit log.` });
+      },
+      "inline",
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Rate limit"
+        description="Requests per minute that each of this service account's keys may send to the management API."
+        actions={
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              setLimit(String(account.rateLimit));
+              setEditing(true);
+            }}
+          >
+            Edit rate limit
+          </Button>
+        }
+      />
+      <CardBody className="flex flex-col gap-1">
+        <span className="tnum text-body-sm font-semibold text-fg">{account.rateLimit.toLocaleString("en")} per minute for each key</span>
+        <span className="text-caption text-fg-3">SCIM requests are counted apart, up to 3,000 per minute for each key.</span>
+      </CardBody>
+      <Dialog
+        open={editing}
+        onOpenChange={(next) => (next ? setEditing(true) : close())}
+        error={errorFor("rate-limit")}
+        title={`Edit ${account.name}'s rate limit`}
+        description="Requests over the limit are rejected with 429 Too Many Requests until the next minute starts."
+        footer={
+          <>
+            <Button variant="secondary" onClick={close}>
+              Cancel
+            </Button>
+            <Button variant="primary" loading={pending === "rate-limit"} onClick={save}>
+              Save rate limit
+            </Button>
+          </>
+        }
+      >
+        <form
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            save();
+          }}
+        >
+          <Field label="Requests per minute for each key" hint="Between 1 and 100,000. New service accounts start at 600." error={invalid}>
+            {(props) => (
+              <div className="w-32">
+                <Input {...props} autoFocus type="number" inputMode="numeric" min={1} max={100_000} step={1} className="tnum" value={limit} onChange={(event) => setLimit(event.target.value)} />
+              </div>
+            )}
+          </Field>
+          <button type="submit" hidden />
+        </form>
+      </Dialog>
+    </Card>
+  );
+}
+
 export function KeyTable({ keys, accountName }: { keys: ApiKey[]; accountName: string }) {
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
 
@@ -313,7 +403,7 @@ export function KeyTable({ keys, accountName }: { keys: ApiKey[]; accountName: s
     <>
       <SimpleTable
         caption="API keys"
-        head={["Key", "Scopes", "Status", "Created", "Last used", "Expires", "Actions"]}
+        head={["Key", "Scopes", "Status", "Created", "Last used", "Rate limited (24 h)", "Expires", "Actions"]}
         rows={keys.map((key) => {
           const state = keyState(key);
           return [
@@ -329,6 +419,7 @@ export function KeyTable({ keys, accountName }: { keys: ApiKey[]; accountName: s
             <span key="u" className="whitespace-nowrap">
               {key.lastUsedAt ? <RelativeTime iso={key.lastUsedAt} /> : "Never"}
             </span>,
+            <RateLimitHits key="r" hits={key.rateLimitHits} />,
             state === "revoked" ? "—" : key.expiresAt ? <ExpiryText key="e" iso={key.expiresAt} /> : "Never",
             <span key="a" className="flex justify-end">
               {state === "revoked" ? null : (

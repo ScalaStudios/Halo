@@ -21,15 +21,23 @@ export default function Loading() {
     >
       <section className="flex flex-col gap-6">
         <SectionTitle title="API keys" description="Send a key as Authorization: Bearer <key>. The api scope opens the management API; the scim scope opens SCIM provisioning." />
-        <TableSkeleton simple columns={7} rows={2} />
+        <TableSkeleton simple columns={8} rows={2} />
       </section>
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-        <Card className="min-w-0 xl:col-span-5">
-          <CardHeader title="Roles" description="What requests with this service account's keys may change." />
-          <CardBody>
-            <div className="h-20 rounded-md border border-border bg-sunken" />
-          </CardBody>
-        </Card>
+        <div className="flex min-w-0 flex-col gap-6 xl:col-span-5">
+          <Card>
+            <CardHeader title="Roles" description="What requests with this service account's keys may change." />
+            <CardBody>
+              <div className="h-20 rounded-md border border-border bg-sunken" />
+            </CardBody>
+          </Card>
+          <Card>
+            <CardHeader title="Rate limit" description="Requests per minute that each of this service account's keys may send to the management API." />
+            <CardBody>
+              <SkeletonText chars={24} />
+            </CardBody>
+          </Card>
+        </div>
         <Card className="min-w-0 xl:col-span-7">
           <CardHeader title="Activity" description={<SkeletonText chars={50} />} />
           <ListSkeleton className="border-t border-border" />
