@@ -59,3 +59,12 @@ func (s *Store) CountDeviceAuthorizations(ctx context.Context, ip string, since 
 	err := s.db.QueryRow(ctx, `select count(*) from device_authorizations where ip = $1 and created_at > $2`, ip, since).Scan(&n)
 	return n, err
 }
+
+func (s *Store) CountRequest(ctx context.Context, subject, scope string, limit int, window time.Duration) (int, time.Time, error) {
+	start := time.Now().Truncate(window)
+	var n int
+	err := s.db.QueryRow(ctx, `insert into rate_limit_windows (subject, scope, window_start, requests, rejected) values ($1, $2, $3, 1, (1 > $4::int)::int)
+		on conflict (subject, scope, window_start) do update set requests = rate_limit_windows.requests + 1, rejected = rate_limit_windows.rejected + (rate_limit_windows.requests >= $4::int)::int
+		returning requests`, subject, scope, start, limit).Scan(&n)
+	return n, start.Add(window), err
+}

@@ -112,11 +112,12 @@ type handlerFunc func(w http.ResponseWriter, r *http.Request, actor store.User) 
 
 type server struct {
 	st   *store.Store
+	auth *httpx.Auth
 	base string
 }
 
 func New(d httpx.Deps) (http.Handler, error) {
-	s := &server{st: d.Store, base: d.Config.Issuer() + "/scim/v2"}
+	s := &server{st: d.Store, auth: d.Auth, base: d.Config.Issuer() + "/scim/v2"}
 	mux := http.NewServeMux()
 	for pattern, fn := range map[string]handlerFunc{
 		"GET /scim/v2/ServiceProviderConfig": s.serviceProviderConfig,
@@ -148,6 +149,11 @@ func New(d httpx.Deps) (http.Handler, error) {
 func (s *server) handle(fn handlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		actor, err := authorize(r)
+		if err == nil {
+			if limited := s.auth.Throttle(w, r, "scim"); limited != nil {
+				err = fail(limited.Status, "", limited.Message)
+			}
+		}
 		if err == nil {
 			err = fn(w, r, actor)
 		}

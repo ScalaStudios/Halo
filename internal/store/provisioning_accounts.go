@@ -24,6 +24,7 @@ type APIKey struct {
 	ExpiresAt          *time.Time `json:"expiresAt"`
 	LastUsedAt         *time.Time `json:"lastUsedAt"`
 	RevokedAt          *time.Time `json:"revokedAt"`
+	RateLimitHits      int        `json:"rateLimitHits"`
 }
 
 type ServiceAccount struct {
@@ -34,6 +35,7 @@ type ServiceAccount struct {
 	OwnerID     *string   `json:"ownerId"`
 	Status      string    `json:"status"`
 	Roles       []string  `json:"roles"`
+	RateLimit   int       `json:"rateLimit"`
 	Keys        []APIKey  `json:"keys"`
 	CreatedBy   *string   `json:"createdBy"`
 	CreatedAt   time.Time `json:"createdAt"`
@@ -47,12 +49,19 @@ type NewServiceAccount struct {
 	Roles       []string
 }
 
-const apiKeyQuery = `select k.id, k.service_account_id, u.name, k.label, k.prefix, k.scopes, k.created_by, k.created_at, k.expires_at, k.last_used_at, k.revoked_at
+type ResolvedKey struct {
+	ID        string
+	Scopes    []string
+	RateLimit int
+}
+
+const apiKeyQuery = `select k.id, k.service_account_id, u.name, k.label, k.prefix, k.scopes, k.created_by, k.created_at, k.expires_at, k.last_used_at, k.revoked_at,
+	(select coalesce(sum(w.rejected), 0) from rate_limit_windows w where w.subject = k.id and w.window_start > now() - interval '1 day')
 	from api_keys k join users u on u.id = k.service_account_id`
 
 func scanAPIKey(row rowScanner) (APIKey, error) {
 	var k APIKey
-	err := row.Scan(&k.ID, &k.ServiceAccountID, &k.ServiceAccountName, &k.Label, &k.Prefix, &k.Scopes, &k.CreatedBy, &k.CreatedAt, &k.ExpiresAt, &k.LastUsedAt, &k.RevokedAt)
+	err := row.Scan(&k.ID, &k.ServiceAccountID, &k.ServiceAccountName, &k.Label, &k.Prefix, &k.Scopes, &k.CreatedBy, &k.CreatedAt, &k.ExpiresAt, &k.LastUsedAt, &k.RevokedAt, &k.RateLimitHits)
 	return k, err
 }
 
@@ -101,20 +110,20 @@ func (s *Store) RevokeAPIKey(ctx context.Context, keyID string) error {
 	return nil
 }
 
-func (s *Store) ResolveAPIKey(ctx context.Context, token string) (User, []string, error) {
-	var keyID, accountID string
-	var scopes []string
+func (s *Store) ResolveAPIKey(ctx context.Context, token string) (User, ResolvedKey, error) {
+	var key ResolvedKey
+	var accountID string
 	var lastUsed *time.Time
-	err := s.db.QueryRow(ctx, `select k.id, k.service_account_id, k.scopes, k.last_used_at from api_keys k join users u on u.id = k.service_account_id
-		where k.key_hash = $1 and k.revoked_at is null and (k.expires_at is null or k.expires_at > now()) and u.status = 'active'`, secret.Hash(token)).Scan(&keyID, &accountID, &scopes, &lastUsed)
+	err := s.db.QueryRow(ctx, `select k.id, k.service_account_id, k.scopes, a.rate_limit, k.last_used_at from api_keys k join users u on u.id = k.service_account_id join service_accounts a on a.user_id = k.service_account_id
+		where k.key_hash = $1 and k.revoked_at is null and (k.expires_at is null or k.expires_at > now()) and u.status = 'active'`, secret.Hash(token)).Scan(&key.ID, &accountID, &key.Scopes, &key.RateLimit, &lastUsed)
 	if err != nil {
-		return User{}, nil, notFound(err)
+		return User{}, ResolvedKey{}, notFound(err)
 	}
 	if lastUsed == nil || time.Since(*lastUsed) > time.Minute {
-		_, _ = s.db.Exec(ctx, `update api_keys set last_used_at = now() where id = $1`, keyID)
+		_, _ = s.db.Exec(ctx, `update api_keys set last_used_at = now() where id = $1`, key.ID)
 	}
 	u, err := s.GetUser(ctx, accountID)
-	return u, scopes, err
+	return u, key, err
 }
 
 func (s *Store) ListServiceAccounts(ctx context.Context) ([]ServiceAccount, error) {
@@ -133,7 +142,7 @@ func (s *Store) GetServiceAccount(ctx context.Context, accountID string) (Servic
 }
 
 func (s *Store) serviceAccounts(ctx context.Context, accountID string) ([]ServiceAccount, error) {
-	rows, err := s.db.Query(ctx, `select u.id, u.name, u.email, a.description, a.owner_id, u.status, a.created_by, u.created_at,
+	rows, err := s.db.Query(ctx, `select u.id, u.name, u.email, a.description, a.owner_id, u.status, a.rate_limit, a.created_by, u.created_at,
 		array(select r.role from user_roles r where r.user_id = u.id order by r.role)
 		from service_accounts a join users u on u.id = a.user_id where $1 = '' or u.id = $1 order by lower(u.name), u.id`, accountID)
 	if err != nil {
@@ -144,7 +153,7 @@ func (s *Store) serviceAccounts(ctx context.Context, accountID string) ([]Servic
 	index := map[string]int{}
 	for rows.Next() {
 		a := ServiceAccount{Keys: []APIKey{}}
-		if err := rows.Scan(&a.ID, &a.Name, &a.Email, &a.Description, &a.OwnerID, &a.Status, &a.CreatedBy, &a.CreatedAt, &a.Roles); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.Email, &a.Description, &a.OwnerID, &a.Status, &a.RateLimit, &a.CreatedBy, &a.CreatedAt, &a.Roles); err != nil {
 			return nil, err
 		}
 		index[a.ID] = len(accounts)
@@ -191,9 +200,9 @@ func (s *Store) CreateServiceAccount(ctx context.Context, in NewServiceAccount) 
 	return s.GetServiceAccount(ctx, accountID)
 }
 
-func (s *Store) UpdateServiceAccount(ctx context.Context, accountID, name, description string, ownerID *string) error {
+func (s *Store) UpdateServiceAccount(ctx context.Context, accountID, name, description string, ownerID *string, rateLimit int) error {
 	return s.Tx(ctx, func(tx *Store) error {
-		tag, err := tx.db.Exec(ctx, `update service_accounts set description = $2, owner_id = $3 where user_id = $1`, accountID, description, ownerID)
+		tag, err := tx.db.Exec(ctx, `update service_accounts set description = $2, owner_id = $3, rate_limit = $4 where user_id = $1`, accountID, description, ownerID, rateLimit)
 		if err != nil {
 			return err
 		}
