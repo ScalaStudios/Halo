@@ -29,8 +29,14 @@ func (s *storage) ValidateTokenExchangeRequest(ctx context.Context, req op.Token
 	case req.GetRequestedTokenType() != oidc.AccessTokenType:
 		return oidc.ErrInvalidRequest().WithDescription("Halo issues access tokens only. Send requested_token_type=%s or leave it out.", oidc.AccessTokenType)
 	}
-	if _, err := s.exchangeSubject(ctx, req); err != nil {
+	subject, err := s.exchangeSubject(ctx, req)
+	if err != nil {
 		return err
+	}
+	if accepted, err := s.st.AcceptsExchangeFrom(ctx, app.ID, subject.Audience); err != nil {
+		return err
+	} else if !accepted {
+		return oidc.ErrInvalidRequest().WithDescription("subject_token was not issued for an API that %s accepts tokens from. An administrator can add the API under Token exchange in the application's authentication settings.", app.Name)
 	}
 	targets := req.GetAudience()
 	if len(targets) == 0 {

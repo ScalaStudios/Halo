@@ -176,3 +176,9 @@ func (s *Store) GrantedResources(ctx context.Context, clientID string) ([]Grante
 	}
 	return granted, rows.Err()
 }
+
+func (s *Store) AcceptsExchangeFrom(ctx context.Context, appID string, audience []string) (bool, error) {
+	var ok bool
+	err := s.db.QueryRow(ctx, `select exists (select 1 from app_exchange_sources x join api_resources r on r.id = x.resource_id where x.app_id = $1 and r.identifier = any($2))`, appID, audience).Scan(&ok)
+	return ok, err
+}

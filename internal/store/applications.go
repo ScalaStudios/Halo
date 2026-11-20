@@ -11,13 +11,14 @@ import (
 	"halo/internal/secret"
 )
 
-const appColumns = `id, name, description, protocol, app_type, status, client_id, homepage, redirect_uris, post_logout_uris, scopes, access_token_ttl, refresh_token_ttl, id_token_ttl, refresh_rotation, token_exchange, setup_guide, owner_id, created_at, logo_updated_at`
+const appColumns = `id, name, description, protocol, app_type, status, client_id, homepage, redirect_uris, post_logout_uris, scopes, access_token_ttl, refresh_token_ttl, id_token_ttl, refresh_rotation, token_exchange,
+	array(select x.resource_id from app_exchange_sources x where x.app_id = applications.id order by x.resource_id), setup_guide, owner_id, created_at, logo_updated_at`
 
 func scanApp(row rowScanner) (Application, error) {
 	var a Application
 	var logo *time.Time
 	err := row.Scan(&a.ID, &a.Name, &a.Description, &a.Protocol, &a.Type, &a.Status, &a.ClientID, &a.Homepage, &a.RedirectURIs, &a.PostLogoutURIs, &a.Scopes,
-		&a.TokenPolicy.AccessTokenTTL, &a.TokenPolicy.RefreshTokenTTL, &a.TokenPolicy.IDTokenTTL, &a.TokenPolicy.Rotation, &a.TokenPolicy.Exchange, &a.SetupGuide, &a.Owner, &a.CreatedAt, &logo)
+		&a.TokenPolicy.AccessTokenTTL, &a.TokenPolicy.RefreshTokenTTL, &a.TokenPolicy.IDTokenTTL, &a.TokenPolicy.Rotation, &a.TokenPolicy.Exchange, &a.TokenPolicy.ExchangeFrom, &a.SetupGuide, &a.Owner, &a.CreatedAt, &logo)
 	if logo != nil {
 		path := AppLogos.Path(a.ID, *logo)
 		a.LogoURL = &path

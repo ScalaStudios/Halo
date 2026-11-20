@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Plus, X } from "lucide-react";
 import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation } from "@/components/console/use-mutation";
@@ -9,10 +10,11 @@ import { Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Input, Select, Textarea } from "@/components/ui/input";
+import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
 import { formatDuration } from "@/lib/format";
+import type { ApiResource } from "@/lib/infra-types";
 import type { Application, User } from "@/lib/types";
 import { uriError } from "./new-application-flow";
 
@@ -152,7 +154,7 @@ function DetailsForm({
   );
 }
 
-export function AuthenticationForm({ app, children }: { app: Application; children: ReactNode }) {
+export function AuthenticationForm({ app, resources, children }: { app: Application; resources: ApiResource[]; children: ReactNode }) {
   const service = app.type === "service";
   const publicClient = app.type === "spa" || app.type === "native";
   const policy = app.tokenPolicy;
@@ -163,6 +165,8 @@ export function AuthenticationForm({ app, children }: { app: Application; childr
   const [refresh, setRefresh] = useState(split(policy.refreshTokenTtl));
   const [rotation, setRotation] = useState(policy.rotation);
   const [exchange, setExchange] = useState(policy.exchange);
+  const [exchangeFrom, setExchangeFrom] = useState(policy.exchangeFrom);
+  const sourcesId = useId();
   const [errors, setErrors] = useState<{ access?: string; id?: string; refresh?: string; redirects?: string; redirect?: (string | undefined)[]; postLogout?: (string | undefined)[] }>({});
   const { pending, run, errorFor, toast } = useMutation();
   const refreshOff = refresh.amount.trim() === "0";
@@ -185,8 +189,8 @@ export function AuthenticationForm({ app, children }: { app: Application; childr
     setErrors(next);
     if (next.access || next.id || next.refresh || next.redirects || [...next.redirect, ...next.postLogout].some(Boolean)) return;
     const tokenPolicy = service
-      ? { accessTokenTtl: toSeconds(access), exchange }
-      : { accessTokenTtl: toSeconds(access), idTokenTtl: toSeconds(idToken), refreshTokenTtl: toSeconds(refresh), rotation, exchange };
+      ? { accessTokenTtl: toSeconds(access), exchange, exchangeFrom }
+      : { accessTokenTtl: toSeconds(access), idTokenTtl: toSeconds(idToken), refreshTokenTtl: toSeconds(refresh), rotation, exchange, exchangeFrom };
     void run(
       "authentication",
       () =>
@@ -226,7 +230,7 @@ export function AuthenticationForm({ app, children }: { app: Application; childr
           {publicClient ? null : (
             <Field
               label="Token exchange"
-              hint={exchange ? "Can trade a person's access token for one to an API it has scopes on." : "Can't call other APIs on a person's behalf."}
+              hint={exchange ? "Accepts a person's access token for an API checked below and issues one for an API it has scopes on." : "Can't call other APIs on a person's behalf."}
             >
               {(props) => (
                 <Select {...props} value={exchange ? "on" : "off"} onChange={(event) => setExchange(event.target.value === "on")}>
@@ -235,6 +239,38 @@ export function AuthenticationForm({ app, children }: { app: Application; childr
                 </Select>
               )}
             </Field>
+          )}
+          {publicClient || !exchange ? null : (
+            <fieldset className="flex min-w-0 flex-col gap-3 sm:col-span-2" aria-describedby={`${sourcesId}-hint`}>
+              <legend className="mb-3 text-label text-fg">Accept tokens issued for</legend>
+              {resources.map((resource) => (
+                <label key={resource.id} className="flex cursor-pointer items-start gap-3">
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={exchangeFrom.includes(resource.id)}
+                    onChange={(event) => setExchangeFrom((current) => (event.target.checked ? [...current, resource.id] : current.filter((id) => id !== resource.id)))}
+                  />
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-body-sm text-fg">{resource.name}</span>
+                    <span className="font-mono text-code-sm break-all text-fg-3">{resource.identifier}</span>
+                  </span>
+                </label>
+              ))}
+              <p id={`${sourcesId}-hint`} className="text-caption text-fg-3">
+                {resources.length === 0 ? (
+                  <>
+                    No APIs yet, so no token can be exchanged.{" "}
+                    <Link href="/admin/api-resources" className="text-link underline underline-offset-3 hover:text-ember">
+                      Add an API
+                    </Link>
+                  </>
+                ) : exchangeFrom.length === 0 ? (
+                  "Accepts no tokens until you check at least one API."
+                ) : (
+                  "A token addressed to any other API or application is refused."
+                )}
+              </p>
+            </fieldset>
           )}
         </CardBody>
       </Card>

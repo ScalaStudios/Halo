@@ -19,6 +19,7 @@ import { SimpleTable } from "@/components/ui/simple-table";
 import { TabNav } from "@/components/ui/tab-nav";
 import { apiGet } from "@/lib/api/server";
 import { formatDuration, pluralize } from "@/lib/format";
+import type { ApiResource } from "@/lib/infra-types";
 import type { SamlApplication } from "@/lib/saml-types";
 import { endpoints, setupGuide } from "@/lib/setup-guides";
 import type { Application, Group, Organization, Session, SignInEvent, User } from "@/lib/types";
@@ -31,13 +32,14 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function ApplicationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { id } = await params;
   const { tab = "overview" } = await searchParams;
-  const [app, groups, users, sessions, appSignIns, org] = await Promise.all([
+  const [app, groups, users, sessions, appSignIns, org, resources] = await Promise.all([
     apiGet<SamlApplication>(`/applications/${encodeURIComponent(id)}`),
     apiGet<Group[]>("/groups"),
     apiGet<User[]>("/users"),
     apiGet<Session[]>("/sessions"),
     apiGet<SignInEvent[]>(`/sign-ins?app=${encodeURIComponent(id)}`),
     apiGet<Organization>("/organization"),
+    tab === "authentication" ? apiGet<ApiResource[]>("/api-resources") : [],
   ]);
 
   const saml = app.protocol === "saml";
@@ -147,7 +149,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
 
       <div key={tab} className="animate-enter">
         {tab === "overview" ? <OverviewTab app={app} issuer={org.issuer} /> : null}
-        {tab === "authentication" ? <AuthenticationTab app={app} /> : null}
+        {tab === "authentication" ? <AuthenticationTab app={app} resources={resources} /> : null}
         {tab === "permissions" ? (
           <div className="flex flex-col gap-6">
             <SectionTitle title="Scopes" description={saml ? undefined : `Scopes ${app.name} can request. Requests for any other scope are rejected.`} />
@@ -361,7 +363,7 @@ function OverviewTab({ app, issuer }: { app: SamlApplication; issuer: string }) 
   );
 }
 
-function AuthenticationTab({ app }: { app: SamlApplication }) {
+function AuthenticationTab({ app, resources }: { app: SamlApplication; resources: ApiResource[] }) {
   if (app.saml) {
     return <SamlSettingsForm appId={app.id} appName={app.name} saml={app.saml} />;
   }
@@ -371,7 +373,7 @@ function AuthenticationTab({ app }: { app: SamlApplication }) {
   const grants = service ? ["client_credentials"] : app.tokenPolicy.refreshTokenTtl > 0 ? ["authorization_code", "refresh_token"] : ["authorization_code"];
 
   return (
-    <AuthenticationForm key={JSON.stringify([app.redirectUris, app.postLogoutUris, app.tokenPolicy])} app={app}>
+    <AuthenticationForm key={JSON.stringify([app.redirectUris, app.postLogoutUris, app.tokenPolicy])} app={app} resources={resources}>
       <Card>
         <CardHeader title="Grants" description="How the application gets tokens from Halo." />
         <CardBody>
