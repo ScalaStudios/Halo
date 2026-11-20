@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -104,6 +103,14 @@ func (e *scimError) Error() string {
 	return e.detail
 }
 
+func (e *scimError) body() map[string]any {
+	body := map[string]any{"schemas": []string{errorSchema}, "status": strconv.Itoa(e.status), "detail": e.detail}
+	if e.scimType != "" {
+		body["scimType"] = e.scimType
+	}
+	return body
+}
+
 func fail(status int, scimType, detail string) *scimError {
 	return &scimError{status: status, scimType: scimType, detail: detail}
 }
@@ -114,11 +121,11 @@ type server struct {
 	st   *store.Store
 	auth *httpx.Auth
 	base string
+	mux  *http.ServeMux
 }
 
 func New(d httpx.Deps) (http.Handler, error) {
-	s := &server{st: d.Store, auth: d.Auth, base: d.Config.Issuer() + "/scim/v2"}
-	mux := http.NewServeMux()
+	s := &server{st: d.Store, auth: d.Auth, base: d.Config.Issuer() + "/scim/v2", mux: http.NewServeMux()}
 	for pattern, fn := range map[string]handlerFunc{
 		"GET /scim/v2/ServiceProviderConfig": s.serviceProviderConfig,
 		"GET /scim/v2/ResourceTypes":         discover(s.resourceTypes),
@@ -137,13 +144,14 @@ func New(d httpx.Deps) (http.Handler, error) {
 		"PUT /scim/v2/Groups/{id}":           s.replaceGroup,
 		"PATCH /scim/v2/Groups/{id}":         s.patchGroup,
 		"DELETE /scim/v2/Groups/{id}":        s.deleteGroup,
+		"POST /scim/v2/Bulk":                 s.bulk,
 		"/scim/": func(http.ResponseWriter, *http.Request, store.User) error {
-			return fail(http.StatusNotFound, "", "This SCIM endpoint does not exist. Halo serves /scim/v2/Users, /scim/v2/Groups and the discovery endpoints.")
+			return fail(http.StatusNotFound, "", "This SCIM endpoint does not exist. Halo serves /scim/v2/Users, /scim/v2/Groups, /scim/v2/Bulk and the discovery endpoints.")
 		},
 	} {
-		mux.Handle(pattern, s.handle(fn))
+		s.mux.Handle(pattern, s.handle(fn))
 	}
-	return mux, nil
+	return s.mux, nil
 }
 
 func (s *server) handle(fn handlerFunc) http.Handler {
@@ -174,11 +182,7 @@ func (s *server) handle(fn handlerFunc) http.Handler {
 		if e.status == http.StatusUnauthorized {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="Halo SCIM"`)
 		}
-		body := map[string]any{"schemas": []string{errorSchema}, "status": strconv.Itoa(e.status), "detail": e.detail}
-		if e.scimType != "" {
-			body["scimType"] = e.scimType
-		}
-		_ = write(w, e.status, body)
+		_ = write(w, e.status, e.body())
 	})
 }
 
@@ -239,25 +243,11 @@ func paging(r *http.Request) (int, int) {
 	return start, min(max(count, 0), maxResults)
 }
 
-var filterPattern = regexp.MustCompile(`(?i)^\s*([a-z.]+)\s+eq\s+"((?:[^"\\]|\\.)*)"\s*$`)
-
-func parseFilter(raw, example string, allowed ...string) (string, string, error) {
-	if strings.TrimSpace(raw) == "" {
-		return "", "", nil
-	}
-	m := filterPattern.FindStringSubmatch(raw)
-	var value string
-	if m == nil || !slices.Contains(allowed, strings.ToLower(m[1])) || json.Unmarshal([]byte(`"`+m[2]+`"`), &value) != nil {
-		return "", "", fail(http.StatusBadRequest, "invalidFilter", "Halo supports a single eq condition here, such as "+example+".")
-	}
-	return strings.ToLower(m[1]), value, nil
-}
-
 func (s *server) serviceProviderConfig(w http.ResponseWriter, _ *http.Request, _ store.User) error {
 	return write(w, http.StatusOK, map[string]any{
 		"schemas":        []string{"urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"},
 		"patch":          map[string]bool{"supported": true},
-		"bulk":           map[string]any{"supported": false, "maxOperations": 0, "maxPayloadSize": 0},
+		"bulk":           map[string]any{"supported": true, "maxOperations": maxOperations, "maxPayloadSize": maxPayloadSize},
 		"filter":         map[string]any{"supported": true, "maxResults": maxResults},
 		"changePassword": map[string]bool{"supported": false},
 		"sort":           map[string]bool{"supported": false},

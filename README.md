@@ -54,7 +54,7 @@ Not built yet: LDAP directory sync and pushing groups over outbound SCIM. See th
 | Resource Indicators (RFC 8707) | Partial | The `resource` parameter selects an API resource on authorization, device, client credentials and token exchange requests, and its JWT access tokens carry it in `aud` |
 | Token Exchange (RFC 8693) | Partial | Web and service applications with token exchange turned on trade a person's access token for one to an API they have scopes on, with the application in the `act` claim. Access tokens only, and no `actor_token` |
 | SAML 2.0 | Implemented | Web browser single sign-on as an identity provider: SP- and IdP-initiated, HTTP-Redirect and HTTP-POST bindings, signed assertions and metadata, and assertions encrypted with AES-256-GCM or AES-256-CBC per service provider. No single logout |
-| SCIM 2.0 (RFC 7643 and RFC 7644) | Implemented | A server for users and groups with `eq` filters and no bulk operations, and a client that provisions users into applications |
+| SCIM 2.0 (RFC 7643 and RFC 7644) | Implemented | A server for users and groups with the full filter grammar and bulk operations, and a client that provisions users into applications |
 | WebAuthn and FIDO2 | Implemented | Passkeys and security keys as discoverable credentials, for sign-in without a username |
 | TOTP (RFC 6238) | Implemented | Six-digit codes from authenticator apps |
 | LDAP | Not implemented | Planned |
