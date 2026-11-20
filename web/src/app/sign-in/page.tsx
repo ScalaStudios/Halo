@@ -1,17 +1,28 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { AuthFrame } from "@/components/auth/auth-frame";
+import { ConsentStep } from "@/components/auth/consent";
 import { apiPeek } from "@/lib/api/server";
 import { SignInFlow } from "@/components/auth/sign-in-flow";
 import type { Challenge, Settings } from "@/lib/settings-types";
 
-export const metadata: Metadata = {
-  title: "Sign in",
-  description: "Sign in to Halo with a passkey, security key, authenticator app or recovery code.",
-};
+type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
-export default async function SignInPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
+  return typeof (await searchParams).consent === "string"
+    ? { title: "Allow access", description: "Choose whether an application can access your Halo account information." }
+    : { title: "Sign in", description: "Sign in to Halo with a passkey, security key, authenticator app or recovery code." };
+}
+
+export default async function SignInPage({ searchParams }: Props) {
   const params = await searchParams;
+  if (typeof params.consent === "string") {
+    return (
+      <AuthFrame>
+        <ConsentStep authRequest={params.consent} />
+      </AuthFrame>
+    );
+  }
   const authRequest = typeof params.authRequest === "string" ? params.authRequest : undefined;
   const [request, methods] = await Promise.all([
     authRequest ? apiPeek<{ application: { name: string; logoUrl: string | null } }>(`/auth/request/${encodeURIComponent(authRequest)}`) : null,

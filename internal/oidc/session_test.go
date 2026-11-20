@@ -17,6 +17,7 @@ import (
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 
 	"halo/internal/access"
+	"halo/internal/auth"
 	"halo/internal/config"
 	"halo/internal/httpx"
 	halooidc "halo/internal/oidc"
@@ -71,13 +72,20 @@ func newHarness(t *testing.T, policy access.Engine) *harness {
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
 	authn := &httpx.Auth{Store: st, Public: issuer, Dev: true}
-	provider, err := halooidc.New(httpx.Deps{Config: config.Config{PublicURL: issuer, SecretKey: key, Dev: true}, Store: st, Auth: authn, Policy: policy})
+	deps := httpx.Deps{Config: config.Config{PublicURL: issuer, SecretKey: key, Dev: true}, Store: st, Auth: authn, Policy: policy}
+	provider, err := halooidc.New(deps)
 	if err != nil {
+		t.Fatal(err)
+	}
+	api, signIn := http.NewServeMux(), deps
+	signIn.Config.PublicURL = &url.URL{Scheme: "http", Host: "localhost"}
+	if err := auth.Register(api, signIn); err != nil {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/oauth2/", authn.Resolve(provider))
 	mux.Handle("/.well-known/", provider)
+	mux.Handle("/api/", authn.Resolve(api))
 	handler = mux
 	return h
 }

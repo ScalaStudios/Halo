@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -110,9 +111,16 @@ func New(d httpx.Deps) (http.Handler, error) {
 	mux.HandleFunc("GET /oauth2/logout/return", st.logoutReturn)
 	mux.HandleFunc("/oauth2/authorize/callback", func(w http.ResponseWriter, r *http.Request) {
 		req, err := d.Store.GetAuthRequest(r.Context(), r.FormValue("id"))
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "Halo could not load this sign-in. Go back to the application and try again.", http.StatusInternalServerError)
+			return
+		}
 		sess, signedIn := httpx.CurrentSession(r)
 		if err == nil && req.Done && (!signedIn || req.SessionID == nil || *req.SessionID != sess.ID) {
 			http.Error(w, "This sign-in was completed in a different browser session. Start again from the application.", http.StatusForbidden)
+			return
+		}
+		if err == nil && req.Done && st.awaitConsent(w, r, req, provider) {
 			return
 		}
 		provider.ServeHTTP(w, r)

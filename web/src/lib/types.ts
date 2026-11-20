@@ -116,7 +116,12 @@ export type Application = {
   logoUrl: string | null;
   registeredDynamically: boolean;
   awaitingApproval: boolean;
+  requiresConsent: boolean;
 };
+
+export type Scope = { name: string; description: string };
+
+export type Consent = { appId: string; name: string; homepage: string; logoUrl: string | null; scopes: Scope[]; grantedAt: string };
 
 export type Collection = {
   id: string;

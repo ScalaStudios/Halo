@@ -61,6 +61,13 @@ func (s *storage) silent(ctx context.Context, a *store.AuthRequest, app store.Ap
 	case len(decision.Terms) > 0:
 		return oidc.ErrInteractionRequired().WithDescription("The user must accept the organization's terms of use first.")
 	}
+	needed, err := s.needsConsent(ctx, app, u.ID, *a)
+	if err != nil {
+		return err
+	}
+	if needed {
+		return consentRequired()
+	}
 	a.ID, a.UserID, a.SessionID, a.AuthTime, a.AMR, a.Done = id.New(silentPrefix), &u.ID, &sess.ID, &sess.CreatedAt, sess.AMR(), true
 	event.Result = "success"
 	return s.st.RecordSignIn(ctx, event)

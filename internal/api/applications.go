@@ -598,17 +598,18 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 			Exchange        *bool     `json:"exchange"`
 			ExchangeFrom    *[]string `json:"exchangeFrom"`
 		} `json:"tokenPolicy"`
-		MaxAuthAge *int      `json:"maxAuthAge"`
-		Owner      *string   `json:"owner"`
-		GroupIDs   *[]string `json:"groupIds"`
+		MaxAuthAge      *int      `json:"maxAuthAge"`
+		Owner           *string   `json:"owner"`
+		GroupIDs        *[]string `json:"groupIds"`
+		RequiresConsent *bool     `json:"requiresConsent"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
-	if app.Protocol == "saml" && (in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil) {
+	if app.Protocol == "saml" && (in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil || in.RequiresConsent != nil) {
 		return httpx.Invalid(app.Name + " signs in with SAML, so it has no redirect URIs, scopes or token lifetimes. Change its ACS URLs in the SAML settings.")
 	}
-	if app.Protocol == "bookmark" && (in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil || in.MaxAuthAge != nil) {
+	if app.Protocol == "bookmark" && (in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil || in.MaxAuthAge != nil || in.RequiresConsent != nil) {
 		return httpx.Invalid(app.Name + " is a bookmark, so it has no redirect URIs, scopes, token lifetimes or sign-in frequency.")
 	}
 	if app.Type == "service" && in.MaxAuthAge != nil {
@@ -689,6 +690,10 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		}
 		next.MaxAuthAge = *in.MaxAuthAge
 		changed = append(changed, "sign-in frequency")
+	}
+	if in.RequiresConsent != nil && *in.RequiresConsent != app.RequiresConsent {
+		next.RequiresConsent = *in.RequiresConsent
+		changed = append(changed, "consent screen")
 	}
 	current := ""
 	if app.Owner != nil {
