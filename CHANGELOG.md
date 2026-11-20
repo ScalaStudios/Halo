@@ -56,6 +56,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - User and operator documentation at [halo.scala.gg/docs](https://halo.scala.gg/docs), with guides for email, policies, governance, federation, provisioning, webhooks, API resources and infrastructure access, and integration guides for Grafana, Forgejo, Nextcloud, Kubernetes, Proxmox VE, Outline, Headscale, AWS IAM Identity Center and Slack.
 - Continuous integration for `go vet`, `go test`, type checking and the web build.
 - Contributing guide, security policy, code of conduct, and issue and pull request templates.
+- A limit on how many sessions one person can hold at once, set under Security defaults for the organization and per group, where someone in several limited groups gets the lowest limit. At the limit Halo either refuses the new sign-in with `ERR_SESSION_LIMIT` or ends the oldest sessions, and records each ended session in the sign-in log with the result `ended` and the `sign_in.ended` webhook event. Halo CLI sessions are either counted separately against the same limit or not limited.
 
 ### Changed
 
