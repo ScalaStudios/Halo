@@ -1350,6 +1350,57 @@ paths:
                 type: array
                 items: {$ref: '#/components/schemas/AccessRequest'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/role-activations:
+    post:
+      tags: [Account, Users]
+      operationId: activateRole
+      summary: Activate a role you are eligible for
+      description: 'Gives you the role for 1 to 8 hours. It takes effect on your next request and stops on the first request after it ends. Needs the `halo_session` cookie; CLI access tokens are refused. The activation and its reason are written to the audit log, and so is its end.'
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role, durationHours, justification]
+              properties:
+                role: {$ref: '#/components/schemas/RoleKey'}
+                durationHours: {type: integer, minimum: 1, maximum: 8}
+                justification: {type: string, minLength: 1, maxLength: 2000, description: Why you need the role. Recorded in the audit log.}
+      responses:
+        '201':
+          description: The activation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RoleActivation'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403':
+          description: '`ERR_NOT_ELIGIBLE`: you are not eligible for the role. `ERR_CROSS_SITE` on requests from another website.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '409':
+          description: '`ERR_CONFLICT`: you already hold the role, or it is already active.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /me/role-activations/{id}/deactivate:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Account, Users]
+      operationId: deactivateRole
+      summary: End your role activation before its time limit
+      security: *personal
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /me/reviews:
     get:
       tags: [Account, Access reviews]
@@ -1685,7 +1736,33 @@ paths:
       tags: [Users]
       operationId: setUserRoles
       summary: Replace a person's administrator roles
-      description: 'Roles: global administrator. Send the complete list; an empty list removes every role. You cannot remove your own global administrator role.'
+      description: 'Roles: global administrator. Send the complete list; an empty list removes every role. You cannot remove your own global administrator role or give yourself a role, including one you activated.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roles]
+              properties:
+                roles:
+                  type: array
+                  items: {$ref: '#/components/schemas/RoleKey'}
+      responses:
+        '200': {$ref: '#/components/responses/UserResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /users/{id}/eligible-roles:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Users]
+      operationId: setUserEligibleRoles
+      summary: Replace the roles a person can activate
+      description: 'Roles: global administrator. Send the complete list; an empty list removes every eligibility and ends any activation of a role that is no longer listed. You cannot change your own eligible roles.'
       requestBody:
         required: true
         content:
@@ -4511,7 +4588,7 @@ components:
         detail: {type: string, examples: [8 of 10 remaining]}
     User:
       type: object
-      required: [id, email, emailVerified, name, title, department, location, status, strength, methods, roles, groupIds, appIds, managerId, source, createdAt, lastSignInAt]
+      required: [id, email, emailVerified, name, title, department, location, status, strength, methods, roles, eligibleRoles, activations, groupIds, appIds, managerId, source, createdAt, lastSignInAt]
       properties:
         id: {type: string, examples: [usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         email: {type: string, format: email}
@@ -4527,8 +4604,16 @@ components:
           items: {$ref: '#/components/schemas/Method'}
         roles:
           type: array
-          description: Role names, such as `Global administrator`. Assign roles with their keys.
+          description: Role names, such as `Global administrator`, including roles activated for a limited time. Assign roles with their keys.
           items: {type: string}
+        eligibleRoles:
+          type: array
+          description: Roles the person can activate for a limited time.
+          items: {$ref: '#/components/schemas/RoleKey'}
+        activations:
+          type: array
+          description: Eligible roles that are active now. They are also listed in `roles`.
+          items: {$ref: '#/components/schemas/RoleActivation'}
         groupIds:
           type: array
           description: Assigned and rule-based groups.
@@ -4542,6 +4627,15 @@ components:
         createdAt: {type: string, format: date-time}
         lastSignInAt: {type: [string, 'null'], format: date-time}
         avatarUrl: {type: [string, 'null'], description: 'Path of the profile picture, or null. With the `profile` scope, ID tokens and userinfo carry the absolute URL as `picture`.', examples: ['/api/v1/users/usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9/avatar?v=1790000000']}
+    RoleActivation:
+      type: object
+      required: [id, role, justification, activatedAt, expiresAt]
+      properties:
+        id: {type: string, examples: [rla_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        role: {$ref: '#/components/schemas/RoleKey'}
+        justification: {type: string}
+        activatedAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time, description: Halo removes the role at this time.}
     Group:
       type: object
       required: [id, name, description, kind, joinPolicy, owners, memberCount, source, createdAt]

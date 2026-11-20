@@ -3,11 +3,15 @@
 import { Plus } from "lucide-react";
 import { useId, useState, type FormEvent } from "react";
 import { useMutation } from "@/components/console/use-mutation";
+import { ROLES } from "@/components/provisioning/shared";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Select, Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
+import { formatDateTime, pluralize } from "@/lib/format";
 import type { AccessPackage, AccessRequest } from "@/lib/governance-types";
+import type { RoleKey } from "@/lib/provisioning-types";
+import type { RoleActivation } from "@/lib/types";
 import { approversLabel, DURATIONS, durationLabel, joinNames } from "./shared";
 
 function durationOptions(maxDays: number | null): string[] {
@@ -177,6 +181,113 @@ export function CancelRequest({ request }: { request: AccessRequest }) {
       }
     >
       Cancel request
+    </Button>
+  );
+}
+
+const ACTIVATION_HOURS = [1, 2, 3, 4, 5, 6, 7, 8];
+
+export function ActivateRole({ role }: { role: RoleKey }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
+        Activate
+      </Button>
+      {open ? <ActivateDialog role={role} onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
+
+function ActivateDialog({ role, onClose }: { role: RoleKey; onClose: () => void }) {
+  const formId = useId();
+  const [hours, setHours] = useState("1");
+  const [justification, setJustification] = useState("");
+  const [error, setError] = useState<string>();
+  const { pending, run, errorFor, toast } = useMutation();
+  const label = ROLES[role].label;
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!justification.trim()) {
+      setError("Add a reason. It's recorded in the audit log with the activation.");
+      return;
+    }
+    void run(
+      "activate",
+      () => api<RoleActivation>("/me/role-activations", { body: { role, durationHours: Number(hours), justification: justification.trim() } }),
+      (activation) => {
+        onClose();
+        toast({ title: `${label} is active`, description: `Until ${formatDateTime(activation.expiresAt)}. Halo removes the role then.` });
+      },
+      "inline",
+    );
+  }
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(next) => (next ? undefined : onClose())}
+      error={errorFor("activate")}
+      title={`Activate ${label.toLowerCase()}`}
+      description="You get the role on your next request. Halo removes it when the time ends, and records the activation and your reason in the audit log."
+      footer={
+        <>
+          <Button variant="secondary" disabled={pending === "activate"} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" type="submit" form={formId} loading={pending === "activate"}>
+            Activate role
+          </Button>
+        </>
+      }
+    >
+      <form id={formId} noValidate onSubmit={submit} className="flex flex-col gap-6">
+        <Field label="Justification" hint="What you'll do with the role. One or two sentences is enough." error={error}>
+          {(field) => (
+            <Textarea
+              {...field}
+              value={justification}
+              onChange={(event) => {
+                setJustification(event.target.value);
+                setError(undefined);
+              }}
+            />
+          )}
+        </Field>
+        <Field label="Duration" hint="You can deactivate the role sooner when you're done.">
+          {(field) => (
+            <Select {...field} value={hours} onChange={(event) => setHours(event.target.value)}>
+              {ACTIVATION_HOURS.map((value) => (
+                <option key={value} value={value}>
+                  {pluralize(value, "hour")}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+      </form>
+    </Dialog>
+  );
+}
+
+export function DeactivateRole({ activation }: { activation: RoleActivation }) {
+  const { pending, run, toast } = useMutation();
+  const label = ROLES[activation.role].label;
+  return (
+    <Button
+      size="sm"
+      variant="quiet"
+      loading={pending === "deactivate"}
+      onClick={() =>
+        run(
+          "deactivate",
+          () => api(`/me/role-activations/${activation.id}/deactivate`, { method: "POST" }),
+          () => toast({ title: `${label} deactivated`, description: "You no longer hold the role. Recorded in the audit log." }),
+        )
+      }
+    >
+      Deactivate
     </Button>
   );
 }

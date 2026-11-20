@@ -1,4 +1,5 @@
 import type { NamedRef } from "./governance-types";
+import type { RoleKey } from "./provisioning-types";
 
 export type UserStatus = "active" | "suspended" | "invited" | "deprovisioned";
 export type AuthStrength = "phishing-resistant" | "multi-factor" | "single-factor";
@@ -25,6 +26,8 @@ export type User = {
   strength: AuthStrength;
   methods: AuthMethod[];
   roles: string[];
+  eligibleRoles: RoleKey[];
+  activations: RoleActivation[];
   groupIds: string[];
   appIds: string[];
   managerId: string | null;
@@ -32,6 +35,14 @@ export type User = {
   createdAt: string;
   lastSignInAt: string | null;
   avatarUrl: string | null;
+};
+
+export type RoleActivation = {
+  id: string;
+  role: RoleKey;
+  justification: string;
+  activatedAt: string;
+  expiresAt: string;
 };
 
 export type JoinPolicy = "closed" | "request" | "open";

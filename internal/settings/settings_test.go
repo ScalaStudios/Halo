@@ -323,7 +323,7 @@ func TestExportExcludesSecrets(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &export); err != nil {
 		t.Fatalf("export is not valid JSON: %v", err)
 	}
-	for _, section := range []string{"exportedAt", "organization", "settings", "users", "groups", "memberships", "roles", "applications", "policies", "terms", "termsAcceptances", "accessPackages", "accessReviews"} {
+	for _, section := range []string{"exportedAt", "organization", "settings", "users", "groups", "memberships", "roles", "eligibleRoles", "applications", "policies", "terms", "termsAcceptances", "accessPackages", "accessReviews"} {
 		if export[section] == nil {
 			t.Errorf("export has no %s", section)
 		}

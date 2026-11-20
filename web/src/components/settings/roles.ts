@@ -8,6 +8,13 @@ export function hasRole(user: Pick<User, "roles">, ...keys: RoleKey[]) {
 
 export const ROLE_ORDER: RoleKey[] = ["global_admin", "security_admin", "user_admin", "helpdesk_admin", "app_admin", "auditor"];
 
+const KEY_BY_LABEL = Object.fromEntries(ROLE_ORDER.map((key) => [ROLES[key].label, key])) as Record<string, RoleKey>;
+
+export function keysOf(person: Pick<User, "roles" | "activations">) {
+  const activated = person.activations.map((a) => a.role);
+  return person.roles.map((label) => KEY_BY_LABEL[label]).filter((key): key is RoleKey => Boolean(key) && !activated.includes(key));
+}
+
 export const CAPABILITIES: Record<RoleKey, string[]> = {
   global_admin: [
     "Everything the other five roles can do",

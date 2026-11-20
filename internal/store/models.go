@@ -35,6 +35,9 @@ type User struct {
 	CreatedAt     time.Time  `json:"createdAt"`
 	LastSignInAt  *time.Time `json:"lastSignInAt"`
 	AvatarURL     *string    `json:"avatarUrl"`
+
+	EligibleRoles []string         `json:"eligibleRoles"`
+	Activations   []RoleActivation `json:"activations"`
 }
 
 type Group struct {

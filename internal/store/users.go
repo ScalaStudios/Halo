@@ -212,23 +212,43 @@ func (s *Store) decorate(ctx context.Context, users []User) error {
 		users[i].Methods = []Method{}
 		users[i].Roles = []string{}
 		users[i].RoleKeys = []string{}
+		users[i].EligibleRoles = []string{}
+		users[i].Activations = []RoleActivation{}
 		users[i].GroupIDs = []string{}
 		users[i].AppIDs = []string{}
 	}
 
-	rows, err := s.db.Query(ctx, `select user_id, role from user_roles where user_id = any($1) order by role`, ids)
+	rows, err := s.db.Query(ctx, `select user_id, role, kind, id, justification, created_at, expires_at from (
+			select user_id, role, 'standing' as kind, '' as id, '' as justification, created_at, null::timestamptz as expires_at from user_roles where user_id = any($1)
+			union all
+			select user_id, role, 'eligible', '', '', created_at, null from role_eligibilities where user_id = any($1)
+			union all
+			select a.user_id, a.role, 'active', a.id, a.justification, a.created_at, a.expires_at from role_activations a
+			where a.user_id = any($1) and a.ended_at is null and a.expires_at > now()
+				and not exists (select 1 from user_roles r where r.user_id = a.user_id and r.role = a.role)
+		) roles order by role`, ids)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
-		var userID, role string
-		if err := rows.Scan(&userID, &role); err != nil {
+		var userID, role, kind string
+		var a RoleActivation
+		var expires *time.Time
+		if err := rows.Scan(&userID, &role, &kind, &a.ID, &a.Justification, &a.ActivatedAt, &expires); err != nil {
 			rows.Close()
 			return err
 		}
 		u := &users[index[userID]]
+		if kind == "eligible" {
+			u.EligibleRoles = append(u.EligibleRoles, role)
+			continue
+		}
 		u.RoleKeys = append(u.RoleKeys, role)
 		u.Roles = append(u.Roles, RoleLabels[role])
+		if expires != nil {
+			a.Role, a.ExpiresAt = role, *expires
+			u.Activations = append(u.Activations, a)
+		}
 	}
 	rows.Close()
 

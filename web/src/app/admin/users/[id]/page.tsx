@@ -61,7 +61,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
   const StrengthIcon = strengthIcon[user.strength];
   const signInMethods = user.methods.filter((m) => m.kind !== "recovery-codes");
   const global = me.roles.includes("Global administrator");
-  const access = user.roles.length > 0 && !global ? null : global || me.roles.includes("User administrator") ? "all" : me.roles.includes("Helpdesk administrator") ? "org" : null;
+  const access = user.roles.length + user.eligibleRoles.length > 0 && !global ? null : global || me.roles.includes("User administrator") ? "all" : me.roles.includes("Helpdesk administrator") ? "org" : null;
   const edit: ProfileEdit | undefined = access ? { user, directory, access } : undefined;
   const passwordGroups = settings.passwordGroupIds.map((id) => groups.find((g) => g.id === id)?.name ?? "a deleted group");
   const passwordWarning = !enabled.methods.includes("password")
