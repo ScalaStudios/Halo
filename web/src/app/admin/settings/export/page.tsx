@@ -13,7 +13,7 @@ const INCLUDED = [
   "Organization profile and every setting on these pages",
   "People, with profile fields, status and manager",
   "Groups, their rules, owners and members",
-  "Administrator roles and who holds them",
+  "Administrator roles, who holds them and who is eligible to activate them",
   "Applications, with redirect URIs, scopes, token lifetimes and assigned groups",
   "Access policies, access packages and access reviews with every decision",
   "Terms of use, and who accepted which version and when",

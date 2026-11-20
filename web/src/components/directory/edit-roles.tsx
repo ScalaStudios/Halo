@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { RoleCheckboxes } from "@/components/provisioning/service-accounts-table";
 import { ROLES } from "@/components/provisioning/shared";
-import { keysOf } from "@/components/settings/roles-board";
+import { keysOf } from "@/components/settings/roles";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { api } from "@/lib/api/client";

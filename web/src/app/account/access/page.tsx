@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { empty, list, row } from "@/components/account/list";
-import { CancelRequest, RequestAccess } from "@/components/governance/request-access";
+import { ActivateRole, CancelRequest, DeactivateRole, RequestAccess } from "@/components/governance/request-access";
 import { PendingRequests } from "@/components/governance/requests";
 import { approversLabel, dueLabel, durationLabel, grantLabel, joinNames, REQUEST_STATUS, ReviewProgress } from "@/components/governance/shared";
+import { ROLES } from "@/components/provisioning/shared";
+import { keysOf } from "@/components/settings/roles";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionTitle } from "@/components/ui/section-title";
 import { apiGet } from "@/lib/api/server";
-import { formatRelative } from "@/lib/format";
+import { formatDateTime, formatRelative } from "@/lib/format";
 import type { AccessPackage, AccessRequest, AccessReview } from "@/lib/governance-types";
 import type { Organization, User } from "@/lib/types";
 
@@ -39,6 +41,8 @@ export default async function AccessPage() {
   ]);
   const pendingIds = requests.filter((r) => r.status === "pending").map((r) => r.package.id);
   const admin = user.roles.length > 0;
+  const standing = keysOf(user);
+  const eligible = user.eligibleRoles.filter((role) => !standing.includes(role));
 
   return (
     <div className="flex flex-col gap-12">
@@ -142,13 +146,16 @@ export default async function AccessPage() {
       </section>
 
       <section className="flex flex-col gap-4">
-        <SectionTitle title="Your roles" description="Administrative roles in Halo. Most people have none." />
-        {user.roles.length > 0 ? (
+        <SectionTitle
+          title="Your roles"
+          description="Administrative roles in Halo. Most people have none. Roles you're eligible for stay off until you activate them."
+        />
+        {standing.length + eligible.length > 0 ? (
           <ul className={list}>
-            {user.roles.map((role) => (
+            {standing.map((role) => (
               <li key={role} className={row}>
                 <div className="flex min-w-0 flex-col gap-1">
-                  <p className="text-body-sm font-semibold text-fg">{role}</p>
+                  <p className="text-body-sm font-semibold text-fg">{ROLES[role].label}</p>
                   <p className="text-body-sm text-fg-3">Lets you manage Halo for {org.name}.</p>
                 </div>
                 <Link href="/admin" className="shrink-0 text-body-sm text-link underline underline-offset-3 hover:text-ember-hover">
@@ -156,6 +163,23 @@ export default async function AccessPage() {
                 </Link>
               </li>
             ))}
+            {eligible.map((role) => {
+              const active = user.activations.find((a) => a.role === role);
+              return (
+                <li key={`eligible-${role}`} className={row}>
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <p className="flex flex-wrap items-center gap-2 text-body-sm font-semibold text-fg">
+                      {ROLES[role].label}
+                      <Badge tone={active ? "success" : "neutral"}>{active ? "Active" : "Eligible"}</Badge>
+                    </p>
+                    <p className="text-body-sm text-fg-3">
+                      {active ? `Until ${formatDateTime(active.expiresAt)} · “${active.justification}”` : "Activate it for up to 8 hours when you need it."}
+                    </p>
+                  </div>
+                  {active ? <DeactivateRole activation={active} /> : <ActivateRole role={role} />}
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <p className={empty}>You don&apos;t have an administrative role in Halo.</p>

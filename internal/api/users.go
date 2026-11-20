@@ -48,8 +48,8 @@ func (h *handlers) emailLink(r *http.Request, token string, m halomail.Message) 
 }
 
 func guardAdmin(actor, target store.User) error {
-	if len(target.RoleKeys) > 0 && !actor.HasRole("global_admin") {
-		return httpx.Fail(http.StatusForbidden, "ERR_FORBIDDEN", target.Name+" holds an administrator role, so only a global administrator can change their account.")
+	if len(target.RoleKeys)+len(target.EligibleRoles) > 0 && !actor.HasRole("global_admin") {
+		return httpx.Fail(http.StatusForbidden, "ERR_FORBIDDEN", target.Name+" holds or is eligible for an administrator role, so only a global administrator can change their account.")
 	}
 	return nil
 }
@@ -392,6 +392,9 @@ func (h *handlers) setRoles(w http.ResponseWriter, r *http.Request, actor store.
 	if err != nil {
 		return err
 	}
+	if target.ID == actor.ID && slices.ContainsFunc(roles, func(role string) bool { return !target.HasRole(role) || activated(target, role) }) {
+		return httpx.Fail(http.StatusForbidden, "ERR_FORBIDDEN", "You cannot give yourself a role, including one you activated. Ask another global administrator to do it.")
+	}
 	if target.ID == actor.ID && target.HasRole("global_admin") && !slices.Contains(roles, "global_admin") {
 		return httpx.Invalid("You cannot remove your own global administrator role. Ask another global administrator to do it, so the organization always keeps one.")
 	}
@@ -400,6 +403,51 @@ func (h *handlers) setRoles(w http.ResponseWriter, r *http.Request, actor store.
 			return err
 		}
 		return record(r, tx, actor, roleEvent(target, labels))
+	})
+	if err != nil {
+		return err
+	}
+	return h.respondUser(w, r, target.ID)
+}
+
+func activated(u store.User, role string) bool {
+	return slices.ContainsFunc(u.Activations, func(a store.RoleActivation) bool { return a.Role == role })
+}
+
+func (h *handlers) setEligibleRoles(w http.ResponseWriter, r *http.Request, actor store.User) error {
+	target, err := h.user(r)
+	if err != nil {
+		return err
+	}
+	if target.ID == actor.ID {
+		return httpx.Fail(http.StatusForbidden, "ERR_FORBIDDEN", "You cannot change which roles you are eligible for. Ask another global administrator to do it.")
+	}
+	var in struct {
+		Roles *[]string `json:"roles"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	if in.Roles == nil {
+		return httpx.Invalid(`Send the complete list of eligible roles, for example {"roles": ["security_admin"]}. Send an empty list to remove every eligibility.`)
+	}
+	roles, labels, err := checkRoles(*in.Roles)
+	if err != nil {
+		return err
+	}
+	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+		ended, err := tx.SetEligibleRoles(r.Context(), target.ID, roles)
+		if err != nil {
+			return err
+		}
+		summary := "Removed every eligible role"
+		if len(labels) > 0 {
+			summary = "Set eligible roles to " + strings.Join(labels, ", ")
+		}
+		for _, role := range ended {
+			summary += "; ended the active " + store.RoleLabels[role] + " activation"
+		}
+		return record(r, tx, actor, store.AuditEvent{Action: "role.eligibility.update", Summary: summary, TargetType: "user", TargetID: target.ID, TargetLabel: target.Name})
 	})
 	if err != nil {
 		return err

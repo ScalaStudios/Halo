@@ -10,14 +10,14 @@ export const metadata = { title: "Roles" };
 
 export default async function RolesPage() {
   const [users, me] = await Promise.all([apiGet<User[]>("/users"), apiGet<User>("/me")]);
-  const people = users.map(({ id, name, email, roles, status }) => ({ id, name, email, roles, status }));
+  const people = users.map(({ id, name, email, roles, status, eligibleRoles, activations }) => ({ id, name, email, roles, status, eligibleRoles, activations }));
   const admins = people.filter((p) => p.roles.length > 0).length;
   const canEdit = hasRole(me);
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
         title="Roles"
-        description={`${pluralize(admins, "person holds", "people hold")} an administrator role. Every role can read every administration page; the lists below are what each one may change.`}
+        description={`${pluralize(admins, "person holds", "people hold")} an administrator role. Every role can read every administration page; the lists below are what each one may change. Eligible people activate a role for up to 8 hours when they need it.`}
       />
       {canEdit ? null : <ReadOnlyNote>Only a global administrator can assign or remove roles.</ReadOnlyNote>}
       <RolesBoard people={people} meId={me.id} canEdit={canEdit} />

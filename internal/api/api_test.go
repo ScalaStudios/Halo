@@ -172,6 +172,47 @@ func TestInviteWithRole(t *testing.T) {
 	}
 }
 
+func TestEligibilityCannotBeSelfGranted(t *testing.T) {
+	st, h := setup(t)
+	ctx := context.Background()
+	gia, global := person(t, st, "gia@example.com", "global_admin")
+	uma, userAdmin := person(t, st, "uma@example.com", "user_admin")
+	alex, token := person(t, st, "alex@example.com")
+	eligible := func(roles ...string) map[string]any { return map[string]any{"roles": append([]string{}, roles...)} }
+
+	expect(t, call(t, h, userAdmin, "PUT", "/api/v1/users/"+uma.ID+"/eligible-roles", eligible("global_admin")), 403)
+	expect(t, call(t, h, userAdmin, "PUT", "/api/v1/users/"+alex.ID+"/eligible-roles", eligible("security_admin")), 403)
+	expect(t, call(t, h, token, "PUT", "/api/v1/users/"+alex.ID+"/eligible-roles", eligible("global_admin")), 403)
+	expect(t, call(t, h, global, "PUT", "/api/v1/users/"+gia.ID+"/eligible-roles", eligible("security_admin")), 403)
+	expect(t, call(t, h, global, "PUT", "/api/v1/users/"+alex.ID+"/eligible-roles", eligible("owner")), 422)
+
+	rec := call(t, h, global, "PUT", "/api/v1/users/"+alex.ID+"/eligible-roles", eligible("global_admin"))
+	expect(t, rec, 200)
+	if u := decode[store.User](t, rec); !slices.Equal(u.EligibleRoles, []string{"global_admin"}) || len(u.Roles) != 0 {
+		t.Fatalf("eligible user: %+v", u)
+	}
+	expect(t, call(t, h, token, "GET", "/api/v1/users", nil), 403)
+	expect(t, call(t, h, userAdmin, "PATCH", "/api/v1/users/"+alex.ID, map[string]any{"title": "Engineer"}), 403)
+
+	if _, err := st.ActivateRole(ctx, alex.ID, "global_admin", "Rotating signing keys", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	expect(t, call(t, h, token, "GET", "/api/v1/users", nil), 200)
+	expect(t, call(t, h, token, "PUT", "/api/v1/users/"+alex.ID+"/roles", map[string]any{"roles": []string{"global_admin"}}), 403)
+	expect(t, call(t, h, token, "PUT", "/api/v1/users/"+alex.ID+"/roles", map[string]any{"roles": []string{"auditor"}}), 403)
+	expect(t, call(t, h, token, "PUT", "/api/v1/users/"+alex.ID+"/eligible-roles", eligible("global_admin", "security_admin")), 403)
+	if u, err := st.GetUser(ctx, alex.ID); err != nil || len(u.Activations) != 1 || !slices.Equal(u.EligibleRoles, []string{"global_admin"}) {
+		t.Fatalf("after refused self-grants: %+v %v", u, err)
+	}
+
+	expect(t, call(t, h, global, "PUT", "/api/v1/users/"+alex.ID+"/eligible-roles", eligible()), 200)
+	expect(t, call(t, h, token, "GET", "/api/v1/users", nil), 403)
+	audit, err := st.ListAudit(ctx, 1)
+	if err != nil || len(audit) != 1 || audit[0].Action != "role.eligibility.update" || audit[0].Summary != "Removed every eligible role; ended the active Global administrator activation" || audit[0].TargetID != alex.ID {
+		t.Fatalf("audit: %+v %v", audit, err)
+	}
+}
+
 func TestSuspendRevokesSessions(t *testing.T) {
 	st, h := setup(t)
 	ctx := context.Background()

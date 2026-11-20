@@ -18,6 +18,7 @@ var ExportSections = []ExportSection{
 		array(select o.user_id from group_owners o where o.group_id = g.id order by o.user_id) as owner_ids from groups g order by g.name`},
 	{"memberships", "group_members", `select group_id, user_id, created_at from group_members order by group_id, user_id`},
 	{"roles", "user_roles", `select user_id, role, created_at from user_roles order by user_id, role`},
+	{"eligibleRoles", "role_eligibilities", `select user_id, role, created_at from role_eligibilities order by user_id, role`},
 	{"applications", "applications", `select a.id, a.name, a.description, a.protocol, a.app_type, a.status, a.client_id, a.homepage, a.redirect_uris, a.post_logout_uris, a.scopes,
 		a.access_token_ttl, a.refresh_token_ttl, a.id_token_ttl, a.refresh_rotation, a.setup_guide, a.owner_id, a.created_at, a.updated_at,
 		array(select g.group_id from app_groups g where g.app_id = a.id order by g.group_id) as group_ids from applications a order by a.name`},

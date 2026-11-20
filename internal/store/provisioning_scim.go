@@ -34,7 +34,7 @@ type SCIMGroup struct {
 }
 
 const scimUserQuery = `select u.id, u.email, u.name, u.title, u.department, u.status, u.manager_id, m.name, u.external_id,
-	exists (select 1 from user_roles r where r.user_id = u.id), u.created_at, u.updated_at
+	exists (select 1 from user_roles r where r.user_id = u.id) or exists (select 1 from role_eligibilities e where e.user_id = u.id), u.created_at, u.updated_at
 	from users u left join users m on m.id = u.manager_id where u.kind = 'person' and u.status <> 'deprovisioned'`
 
 func scanSCIMUser(row rowScanner) (SCIMUser, error) {
