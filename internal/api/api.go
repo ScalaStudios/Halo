@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"slices"
 
+	"halo/internal/approval"
 	"halo/internal/config"
 	"halo/internal/httpx"
 	"halo/internal/mail"
@@ -19,6 +20,7 @@ type handlers struct {
 	st     *store.Store
 	cfg    config.Config
 	mailer mail.Mailer
+	gate   *approval.Gate
 }
 
 type handler func(http.ResponseWriter, *http.Request, store.User) error
@@ -28,7 +30,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	if mailer == nil {
 		mailer = mail.New(d.Config, d.Store)
 	}
-	h := &handlers{st: d.Store, cfg: d.Config, mailer: mailer}
+	h := &handlers{st: d.Store, cfg: d.Config, mailer: mailer, gate: approval.New(d)}
 	route := func(pattern string, roles []string, fn handler) {
 		mux.Handle(pattern, httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
 			actor, err := httpx.RequireRole(r, roles...)

@@ -8,7 +8,9 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
+	"halo/internal/approval"
 	"halo/internal/httpx"
 	"halo/internal/store"
 )
@@ -82,6 +84,13 @@ func (h *handler) saveProvider(w http.ResponseWriter, r *http.Request, existing 
 	if existing.ID != "" {
 		action, summary = "identity_provider.update", "Changed identity provider settings"
 	}
+	change := providerChange(existing, p.Name, "Add the identity provider")
+	if existing.ID != "" {
+		change.Summary = "Change the identity provider's " + providerFields(existing, p, strings.TrimSpace(in.ClientSecret) != "")
+	}
+	if held, err := h.gate.Hold(w, r, actor, change); held || err != nil {
+		return err
+	}
 	return h.writeProvider(w, r, actor, action, summary, func(tx *store.Store) (store.IdentityProvider, error) {
 		return tx.SaveIdentityProvider(r.Context(), p, strings.TrimSpace(in.ClientSecret))
 	})
@@ -98,6 +107,10 @@ func (h *handler) setProviderEnabled(enabled bool) httpx.HandlerFunc {
 			return httpx.NotFound("This identity provider")
 		}
 		if err != nil {
+			return err
+		}
+		change := providerChange(p, p.Name, map[bool]string{true: "Turn on", false: "Turn off"}[enabled]+" sign-in with "+p.Name)
+		if held, err := h.gate.Hold(w, r, actor, change); held || err != nil {
 			return err
 		}
 		p.Enabled = enabled
@@ -124,6 +137,9 @@ func (h *handler) deleteProvider(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if held, err := h.gate.Hold(w, r, actor, providerChange(p, p.Name, "Delete the identity provider and unlink its accounts")); held || err != nil {
+		return err
+	}
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
 		if err := tx.DeleteIdentityProvider(ctx, p.ID); err != nil {
 			return err
@@ -134,6 +150,36 @@ func (h *handler) deleteProvider(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return noContent(w)
+}
+
+func providerChange(p store.IdentityProvider, label, summary string) approval.Change {
+	state := p
+	state.LinkedCount, state.UpdatedAt = 0, time.Time{}
+	return approval.Change{Action: "identity-providers", Summary: summary, TargetType: "identity_provider", TargetID: p.ID, TargetLabel: label, State: state}
+}
+
+func providerFields(old, p store.IdentityProvider, secret bool) string {
+	changed := []string{}
+	for _, f := range []struct {
+		label string
+		diff  bool
+	}{
+		{"name", old.Name != p.Name},
+		{"issuer", old.Issuer != p.Issuer},
+		{"client ID", old.ClientID != p.ClientID},
+		{"client secret", secret},
+		{"scopes", !slices.Equal(old.Scopes, p.Scopes)},
+		{"on or off state", old.Enabled != p.Enabled},
+		{"sign-in page button", old.ShowOnSignIn != p.ShowOnSignIn},
+		{"allowed email domains", !slices.Equal(old.AllowedDomains, p.AllowedDomains)},
+		{"account creation on first sign-in", old.JIT != p.JIT},
+		{"groups for new accounts", !slices.Equal(old.JITGroupIDs, p.JITGroupIDs)},
+	} {
+		if f.diff {
+			changed = append(changed, f.label)
+		}
+	}
+	return cmp.Or(strings.Join(changed, ", "), "settings, without changes")
 }
 
 func (h *handler) writeProvider(w http.ResponseWriter, r *http.Request, actor store.User, action, summary string, save func(*store.Store) (store.IdentityProvider, error)) error {

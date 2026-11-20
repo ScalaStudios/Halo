@@ -12,6 +12,7 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 
 	"halo/internal/access"
+	"halo/internal/approval"
 	"halo/internal/config"
 	"halo/internal/httpx"
 	"halo/internal/mail"
@@ -47,6 +48,7 @@ type handler struct {
 	policy access.Engine
 	mailer mail.Mailer
 	cfg    config.Config
+	gate   *approval.Gate
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
@@ -67,7 +69,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	if mailer == nil {
 		mailer = mail.Log{}
 	}
-	h := &handler{st: d.Store, auth: d.Auth, wa: wa, policy: policy, mailer: mailer, cfg: d.Config}
+	h := &handler{st: d.Store, auth: d.Auth, wa: wa, policy: policy, mailer: mailer, cfg: d.Config, gate: approval.New(d)}
 	for pattern, fn := range map[string]httpx.HandlerFunc{
 		"GET /api/v1/auth/request/{id}":          h.authRequest,
 		"POST /api/v1/auth/passkey/begin":        h.passkeyBegin,

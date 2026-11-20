@@ -1,0 +1,110 @@
+package store
+
+import (
+	"context"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"halo/internal/id"
+)
+
+var ApprovalActions = map[string]string{
+	"global-admin":       "granting the global administrator role",
+	"policy-disable":     "stopping an enforced access policy",
+	"password-sign-in":   "turning on password sign-in",
+	"identity-providers": "changing identity providers",
+}
+
+type ApprovalRequest struct {
+	ID          string     `json:"id"`
+	Action      string     `json:"action"`
+	Summary     string     `json:"summary"`
+	TargetType  string     `json:"targetType"`
+	TargetID    string     `json:"targetId"`
+	TargetLabel string     `json:"targetLabel"`
+	Requester   NamedRef   `json:"requester"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	ExpiresAt   time.Time  `json:"expiresAt"`
+	Status      string     `json:"status"`
+	DecidedBy   *NamedRef  `json:"decidedBy"`
+	DecidedAt   *time.Time `json:"decidedAt"`
+	Outcome     string     `json:"outcome"`
+	CanDecide   bool       `json:"canDecide"`
+	Method      string     `json:"-"`
+	Path        string     `json:"-"`
+	Body        []byte     `json:"-"`
+	State       string     `json:"-"`
+}
+
+var approvalSelect = `select r.id, r.action, r.summary, r.target_type, r.target_id, r.target_label, json_build_object('id', u.id, 'name', u.name),
+	r.created_at, r.expires_at, case when r.status = 'pending' and r.expires_at <= now() then 'expired' else r.status end, ` + govRef("d") + `,
+	r.decided_at, r.outcome, r.method, r.path, r.body_sealed, r.state
+	from approval_requests r join users u on u.id = r.requested_by left join users d on d.id = r.decided_by `
+
+func (s *Store) approvals(ctx context.Context, clause string, args ...any) ([]ApprovalRequest, error) {
+	rows, err := s.db.Query(ctx, approvalSelect+clause, args...)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (ApprovalRequest, error) {
+		var r ApprovalRequest
+		var sealed []byte
+		if err := row.Scan(&r.ID, &r.Action, &r.Summary, &r.TargetType, &r.TargetID, &r.TargetLabel, &r.Requester, &r.CreatedAt, &r.ExpiresAt, &r.Status,
+			&r.DecidedBy, &r.DecidedAt, &r.Outcome, &r.Method, &r.Path, &sealed, &r.State); err != nil {
+			return r, err
+		}
+		var err error
+		r.Body, err = s.Sealer.Open(sealed)
+		return r, err
+	})
+}
+
+func (s *Store) ListApprovalRequests(ctx context.Context) ([]ApprovalRequest, error) {
+	return s.approvals(ctx, `order by r.created_at desc limit 500`)
+}
+
+func (s *Store) GetApprovalRequest(ctx context.Context, requestID string) (ApprovalRequest, error) {
+	list, err := s.approvals(ctx, `where r.id = $1`, requestID)
+	if err != nil {
+		return ApprovalRequest{}, err
+	}
+	if len(list) == 0 {
+		return ApprovalRequest{}, ErrNotFound
+	}
+	return list[0], nil
+}
+
+func (s *Store) CreateApprovalRequest(ctx context.Context, r ApprovalRequest) (string, error) {
+	requestID := id.New("apr")
+	_, err := s.db.Exec(ctx, `insert into approval_requests (id, action, summary, target_type, target_id, target_label, method, path, body_sealed, state, requested_by, expires_at)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		requestID, r.Action, r.Summary, r.TargetType, r.TargetID, r.TargetLabel, r.Method, r.Path, s.Sealer.Seal(r.Body), r.State, r.Requester.ID, r.ExpiresAt)
+	return requestID, err
+}
+
+func (s *Store) DecideApprovalRequest(ctx context.Context, requestID, status, deciderID string) error {
+	tag, err := s.db.Exec(ctx, `update approval_requests set status = $2, decided_by = $3, decided_at = now() where id = $1 and status = 'pending' and expires_at > now()`,
+		requestID, status, deciderID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 1 {
+		return nil
+	}
+	return s.existsOr(ctx, `select exists (select 1 from approval_requests where id = $1)`, requestID)
+}
+
+func (s *Store) FailApprovalRequest(ctx context.Context, requestID, outcome string) error {
+	_, err := s.db.Exec(ctx, `update approval_requests set status = 'failed', outcome = $2 where id = $1`, requestID, outcome)
+	return err
+}
+
+func (s *Store) GlobalAdminEmails(ctx context.Context, exceptUserID string) ([]string, error) {
+	rows, err := s.db.Query(ctx, `select u.email from users u join user_roles r on r.user_id = u.id
+		where r.role = 'global_admin' and u.status = 'active' and u.kind = 'person' and u.id <> $1 order by u.email`, exceptUserID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}

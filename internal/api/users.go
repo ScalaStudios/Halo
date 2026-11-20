@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"halo/internal/approval"
 	"halo/internal/httpx"
 	halomail "halo/internal/mail"
 	"halo/internal/secret"
@@ -120,6 +121,9 @@ func (h *handlers) inviteUser(w http.ResponseWriter, r *http.Request, actor stor
 		if _, err := httpx.RequireRole(r); err != nil {
 			return err
 		}
+	}
+	if err := h.gate.RefuseGlobalAdmin(r.Context(), roles); err != nil {
+		return err
 	}
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
@@ -397,6 +401,13 @@ func (h *handlers) setRoles(w http.ResponseWriter, r *http.Request, actor store.
 	}
 	if target.ID == actor.ID && target.HasRole("global_admin") && !slices.Contains(roles, "global_admin") {
 		return httpx.Invalid("You cannot remove your own global administrator role. Ask another global administrator to do it, so the organization always keeps one.")
+	}
+	change := approval.Change{Summary: roleEvent(target, labels).Summary, TargetType: "user", TargetID: target.ID, TargetLabel: target.Name, State: target.RoleKeys}
+	if slices.Contains(roles, "global_admin") && !target.HasRole("global_admin") {
+		change.Action = "global-admin"
+	}
+	if held, err := h.gate.Hold(w, r, actor, change); held || err != nil {
+		return err
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 		if err := tx.SetUserRoles(r.Context(), target.ID, roles); err != nil {

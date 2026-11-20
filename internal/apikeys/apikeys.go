@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"halo/internal/approval"
 	"halo/internal/httpx"
 	"halo/internal/store"
 )
@@ -23,11 +24,12 @@ func Resolver(st *store.Store) httpx.KeyResolver {
 }
 
 type handlers struct {
-	st *store.Store
+	st   *store.Store
+	gate *approval.Gate
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
-	h := &handlers{st: d.Store}
+	h := &handlers{st: d.Store, gate: approval.New(d)}
 	route := func(pattern string, roles []string, fn func(http.ResponseWriter, *http.Request, store.User) error) {
 		mux.Handle(pattern, httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
 			actor, err := httpx.RequireRole(r, roles...)
@@ -150,6 +152,9 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request, actor store.Us
 	}
 	roles, err := grantable(actor, in.Roles)
 	if err != nil {
+		return err
+	}
+	if err := h.gate.RefuseGlobalAdmin(r.Context(), roles); err != nil {
 		return err
 	}
 	owner, err := h.owner(r, in.OwnerID)
@@ -285,6 +290,13 @@ func (h *handlers) setRoles(w http.ResponseWriter, r *http.Request, actor store.
 	summary := "Removed every role"
 	if len(roles) > 0 {
 		summary = "Set roles to " + labels(roles)
+	}
+	change := approval.Change{Summary: summary, TargetType: "service_account", TargetID: account.ID, TargetLabel: account.Name, State: account.Roles}
+	if slices.Contains(roles, "global_admin") && !slices.Contains(account.Roles, "global_admin") {
+		change.Action = "global-admin"
+	}
+	if held, err := h.gate.Hold(w, r, actor, change); held || err != nil {
+		return err
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 		if err := tx.SetUserRoles(r.Context(), account.ID, roles); err != nil {

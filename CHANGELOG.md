@@ -67,6 +67,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Continuous integration for `go vet`, `go test`, type checking and the web build.
 - Contributing guide, security policy, code of conduct, and issue and pull request templates.
 - A limit on how many sessions one person can hold at once, set under Security defaults for the organization and per group, where someone in several limited groups gets the lowest limit. At the limit Halo either refuses the new sign-in with `ERR_SESSION_LIMIT` or ends the oldest sessions, and records each ended session in the sign-in log with the result `ended` and the `sign_in.ended` webhook event. Halo CLI sessions are either counted separately against the same limit or not limited.
+- Approval by a second global administrator, off by default, for granting the global administrator role, stopping an enforced access policy, turning on password sign-in and changing identity providers. The change waits on the Approvals page for 72 hours; the requester cannot approve it, approving applies it once as the requester, and a request whose target changed in the meantime is not applied. Emergency access accounts skip approval, and each use is emailed to the other global administrators. Requests, approvals, rejections, approved changes that could not be applied, and skips are in the audit log.
 
 ### Changed
 

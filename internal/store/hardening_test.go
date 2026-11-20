@@ -39,6 +39,8 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	must(st.CreateSSHAuthority(ctx, []byte("ssh-seed"), "ssh-ed25519 AAAA"))
 	must(st.ReplaceRecoveryCodes(ctx, u.ID, [][]byte{st.RecoveryCodeHash("abcd")}))
+	approvalID, err := st.CreateApprovalRequest(ctx, store.ApprovalRequest{Action: "global-admin", Summary: "Set roles", TargetType: "user", TargetLabel: "Ada", Method: "PUT", Path: "/api/v1/users/x/roles", Body: []byte("approval-body"), State: "null", Requester: store.NamedRef{ID: u.ID}, ExpiresAt: time.Now().Add(time.Hour)})
+	must(err)
 
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
@@ -46,7 +48,7 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	rotation, err := st.RotateSecretKey(ctx, next)
 	must(err)
-	if len(rotation.Resealed) != 9 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
+	if len(rotation.Resealed) != 10 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
 		t.Fatalf("resealed: %+v", rotation.Resealed)
 	}
 	if !slices.Equal(rotation.RecoveryCodeUsers, []string{"ada@example.com"}) {
@@ -74,6 +76,8 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	ssh, err := rotated.GetSSHAuthority(ctx)
 	must(err)
+	pending, err := rotated.GetApprovalRequest(ctx, approvalID)
+	must(err)
 	for want, sealed := range map[string][]byte{"totp-seed": totp[0].Sealed, "scim-token": provisioning.TokenSealed, "client-secret": provider.SecretSealed} {
 		if plain, err := rotated.Sealer.Open(sealed); err != nil || string(plain) != want {
 			t.Fatalf("open %s with the new key: %q %v", want, plain, err)
@@ -82,8 +86,8 @@ func TestRotateSecretKey(t *testing.T) {
 	if _, err := rotated.Sealer.Open(webhook.Sealed); err != nil {
 		t.Fatalf("webhook secret: %v", err)
 	}
-	if string(keys[0].PrivateKey) != "oidc-key" || mail[0].Text != "mail body" || string(saml.PrivateKey) != "saml-key" || string(ssh.Seed) != "ssh-seed" {
-		t.Fatalf("rotated values: %q %q %q %q", keys[0].PrivateKey, mail[0].Text, saml.PrivateKey, ssh.Seed)
+	if string(keys[0].PrivateKey) != "oidc-key" || mail[0].Text != "mail body" || string(saml.PrivateKey) != "saml-key" || string(ssh.Seed) != "ssh-seed" || string(pending.Body) != "approval-body" {
+		t.Fatalf("rotated values: %q %q %q %q %q", keys[0].PrivateKey, mail[0].Text, saml.PrivateKey, ssh.Seed, pending.Body)
 	}
 	if _, err := st.RotateSecretKey(ctx, next); err == nil {
 		t.Fatal("rotating again with the old key must fail without changing anything")

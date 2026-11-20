@@ -46,6 +46,9 @@ type Settings struct {
 	SessionLimitAction string              `json:"sessionLimitAction"`
 	SessionLimitCLI    bool                `json:"sessionLimitCli"`
 	SessionLimitGroups []GroupSessionLimit `json:"sessionLimitGroups"`
+
+	ApprovalActions    []string `json:"approvalActions"`
+	EmergencyAccessIDs []string `json:"emergencyAccessIds"`
 }
 
 type GroupSessionLimit struct {
@@ -67,6 +70,8 @@ var DefaultSettings = Settings{
 	EmailSignIn:          "link",
 	SessionLimitAction:   "refuse",
 	SessionLimitGroups:   []GroupSessionLimit{},
+	ApprovalActions:      []string{},
+	EmergencyAccessIDs:   []string{},
 }
 
 const settingsTTL = 30 * time.Second
