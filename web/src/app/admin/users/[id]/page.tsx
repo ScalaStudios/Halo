@@ -10,6 +10,7 @@ import { DescriptionList } from "@/components/ui/description-list";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TabNav } from "@/components/ui/tab-nav";
 import { TemporaryPasswordButton, UserActions } from "@/components/directory/user-actions";
+import { ImpersonationNotices } from "@/components/directory/impersonation";
 import { EditProfileButton, type ProfileEdit } from "@/components/directory/edit-profile";
 import { EditRolesButton, PasskeyWarning } from "@/components/directory/edit-roles";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
@@ -26,7 +27,7 @@ import { formatDate, formatDateTime, formatRelative } from "@/lib/format";
 import { METHOD, STATUS, STRENGTH } from "@/lib/labels";
 import type { Device } from "@/lib/policy-types";
 import type { SettingsResponse } from "@/lib/settings-types";
-import type { Application, AuditEvent, Group, Session, SignInEvent, User } from "@/lib/types";
+import type { Application, AuditEvent, Group, Impersonation, Session, SignInEvent, User } from "@/lib/types";
 
 const strengthIcon = { "phishing-resistant": ShieldCheck, "multi-factor": ShieldAlert, "single-factor": ShieldX } as const;
 const strengthColor = { "phishing-resistant": "text-success", "multi-factor": "text-warning", "single-factor": "text-danger" } as const;
@@ -40,7 +41,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
   const { id } = await params;
   const { tab = "overview" } = await searchParams;
   const path = `/users/${encodeURIComponent(id)}`;
-  const [user, userSessions, userSignIns, groups, applications, audit, userDevices, directory, me, enabled, { settings }] = await Promise.all([
+  const [user, userSessions, userSignIns, groups, applications, audit, userDevices, directory, me, enabled, { settings }, impersonations] = await Promise.all([
     apiGet<User>(path),
     apiGet<Session[]>(`${path}/sessions`),
     apiGet<SignInEvent[]>(`${path}/sign-ins`),
@@ -52,6 +53,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
     apiGet<User>("/me"),
     apiGet<{ methods: string[] }>("/auth/methods"),
     apiGet<SettingsResponse>("/settings"),
+    apiGet<Impersonation[]>(`/impersonations?user=${encodeURIComponent(id)}`),
   ]);
   const manager = user.managerId ? await apiGet<User>(`/users/${encodeURIComponent(user.managerId)}`) : undefined;
 
@@ -63,6 +65,12 @@ export default async function UserPage({ params, searchParams }: { params: Promi
   const global = me.roles.includes("Global administrator");
   const access = user.roles.length + user.eligibleRoles.length > 0 && !global ? null : global || me.roles.includes("User administrator") ? "all" : me.roles.includes("Helpdesk administrator") ? "org" : null;
   const edit: ProfileEdit | undefined = access ? { user, directory, access } : undefined;
+  const impersonate =
+    (global || me.roles.includes("Helpdesk administrator")) &&
+    user.id !== me.id &&
+    user.status === "active" &&
+    user.roles.length + user.eligibleRoles.length === 0 &&
+    settings.impersonationGroupIds.some((g) => user.groupIds.includes(g));
   const passwordGroups = settings.passwordGroupIds.map((id) => groups.find((g) => g.id === id)?.name ?? "a deleted group");
   const passwordWarning = !enabled.methods.includes("password")
     ? `Passwords are turned off, so ${user.name} can't use this until a security administrator turns them on under Methods.`
@@ -101,8 +109,9 @@ export default async function UserPage({ params, searchParams }: { params: Promi
               <ProfileHeading user={user} />
             </div>
           )}
-          <UserActions id={user.id} name={user.name} suspended={user.status === "suspended"} edit={edit} />
+          <UserActions id={user.id} name={user.name} suspended={user.status === "suspended"} edit={edit} impersonate={impersonate} />
         </header>
+        <ImpersonationNotices impersonations={impersonations} meId={me.id} />
         <dl className="grid grid-cols-2 gap-x-8 gap-y-4 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 xl:grid-cols-6">
           <Fact label="Status">
             <span className="inline-flex items-center gap-2">

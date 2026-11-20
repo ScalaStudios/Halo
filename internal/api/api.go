@@ -21,6 +21,7 @@ type handlers struct {
 	cfg    config.Config
 	mailer mail.Mailer
 	gate   *approval.Gate
+	auth   *httpx.Auth
 }
 
 type handler func(http.ResponseWriter, *http.Request, store.User) error
@@ -30,7 +31,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	if mailer == nil {
 		mailer = mail.New(d.Config, d.Store)
 	}
-	h := &handlers{st: d.Store, cfg: d.Config, mailer: mailer, gate: approval.New(d)}
+	h := &handlers{st: d.Store, cfg: d.Config, mailer: mailer, gate: approval.New(d), auth: d.Auth}
 	route := func(pattern string, roles []string, fn handler) {
 		mux.Handle(pattern, httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
 			actor, err := httpx.RequireRole(r, roles...)
@@ -64,6 +65,10 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("PUT /api/v1/users/{id}/roles", nil, h.setRoles)
 	route("PUT /api/v1/users/{id}/eligible-roles", nil, h.setEligibleRoles)
 	route("PATCH /api/v1/users/{id}", []string{"user_admin", "helpdesk_admin"}, h.updateUser)
+	route("POST /api/v1/users/{id}/impersonations", []string{"helpdesk_admin"}, h.requestImpersonation)
+	route("GET /api/v1/impersonations", readers, h.listImpersonations)
+	route("POST /api/v1/impersonations/{id}/start", []string{"helpdesk_admin"}, h.startImpersonation)
+	mux.Handle("POST /api/v1/impersonations/{id}/end", httpx.Handle(h.endImpersonation))
 
 	route("GET /api/v1/groups", readers, h.listGroups)
 	route("POST /api/v1/groups", []string{"user_admin"}, h.createGroup)

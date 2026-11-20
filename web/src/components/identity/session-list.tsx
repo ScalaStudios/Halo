@@ -93,6 +93,7 @@ export function SessionList({ sessions, userId }: { sessions: Session[]; userId?
                   <p className="flex flex-wrap items-center gap-2 text-body-sm font-semibold text-fg">
                     {session.device} · {session.browser}
                     {session.current ? <Badge tone="success">This browser</Badge> : null}
+                    {session.impersonationId ? <Badge tone="warning">Impersonation</Badge> : null}
                   </p>
                   <p className="text-body-sm text-fg-3">
                     {session.location} · <span className="font-mono text-code-sm">{session.ip}</span>

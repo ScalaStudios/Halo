@@ -66,6 +66,7 @@ var fields = []struct {
 	{"sessionLimitGroups", "group session limits", false},
 	{"approvalActions", "changes that need approval", true},
 	{"emergencyAccessIds", "emergency access accounts", true},
+	{"impersonationGroupIds", "groups whose members can be impersonated", true},
 	{"clientRegistration", "client registration", false},
 	{"botProtection", "bot protection", false},
 	{"botProtectionSiteKey", "bot protection site key", false},
@@ -186,6 +187,7 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	next.SessionLimitGroups = slices.Clone(before.SessionLimitGroups)
 	next.ApprovalActions = slices.Clone(before.ApprovalActions)
 	next.EmergencyAccessIDs = slices.Clone(before.EmergencyAccessIDs)
+	next.ImpersonationGroups = slices.Clone(before.ImpersonationGroups)
 	in := struct {
 		store.Settings
 		BotProtectionSecret string `json:"botProtectionSecret"`
@@ -215,6 +217,9 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	if next.EmergencyAccessIDs == nil {
 		next.EmergencyAccessIDs = []string{}
 	}
+	if next.ImpersonationGroups == nil {
+		next.ImpersonationGroups = []string{}
+	}
 	if err := validate(next); err != nil {
 		return err
 	}
@@ -235,6 +240,15 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 		}
 		if slices.ContainsFunc(next.PasswordGroupIDs, func(id string) bool { return !existing[id] }) {
 			return httpx.Invalid("One of the groups chosen for passwords no longer exists. Refresh the page and choose again.")
+		}
+	}
+	if !slices.Equal(before.ImpersonationGroups, next.ImpersonationGroups) {
+		existing, err := h.st.ExistingIDs(ctx, "groups", next.ImpersonationGroups)
+		if err != nil {
+			return err
+		}
+		if slices.ContainsFunc(next.ImpersonationGroups, func(id string) bool { return !existing[id] }) {
+			return httpx.Invalid("One of the groups chosen for impersonation no longer exists. Refresh the page and choose again.")
 		}
 	}
 	if !slices.Equal(before.SessionLimitGroups, next.SessionLimitGroups) {

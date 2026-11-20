@@ -39,6 +39,7 @@ const ACTIONS: { value: ApprovalAction; label: string; description: string }[] =
   { value: "policy-disable", label: "Stopping an enforced access policy", description: "Turning it off, switching it to report-only or deleting it." },
   { value: "password-sign-in", label: "Turning on password sign-in", description: "For the whole organization, under Methods." },
   { value: "identity-providers", label: "Changing identity providers", description: "Adding, editing, turning on or off, or deleting one." },
+  { value: "impersonation", label: "Impersonating someone", description: "A helpdesk administrator seeing Halo as a person for 30 minutes. They start it once approved." },
 ];
 
 const TARGET_HREF: Record<string, (id: string) => string> = {

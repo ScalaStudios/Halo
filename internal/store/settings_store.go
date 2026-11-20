@@ -50,6 +50,8 @@ type Settings struct {
 	ApprovalActions    []string `json:"approvalActions"`
 	EmergencyAccessIDs []string `json:"emergencyAccessIds"`
 
+	ImpersonationGroups []string `json:"impersonationGroupIds"`
+
 	ClientRegistration string `json:"clientRegistration"`
 
 	BotProtection        string `json:"botProtection"`
@@ -87,6 +89,7 @@ var DefaultSettings = Settings{
 	SessionLimitGroups:   []GroupSessionLimit{},
 	ApprovalActions:      []string{},
 	EmergencyAccessIDs:   []string{},
+	ImpersonationGroups:  []string{},
 	ClientRegistration:   "off",
 }
 

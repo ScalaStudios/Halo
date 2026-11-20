@@ -31,6 +31,7 @@ export type Settings = {
   sessionLimitGroups: { groupId: string; limit: number }[];
   approvalActions: ApprovalAction[];
   emergencyAccessIds: string[];
+  impersonationGroupIds: string[];
   clientRegistration: "off" | "open" | "token" | "approval";
   botProtection: "" | Challenge["provider"];
   botProtectionSiteKey: string;
@@ -52,7 +53,7 @@ export type EmailTemplate = {
 
 export type Challenge = { provider: "turnstile" | "hcaptcha"; siteKey: string };
 
-export type ApprovalAction = "global-admin" | "policy-disable" | "password-sign-in" | "identity-providers";
+export type ApprovalAction = "global-admin" | "policy-disable" | "password-sign-in" | "identity-providers" | "impersonation";
 
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "failed" | "expired";
 

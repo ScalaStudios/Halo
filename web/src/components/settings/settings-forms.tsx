@@ -6,7 +6,8 @@ import { ActionError } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { CopyField } from "@/components/ui/copy-field";
-import { FieldError } from "@/components/policy/policy-form";
+import { CheckList, FieldError } from "@/components/policy/policy-form";
+import { joinList } from "@/components/policy/shared";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
 import type { Settings } from "@/lib/settings-types";
 import type { Group } from "@/lib/types";
@@ -619,6 +620,57 @@ export function LogRetentionForm({ settings, canEdit }: { settings: Settings; ca
             <ReadOnlyNote>Only a global administrator can change log retention.</ReadOnlyNote>
           )}
         </form>
+      </CardBody>
+    </Card>
+  );
+}
+
+export function ImpersonationForm({ settings, groups, canEdit }: { settings: Settings; groups: Group[]; canEdit: boolean }) {
+  const { saving, failure, save } = useSaveSettings();
+  const [groupIds, setGroupIds] = useState(() => settings.impersonationGroupIds.filter((id) => groups.some((g) => g.id === id)));
+  const dirty = groupIds.length !== settings.impersonationGroupIds.length || groupIds.some((id) => !settings.impersonationGroupIds.includes(id));
+  const chosen = groups.filter((g) => settings.impersonationGroupIds.includes(g.id)).map((g) => g.name);
+
+  return (
+    <Card>
+      <CardHeader
+        title="Impersonation"
+        description="Lets helpdesk administrators see Halo as someone for 30 minutes to find out why their access fails. They can look but not change anything or open applications, the person gets an email, and both names go in the audit and sign-in logs. People who hold or are eligible for an administrator role can't be impersonated."
+      />
+      <CardBody>
+        {canEdit ? (
+          <form
+            noValidate
+            className="flex max-w-xl flex-col gap-6"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void save(
+                { impersonationGroupIds: groupIds },
+                groupIds.length ? "Impersonation saved" : "Impersonation turned off",
+                groupIds.length ? "Helpdesk administrators can impersonate members of these groups within 30 seconds." : "Nobody can be impersonated. Impersonations already running continue until they end.",
+              );
+            }}
+          >
+            <CheckList
+              legend="Whose accounts can be impersonated"
+              options={groups.map((g) => ({ id: g.id, name: g.name }))}
+              selected={groupIds}
+              onToggle={(id, on) => setGroupIds((current) => (on ? [...current, id] : current.filter((v) => v !== id)))}
+              empty="There are no groups yet."
+            />
+            <p className="text-caption text-fg-3">Choose no group to turn impersonation off. To have a second global administrator approve each one first, turn on approval for impersonation under Approvals.</p>
+            <div className="flex flex-wrap items-center gap-4">
+              <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>
+                Save impersonation
+              </Button>
+              <ActionError message={failure} />
+            </div>
+          </form>
+        ) : (
+          <ReadOnlyNote>
+            {chosen.length ? `Members of ${joinList(chosen)} can be impersonated.` : "Impersonation is off."} Only global administrators can change who can be impersonated.
+          </ReadOnlyNote>
+        )}
       </CardBody>
     </Card>
   );

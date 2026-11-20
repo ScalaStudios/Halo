@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FileCheck, History, KeyRound, LayoutGrid, LogOut, MonitorSmartphone, ShieldCheck, UserRound, UserRoundCog, UsersRound } from "lucide-react";
+import { FileCheck, History, KeyRound, LayoutGrid, LogOut, MonitorSmartphone, ShieldCheck, UserRound, UserRoundCog, UsersRound, VenetianMask } from "lucide-react";
 import { useState, useTransition, type ReactNode } from "react";
 import { HaloLogo } from "@/components/halo-mark";
 import { Avatar } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { LinkProgress, NavigationProgress } from "@/components/ui/navigation-progress";
 import { TabNav } from "@/components/ui/tab-nav";
@@ -13,6 +15,7 @@ import { useToast } from "@/components/ui/toast";
 import { describeFailure } from "@/components/auth/passkey";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
+import { formatTime } from "@/lib/format";
 import type { User } from "@/lib/types";
 
 const nav = [
@@ -26,7 +29,7 @@ const nav = [
   { label: "Activity", href: "/account/activity", icon: History },
 ];
 
-export function AccountShell({ user, children }: { user: Pick<User, "name" | "email" | "roles" | "avatarUrl">; children: ReactNode }) {
+export function AccountShell({ user, children }: { user: Pick<User, "name" | "email" | "roles" | "avatarUrl" | "impersonation">; children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const toast = useToast();
@@ -38,7 +41,7 @@ export function AccountShell({ user, children }: { user: Pick<User, "name" | "em
   async function signOut() {
     setSigningOut(true);
     try {
-      await api("/auth/sign-out", { method: "POST" });
+      await api(user.impersonation ? `/impersonations/${user.impersonation.id}/end` : "/auth/sign-out", { method: "POST" });
       window.location.assign("/sign-in");
     } catch (error) {
       setSigningOut(false);
@@ -49,6 +52,22 @@ export function AccountShell({ user, children }: { user: Pick<User, "name" | "em
   return (
     <div className="flex min-h-dvh flex-col">
       {navigating || signingOut ? <NavigationProgress /> : null}
+      {user.impersonation ? (
+        <div role="status" className="border-b border-warning/20 bg-warning-container">
+          <div className="mx-auto flex w-full max-w-288 flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center sm:px-8">
+            <VenetianMask aria-hidden="true" size={20} strokeWidth={1.75} className="hidden shrink-0 text-warning sm:block" />
+            <p className="flex-1 text-body-sm text-fg">
+              <span className="font-semibold">
+                {user.impersonation.actor.name} is viewing Halo as {user.name} until {formatTime(user.impersonation.expiresAt)}.
+              </span>{" "}
+              You can look but not change anything or open applications.
+            </p>
+            <Button size="sm" variant="secondary" loading={signingOut} onClick={signOut} className="self-start sm:self-center">
+              End impersonation
+            </Button>
+          </div>
+        </div>
+      ) : null}
       <header className="sticky top-0 z-30 border-b border-border bg-canvas">
         <div className="mx-auto flex h-16 w-full max-w-288 items-center gap-3 px-5 sm:px-8">
           <Link href="/account" className="flex items-center gap-3 rounded-md">
@@ -56,6 +75,7 @@ export function AccountShell({ user, children }: { user: Pick<User, "name" | "em
             <span aria-hidden="true" className="h-6 w-px bg-border" />
             <span className="text-body text-fg-3">Account</span>
           </Link>
+          {user.impersonation ? <Badge tone="warning">Impersonation</Badge> : null}
           <Menu>
             <MenuTrigger
               aria-label="Account menu"
@@ -76,7 +96,7 @@ export function AccountShell({ user, children }: { user: Pick<User, "name" | "em
                 </MenuItem>
               ) : null}
               <MenuItem icon={LogOut} onSelect={signOut}>
-                Sign out
+                {user.impersonation ? "End impersonation" : "Sign out"}
               </MenuItem>
             </MenuContent>
           </Menu>

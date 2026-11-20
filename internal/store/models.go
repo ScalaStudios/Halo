@@ -134,6 +134,8 @@ type Session struct {
 	RevokedAt    *time.Time `json:"-"`
 	Current      bool       `json:"current,omitempty"`
 	Client       string     `json:"client,omitempty"`
+
+	ImpersonationID string `json:"impersonationId,omitempty"`
 }
 
 type SignInEvent struct {
@@ -150,6 +152,8 @@ type SignInEvent struct {
 	Risk      string    `json:"risk"`
 	Reason    string    `json:"reason,omitempty"`
 	Challenge string    `json:"challenge,omitempty"`
+
+	ImpersonatorID *string `json:"impersonatorId,omitempty"`
 }
 
 type AuditEvent struct {

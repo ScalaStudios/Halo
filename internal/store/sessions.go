@@ -58,12 +58,12 @@ func (s *Store) CreateSession(ctx context.Context, in NewSession) (Session, stri
 	return sess, token, nil
 }
 
-const sessionColumns = `id, user_id, method, second_factor, ip, location, user_agent, created_at, last_active_at, expires_at, revoked_at, coalesce(client_id, '')`
+const sessionColumns = `id, user_id, method, second_factor, ip, location, user_agent, created_at, last_active_at, expires_at, revoked_at, coalesce(client_id, ''), coalesce(impersonation_id, '')`
 
 func scanSession(row rowScanner) (Session, error) {
 	var sess Session
 	var ua string
-	err := row.Scan(&sess.ID, &sess.UserID, &sess.Method, &sess.SecondFactor, &sess.IP, &sess.Location, &ua, &sess.CreatedAt, &sess.LastActiveAt, &sess.ExpiresAt, &sess.RevokedAt, &sess.Client)
+	err := row.Scan(&sess.ID, &sess.UserID, &sess.Method, &sess.SecondFactor, &sess.IP, &sess.Location, &ua, &sess.CreatedAt, &sess.LastActiveAt, &sess.ExpiresAt, &sess.RevokedAt, &sess.Client, &sess.ImpersonationID)
 	sess.Device, sess.OS, sess.Browser = ParseUserAgent(ua)
 	return sess, err
 }
@@ -148,7 +148,7 @@ func (s *Store) MakeRoomForSession(ctx context.Context, u User, cli bool, replac
 	if _, err := s.revokeSessions(ctx, `id = $1 and user_id = $2`, replacing, u.ID); err != nil {
 		return err
 	}
-	rows, err := s.db.Query(ctx, `select `+sessionColumns+` from sessions where user_id = $1 and (client_id is not null) = $2 and revoked_at is null and expires_at > now() order by created_at`, u.ID, cli)
+	rows, err := s.db.Query(ctx, `select `+sessionColumns+` from sessions where user_id = $1 and (client_id is not null) = $2 and impersonation_id is null and revoked_at is null and expires_at > now() order by created_at`, u.ID, cli)
 	if err != nil {
 		return err
 	}

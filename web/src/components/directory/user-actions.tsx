@@ -1,6 +1,6 @@
 "use client";
 
-import { Ban, Copy, MonitorX, MoreHorizontal, RectangleEllipsis, RotateCcw, Undo2, UserPen, UsersRound } from "lucide-react";
+import { Ban, Copy, MonitorX, MoreHorizontal, RectangleEllipsis, RotateCcw, Undo2, UserPen, UsersRound, VenetianMask } from "lucide-react";
 import { useId, useState } from "react";
 import { SecretWarning } from "@/components/applications/shared";
 import { useMutation } from "@/components/console/use-mutation";
@@ -14,6 +14,7 @@ import { api } from "@/lib/api/client";
 import { formatDateTime, pluralize } from "@/lib/format";
 import type { SetupLink } from "@/lib/mail-types";
 import { EditProfileDialog, type ProfileEdit } from "./edit-profile";
+import { ImpersonateDialog } from "./impersonation";
 
 type UserRef = { id: string; name: string };
 
@@ -24,9 +25,10 @@ function randomPassword() {
   return [0, 5, 10, 15].map((start) => chars.slice(start, start + 5).join("")).join("-");
 }
 
-export function UserActions({ id, name, suspended, edit }: { id: string; name: string; suspended: boolean; edit?: ProfileEdit }) {
+export function UserActions({ id, name, suspended, edit, impersonate }: { id: string; name: string; suspended: boolean; edit?: ProfileEdit; impersonate?: boolean }) {
   const { pending, run, toast, router } = useMutation();
   const [editing, setEditing] = useState(false);
+  const [impersonating, setImpersonating] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [suspending, setSuspending] = useState(false);
   const user = { id, name };
@@ -67,6 +69,11 @@ export function UserActions({ id, name, suspended, edit }: { id: string; name: s
           <MenuItem icon={UsersRound} onSelect={() => router.push(`/admin/users/${id}?tab=groups`, { scroll: false })}>
             Modify groups
           </MenuItem>
+          {impersonate ? (
+            <MenuItem icon={VenetianMask} onSelect={() => setImpersonating(true)}>
+              Impersonate
+            </MenuItem>
+          ) : null}
           <MenuItem
             icon={Copy}
             onSelect={() => {
@@ -100,6 +107,7 @@ export function UserActions({ id, name, suspended, edit }: { id: string; name: s
       <ResetAuthenticationDialog user={resetting ? user : null} onClose={() => setResetting(false)} />
       <SuspendDialog users={suspending ? [user] : []} onClose={() => setSuspending(false)} />
       {edit ? <EditProfileDialog {...edit} open={editing} onOpenChange={setEditing} /> : null}
+      {impersonate ? <ImpersonateDialog user={user} open={impersonating} onOpenChange={setImpersonating} /> : null}
     </div>
   );
 }

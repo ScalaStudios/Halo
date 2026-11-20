@@ -13,11 +13,21 @@ import (
 )
 
 func (h *handler) me(w http.ResponseWriter, r *http.Request) error {
-	u, _, err := httpx.RequireUser(r)
+	u, sess, err := httpx.RequireUser(r)
 	if err != nil {
 		return err
 	}
-	return httpx.JSON(w, http.StatusOK, u)
+	if sess.ImpersonationID == "" {
+		return httpx.JSON(w, http.StatusOK, u)
+	}
+	impersonation, err := h.st.GetImpersonation(r.Context(), sess.ImpersonationID)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, struct {
+		store.User
+		Impersonation store.Impersonation `json:"impersonation"`
+	}{u, impersonation})
 }
 
 func (h *handler) removeMethod(w http.ResponseWriter, r *http.Request) error {
