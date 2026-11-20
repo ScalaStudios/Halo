@@ -402,7 +402,7 @@ func (h *handlers) setRoles(w http.ResponseWriter, r *http.Request, actor store.
 	if target.ID == actor.ID && target.HasRole("global_admin") && !slices.Contains(roles, "global_admin") {
 		return httpx.Invalid("You cannot remove your own global administrator role. Ask another global administrator to do it, so the organization always keeps one.")
 	}
-	change := approval.Change{Summary: roleEvent(target, labels).Summary, TargetType: "user", TargetID: target.ID, TargetLabel: target.Name, State: target.RoleKeys}
+	change := approval.Change{Summary: roleEvent(target, labels).Summary, TargetType: "user", TargetID: target.ID, TargetLabel: target.Name, State: []any{target.Name, target.Email, target.RoleKeys}}
 	if slices.Contains(roles, "global_admin") && (!target.HasRole("global_admin") || activated(target, "global_admin")) {
 		change.Action = "global-admin"
 	}
@@ -450,7 +450,7 @@ func (h *handlers) setEligibleRoles(w http.ResponseWriter, r *http.Request, acto
 	if len(labels) > 0 {
 		summary = "Set eligible roles to " + strings.Join(labels, ", ")
 	}
-	change := approval.Change{Summary: summary, TargetType: "user", TargetID: target.ID, TargetLabel: target.Name, State: target.EligibleRoles}
+	change := approval.Change{Summary: summary, TargetType: "user", TargetID: target.ID, TargetLabel: target.Name, State: []any{target.Name, target.Email, target.EligibleRoles}}
 	if slices.Contains(roles, "global_admin") && !slices.Contains(target.EligibleRoles, "global_admin") {
 		change.Action = "global-admin"
 	}

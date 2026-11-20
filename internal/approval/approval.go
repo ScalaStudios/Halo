@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -54,7 +55,7 @@ func (g *Gate) RefuseGlobalAdmin(ctx context.Context, roles []string) error {
 	if !slices.Contains(roles, "global_admin") {
 		return nil
 	}
-	s, err := g.st.Settings(ctx)
+	s, err := g.st.CurrentSettings(ctx)
 	if err == nil && required(s, "global-admin") {
 		err = httpx.Invalid("Granting the global administrator role needs approval from another global administrator. Save without that role, then grant it on its own.")
 	}
@@ -76,7 +77,7 @@ func (g *Gate) Hold(w http.ResponseWriter, r *http.Request, actor store.User, c 
 	if c.Action == "" {
 		return false, nil
 	}
-	settings, err := g.st.Settings(ctx)
+	settings, err := g.st.CurrentSettings(ctx)
 	if err != nil || !required(settings, c.Action) {
 		return false, err
 	}
@@ -86,7 +87,11 @@ func (g *Gate) Hold(w http.ResponseWriter, r *http.Request, actor store.User, c 
 	if actor.Kind != "person" {
 		return false, httpx.Fail(http.StatusForbidden, "ERR_APPROVAL_REQUIRED", "This change needs approval from another global administrator, so a person must ask for it in the console. API keys can't.")
 	}
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return false, httpx.Fail(http.StatusRequestEntityTooLarge, "ERR_TOO_LARGE", "The request body is larger than 1 MB, so it can't wait for approval. Send a smaller one.")
+	}
 	if err != nil {
 		return false, err
 	}
@@ -141,6 +146,10 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	mux.Handle("POST /api/v1/approvals/{id}/reject", httpx.Handle(h.decide(false)))
 	return nil
 }
+
+type notApplied struct{ message string }
+
+func (n notApplied) Error() string { return n.message }
 
 func conflict(message string) error {
 	return httpx.Fail(http.StatusConflict, "ERR_CONFLICT", message)
@@ -199,31 +208,40 @@ func (h *handler) decide(approve bool) httpx.HandlerFunc {
 		if approve {
 			status, action, verb = "approved", "approval.approve", "Approved: "
 		}
-		err = h.st.Tx(ctx, func(tx *store.Store) error {
-			if err := tx.DecideApprovalRequest(ctx, req.ID, status, actor.ID); errors.Is(err, store.ErrConflict) {
+		settle := func(tx *store.Store, status, outcome string, events ...store.AuditEvent) error {
+			if err := tx.DecideApprovalRequest(ctx, req.ID, status, actor.ID, outcome); errors.Is(err, store.ErrConflict) {
 				return conflict("Someone decided this request a moment ago, or it expired. Refresh the page to see its current state.")
 			} else if err != nil {
 				return err
 			}
-			return tx.RecordAudit(ctx, store.AuditEvent{ActorID: &actor.ID, Action: action, Summary: verb + req.Summary, TargetType: req.TargetType, TargetID: req.TargetID, TargetLabel: req.TargetLabel, IP: httpx.ClientIP(r)})
+			for _, e := range events {
+				e.ActorID, e.TargetType, e.TargetID, e.TargetLabel, e.IP = &actor.ID, req.TargetType, req.TargetID, req.TargetLabel, httpx.ClientIP(r)
+				if err := tx.RecordAudit(ctx, e); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		decided := store.AuditEvent{Action: action, Summary: verb + req.Summary}
+		err = h.st.Tx(ctx, func(tx *store.Store) error {
+			if err := settle(tx, status, "", decided); err != nil || !approve {
+				return err
+			}
+			return h.apply(tx, r, req)
 		})
+		var failure notApplied
+		if errors.As(err, &failure) {
+			err = h.st.Tx(ctx, func(tx *store.Store) error {
+				return settle(tx, "failed", failure.message, decided, store.AuditEvent{Action: "approval.fail", Summary: "Not applied: " + req.Summary + ". " + failure.message})
+			})
+			if err == nil {
+				return httpx.Fail(http.StatusConflict, "ERR_NOT_APPLIED", "Approved, but Halo could not apply the change. "+failure.message)
+			}
+		}
 		if err != nil {
 			return err
 		}
-		if approve {
-			if failure := h.apply(r, req); failure != nil {
-				err := h.st.Tx(ctx, func(tx *store.Store) error {
-					if err := tx.FailApprovalRequest(ctx, req.ID, failure.Message); err != nil {
-						return err
-					}
-					return tx.RecordAudit(ctx, store.AuditEvent{ActorID: &actor.ID, Action: "approval.fail", Summary: "Not applied: " + req.Summary + ". " + failure.Message, TargetType: req.TargetType, TargetID: req.TargetID, TargetLabel: req.TargetLabel, IP: httpx.ClientIP(r)})
-				})
-				if err != nil {
-					return err
-				}
-				return httpx.Fail(http.StatusConflict, "ERR_NOT_APPLIED", "Approved, but Halo could not apply the change. "+failure.Message)
-			}
-		}
+		h.st.ForgetSettings()
 		updated, err := h.st.GetApprovalRequest(ctx, req.ID)
 		if err != nil {
 			return err
@@ -232,15 +250,21 @@ func (h *handler) decide(approve bool) httpx.HandlerFunc {
 	}
 }
 
-func (h *handler) apply(r *http.Request, req store.ApprovalRequest) *httpx.Error {
-	requester, err := h.st.GetUser(r.Context(), req.Requester.ID)
-	if err != nil || requester.Status == "suspended" || requester.Status == "deprovisioned" {
-		return &httpx.Error{Message: req.Requester.Name + "'s account could not be used to make the change. It may be suspended."}
+func (h *handler) apply(tx *store.Store, r *http.Request, req store.ApprovalRequest) error {
+	ctx := r.Context()
+	if err := tx.LockApprovalTarget(ctx, req.TargetType); err != nil {
+		return err
 	}
-	ctx := context.WithValue(httpx.WithUser(r.Context(), requester), replayKey{}, req.State)
-	replay, err := http.NewRequestWithContext(ctx, req.Method, req.Path, bytes.NewReader(req.Body))
+	requester, err := tx.GetUser(ctx, req.Requester.ID)
+	if errors.Is(err, store.ErrNotFound) || requester.Status == "suspended" || requester.Status == "deprovisioned" {
+		return notApplied{req.Requester.Name + "'s account could not be used to make the change. It may be suspended."}
+	}
 	if err != nil {
-		return &httpx.Error{Message: err.Error()}
+		return err
+	}
+	replay, err := http.NewRequestWithContext(context.WithValue(httpx.WithUser(tx.Bind(ctx), requester), replayKey{}, req.State), req.Method, req.Path, bytes.NewReader(req.Body))
+	if err != nil {
+		return err
 	}
 	replay.RemoteAddr = r.RemoteAddr
 	replay.Header["X-Forwarded-For"] = r.Header.Values("X-Forwarded-For")
@@ -249,11 +273,14 @@ func (h *handler) apply(r *http.Request, req store.ApprovalRequest) *httpx.Error
 	if rec.Code < http.StatusMultipleChoices {
 		return nil
 	}
+	if rec.Code >= http.StatusInternalServerError {
+		return fmt.Errorf("replaying approval request %s: status %d", req.ID, rec.Code)
+	}
 	var out struct {
 		Error httpx.Error `json:"error"`
 	}
 	if json.Unmarshal(rec.Body.Bytes(), &out) != nil || out.Error.Message == "" {
 		out.Error.Message = "Try again; if it keeps failing, check the server log."
 	}
-	return &out.Error
+	return notApplied{out.Error.Message}
 }

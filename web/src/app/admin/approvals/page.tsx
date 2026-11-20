@@ -38,7 +38,7 @@ export default async function ApprovalsPage() {
           <PendingApprovals requests={pending} />
         </CardBody>
       </Card>
-      <ApprovalSettingsForm settings={settings} people={people} canEdit={hasRole(me)} />
+      <ApprovalSettingsForm key={JSON.stringify([settings.approvalActions, settings.emergencyAccessIds])} settings={settings} people={people} canEdit={hasRole(me)} />
       <section className="flex flex-col gap-4">
         <SectionTitle title="Decided" description="Approved, rejected, expired and unapplied changes, newest first." />
         {decided.length ? (

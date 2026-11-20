@@ -163,8 +163,7 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request, _ store.User) erro
 
 func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.User) error {
 	ctx := r.Context()
-	h.st.ForgetSettings()
-	before, err := h.st.Settings(ctx)
+	before, err := h.st.CurrentSettings(ctx)
 	if err != nil {
 		return err
 	}
@@ -226,6 +225,7 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	encoded, _ = json.Marshal(next)
 	_ = json.Unmarshal(encoded, &updated)
 	var changed []string
+	state, values := map[string]json.RawMessage{}, map[string]json.RawMessage{}
 	for _, f := range fields {
 		if string(old[f.key]) == string(updated[f.key]) {
 			continue
@@ -234,11 +234,12 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 			return httpx.Fail(http.StatusForbidden, "ERR_FORBIDDEN", "Only a global administrator can change the "+f.label+". Ask one to make this change.")
 		}
 		changed = append(changed, f.label)
+		state[f.key], values[f.key] = old[f.key], updated[f.key]
 	}
 	if len(changed) == 0 {
 		return h.respond(w, r)
 	}
-	change := approval.Change{TargetType: "settings", TargetLabel: "Approval settings", State: []any{before.ApprovalActions, before.EmergencyAccessIDs}}
+	change := approval.Change{TargetType: "settings", TargetLabel: "Approval settings", State: state}
 	if !slices.Equal(before.ApprovalActions, next.ApprovalActions) || !slices.Equal(before.EmergencyAccessIDs, next.EmergencyAccessIDs) {
 		if change.Summary, err = h.approvalSummary(ctx, actor, before, next); err != nil {
 			return err
@@ -249,7 +250,19 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 		return err
 	}
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
-		if err := tx.SaveSettings(ctx, next); err != nil {
+		if change.Action != "" {
+			if err := tx.LockApprovalTarget(ctx, "settings"); err != nil {
+				return err
+			}
+			current, err := tx.CurrentSettings(ctx)
+			if err != nil {
+				return err
+			}
+			if !slices.Equal(current.ApprovalActions, before.ApprovalActions) || !slices.Equal(current.EmergencyAccessIDs, before.EmergencyAccessIDs) {
+				return httpx.Fail(http.StatusConflict, "ERR_CONFLICT", "Someone changed the approval settings a moment ago. Refresh the page and make your change again.")
+			}
+		}
+		if err := tx.SaveSettingValues(ctx, values); err != nil {
 			return err
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "settings.update", Summary: "Changed the " + strings.Join(changed, ", "), TargetType: "settings", TargetLabel: "Organization settings"})

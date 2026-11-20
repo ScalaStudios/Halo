@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -35,6 +36,24 @@ type ApprovalRequest struct {
 	Path        string     `json:"-"`
 	Body        []byte     `json:"-"`
 	State       string     `json:"-"`
+}
+
+var approvalTargetTables = map[string]string{
+	"user":              "users, user_roles, role_eligibilities, role_activations",
+	"service_account":   "users, user_roles",
+	"policy":            "access_policies",
+	"identity_provider": "identity_providers",
+	"method":            "sign_in_method_settings",
+	"settings":          "settings",
+}
+
+func (s *Store) LockApprovalTarget(ctx context.Context, targetType string) error {
+	tables, ok := approvalTargetTables[targetType]
+	if !ok {
+		return fmt.Errorf("no lock for approval target %q", targetType)
+	}
+	_, err := s.db.Exec(ctx, `lock table `+tables+` in share row exclusive mode`)
+	return err
 }
 
 var approvalSelect = `select r.id, r.action, r.summary, r.target_type, r.target_id, r.target_label, json_build_object('id', u.id, 'name', u.name),
@@ -83,9 +102,9 @@ func (s *Store) CreateApprovalRequest(ctx context.Context, r ApprovalRequest) (s
 	return requestID, err
 }
 
-func (s *Store) DecideApprovalRequest(ctx context.Context, requestID, status, deciderID string) error {
-	tag, err := s.db.Exec(ctx, `update approval_requests set status = $2, decided_by = $3, decided_at = now() where id = $1 and status = 'pending' and expires_at > now()`,
-		requestID, status, deciderID)
+func (s *Store) DecideApprovalRequest(ctx context.Context, requestID, status, deciderID, outcome string) error {
+	tag, err := s.db.Exec(ctx, `update approval_requests set status = $2, decided_by = $3, decided_at = now(), outcome = $4 where id = $1 and status = 'pending' and expires_at > now()`,
+		requestID, status, deciderID, outcome)
 	if err != nil {
 		return err
 	}
@@ -93,11 +112,6 @@ func (s *Store) DecideApprovalRequest(ctx context.Context, requestID, status, de
 		return nil
 	}
 	return s.existsOr(ctx, `select exists (select 1 from approval_requests where id = $1)`, requestID)
-}
-
-func (s *Store) FailApprovalRequest(ctx context.Context, requestID, outcome string) error {
-	_, err := s.db.Exec(ctx, `update approval_requests set status = 'failed', outcome = $2 where id = $1`, requestID, outcome)
-	return err
 }
 
 func (s *Store) GlobalAdminEmails(ctx context.Context, exceptUserID string) ([]string, error) {

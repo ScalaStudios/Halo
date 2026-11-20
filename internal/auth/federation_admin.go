@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 
 	"halo/internal/approval"
 	"halo/internal/httpx"
@@ -154,7 +153,7 @@ func (h *handler) deleteProvider(w http.ResponseWriter, r *http.Request) error {
 
 func providerChange(p store.IdentityProvider, label, summary string) approval.Change {
 	state := p
-	state.LinkedCount, state.UpdatedAt = 0, time.Time{}
+	state.LinkedCount = 0
 	return approval.Change{Action: "identity-providers", Summary: summary, TargetType: "identity_provider", TargetID: p.ID, TargetLabel: label, State: state}
 }
 
