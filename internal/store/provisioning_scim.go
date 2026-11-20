@@ -43,7 +43,10 @@ const scimUserQuery = `select u.id, u.email, u.name, u.title, u.department, u.st
 
 var SCIMUserFilter = filter.Schema{
 	Prefixes: map[string]string{"urn:ietf:params:scim:schemas:core:2.0:user:": "", "urn:ietf:params:scim:schemas:extension:enterprise:2.0:user:": "enterprise:"},
+	Multi: map[string]string{"schemas": `exists (select 1 from unnest(array_remove(array['urn:ietf:params:scim:schemas:core:2.0:User',
+		case when u.department <> '' or u.manager_id is not null then 'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User' end], null)) sc(uri) where %s)`},
 	Attrs: map[string]filter.Attr{
+		"schemas":                        {Expr: "sc.uri"},
 		"id":                             {Expr: "u.id", Exact: true},
 		"externalid":                     {Expr: "u.external_id", Exact: true},
 		"username":                       {Expr: "u.email"},
@@ -52,6 +55,7 @@ var SCIMUserFilter = filter.Schema{
 		"emails.type":                    {Expr: "'work'"},
 		"emails.primary":                 {Expr: "true", Kind: filter.Boolean},
 		"displayname":                    {Expr: "u.name"},
+		"name":                           {Expr: "nullif(u.name, '')", Kind: filter.Complex},
 		"name.formatted":                 {Expr: "u.name"},
 		"name.givenname":                 {Expr: "split_part(u.name, ' ', 1)"},
 		"name.familyname":                {Expr: "substr(u.name, length(split_part(u.name, ' ', 1)) + 2)"},
@@ -71,6 +75,7 @@ var SCIMGroupFilter = filter.Schema{
 	Multi: map[string]string{"members": `exists (select 1 from group_members gm join users mu on mu.id = gm.user_id
 		where gm.group_id = g.id and mu.kind = 'person' and mu.status <> 'deprovisioned' and %s)`},
 	Attrs: map[string]filter.Attr{
+		"schemas":           {Expr: "'urn:ietf:params:scim:schemas:core:2.0:Group'"},
 		"id":                {Expr: "g.id", Exact: true},
 		"externalid":        {Expr: "g.external_id", Exact: true},
 		"displayname":       {Expr: "g.name"},
@@ -79,6 +84,7 @@ var SCIMGroupFilter = filter.Schema{
 		"members":           {Expr: "gm.user_id", Exact: true},
 		"members.value":     {Expr: "gm.user_id", Exact: true},
 		"members.display":   {Expr: "mu.name"},
+		"members.type":      {Expr: "'User'"},
 	},
 }
 

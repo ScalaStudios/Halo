@@ -21,14 +21,14 @@ var schema = Schema{
 
 func TestCompile(t *testing.T) {
 	for raw, want := range map[string]string{
-		`userName eq "a" and active eq true or not (active eq false)`: `(((lower((u.email)) = lower($1::text) and lower((u.email)) is not null) and ((u.active) = $2::boolean and (u.active) is not null)) or (not ((u.active) = $3::boolean and (u.active) is not null)))`,
-		`urn:ietf:params:scim:schemas:core:2.0:User:userName sw "a"`:  `(coalesce(starts_with(lower((u.email)), lower($1::text)), false))`,
-		`emails[type eq "work"].value ew "@x.org"`:                    `((lower(('work')) = lower($1::text) and lower(('work')) is not null) and (coalesce(right(lower((u.email)), char_length(lower($2::text))) = lower($2::text), false)))`,
-		`members[value eq "usr_1"]`:                                   `exists (select 1 where ((m.id) = $1::text and (m.id) is not null))`,
+		`userName eq "a" and active eq true or not (active eq false)`: `(((coalesce((u.email), '') <> '' and lower((u.email)) = lower($1::text) and lower((u.email)) is not null) and ((u.active) = $2::boolean and (u.active) is not null)) or (not ((u.active) = $3::boolean and (u.active) is not null)))`,
+		`urn:ietf:params:scim:schemas:core:2.0:User:userName sw "a"`:  `(coalesce((u.email), '') <> '' and starts_with(lower((u.email)), lower($1::text)))`,
+		`emails[type eq "work"].value ew "@x.org"`:                    `((coalesce(('work'), '') <> '' and lower(('work')) = lower($1::text) and lower(('work')) is not null) and (coalesce((u.email), '') <> '' and right(lower((u.email)), char_length(lower($2::text))) = lower($2::text)))`,
+		`members[value eq "usr_1"]`:                                   `exists (select 1 where (coalesce((m.id), '') <> '' and (m.id) = $1::text and (m.id) is not null))`,
 		`members.value pr`:                                            `exists (select 1 where (coalesce((m.id), '') <> ''))`,
 		`meta.created gt "2026-01-01T00:00:00Z" and userName eq null`: `((coalesce((u.created_at) > $1::timestamptz, false)) and (not (coalesce((u.email), '') <> '')))`,
 		`  `: `true`,
-		`userName co "x' or '1'='1" or userName eq "\") or (1=1 --"`: `((coalesce(strpos(lower((u.email)), lower($1::text)) > 0, false)) or (lower((u.email)) = lower($2::text) and lower((u.email)) is not null))`,
+		`userName co "x' or '1'='1" or userName eq "\") or (1=1 --"`: `((coalesce((u.email), '') <> '' and strpos(lower((u.email)), lower($1::text)) > 0) or (coalesce((u.email), '') <> '' and lower((u.email)) = lower($2::text) and lower((u.email)) is not null))`,
 	} {
 		got, args, err := Compile(raw, schema)
 		if err != nil || got != want {

@@ -14,6 +14,7 @@ const (
 	String Kind = iota
 	Boolean
 	DateTime
+	Complex
 )
 
 type Attr struct {
@@ -263,6 +264,9 @@ func (p *parser) condition(path string) (string, error) {
 	if t.kind == 'w' && op == "pr" {
 		return present, nil
 	}
+	if a.Kind == Complex {
+		return "", Error(path + " is a complex attribute, so it supports only pr. Filter on one of its sub-attributes instead.")
+	}
 	if t.kind != 'w' || !strings.Contains(" eq ne co sw ew gt ge lt le ", " "+op+" ") {
 		return "", Error(fmt.Sprintf("Expected an operator such as eq, ne, co, sw, ew, pr, gt, ge, lt or le after %s.", path))
 	}
@@ -309,15 +313,18 @@ func (p *parser) condition(path string) (string, error) {
 	if !a.Exact {
 		expr, right = "lower("+expr+")", "lower("+right+")"
 	}
+	cond := relation(expr, op, right)
 	switch op {
 	case "co":
-		return "coalesce(strpos(" + expr + ", " + right + ") > 0, false)", nil
+		cond = "strpos(" + expr + ", " + right + ") > 0"
 	case "sw":
-		return "coalesce(starts_with(" + expr + ", " + right + "), false)", nil
+		cond = "starts_with(" + expr + ", " + right + ")"
 	case "ew":
-		return "coalesce(right(" + expr + ", char_length(" + right + ")) = " + right + ", false)", nil
+		cond = "right(" + expr + ", char_length(" + right + ")) = " + right
+	case "ne":
+		return "not (" + present + " and " + relation(expr, "eq", right) + ")", nil
 	}
-	return relation(expr, op, right), nil
+	return present + " and " + cond, nil
 }
 
 func relation(left, op, right string) string {
