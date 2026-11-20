@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { ArrowLeft, BellRing } from "lucide-react";
-import { DESTINATIONS, RuleActions, RuleConditions } from "@/components/settings/notification-rules";
+import { RuleActions, RuleConditions } from "@/components/settings/notification-rules";
 import { hasRole } from "@/components/settings/roles";
 import { DeliveryLog, EnabledBadge, EventTags } from "@/components/settings/webhooks";
 import { DescriptionList } from "@/components/ui/description-list";
 import { SectionTitle } from "@/components/ui/section-title";
 import { apiGet } from "@/lib/api/server";
 import { formatRelative, pluralize } from "@/lib/format";
+import { DESTINATIONS } from "@/lib/labels";
 import type { NotificationRule, WebhookDelivery, WebhookEventFamily } from "@/lib/settings-types";
 import type { User } from "@/lib/types";
 

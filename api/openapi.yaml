@@ -5479,11 +5479,11 @@ components:
         application/json:
           schema:
             type: object
-            required: [name, destination, url, events]
+            required: [name, destination, events]
             properties:
               name: {type: string, maxLength: 100, examples: [New global administrator]}
               destination: {type: string, enum: [webhook, slack, discord], description: 'The message format: Halo''s signed event JSON, a Slack `text` message, or a Discord embed.'}
-              url: {type: string, format: uri, maxLength: 2048, writeOnly: true, description: 'The https:// URL of the incoming webhook. Stored encrypted and never returned. Empty on update keeps the current URL.'}
+              url: {type: string, format: uri, maxLength: 2048, writeOnly: true, description: 'The https:// URL of the incoming webhook. Required to create a rule or change its destination. Stored encrypted and never returned. Empty on update keeps the current URL.'}
               events:
                 type: array
                 minItems: 1

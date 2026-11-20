@@ -20,14 +20,8 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
 import { formatDateTime, pluralize } from "@/lib/format";
-import { RISK } from "@/lib/labels";
+import { DESTINATIONS, RISK } from "@/lib/labels";
 import type { NotificationDestination, NotificationRule, WebhookDelivery, WebhookEventFamily } from "@/lib/settings-types";
-
-export const DESTINATIONS: Record<NotificationDestination, { label: string; placeholder: string }> = {
-  slack: { label: "Slack", placeholder: "https://hooks.slack.com/services/…" },
-  discord: { label: "Discord", placeholder: "https://discord.com/api/webhooks/…" },
-  webhook: { label: "Webhook", placeholder: "https://hooks.example.com/halo" },
-};
 
 export function RuleConditions({ rule }: { rule: NotificationRule }) {
   const parts = [
@@ -127,7 +121,7 @@ function RuleDialog({ rule, eventTypes, onClose }: { rule: NotificationRule | nu
     const within = (value: string, max: number) => /^\d+$/.test(value) && Number(value) >= 1 && Number(value) <= max;
     const next = {
       name: name.trim() ? undefined : "Name the rule, for example New global administrator.",
-      url: (rule && !url.trim()) || /^https:\/\/\S+$/.test(url.trim()) ? undefined : "Enter the https:// URL of the incoming webhook.",
+      url: (rule && !url.trim() && destination === rule.destination) || /^https:\/\/\S+$/.test(url.trim()) ? undefined : "Enter the https:// URL of the incoming webhook.",
       events: all || events.length ? undefined : "Choose at least one event or family, or send all events.",
       numbers: within(threshold, 100) && within(windowMinutes, 1440) && within(quietMinutes, 1440) ? undefined : "Use 1 to 100 events, and 1 to 1,440 minutes for the window and the quiet period.",
     };
@@ -232,7 +226,11 @@ function RuleDialog({ rule, eventTypes, onClose }: { rule: NotificationRule | nu
           <Field
             label="Webhook URL"
             error={errors.url}
-            hint={rule ? `Leave empty to keep the URL for ${rule.host}. Halo stores it encrypted and never shows it again.` : "Halo stores it encrypted and never shows it again. Private and local addresses are refused."}
+            hint={
+              rule && destination === rule.destination
+                ? `Leave empty to keep the URL for ${rule.host}. Halo stores it encrypted and never shows it again.`
+                : "Halo stores it encrypted and never shows it again. Private and local addresses are refused."
+            }
           >
             {(props) => (
               <Input
@@ -242,7 +240,7 @@ function RuleDialog({ rule, eventTypes, onClose }: { rule: NotificationRule | nu
                 autoComplete="off"
                 spellCheck={false}
                 value={url}
-                placeholder={rule ? "Unchanged" : DESTINATIONS[destination].placeholder}
+                placeholder={rule && destination === rule.destination ? "Unchanged" : DESTINATIONS[destination].placeholder}
                 onChange={(event) => setUrl(event.target.value)}
               />
             )}

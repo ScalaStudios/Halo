@@ -1,5 +1,5 @@
-import { hasRole } from "@/components/settings/roles";
 import { RulesTable } from "@/components/settings/notification-rules";
+import { hasRole } from "@/components/settings/roles";
 import { PageHeader } from "@/components/ui/page-header";
 import { apiGet } from "@/lib/api/server";
 import { pluralize } from "@/lib/format";
