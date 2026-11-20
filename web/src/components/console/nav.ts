@@ -1,5 +1,6 @@
 import {
   AppWindow,
+  BellRing,
   BookOpen,
   Bot,
   Building2,
@@ -105,6 +106,7 @@ export const nav: NavGroup[] = [
       { label: "Sign-in logs", href: `${BASE}/sign-ins`, icon: LogIn, summary: "Every authentication attempt, its result, method and risk." },
       { label: "Audit log", href: `${BASE}/audit`, icon: ScrollText, summary: "Every administrative change, who made it and from where." },
       { label: "Risk events", href: `${BASE}/risk`, icon: ShieldAlert, summary: "Impossible travel, anonymizing networks and credential attacks." },
+      { label: "Notification rules", href: `${BASE}/notification-rules`, icon: BellRing, summary: "Slack, Discord and webhook messages for the security events you choose." },
     ],
   },
   {
