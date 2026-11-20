@@ -571,7 +571,11 @@ func (h *handlers) enabledMethods(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
-	return httpx.JSON(w, http.StatusOK, map[string]any{"methods": enabled, "emailSignIn": org.EmailSignIn})
+	var challenge any
+	if org.BotProtection != "" {
+		challenge = map[string]string{"provider": org.BotProtection, "siteKey": org.BotProtectionSiteKey}
+	}
+	return httpx.JSON(w, http.StatusOK, map[string]any{"methods": enabled, "emailSignIn": org.EmailSignIn, "challenge": challenge})
 }
 
 func (h *handlers) listMethods(w http.ResponseWriter, r *http.Request, _ store.User) error {

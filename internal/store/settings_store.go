@@ -52,6 +52,9 @@ type Settings struct {
 
 	ClientRegistration string `json:"clientRegistration"`
 
+	BotProtection        string `json:"botProtection"`
+	BotProtectionSiteKey string `json:"botProtectionSiteKey"`
+
 	EmailTemplates map[string]EmailTemplate `json:"emailTemplates,omitempty"`
 }
 
@@ -162,6 +165,20 @@ func (s *Store) SaveEmailTemplate(ctx context.Context, kind string, t EmailTempl
 func (s *Store) ResetEmailTemplate(ctx context.Context, kind string) (bool, error) {
 	tag, err := s.db.Exec(ctx, `update settings set value = value - $1::text, updated_at = now() where key = 'emailTemplates' and value ? $1::text`, kind)
 	return err == nil && tag.RowsAffected() > 0, err
+}
+
+func (s *Store) BotProtectionSecret(ctx context.Context) (string, error) {
+	var sealed []byte
+	if err := s.db.QueryRow(ctx, `select secret_sealed from bot_protection`).Scan(&sealed); err != nil {
+		return "", notFound(err)
+	}
+	plain, err := s.Sealer.Open(sealed)
+	return string(plain), err
+}
+
+func (s *Store) SetBotProtectionSecret(ctx context.Context, value string) error {
+	_, err := s.db.Exec(ctx, `insert into bot_protection (secret_sealed) values ($1) on conflict (singleton) do update set secret_sealed = excluded.secret_sealed, updated_at = now()`, s.Sealer.Seal([]byte(value)))
+	return err
 }
 
 func (s *Store) ForgetSettings() {

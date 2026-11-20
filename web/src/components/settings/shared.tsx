@@ -8,7 +8,7 @@ import type { Settings, SettingsResponse } from "@/lib/settings-types";
 
 export function useSaveSettings() {
   const { pending, run, errorFor, toast } = useMutation();
-  function save(body: Partial<Settings>, title: string, description: string) {
+  function save(body: Partial<Settings> & { botProtectionSecret?: string }, title: string, description: string) {
     return run("save", () => api<SettingsResponse>("/settings", { method: "PATCH", body }), () => toast({ title, description }), "inline");
   }
   return { saving: pending === "save", failure: errorFor("save"), save };

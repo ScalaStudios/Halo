@@ -138,11 +138,12 @@ type attempt struct {
 	request      string
 	eventID      string
 	risk         string
+	challenge    string
 }
 
 func (a attempt) event(r *http.Request, result, reason string) store.SignInEvent {
 	_, os, browser := store.ParseUserAgent(r.UserAgent())
-	e := store.SignInEvent{ID: a.eventID, Result: result, Method: a.method, Email: a.email, IP: httpx.ClientIP(r), Device: browser + " · " + os, Risk: a.risk, Reason: reason}
+	e := store.SignInEvent{ID: a.eventID, Result: result, Method: a.method, Email: a.email, IP: httpx.ClientIP(r), Device: browser + " · " + os, Risk: a.risk, Reason: reason, Challenge: a.challenge}
 	if a.user != nil {
 		e.UserID, e.Email = &a.user.ID, a.user.Email
 	}

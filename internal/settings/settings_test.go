@@ -431,3 +431,46 @@ func TestSessionLimitSettings(t *testing.T) {
 		t.Fatalf("clearing the group limits: %+v", got.Settings.SessionLimitGroups)
 	}
 }
+
+func TestBotProtectionSettings(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	security := e.person("sam@example.com", "security_admin")
+
+	for _, body := range []map[string]any{
+		{"botProtection": "turnstile", "botProtectionSiteKey": "0x4AAAAAAA"},
+		{"botProtection": "recaptcha", "botProtectionSiteKey": "0x4AAAAAAA", "botProtectionSecret": "s3cret"},
+		{"botProtection": "hcaptcha", "botProtectionSiteKey": "not a key", "botProtectionSecret": "s3cret"},
+		{"botProtectionSecret": strings.Repeat("x", 201)},
+	} {
+		e.expect(e.call(security, "PATCH", "/api/v1/settings", body), 422)
+	}
+	rec := e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"botProtection": "turnstile", "botProtectionSiteKey": " 0x4AAAAAAA ", "botProtectionSecret": "s3cret"}), 200)
+	got := decode[struct {
+		Settings               store.Settings `json:"settings"`
+		BotProtectionSecretSet bool           `json:"botProtectionSecretSet"`
+	}](t, rec)
+	if got.Settings.BotProtection != "turnstile" || got.Settings.BotProtectionSiteKey != "0x4AAAAAAA" || !got.BotProtectionSecretSet || strings.Contains(rec.Body.String(), "s3cret") {
+		t.Fatalf("bot protection settings: %s", rec.Body)
+	}
+	if plain, err := e.st.BotProtectionSecret(ctx); err != nil || plain != "s3cret" {
+		t.Fatalf("stored secret: %q %v", plain, err)
+	}
+	audit, _ := e.st.ListAudit(ctx, 1)
+	if audit[0].Summary != "Changed the bot protection, bot protection site key, bot protection secret key" {
+		t.Fatalf("audit: %+v", audit)
+	}
+
+	e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"botProtectionSecret": "rotated"}), 200)
+	if plain, _ := e.st.BotProtectionSecret(ctx); plain != "rotated" {
+		t.Fatalf("a secret-only change must be saved: %q", plain)
+	}
+	audit, _ = e.st.ListAudit(ctx, 1)
+	if audit[0].Summary != "Changed the bot protection secret key" || strings.Contains(audit[0].Summary, "rotated") {
+		t.Fatalf("audit: %+v", audit)
+	}
+	e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"botProtection": ""}), 200)
+	if s, _ := e.st.CurrentSettings(ctx); s.BotProtection != "" {
+		t.Fatalf("turning bot protection off: %+v", s)
+	}
+}

@@ -262,12 +262,19 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [methods, emailSignIn]
+                required: [methods, emailSignIn, challenge]
                 properties:
                   methods:
                     type: array
                     items: {$ref: '#/components/schemas/MethodKind'}
                   emailSignIn: {$ref: '#/components/schemas/EmailSignIn'}
+                  challenge:
+                    type: [object, 'null']
+                    description: The bot protection check to show, or null when bot protection is off.
+                    required: [provider, siteKey]
+                    properties:
+                      provider: {type: string, enum: [turnstile, hcaptcha]}
+                      siteKey: {type: string}
   /auth/providers:
     get:
       tags: [Sign-in]
@@ -394,6 +401,7 @@ paths:
         '403': {$ref: '#/components/responses/SignInRefused'}
         '404': {$ref: '#/components/responses/AuthRequestExpired'}
         '429': {$ref: '#/components/responses/TooManyAttempts'}
+        '503': {$ref: '#/components/responses/ChallengeUnavailable'}
   /auth/recovery:
     post:
       tags: [Sign-in]
@@ -409,6 +417,7 @@ paths:
         '403': {$ref: '#/components/responses/SignInRefused'}
         '404': {$ref: '#/components/responses/AuthRequestExpired'}
         '429': {$ref: '#/components/responses/TooManyAttempts'}
+        '503': {$ref: '#/components/responses/ChallengeUnavailable'}
   /auth/password:
     post:
       tags: [Sign-in]
@@ -429,6 +438,7 @@ paths:
                 code: {type: string, description: The current code from the person's authenticator app.}
                 newPassword: {type: string, minLength: 15, maxLength: 256, description: Replaces a temporary password.}
                 authRequest: {$ref: '#/components/schemas/AuthRequestId'}
+                challenge: {$ref: '#/components/schemas/ChallengeToken'}
       responses:
         '200': {$ref: '#/components/responses/SignedIn'}
         '400': {$ref: '#/components/responses/BadJSON'}
@@ -438,19 +448,20 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
         '403':
-          description: '`ERR_SECOND_FACTOR_MISSING`: a second factor is required and the account has no authenticator app. Also `ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED`, `ERR_SESSION_LIMIT` and `ERR_CROSS_SITE`, as for other sign-in methods.'
+          description: '`ERR_SECOND_FACTOR_MISSING`: a second factor is required and the account has no authenticator app. Also `ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED`, `ERR_SESSION_LIMIT`, `ERR_CHALLENGE_REQUIRED`, `ERR_CHALLENGE_FAILED` and `ERR_CROSS_SITE`, as for other sign-in methods.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
         '404': {$ref: '#/components/responses/AuthRequestExpired'}
         '422': {$ref: '#/components/responses/Invalid'}
         '429': {$ref: '#/components/responses/TooManyAttempts'}
+        '503': {$ref: '#/components/responses/ChallengeUnavailable'}
   /auth/magic-link:
     post:
       tags: [Sign-in]
       operationId: requestMagicLink
       summary: Email a sign-in link or code
-      description: Emails a link, a six-digit code for `/auth/magic-link/code`, or both, as `emailSignIn` in the settings chooses. Each works once for 10 minutes, and emails are sent to active accounts only, at most 5 times per person in 15 minutes, and only while magic links are turned on under `/methods`. Answers `202` the same way whether or not the account exists or magic links are on.
+      description: Emails a link, a six-digit code for `/auth/magic-link/code`, or both, as `emailSignIn` in the settings chooses. Each works once for 10 minutes, and emails are sent to active accounts only, at most 5 times per person in 15 minutes, and only while magic links are turned on under `/methods`. Answers `202` the same way whether or not the account exists or magic links are on. While `botProtection` is on, every request needs `challenge`.
       security: []
       requestBody:
         required: true
@@ -462,6 +473,7 @@ paths:
               properties:
                 email: {type: string, format: email}
                 authRequest: {$ref: '#/components/schemas/AuthRequestId'}
+                challenge: {$ref: '#/components/schemas/ChallengeToken'}
       responses:
         '202':
           description: Accepted. The body is an empty object.
@@ -469,7 +481,9 @@ paths:
             application/json:
               schema: {type: object}
         '400': {$ref: '#/components/responses/BadJSON'}
+        '403': {$ref: '#/components/responses/ChallengeRefused'}
         '404': {$ref: '#/components/responses/AuthRequestExpired'}
+        '503': {$ref: '#/components/responses/ChallengeUnavailable'}
   /auth/magic-link/redeem:
     post:
       tags: [Sign-in]
@@ -513,6 +527,7 @@ paths:
         '403': {$ref: '#/components/responses/SignInRefused'}
         '404': {$ref: '#/components/responses/AuthRequestExpired'}
         '429': {$ref: '#/components/responses/TooManyAttempts'}
+        '503': {$ref: '#/components/responses/ChallengeUnavailable'}
   /auth/continue:
     post:
       tags: [Sign-in]
@@ -4345,6 +4360,7 @@ components:
               email: {type: string, format: email}
               code: {type: string}
               authRequest: {$ref: '#/components/schemas/AuthRequestId'}
+              challenge: {$ref: '#/components/schemas/ChallengeToken'}
     Password:
       required: true
       content:
@@ -4624,7 +4640,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     SignInRefused:
-      description: '`ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED` (not in a group assigned to the application), `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED` (a policy requires a passkey or security key), `ERR_SESSION_LIMIT` (the person holds as many sessions as the session limit allows), or `ERR_CROSS_SITE`. Refused sign-ins are recorded in the sign-in log.'
+      description: '`ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED` (not in a group assigned to the application), `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED` (a policy requires a passkey or security key), `ERR_SESSION_LIMIT` (the person holds as many sessions as the session limit allows), `ERR_CHALLENGE_REQUIRED` or `ERR_CHALLENGE_FAILED` (see `ChallengeToken`), or `ERR_CROSS_SITE`. Refused sign-ins are recorded in the sign-in log.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -4635,6 +4651,16 @@ components:
           schema: {$ref: '#/components/schemas/Error'}
     CodeMismatch:
       description: '`ERR_CODE_MISMATCH`: the code did not match, was already used, or no account uses the address.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ChallengeRefused:
+      description: '`ERR_CHALLENGE_REQUIRED`: bot protection is on and the request has no `challenge`. `ERR_CHALLENGE_FAILED`: the provider did not confirm the check; failed checks are recorded in the sign-in log. Also `ERR_CROSS_SITE`.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ChallengeUnavailable:
+      description: '`ERR_CHALLENGE_UNAVAILABLE`: Halo could not verify the check with the bot protection provider, or the provider rejected the secret key, so the request was refused. Recorded in the sign-in log. Passkeys are never checked.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -4788,12 +4814,13 @@ components:
         application/json:
           schema:
             type: object
-            required: [settings, defaultOrganizationName, issuer, customCssDisabled]
+            required: [settings, defaultOrganizationName, issuer, customCssDisabled, botProtectionSecretSet]
             properties:
               settings: {$ref: '#/components/schemas/Settings'}
               defaultOrganizationName: {type: string}
               issuer: {type: string, format: uri}
               customCssDisabled: {type: boolean, description: '`HALO_DISABLE_CUSTOM_CSS=1` is set, so no page uses `customCss`.'}
+              botProtectionSecretSet: {type: boolean, description: A secret key for `botProtection` is stored.}
     ApiResourceResponse:
       description: The API resource.
       content:
@@ -5157,6 +5184,7 @@ components:
         device: {type: string, examples: [Chrome 130 · macOS]}
         risk: {type: string, enum: [none, low, medium, high]}
         reason: {type: string, description: Why the sign-in failed or the session ended.}
+        challenge: {type: string, enum: [passed, failed, unavailable], description: The result of the bot protection check. Absent when no check was asked for.}
     AuditEvent:
       type: object
       required: [id, time, actorId, action, summary, targetType, targetId, target, ip]
@@ -5667,6 +5695,9 @@ components:
           readOnly: true
           additionalProperties: {$ref: '#/components/schemas/EmailTemplateText'}
           description: Custom email subjects and bodies by template kind, left out when there are none. Change them through `/email-templates/{kind}`.
+        botProtection: {type: string, enum: ['', turnstile, hcaptcha], default: '', description: 'Ask for a check from Cloudflare Turnstile or hCaptcha on `/auth/magic-link`, and on `/auth/password`, `/auth/totp`, `/auth/recovery` and `/auth/magic-link/code` once the client IP address has `lockoutThreshold` failed sign-ins within the lockout window. Passkeys are never checked. Empty turns it off. Turning it on needs `botProtectionSiteKey` and a stored `botProtectionSecret`.'}
+        botProtectionSiteKey: {type: string, pattern: '^[A-Za-z0-9_-]{1,100}$', description: The public site key from the provider. The sign-in page uses it to show the check.}
+        botProtectionSecret: {type: string, maxLength: 200, writeOnly: true, description: The secret key from the provider. Stored encrypted and never returned; `botProtectionSecretSet` in the response says whether one is stored. Omit it or send an empty string to keep the stored one.}
     EmailTemplateText:
       type: object
       required: [subject, body]
@@ -5696,6 +5727,9 @@ components:
             - {$ref: '#/components/schemas/EmailTemplateText'}
             - {type: 'null'}
           description: The saved subject and body, or null when Halo sends its default.
+    ChallengeToken:
+      type: string
+      description: 'The token from the bot protection check on the sign-in page. Needed only while `botProtection` is on: always for `/auth/magic-link`, and for password and code sign-ins once the client IP address has `lockoutThreshold` failed sign-ins within the lockout window. Without it the request is refused with `ERR_CHALLENGE_REQUIRED`; Halo verifies it with the provider, and the result is recorded in the sign-in log as `challenge`. If the provider cannot be reached, the request is refused with `ERR_CHALLENGE_UNAVAILABLE`.'
     ClientMetadata:
       type: object
       description: 'Client metadata from RFC 7591. Halo ignores fields it does not list here. Requests are at most 16 KB.'

@@ -32,6 +32,8 @@ export type Settings = {
   approvalActions: ApprovalAction[];
   emergencyAccessIds: string[];
   clientRegistration: "off" | "open" | "token" | "approval";
+  botProtection: "" | Challenge["provider"];
+  botProtectionSiteKey: string;
 };
 
 export type EmailTemplateText = { subject: string; body: string };
@@ -45,6 +47,8 @@ export type EmailTemplate = {
   default: EmailTemplateText;
   custom: EmailTemplateText | null;
 };
+
+export type Challenge = { provider: "turnstile" | "hcaptcha"; siteKey: string };
 
 export type ApprovalAction = "global-admin" | "policy-disable" | "password-sign-in" | "identity-providers";
 
@@ -72,6 +76,7 @@ export type SettingsResponse = {
   defaultOrganizationName: string;
   issuer: string;
   customCssDisabled: boolean;
+  botProtectionSecretSet: boolean;
 };
 
 export type OrganizationProfile = {

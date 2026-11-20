@@ -35,6 +35,7 @@ var (
 	domainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
 	logoTypes     = []string{"image/png", "image/jpeg", "image/webp"}
 	hexColour     = regexp.MustCompile(`^#[0-9a-f]{6}$`)
+	siteKey       = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
 	lookupTXT     = net.DefaultResolver.LookupTXT
 )
 
@@ -66,6 +67,8 @@ var fields = []struct {
 	{"approvalActions", "changes that need approval", true},
 	{"emergencyAccessIds", "emergency access accounts", true},
 	{"clientRegistration", "client registration", false},
+	{"botProtection", "bot protection", false},
+	{"botProtectionSiteKey", "bot protection site key", false},
 }
 
 type handler struct {
@@ -159,7 +162,11 @@ func (h *handler) respond(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return httpx.JSON(w, http.StatusOK, map[string]any{"settings": s, "defaultOrganizationName": h.cfg.Organization, "issuer": h.cfg.Issuer(), "customCssDisabled": h.cfg.NoCustomCSS})
+	_, err = h.st.BotProtectionSecret(r.Context())
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, map[string]any{"settings": s, "defaultOrganizationName": h.cfg.Organization, "issuer": h.cfg.Issuer(), "customCssDisabled": h.cfg.NoCustomCSS, "botProtectionSecretSet": err == nil})
 }
 
 func (h *handler) get(w http.ResponseWriter, r *http.Request, _ store.User) error {
@@ -177,9 +184,16 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	next.SessionLimitGroups = slices.Clone(before.SessionLimitGroups)
 	next.ApprovalActions = slices.Clone(before.ApprovalActions)
 	next.EmergencyAccessIDs = slices.Clone(before.EmergencyAccessIDs)
-	if err := httpx.Decode(r, &next); err != nil {
+	in := struct {
+		store.Settings
+		BotProtectionSecret string `json:"botProtectionSecret"`
+	}{Settings: next}
+	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
+	next = in.Settings
+	botSecret := strings.TrimSpace(in.BotProtectionSecret)
+	next.BotProtectionSiteKey = strings.TrimSpace(next.BotProtectionSiteKey)
 	next.OrganizationName = strings.TrimSpace(next.OrganizationName)
 	next.ContactEmail = strings.TrimSpace(next.ContactEmail)
 	next.SignInMessage = strings.TrimSpace(next.SignInMessage)
@@ -201,6 +215,16 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	}
 	if err := validate(next); err != nil {
 		return err
+	}
+	if len(botSecret) > 200 {
+		return httpx.Invalid("The bot protection secret key is longer than 200 characters. Copy it again from your provider's dashboard.")
+	}
+	if next.BotProtection != "" && botSecret == "" {
+		if _, err := h.st.BotProtectionSecret(ctx); errors.Is(err, store.ErrNotFound) {
+			return httpx.Invalid("Enter the secret key from your bot protection provider to turn bot protection on.")
+		} else if err != nil {
+			return err
+		}
 	}
 	if !slices.Equal(before.PasswordGroupIDs, next.PasswordGroupIDs) {
 		existing, err := h.st.ExistingIDs(ctx, "groups", next.PasswordGroupIDs)
@@ -241,6 +265,9 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 		changed = append(changed, f.label)
 		state[f.key], values[f.key] = old[f.key], updated[f.key]
 	}
+	if botSecret != "" {
+		changed = append(changed, "bot protection secret key")
+	}
 	if len(changed) == 0 {
 		return h.respond(w, r)
 	}
@@ -269,6 +296,11 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 		}
 		if err := tx.SaveSettingValues(ctx, values); err != nil {
 			return err
+		}
+		if botSecret != "" {
+			if err := tx.SetBotProtectionSecret(ctx, botSecret); err != nil {
+				return err
+			}
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "settings.update", Summary: "Changed the " + strings.Join(changed, ", "), TargetType: "settings", TargetLabel: "Organization settings"})
 	})
@@ -354,6 +386,10 @@ func validate(s store.Settings) error {
 		return httpx.Invalid(`Set the sign-in email to "link", "code" or "both".`)
 	case !slices.Contains([]string{"off", "open", "token", "approval"}, s.ClientRegistration):
 		return httpx.Invalid(`Set client registration to "off", "open", "token" or "approval".`)
+	case s.BotProtection != "" && s.BotProtection != "turnstile" && s.BotProtection != "hcaptcha":
+		return httpx.Invalid(`Set bot protection to "turnstile" or "hcaptcha", or leave it empty to turn it off.`)
+	case s.BotProtection != "" && !siteKey.MatchString(s.BotProtectionSiteKey):
+		return httpx.Invalid("Enter the site key from your bot protection provider. It has only letters, digits, dashes and underscores.")
 	}
 	seen := map[string]bool{}
 	for _, g := range s.SessionLimitGroups {

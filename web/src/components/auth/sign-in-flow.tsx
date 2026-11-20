@@ -11,8 +11,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { api, ApiError } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
 import { METHOD } from "@/lib/labels";
-import type { Settings } from "@/lib/settings-types";
+import type { Challenge, Settings } from "@/lib/settings-types";
 import { getAssertion } from "@/lib/webauthn";
+import { ChallengeCheck } from "./challenge";
 import { cancelled, describeFailure, usePasskeySupport, type Ceremony } from "./passkey";
 import { federationProblem, ProviderButtons, useSignInProviders } from "./providers";
 import { TermsStep, type SignedIn } from "./terms";
@@ -60,6 +61,7 @@ export function SignInFlow({
   signedIn,
   allowed,
   emailSignIn,
+  challenge,
   terms,
 }: {
   authRequest?: string;
@@ -70,12 +72,14 @@ export function SignInFlow({
   signedIn: boolean;
   allowed: string[];
   emailSignIn: Settings["emailSignIn"];
+  challenge: Challenge | null;
   terms?: string;
 }) {
   const optionsId = useId();
   const emailRef = useRef<HTMLInputElement>(null);
   const attempt = useRef<AbortController | null>(null);
   const checked = useRef(false);
+  const solver = useRef<{ resolve: (token: string) => void; reject: (error: unknown) => void } | null>(null);
   const supported = usePasskeySupport();
   const providers = useSignInProviders();
   const failure = useSearchParams().get("error");
@@ -98,6 +102,7 @@ export function SignInFlow({
   const [sending, setSending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [resent, setResent] = useState(false);
+  const [checking, setChecking] = useState(false);
   const home = methods.length > 0 ? "choose" : "start";
   const emailed = emailSignIn === "link" ? "link" : "code";
   const changing = step === "new-password";
@@ -107,6 +112,8 @@ export function SignInFlow({
     const timer = setTimeout(() => setCooldown((seconds) => seconds - 1), 1000);
     return () => clearTimeout(timer);
   }, [cooldown]);
+
+  useEffect(() => () => settle(), [step]);
 
   useEffect(() => {
     if (step !== "loading" || checked.current) return;
@@ -119,6 +126,31 @@ export function SignInFlow({
         setStep("start");
       });
   }, [step, authRequest]);
+
+  function settle(token?: string) {
+    const pending = solver.current;
+    solver.current = null;
+    setChecking(false);
+    if (token) pending?.resolve(token);
+    else pending?.reject(new DOMException("Complete the check to continue, or use a different way to sign in.", "AbortError"));
+  }
+
+  function solve() {
+    setChecking(true);
+    return new Promise<string>((resolve, reject) => {
+      solver.current = { resolve, reject };
+    });
+  }
+
+  async function guarded<T>(call: (challenge?: string) => Promise<T>, always = false): Promise<T> {
+    if (!challenge) return call();
+    try {
+      return await call(always ? await solve() : undefined);
+    } catch (error) {
+      if (!(error instanceof ApiError && error.code === "ERR_CHALLENGE_REQUIRED")) throw error;
+      return call(await solve());
+    }
+  }
 
   function finish(result: SignedIn) {
     if (result.terms) {
@@ -181,13 +213,13 @@ export function SignInFlow({
     setSending(true);
     setNotice(null);
     try {
-      await api("/auth/magic-link", { body: { email: email.trim(), authRequest } });
+      await guarded((token) => api("/auth/magic-link", { body: { email: email.trim(), authRequest, challenge: token } }), true);
       setResent(again);
       setCooldown(30);
       setStep("inbox");
     } catch (error) {
       if (expired(error)) return setStep("expired");
-      setNotice(describeFailure(error));
+      if (!cancelled(error)) setNotice(describeFailure(error));
     } finally {
       setSending(false);
     }
@@ -237,7 +269,7 @@ export function SignInFlow({
 
   async function signInWithCode(path: "/auth/totp" | "/auth/recovery" | "/auth/magic-link/code", code: string) {
     try {
-      finish(await api<SignedIn>(path, { body: { email, code, authRequest } }));
+      finish(await guarded((token) => api<SignedIn>(path, { body: { email, code, authRequest, challenge: token } })));
     } catch (error) {
       if (expired(error)) setStep("expired");
       throw error;
@@ -262,7 +294,7 @@ export function SignInFlow({
 
   async function signInWithPassword(code = "") {
     try {
-      finish(await api<SignedIn>("/auth/password", { body: { email, password, newPassword, code, authRequest } }));
+      finish(await guarded((token) => api<SignedIn>("/auth/password", { body: { email, password, newPassword, code, authRequest, challenge: token } })));
     } catch (error) {
       if (expired(error)) return setStep("expired");
       if (!(error instanceof ApiError) || !["ERR_PASSWORD_CHANGE_REQUIRED", "ERR_SECOND_FACTOR_REQUIRED"].includes(error.code)) throw error;
@@ -612,6 +644,8 @@ export function SignInFlow({
           <p className="text-body text-fg-3">Go back to the application and start again.</p>
         </div>
       ) : null}
+
+      {checking && challenge ? <ChallengeCheck challenge={challenge} onToken={settle} onCancel={() => settle()} /> : null}
     </div>
   );
 }
