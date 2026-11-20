@@ -144,6 +144,7 @@ export type SignInEvent = {
   device: string;
   risk: RiskLevel;
   reason?: string;
+  challenge?: "passed" | "failed" | "unavailable";
 };
 
 export type AuditEvent = {

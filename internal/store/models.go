@@ -130,18 +130,19 @@ type Session struct {
 }
 
 type SignInEvent struct {
-	ID       string    `json:"id"`
-	Time     time.Time `json:"time"`
-	UserID   *string   `json:"userId"`
-	Email    string    `json:"email"`
-	AppID    *string   `json:"appId"`
-	Result   string    `json:"result"`
-	Method   string    `json:"method"`
-	IP       string    `json:"ip"`
-	Location string    `json:"location"`
-	Device   string    `json:"device"`
-	Risk     string    `json:"risk"`
-	Reason   string    `json:"reason,omitempty"`
+	ID        string    `json:"id"`
+	Time      time.Time `json:"time"`
+	UserID    *string   `json:"userId"`
+	Email     string    `json:"email"`
+	AppID     *string   `json:"appId"`
+	Result    string    `json:"result"`
+	Method    string    `json:"method"`
+	IP        string    `json:"ip"`
+	Location  string    `json:"location"`
+	Device    string    `json:"device"`
+	Risk      string    `json:"risk"`
+	Reason    string    `json:"reason,omitempty"`
+	Challenge string    `json:"challenge,omitempty"`
 }
 
 type AuditEvent struct {

@@ -33,12 +33,20 @@ func (h *handler) magicLink(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		Email       string `json:"email"`
 		AuthRequest string `json:"authRequest"`
+		Challenge   string `json:"challenge"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
 	app, err := h.target(r.Context(), in.AuthRequest)
 	if err != nil {
+		return err
+	}
+	settings, err := h.st.Settings(r.Context())
+	if err != nil {
+		return err
+	}
+	if err := h.challenge(r, &attempt{method: "magic-link", email: strings.TrimSpace(in.Email), app: app, request: in.AuthRequest}, in.Challenge, settings, true); err != nil {
 		return err
 	}
 	ctx := context.WithoutCancel(r.Context())

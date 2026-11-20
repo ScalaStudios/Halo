@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { AuthFrame } from "@/components/auth/auth-frame";
 import { apiPeek } from "@/lib/api/server";
 import { SignInFlow } from "@/components/auth/sign-in-flow";
-import type { Settings } from "@/lib/settings-types";
+import type { Challenge, Settings } from "@/lib/settings-types";
 
 export const metadata: Metadata = {
   title: "Sign in",
@@ -15,7 +15,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
   const authRequest = typeof params.authRequest === "string" ? params.authRequest : undefined;
   const [request, methods] = await Promise.all([
     authRequest ? apiPeek<{ application: { name: string; logoUrl: string | null } }>(`/auth/request/${encodeURIComponent(authRequest)}`) : null,
-    apiPeek<{ methods: string[]; emailSignIn: Settings["emailSignIn"] }>("/auth/methods"),
+    apiPeek<{ methods: string[]; emailSignIn: Settings["emailSignIn"]; challenge: Challenge | null }>("/auth/methods"),
   ]);
   return (
     <AuthFrame>
@@ -28,6 +28,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
         signedIn={(await cookies()).has("halo_session")}
         allowed={methods.data?.methods ?? ["passkey", "security-key", "totp", "recovery-codes", "magic-link"]}
         emailSignIn={methods.data?.emailSignIn ?? "link"}
+        challenge={methods.data?.challenge ?? null}
         terms={typeof params.terms === "string" ? params.terms : undefined}
       />
     </AuthFrame>

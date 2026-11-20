@@ -39,6 +39,7 @@ func (h *handler) passwordSignIn(w http.ResponseWriter, r *http.Request) error {
 		Code        string `json:"code"`
 		NewPassword string `json:"newPassword"`
 		AuthRequest string `json:"authRequest"`
+		Challenge   string `json:"challenge"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -62,12 +63,15 @@ func (h *handler) passwordSignIn(w http.ResponseWriter, r *http.Request) error {
 	if err := h.lockout(r, a, settings, "passwords"); err != nil {
 		return err
 	}
-	sprayed, err := h.st.RecentFailuresFromIP(ctx, httpx.ClientIP(r), "password", lockoutStart(settings))
+	sprayed, err := h.st.RecentFailuresFromIP(ctx, httpx.ClientIP(r), []string{"password"}, lockoutStart(settings))
 	if err != nil {
 		return err
 	}
 	if sprayed >= addressLockoutFactor*settings.LockoutThreshold {
 		return h.reject(r, a, "Too many failed passwords from this IP address.", tooManyAttempts("passwords", settings))
+	}
+	if err := h.challenge(r, &a, in.Challenge, settings, false); err != nil {
+		return err
 	}
 	if enabled, err := h.st.MethodEnabled(ctx, "password"); err != nil {
 		return err

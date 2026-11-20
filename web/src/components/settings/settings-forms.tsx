@@ -468,3 +468,79 @@ export function SessionLimitForm({ settings, groups, canEdit }: { settings: Sett
     </Card>
   );
 }
+
+export function BotProtectionForm({ settings, secretSet, canEdit }: { settings: Settings; secretSet: boolean; canEdit: boolean }) {
+  const { saving, failure, save } = useSaveSettings();
+  const [provider, setProvider] = useState(settings.botProtection);
+  const [siteKey, setSiteKey] = useState(settings.botProtectionSiteKey);
+  const [secret, setSecret] = useState("");
+  const [attempted, setAttempted] = useState(false);
+  const siteKeyError = provider && !/^[A-Za-z0-9_-]{1,100}$/.test(siteKey.trim()) ? "Enter the site key from your provider's dashboard." : undefined;
+  const secretError = provider && !secretSet && !secret.trim() ? "Enter the secret key from your provider's dashboard." : undefined;
+  const dirty = provider !== settings.botProtection || siteKey.trim() !== settings.botProtectionSiteKey || secret.trim() !== "";
+
+  function submit() {
+    setAttempted(true);
+    if (siteKeyError || secretError) return;
+    void save(
+      { botProtection: provider, botProtectionSiteKey: siteKey.trim(), ...(secret.trim() ? { botProtectionSecret: secret.trim() } : {}) },
+      provider ? "Bot protection saved" : "Bot protection turned off",
+      "The sign-in page follows it within 30 seconds.",
+    ).then((saved) => saved && setSecret(""));
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Bot protection"
+        description="Asks for a check from Cloudflare Turnstile or hCaptcha before Halo emails a sign-in link or code, and before passwords and codes from an IP address that reached the lockout threshold. Passkeys are never checked."
+      />
+      <CardBody>
+        <form
+          noValidate
+          className="flex max-w-xl flex-col gap-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+        >
+          <Field label="Provider" hint="Halo verifies every check with the provider. If the provider can't be reached, these requests are refused until it can.">
+            {(props) => (
+              <Select {...props} disabled={!canEdit} value={provider} onChange={(event) => setProvider(event.target.value as Settings["botProtection"])}>
+                <option value="">Off</option>
+                <option value="turnstile">Cloudflare Turnstile</option>
+                <option value="hcaptcha">hCaptcha</option>
+              </Select>
+            )}
+          </Field>
+          {provider ? (
+            <>
+              <Field label="Site key" hint="Public. The sign-in page uses it to show the check." error={attempted ? siteKeyError : undefined}>
+                {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} disabled={!canEdit} value={siteKey} onChange={(event) => setSiteKey(event.target.value)} />}
+              </Field>
+              <Field
+                label="Secret key"
+                hint={secretSet ? "Leave empty to keep the current secret. Halo stores it encrypted and never shows it again." : "Stored encrypted. Halo never shows it again."}
+                error={attempted ? secretError : undefined}
+              >
+                {(props) => (
+                  <Input {...props} mono type="password" autoComplete="new-password" spellCheck={false} disabled={!canEdit} value={secret} onChange={(event) => setSecret(event.target.value)} />
+                )}
+              </Field>
+            </>
+          ) : null}
+          {canEdit ? (
+            <div className="flex flex-wrap items-center gap-4">
+              <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>
+                Save bot protection
+              </Button>
+              <ActionError message={failure} />
+            </div>
+          ) : (
+            <ReadOnlyNote>Only security and global administrators can change bot protection.</ReadOnlyNote>
+          )}
+        </form>
+      </CardBody>
+    </Card>
+  );
+}

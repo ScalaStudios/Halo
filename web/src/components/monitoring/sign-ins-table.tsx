@@ -18,7 +18,17 @@ import type { SignInEvent } from "@/lib/types";
 
 type Row = SignInEvent & { user: string; app: string };
 
+const CHALLENGE = { passed: "Passed", failed: "Failed", unavailable: "Provider unreachable" };
+
 const GUIDANCE: Record<string, { why: string; next: string }> = {
+  "The bot check failed.": {
+    why: "Bot protection is on, and the provider did not confirm that a person completed the check.",
+    next: "If this was a person, ask them to complete the check again or sign in with a passkey. Many failures from one IP address point to automated traffic.",
+  },
+  "The bot check service could not be reached.": {
+    why: "Halo could not verify the check with the bot protection provider, so it refused the request.",
+    next: "Check that Halo can reach the provider and that the secret key under Security defaults is right. Passkey sign-in still works.",
+  },
   "User is not assigned to this application.": {
     why: "None of the user's groups is assigned to this application.",
     next: "Add the user to a group that is assigned to the application, or assign one of their groups to it.",
@@ -324,6 +334,7 @@ function SignInDetail({ event }: { event: Row }) {
           },
           { label: "Location", value: event.location },
           { label: "Device", value: event.device },
+          ...(event.challenge ? [{ label: "Bot check", value: CHALLENGE[event.challenge] }] : []),
           {
             label: "Event ID",
             value: (

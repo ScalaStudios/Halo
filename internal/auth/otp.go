@@ -33,6 +33,7 @@ func (h *handler) codeSignIn(w http.ResponseWriter, r *http.Request, method stri
 		Email       string `json:"email"`
 		Code        string `json:"code"`
 		AuthRequest string `json:"authRequest"`
+		Challenge   string `json:"challenge"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -54,6 +55,9 @@ func (h *handler) codeSignIn(w http.ResponseWriter, r *http.Request, method stri
 		return err
 	}
 	if err := h.lockout(r, a, settings, "codes"); err != nil {
+		return err
+	}
+	if err := h.challenge(r, &a, in.Challenge, settings, false); err != nil {
 		return err
 	}
 	if a.user == nil {
@@ -81,7 +85,7 @@ func (h *handler) lockout(r *http.Request, a attempt, settings store.Settings, g
 	if a.user != nil {
 		userID = a.user.ID
 	}
-	failures, err := h.st.RecentFailures(r.Context(), userID, a.email, []string{"password", "totp", "recovery-codes", "magic-link"}, lockoutStart(settings))
+	failures, err := h.st.RecentFailures(r.Context(), userID, a.email, guessedMethods, lockoutStart(settings))
 	if err != nil {
 		return err
 	}
