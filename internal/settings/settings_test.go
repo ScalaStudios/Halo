@@ -474,3 +474,25 @@ func TestBotProtectionSettings(t *testing.T) {
 		t.Fatalf("turning bot protection off: %+v", s)
 	}
 }
+
+func TestLogRetentionSettings(t *testing.T) {
+	e := setup(t)
+	admin := e.person("gia@example.com", "global_admin")
+	security := e.person("sam@example.com", "security_admin")
+	for _, body := range []map[string]any{{"signInLogDays": 6}, {"signInLogDays": 3651}, {"signInLogDays": -1}, {"auditLogDays": 29}, {"auditLogDays": 3651}} {
+		e.expect(e.call(admin, "PATCH", "/api/v1/settings", body), 422)
+	}
+	e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"auditLogDays": 365}), 403)
+	got := decode[settingsResponse](t, e.expect(e.call(admin, "PATCH", "/api/v1/settings", map[string]any{"signInLogDays": 7, "auditLogDays": 365}), 200))
+	if got.Settings.SignInLogDays != 7 || got.Settings.AuditLogDays != 365 {
+		t.Fatalf("retention: %+v", got.Settings)
+	}
+	audit, _ := e.st.ListAudit(context.Background(), 10)
+	if len(audit) != 1 || audit[0].Action != "settings.update" || audit[0].Summary != "Changed the sign-in log retention, audit log retention" {
+		t.Fatalf("audit: %+v", audit)
+	}
+	got = decode[settingsResponse](t, e.expect(e.call(admin, "PATCH", "/api/v1/settings", map[string]any{"signInLogDays": 0, "auditLogDays": 0}), 200))
+	if got.Settings.SignInLogDays != 0 || got.Settings.AuditLogDays != 0 {
+		t.Fatalf("keep forever: %+v", got.Settings)
+	}
+}

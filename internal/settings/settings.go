@@ -69,6 +69,8 @@ var fields = []struct {
 	{"clientRegistration", "client registration", false},
 	{"botProtection", "bot protection", false},
 	{"botProtectionSiteKey", "bot protection site key", false},
+	{"signInLogDays", "sign-in log retention", true},
+	{"auditLogDays", "audit log retention", true},
 }
 
 type handler struct {
@@ -390,6 +392,10 @@ func validate(s store.Settings) error {
 		return httpx.Invalid(`Set bot protection to "turnstile" or "hcaptcha", or leave it empty to turn it off.`)
 	case s.BotProtection != "" && !siteKey.MatchString(s.BotProtectionSiteKey):
 		return httpx.Invalid("Enter the site key from your bot protection provider. It has only letters, digits, dashes and underscores.")
+	case s.SignInLogDays != 0 && !between(s.SignInLogDays, 7, 3650):
+		return httpx.Invalid("Keep the sign-in log for between 7 and 3,650 days (10 years), or 0 to keep it forever.")
+	case s.AuditLogDays != 0 && !between(s.AuditLogDays, 30, 3650):
+		return httpx.Invalid("Keep the audit log for between 30 and 3,650 days (10 years), or 0 to keep it forever.")
 	}
 	seen := map[string]bool{}
 	for _, g := range s.SessionLimitGroups {

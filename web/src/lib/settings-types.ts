@@ -34,6 +34,8 @@ export type Settings = {
   clientRegistration: "off" | "open" | "token" | "approval";
   botProtection: "" | Challenge["provider"];
   botProtectionSiteKey: string;
+  signInLogDays: number;
+  auditLogDays: number;
 };
 
 export type EmailTemplateText = { subject: string; body: string };

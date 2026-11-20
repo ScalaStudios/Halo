@@ -55,6 +55,9 @@ type Settings struct {
 	BotProtection        string `json:"botProtection"`
 	BotProtectionSiteKey string `json:"botProtectionSiteKey"`
 
+	SignInLogDays int `json:"signInLogDays"`
+	AuditLogDays  int `json:"auditLogDays"`
+
 	EmailTemplates map[string]EmailTemplate `json:"emailTemplates,omitempty"`
 }
 

@@ -544,3 +544,82 @@ export function BotProtectionForm({ settings, secretSet, canEdit }: { settings: 
     </Card>
   );
 }
+
+type RetentionKey = "signInLogDays" | "auditLogDays";
+
+const RETENTION: { key: RetentionKey; label: string; min: number; hint: string }[] = [
+  { key: "signInLogDays", label: "Sign-in log", min: 7, hint: "Between 7 and 3,650, or 0 to keep entries forever. Entries hold IP addresses, locations and devices." },
+  { key: "auditLogDays", label: "Audit log", min: 30, hint: "Between 30 and 3,650, or 0 to keep entries forever." },
+];
+
+export function LogRetentionForm({ settings, canEdit }: { settings: Settings; canEdit: boolean }) {
+  const { saving, failure, save } = useSaveSettings();
+  const [values, setValues] = useState({ signInLogDays: String(settings.signInLogDays), auditLogDays: String(settings.auditLogDays) });
+  const [attempted, setAttempted] = useState(false);
+  const days = (key: RetentionKey) => Number(values[key]);
+  const invalid = (f: (typeof RETENTION)[number]) => values[f.key].trim() === "" || !Number.isInteger(days(f.key)) || (days(f.key) !== 0 && (days(f.key) < f.min || days(f.key) > 3650));
+  const dirty = RETENTION.some((f) => days(f.key) !== settings[f.key]);
+  const shortened = RETENTION.some((f) => !invalid(f) && days(f.key) > 0 && (settings[f.key] === 0 || days(f.key) < settings[f.key]));
+
+  function submit() {
+    setAttempted(true);
+    if (RETENTION.some(invalid)) return;
+    void save({ signInLogDays: days("signInLogDays"), auditLogDays: days("auditLogDays") }, "Log retention saved", "Halo applies it at its next daily cleanup.");
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Log retention" description="How long Halo keeps sign-in and audit log entries. Once a day it deletes older entries and records how many in the audit log." />
+      <CardBody>
+        <form
+          noValidate
+          className="flex max-w-xl flex-col gap-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+        >
+          {RETENTION.map((f) => (
+            <Field key={f.key} label={f.label} hint={f.hint} error={attempted && invalid(f) ? `Enter a whole number between ${f.min} and 3,650, or 0.` : undefined}>
+              {(props) => (
+                <div className="flex items-center gap-3">
+                  <div className="w-32">
+                    <Input
+                      {...props}
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={3650}
+                      step={1}
+                      disabled={!canEdit}
+                      className="tnum"
+                      value={values[f.key]}
+                      onChange={(event) => setValues((current) => ({ ...current, [f.key]: event.target.value }))}
+                    />
+                  </div>
+                  <span className="text-body-sm text-fg-3">days</span>
+                </div>
+              )}
+            </Field>
+          ))}
+          {shortened ? (
+            <div role="note" className="flex gap-3 rounded-md border border-warning/20 bg-warning-container p-4">
+              <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-warning" />
+              <p className="text-body-sm text-fg-2">Entries older than the new period are deleted within a day of saving. Halo can&apos;t bring them back.</p>
+            </div>
+          ) : null}
+          {canEdit ? (
+            <div className="flex flex-wrap items-center gap-4">
+              <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>
+                Save log retention
+              </Button>
+              <ActionError message={failure} />
+            </div>
+          ) : (
+            <ReadOnlyNote>Only a global administrator can change log retention.</ReadOnlyNote>
+          )}
+        </form>
+      </CardBody>
+    </Card>
+  );
+}
