@@ -265,6 +265,10 @@ func (s *storage) accessToken(ctx context.Context, tokenID string) (store.OIDCTo
 	if err != nil {
 		return t, store.User{}, err
 	}
+	if t.SubjectID != nil {
+		_, u, err := s.accessToken(ctx, *t.SubjectID)
+		return t, u, err
+	}
 	u, err := s.activeUser(ctx, *t.UserID, app)
 	return t, u, err
 }

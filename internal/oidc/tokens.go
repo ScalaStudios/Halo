@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 	"github.com/zitadel/oidc/v3/pkg/op"
 
+	"halo/internal/httpx"
 	"halo/internal/id"
 	"halo/internal/secret"
 	"halo/internal/store"
@@ -31,6 +33,7 @@ func (r *refreshRequest) SetCurrentScopes(scopes []string) { r.scopes = scopes }
 func (s *storage) grant(ctx context.Context, req op.TokenRequest) (store.OIDCToken, store.Application, error) {
 	t := store.OIDCToken{ID: id.New("atk"), Kind: "access", Scopes: req.GetScopes()}
 	user := true
+	var subject store.OIDCToken
 	switch r := req.(type) {
 	case *authRequest:
 		t.ClientID, t.SessionID, t.AMR, t.AuthTime = r.ClientID, r.SessionID, r.AMR, r.AuthTime
@@ -40,6 +43,12 @@ func (s *storage) grant(ctx context.Context, req op.TokenRequest) (store.OIDCTok
 		t.ClientID, t.AMR, t.AuthTime = r.ClientID, r.AMR, &r.AuthTime
 	case *oidc.JWTTokenRequest:
 		t.ClientID, user = r.Subject, false
+	case op.TokenExchangeRequest:
+		var err error
+		if subject, err = s.exchangeSubject(ctx, r); err != nil {
+			return t, store.Application{}, err
+		}
+		t.ClientID, t.UserID, t.SessionID, t.AMR, t.AuthTime, t.SubjectID, user = r.GetClientID(), subject.UserID, subject.SessionID, subject.AMR, subject.AuthTime, &subject.ID, false
 	default:
 		return t, store.Application{}, fmt.Errorf("unsupported token request %T", req)
 	}
@@ -63,6 +72,9 @@ func (s *storage) grant(ctx context.Context, req op.TokenRequest) (store.OIDCTok
 		ttl = app.TokenPolicy.AccessTokenTTL
 	}
 	t.ExpiresAt = time.Now().Add(seconds(ttl))
+	if t.SubjectID != nil && subject.ExpiresAt.Before(t.ExpiresAt) {
+		t.ExpiresAt = subject.ExpiresAt
+	}
 	switch req.(type) {
 	case *op.DeviceAuthorizationState:
 		t.SessionID, err = s.deviceSession(ctx, app)
@@ -85,11 +97,28 @@ func (s *storage) deviceSession(ctx context.Context, app store.Application) (*st
 }
 
 func (s *storage) CreateAccessToken(ctx context.Context, req op.TokenRequest) (string, time.Time, error) {
-	access, _, err := s.grant(ctx, req)
+	access, app, err := s.grant(ctx, req)
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	return access.ID, access.ExpiresAt, s.st.CreateOIDCTokens(ctx, access)
+	if access.SubjectID == nil {
+		return access.ID, access.ExpiresAt, s.st.CreateOIDCTokens(ctx, access)
+	}
+	u, err := s.st.GetUser(ctx, *access.UserID)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	event := store.AuditEvent{Action: "token.exchange", TargetType: "user", TargetID: u.ID, TargetLabel: u.Name,
+		Summary: fmt.Sprintf("%s exchanged a token of %s for %s with %s", app.Name, u.Email, strings.Join(access.Audience, ", "), strings.Join(access.Scopes, " "))}
+	if r, ok := ctx.Value(requestKey{}).(*http.Request); ok {
+		event.IP = httpx.ClientIP(r)
+	}
+	return access.ID, access.ExpiresAt, s.st.Tx(ctx, func(tx *store.Store) error {
+		if err := tx.CreateOIDCTokens(ctx, access); err != nil {
+			return err
+		}
+		return tx.RecordAudit(ctx, event)
+	})
 }
 
 func (s *storage) CreateAccessAndRefreshTokens(ctx context.Context, req op.TokenRequest, current string) (string, string, time.Time, error) {

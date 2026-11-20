@@ -114,9 +114,9 @@ func (s *Store) DeleteGroup(ctx context.Context, groupID string) error {
 
 func (s *Store) UpdateApplication(ctx context.Context, a Application) error {
 	tag, err := s.db.Exec(ctx, `update applications set name = $2, description = $3, homepage = $4, redirect_uris = $5, post_logout_uris = $6, scopes = $7,
-		access_token_ttl = $8, refresh_token_ttl = $9, id_token_ttl = $10, refresh_rotation = $11, owner_id = $12, updated_at = now() where id = $1`,
+		access_token_ttl = $8, refresh_token_ttl = $9, id_token_ttl = $10, refresh_rotation = $11, owner_id = $12, token_exchange = $13, updated_at = now() where id = $1`,
 		a.ID, a.Name, a.Description, a.Homepage, a.RedirectURIs, a.PostLogoutURIs, a.Scopes,
-		a.TokenPolicy.AccessTokenTTL, a.TokenPolicy.RefreshTokenTTL, a.TokenPolicy.IDTokenTTL, a.TokenPolicy.Rotation, a.Owner)
+		a.TokenPolicy.AccessTokenTTL, a.TokenPolicy.RefreshTokenTTL, a.TokenPolicy.IDTokenTTL, a.TokenPolicy.Rotation, a.Owner, a.TokenPolicy.Exchange)
 	if err != nil {
 		return err
 	}

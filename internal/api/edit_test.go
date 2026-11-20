@@ -251,6 +251,19 @@ func TestUpdateApplication(t *testing.T) {
 	if got := decode[store.Application](t, rec); got.TokenPolicy.RefreshTokenTTL != 0 || got.Owner != nil {
 		t.Fatalf("refresh tokens and owner not cleared: %+v", got)
 	}
+	rec = call(t, h, admin, "PATCH", path, map[string]any{"tokenPolicy": map[string]any{"exchange": true}})
+	expect(t, rec, 200)
+	if got := decode[store.Application](t, rec); !got.TokenPolicy.Exchange || got.TokenPolicy.AccessTokenTTL != 300 {
+		t.Fatalf("token exchange not turned on: %+v", got.TokenPolicy)
+	}
+	if e := lastAudit(t, st); e.Summary != "Updated token exchange" {
+		t.Fatalf("token exchange audit: %+v", e)
+	}
+	spa, err := st.CreateApplication(ctx, store.NewApplication{Name: "Dashboard", Protocol: "oidc", Type: "spa", RedirectURIs: []string{"https://dash.example.com/cb"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, call(t, h, admin, "PATCH", "/api/v1/applications/"+spa.ID, map[string]any{"tokenPolicy": map[string]any{"exchange": true}}), 422)
 
 	ops, err := st.CreateGroup(ctx, store.NewGroup{Name: "Ops", Kind: "assigned"})
 	if err != nil {

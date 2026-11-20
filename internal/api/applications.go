@@ -541,6 +541,7 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 			RefreshTokenTTL *int  `json:"refreshTokenTtl"`
 			IDTokenTTL      *int  `json:"idTokenTtl"`
 			Rotation        *bool `json:"rotation"`
+			Exchange        *bool `json:"exchange"`
 		} `json:"tokenPolicy"`
 		Owner    *string   `json:"owner"`
 		GroupIDs *[]string `json:"groupIds"`
@@ -600,7 +601,13 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		if next.TokenPolicy.Rotation != before.Rotation {
 			changed = append(changed, "refresh token rotation")
 		}
-		before.Rotation = next.TokenPolicy.Rotation
+		if p.Exchange != nil {
+			next.TokenPolicy.Exchange = *p.Exchange
+		}
+		if next.TokenPolicy.Exchange != before.Exchange {
+			changed = append(changed, "token exchange")
+		}
+		before.Rotation, before.Exchange = next.TokenPolicy.Rotation, next.TokenPolicy.Exchange
 		if next.TokenPolicy != before {
 			changed = append(changed, "token lifetimes")
 		}
@@ -660,6 +667,9 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		if app.Protocol == "oidc" && !slices.Contains(next.Scopes, "openid") {
 			return httpx.Invalid("Keep the openid scope. OpenID Connect sign-in fails without it.")
 		}
+	}
+	if next.TokenPolicy.Exchange && (app.Type == "spa" || app.Type == "native") {
+		return httpx.Invalid(app.Name + " is a public client without a secret, so it can't exchange tokens. Use a web or service application.")
 	}
 	if t := next.TokenPolicy; slices.Contains(changed, "token lifetimes") {
 		switch {

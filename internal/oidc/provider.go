@@ -69,6 +69,9 @@ func New(d httpx.Deps) (http.Handler, error) {
 
 	serve := func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
+		if r.Form.Get("grant_type") == string(oidc.GrantTypeTokenExchange) {
+			r.Form["audience"] = slices.Compact(slices.Sorted(slices.Values(append(r.Form["audience"], r.Form["resource"]...))))
+		}
 		provider.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestKey{}, r)))
 	}
 	mux := http.NewServeMux()

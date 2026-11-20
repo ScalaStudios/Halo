@@ -389,6 +389,7 @@ function AuthenticationTab({ app }: { app: SamlApplication }) {
               },
               { label: "PKCE", value: service ? "Not used. Client credentials has no browser redirect." : "Required, S256" },
               { label: "Client authentication", value: publicClient ? "None. Public client without a secret." : "Client secret, client_secret_basic" },
+              ...(app.tokenPolicy.exchange ? [{ label: "Token exchange", value: "urn:ietf:params:oauth:grant-type:token-exchange", mono: true }] : []),
             ]}
           />
         </CardBody>
