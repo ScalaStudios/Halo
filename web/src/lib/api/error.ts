@@ -1,3 +1,5 @@
+import type { ApprovalRequest } from "@/lib/settings-types";
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -11,4 +13,10 @@ export class ApiError extends Error {
 export async function toApiError(res: Response, fallback: string): Promise<ApiError> {
   const body = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
   return new ApiError(res.status, body?.error?.code ?? "ERR_INTERNAL", body?.error?.message ?? fallback);
+}
+
+export class ApprovalPending extends Error {
+  constructor(readonly request: ApprovalRequest) {
+    super(request.summary);
+  }
 }

@@ -43,6 +43,8 @@ tags:
     description: Bundles of groups that people can request.
   - name: Access requests
     description: Requests for access packages and the grants they create.
+  - name: Approvals
+    description: Changes that wait for a second global administrator before they apply.
   - name: Access reviews
     description: Periodic reviews of who stays in an assigned group.
   - name: Lifecycle
@@ -1436,7 +1438,7 @@ paths:
       tags: [Users]
       operationId: inviteUser
       summary: Invite a person
-      description: 'Roles: user administrator; including `roles` requires global administrator. Creates the account with status `invited` and a setup link, and emails the link when SMTP is configured.'
+      description: 'Roles: user administrator; including `roles` requires global administrator, and `global_admin` is refused while granting it needs approval. Creates the account with status `invited` and a setup link, and emails the link when SMTP is configured.'
       requestBody:
         required: true
         content:
@@ -1776,6 +1778,7 @@ paths:
                   items: {$ref: '#/components/schemas/RoleKey'}
       responses:
         '200': {$ref: '#/components/responses/UserResponse'}
+        '202': {$ref: '#/components/responses/ApprovalPending'}
         '400': {$ref: '#/components/responses/BadJSON'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -2607,6 +2610,54 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /approvals:
+    get:
+      tags: [Approvals]
+      operationId: listApprovals
+      summary: List changes waiting for approval and past decisions
+      description: 'Roles: any administrator. `canDecide` says whether you may approve or reject each one.'
+      responses:
+        '200':
+          description: The 500 most recent requests, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ApprovalRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /approvals/{id}/approve:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Approvals]
+      operationId: approveChange
+      summary: Approve a change and apply it
+      description: 'Roles: a global administrator who is not the requester, signed in to the console; API keys cannot decide. Applies the saved change once, as the requester. If the target changed since the request, or the change no longer passes validation, nothing is applied, the request becomes `failed`, `approval.fail` is recorded and the response is `ERR_NOT_APPLIED`.'
+      responses:
+        '200': {$ref: '#/components/responses/ApprovalResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ApprovalForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: '`ERR_CONFLICT`: the request was already decided or has expired. `ERR_NOT_APPLIED`: the request was approved but the change could not be applied.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /approvals/{id}/reject:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Approvals]
+      operationId: rejectChange
+      summary: Reject a change
+      description: 'Roles: a global administrator who is not the requester, signed in to the console; API keys cannot decide.'
+      responses:
+        '200': {$ref: '#/components/responses/ApprovalResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/ApprovalForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /access-reviews:
     get:
       tags: [Access reviews]
@@ -2882,6 +2933,7 @@ paths:
       requestBody: {$ref: '#/components/requestBodies/PolicyInput'}
       responses:
         '200': {$ref: '#/components/responses/PolicyResponse'}
+        '202': {$ref: '#/components/responses/ApprovalPending'}
         '400': {$ref: '#/components/responses/BadJSON'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -2895,6 +2947,7 @@ paths:
       description: 'Roles: security administrator.'
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
+        '202': {$ref: '#/components/responses/ApprovalPending'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -3050,6 +3103,7 @@ paths:
                 enabled: {type: boolean}
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
+        '202': {$ref: '#/components/responses/ApprovalPending'}
         '400': {$ref: '#/components/responses/BadJSON'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -3168,7 +3222,7 @@ paths:
       tags: [Service accounts]
       operationId: createServiceAccount
       summary: Create a service account
-      description: 'Roles: security administrator. You can give it only roles you hold yourself; everyone may give `auditor`.'
+      description: 'Roles: security administrator. You can give it only roles you hold yourself; everyone may give `auditor`. `global_admin` is refused while granting it needs approval.'
       requestBody:
         required: true
         content:
@@ -3248,6 +3302,7 @@ paths:
                   items: {$ref: '#/components/schemas/RoleKey'}
       responses:
         '200': {$ref: '#/components/responses/ServiceAccountResponse'}
+        '202': {$ref: '#/components/responses/ApprovalPending'}
         '400': {$ref: '#/components/responses/BadJSON'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -3436,6 +3491,7 @@ paths:
       requestBody: {$ref: '#/components/requestBodies/IdentityProviderInput'}
       responses:
         '201': {$ref: '#/components/responses/IdentityProviderResponse'}
+        '202': {$ref: '#/components/responses/ApprovalPending'}
         '400': {$ref: '#/components/responses/BadJSON'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -3452,6 +3508,7 @@ paths:
       requestBody: {$ref: '#/components/requestBodies/IdentityProviderInput'}
       responses:
         '200': {$ref: '#/components/responses/IdentityProviderResponse'}
+        '202': {$ref: '#/components/responses/ApprovalPending'}
         '400': {$ref: '#/components/responses/BadJSON'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -3465,6 +3522,7 @@ paths:
       description: 'Roles: security administrator.'
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
+        '202': {$ref: '#/components/responses/ApprovalPending'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -3478,6 +3536,7 @@ paths:
       description: 'Roles: security administrator.'
       responses:
         '200': {$ref: '#/components/responses/IdentityProviderResponse'}
+        '202': {$ref: '#/components/responses/ApprovalPending'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -3491,6 +3550,7 @@ paths:
       description: 'Roles: security administrator. Linked accounts stay linked.'
       responses:
         '200': {$ref: '#/components/responses/IdentityProviderResponse'}
+        '202': {$ref: '#/components/responses/ApprovalPending'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -3508,7 +3568,7 @@ paths:
       tags: [Settings]
       operationId: updateSettings
       summary: Change organization settings
-      description: 'Roles: security administrator. Only a global administrator can change `organizationName`, `contactEmail`, `signInMessage`, `theme`, `customCss` and `consoleBranding`. Send only the fields to change. Token lifetimes apply to applications created afterwards.'
+      description: 'Roles: security administrator. Only a global administrator can change `organizationName`, `contactEmail`, `signInMessage`, `theme`, `customCss`, `consoleBranding`, `approvalActions` and `emergencyAccessIds`. Send only the fields to change. Token lifetimes apply to applications created afterwards.'
       requestBody:
         required: true
         content:
@@ -3516,6 +3576,7 @@ paths:
             schema: {$ref: '#/components/schemas/Settings'}
       responses:
         '200': {$ref: '#/components/responses/SettingsResponse'}
+        '202': {$ref: '#/components/responses/ApprovalPending'}
         '400': {$ref: '#/components/responses/BadJSON'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -4290,7 +4351,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     Forbidden:
-      description: '`ERR_FORBIDDEN`: your roles do not allow this. `ERR_CROSS_SITE` on changes from another website.'
+      description: '`ERR_FORBIDDEN`: your roles do not allow this. `ERR_CROSS_SITE` on changes from another website. `ERR_APPROVAL_REQUIRED`: the change needs approval, and an API key cannot ask for it.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -4366,6 +4427,21 @@ components:
           schema: {$ref: '#/components/schemas/Error'}
     RegistrationFailed:
       description: '`ERR_CEREMONY_EXPIRED`: the setup step expired; start again. `ERR_REGISTRATION_FAILED`: Halo could not verify the new credential. `ERR_INVALID_JSON`.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ApprovalPending:
+      description: 'The change needs approval from another global administrator under `approvalActions`. Nothing changed yet: the change is saved as a pending approval request that expires after 72 hours. A service account asking for such a change gets `403 ERR_APPROVAL_REQUIRED` instead, because a person must ask for it.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApprovalRequest'}
+    ApprovalResponse:
+      description: The approval request.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApprovalRequest'}
+    ApprovalForbidden:
+      description: '`ERR_SELF_APPROVAL`: you asked for the change yourself. `ERR_FORBIDDEN`: you are not a global administrator, or you used an API key. `ERR_CROSS_SITE`.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -4959,6 +5035,27 @@ components:
           items: {$ref: '#/components/schemas/NamedRef'}
         createdAt: {type: string, format: date-time}
         canDecide: {type: boolean}
+    ApprovalRequest:
+      type: object
+      required: [id, action, summary, targetType, targetId, targetLabel, requester, createdAt, expiresAt, status, decidedBy, decidedAt, outcome, canDecide]
+      properties:
+        id: {type: string, examples: [apr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        action: {type: string, enum: [global-admin, policy-disable, password-sign-in, identity-providers, approval-settings]}
+        summary: {type: string, examples: [Set roles to Global administrator]}
+        targetType: {type: string, enum: [user, service_account, policy, method, identity_provider, settings]}
+        targetId: {type: string, description: Empty for a new identity provider and for settings.}
+        targetLabel: {type: string}
+        requester: {$ref: '#/components/schemas/NamedRef'}
+        createdAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        status: {type: string, enum: [pending, approved, rejected, failed, expired]}
+        decidedBy:
+          oneOf:
+            - {$ref: '#/components/schemas/NamedRef'}
+            - {type: 'null'}
+        decidedAt: {type: [string, 'null'], format: date-time}
+        outcome: {type: string, description: Why an approved change was not applied. Empty otherwise.}
+        canDecide: {type: boolean}
     ReviewItem:
       type: object
       required: [user, title, decision, note, decidedBy, decidedAt, outcome]
@@ -5324,6 +5421,17 @@ components:
             properties:
               groupId: {type: string}
               limit: {type: integer, minimum: 1, maximum: 100}
+        approvalActions:
+          type: array
+          default: []
+          items: {type: string, enum: [global-admin, policy-disable, password-sign-in, identity-providers]}
+          description: 'Changes that wait for a second global administrator: `global-admin` grants the global administrator role, `policy-disable` turns off, switches to report-only or deletes an enforced access policy, `password-sign-in` turns on password sign-in, `identity-providers` adds, changes, turns on or off or deletes an identity provider. While any is on, changing this list or `emergencyAccessIds` also needs approval. Turning approval on needs a second active global administrator.'
+        emergencyAccessIds:
+          type: array
+          default: []
+          maxItems: 5
+          items: {type: string}
+          description: People whose changes skip approval. Each use is recorded as `approval.bypass` in the audit log and emailed to the other global administrators.
     EmailSignIn:
       type: string
       enum: [link, code, both]

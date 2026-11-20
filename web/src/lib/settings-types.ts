@@ -29,6 +29,29 @@ export type Settings = {
   sessionLimitAction: "refuse" | "end-oldest";
   sessionLimitCli: boolean;
   sessionLimitGroups: { groupId: string; limit: number }[];
+  approvalActions: ApprovalAction[];
+  emergencyAccessIds: string[];
+};
+
+export type ApprovalAction = "global-admin" | "policy-disable" | "password-sign-in" | "identity-providers";
+
+export type ApprovalStatus = "pending" | "approved" | "rejected" | "failed" | "expired";
+
+export type ApprovalRequest = {
+  id: string;
+  action: ApprovalAction | "approval-settings";
+  summary: string;
+  targetType: string;
+  targetId: string;
+  targetLabel: string;
+  requester: { id: string; name: string };
+  createdAt: string;
+  expiresAt: string;
+  status: ApprovalStatus;
+  decidedBy: { id: string; name: string } | null;
+  decidedAt: string | null;
+  outcome: string;
+  canDecide: boolean;
 };
 
 export type SettingsResponse = {

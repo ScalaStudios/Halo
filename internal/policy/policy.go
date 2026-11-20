@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"halo/internal/access"
+	"halo/internal/approval"
 	"halo/internal/httpx"
 	"halo/internal/secret"
 	"halo/internal/store"
@@ -26,14 +27,15 @@ var (
 )
 
 type handlers struct {
-	st  *store.Store
-	eng *engine
+	st   *store.Store
+	eng  *engine
+	gate *approval.Gate
 }
 
 type handler func(http.ResponseWriter, *http.Request, store.User) error
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
-	h := &handlers{st: d.Store, eng: &engine{st: d.Store}}
+	h := &handlers{st: d.Store, eng: &engine{st: d.Store}, gate: approval.New(d)}
 	route := func(pattern string, roles []string, fn handler) {
 		mux.Handle(pattern, httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
 			actor, err := httpx.RequireRole(r, roles...)
@@ -262,6 +264,13 @@ func (h *handlers) updatePolicy(w http.ResponseWriter, r *http.Request, actor st
 		return err
 	}
 	p.ID = old.ID
+	change := policyChange(old, map[bool]string{true: "Switch the policy to report-only", false: "Turn off the policy"}[p.Enabled])
+	if enforced(p) {
+		change.Action = ""
+	}
+	if held, err := h.gate.Hold(w, r, actor, change); held || err != nil {
+		return err
+	}
 	var updated store.AccessPolicy
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 		var err error
@@ -285,6 +294,9 @@ func (h *handlers) deletePolicy(w http.ResponseWriter, r *http.Request, actor st
 	if err != nil {
 		return found(err, "This policy")
 	}
+	if held, err := h.gate.Hold(w, r, actor, policyChange(p, "Delete the policy")); held || err != nil {
+		return err
+	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 		if err := tx.DeleteAccessPolicy(r.Context(), p.ID); err != nil {
 			return found(err, "This policy")
@@ -296,6 +308,20 @@ func (h *handlers) deletePolicy(w http.ResponseWriter, r *http.Request, actor st
 	}
 	w.WriteHeader(http.StatusNoContent)
 	return nil
+}
+
+func enforced(p store.AccessPolicy) bool {
+	return p.Enabled && p.Mode == "enforce"
+}
+
+func policyChange(p store.AccessPolicy, summary string) approval.Change {
+	state := p
+	state.Priority, state.UpdatedAt = 0, time.Time{}
+	c := approval.Change{Summary: summary, TargetType: "policy", TargetID: p.ID, TargetLabel: p.Name, State: state}
+	if enforced(p) {
+		c.Action = "policy-disable"
+	}
+	return c
 }
 
 func (h *handlers) reorderPolicies(w http.ResponseWriter, r *http.Request, actor store.User) error {
@@ -624,6 +650,14 @@ func (h *handlers) setMethod(w http.ResponseWriter, r *http.Request, actor store
 	summary := "Turned off sign-in with " + methodPlurals[method]
 	if in.Enabled {
 		summary = "Turned on sign-in with " + methodPlurals[method]
+	}
+	current := slices.ContainsFunc(settings, func(m store.MethodSetting) bool { return m.Method == method && m.Enabled })
+	change := approval.Change{Summary: "Turn on sign-in with " + methodPlurals[method], TargetType: "method", TargetID: method, TargetLabel: capitalize(methodPlurals[method]), State: current}
+	if method == "password" && in.Enabled && !current {
+		change.Action = "password-sign-in"
+	}
+	if held, err := h.gate.Hold(w, r, actor, change); held || err != nil {
+		return err
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 		if err := tx.SetMethodEnabled(r.Context(), method, in.Enabled); err != nil {

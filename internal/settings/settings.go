@@ -1,12 +1,14 @@
 package settings
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/mail"
@@ -17,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	spec "halo/api"
+	"halo/internal/approval"
 	"halo/internal/config"
 	"halo/internal/httpx"
 	"halo/internal/store"
@@ -60,11 +63,14 @@ var fields = []struct {
 	{"sessionLimitAction", "action at the session limit", false},
 	{"sessionLimitCli", "Halo CLI session limit", false},
 	{"sessionLimitGroups", "group session limits", false},
+	{"approvalActions", "changes that need approval", true},
+	{"emergencyAccessIds", "emergency access accounts", true},
 }
 
 type handler struct {
-	st  *store.Store
-	cfg config.Config
+	st   *store.Store
+	cfg  config.Config
+	gate *approval.Gate
 }
 
 type Org struct {
@@ -79,7 +85,7 @@ type Org struct {
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
-	h := &handler{st: d.Store, cfg: d.Config}
+	h := &handler{st: d.Store, cfg: d.Config, gate: approval.New(d)}
 	route := func(pattern string, roles []string, fn func(http.ResponseWriter, *http.Request, store.User) error) {
 		mux.Handle(pattern, httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
 			actor, err := httpx.RequireRole(r, roles...)
@@ -165,6 +171,8 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	next := before
 	next.PasswordGroupIDs = slices.Clone(before.PasswordGroupIDs)
 	next.SessionLimitGroups = slices.Clone(before.SessionLimitGroups)
+	next.ApprovalActions = slices.Clone(before.ApprovalActions)
+	next.EmergencyAccessIDs = slices.Clone(before.EmergencyAccessIDs)
 	if err := httpx.Decode(r, &next); err != nil {
 		return err
 	}
@@ -180,6 +188,12 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	}
 	if next.SessionLimitGroups == nil {
 		next.SessionLimitGroups = []store.GroupSessionLimit{}
+	}
+	if next.ApprovalActions == nil {
+		next.ApprovalActions = []string{}
+	}
+	if next.EmergencyAccessIDs == nil {
+		next.EmergencyAccessIDs = []string{}
 	}
 	if err := validate(next); err != nil {
 		return err
@@ -224,6 +238,16 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	if len(changed) == 0 {
 		return h.respond(w, r)
 	}
+	change := approval.Change{TargetType: "settings", TargetLabel: "Approval settings", State: []any{before.ApprovalActions, before.EmergencyAccessIDs}}
+	if !slices.Equal(before.ApprovalActions, next.ApprovalActions) || !slices.Equal(before.EmergencyAccessIDs, next.EmergencyAccessIDs) {
+		if change.Summary, err = h.approvalSummary(ctx, actor, before, next); err != nil {
+			return err
+		}
+		change.Action = "approval-settings"
+	}
+	if held, err := h.gate.Hold(w, r, actor, change); held || err != nil {
+		return err
+	}
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
 		if err := tx.SaveSettings(ctx, next); err != nil {
 			return err
@@ -235,6 +259,44 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 		return err
 	}
 	return h.respond(w, r)
+}
+
+func (h *handler) approvalSummary(ctx context.Context, actor store.User, before, next store.Settings) (string, error) {
+	labels, names := []string{}, []string{}
+	for i, action := range next.ApprovalActions {
+		label, ok := store.ApprovalActions[action]
+		if !ok || slices.Index(next.ApprovalActions, action) != i {
+			return "", httpx.Invalid("Choose changes that need approval from " + strings.Join(slices.Sorted(maps.Keys(store.ApprovalActions)), ", ") + ", each once.")
+		}
+		labels = append(labels, label)
+	}
+	if len(next.EmergencyAccessIDs) > 5 {
+		return "", httpx.Invalid("Choose at most five emergency access accounts. Keep the list short so every use stands out.")
+	}
+	for _, userID := range next.EmergencyAccessIDs {
+		u, err := h.st.GetUser(ctx, userID)
+		if errors.Is(err, store.ErrNotFound) || (err == nil && u.Kind != "person") {
+			return "", httpx.Invalid("One of the emergency access accounts is not a person in the directory. Refresh the page and choose again.")
+		}
+		if err != nil {
+			return "", err
+		}
+		names = append(names, u.Name)
+	}
+	if len(before.ApprovalActions) == 0 && len(next.ApprovalActions) > 0 {
+		others, err := h.st.GlobalAdminEmails(ctx, actor.ID)
+		if err != nil {
+			return "", err
+		}
+		if len(others) == 0 {
+			return "", httpx.Invalid("Approval needs a second active global administrator to approve your changes. Grant the role to someone else first.")
+		}
+	}
+	summary := "Turn off approval"
+	if len(labels) > 0 {
+		summary = "Require approval for " + strings.Join(labels, ", ")
+	}
+	return summary + ". Emergency access accounts: " + cmp.Or(strings.Join(names, ", "), "none"), nil
 }
 
 func validate(s store.Settings) error {

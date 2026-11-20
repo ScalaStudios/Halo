@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { startTransition, useState } from "react";
 import { useToast } from "@/components/ui/toast";
-import { ApiError } from "@/lib/api/client";
+import { ApiError, ApprovalPending } from "@/lib/api/client";
+import { formatDateTime } from "@/lib/format";
 
 export function useMutation() {
   const router = useRouter();
@@ -29,6 +30,15 @@ export function useMutation() {
       return true;
     } catch (error) {
       setPending(null);
+      if (error instanceof ApprovalPending) {
+        toast({
+          title: "Waiting for approval",
+          description: `Nothing has changed yet. Another global administrator must approve this by ${formatDateTime(error.request.expiresAt)}.`,
+        });
+        router.push("/admin/approvals");
+        router.refresh();
+        return false;
+      }
       router.refresh();
       const message = error instanceof ApiError ? error.message : "Halo could not reach the server. Try again.";
       if (onError === "inline") setFailure({ key, message });

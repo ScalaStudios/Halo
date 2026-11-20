@@ -24,6 +24,7 @@ import {
   Shield,
   ShieldAlert,
   SlidersHorizontal,
+  Stamp,
   UserRoundCog,
   Users,
   UsersRound,
@@ -70,6 +71,7 @@ export const nav: NavGroup[] = [
       { label: "Roles", href: `${BASE}/roles`, icon: UserRoundCog, summary: "Administrative roles in Halo and what each one may change." },
       { label: "Policies", href: `${BASE}/policies`, icon: Shield, summary: "Conditional access: who, which application, under which device, network and risk conditions." },
       { label: "Infrastructure access", href: `${BASE}/infrastructure`, icon: Server, summary: "Short-lived SSH certificates, database credentials and Kubernetes access." },
+      { label: "Approvals", href: `${BASE}/approvals`, icon: Stamp, summary: "High-impact changes waiting for a second global administrator, and which changes need one." },
     ],
   },
   {

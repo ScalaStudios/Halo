@@ -1,10 +1,12 @@
 package httpx
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"net"
@@ -80,8 +82,12 @@ func JSON(w http.ResponseWriter, status int, body any) error {
 }
 
 func Decode(r *http.Request, dst any) error {
-	r.Body = http.MaxBytesReader(nil, r.Body, 1<<20)
-	dec := json.NewDecoder(r.Body)
+	raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 1<<20))
+	if err != nil {
+		return ErrBadJSON
+	}
+	r.Body = io.NopCloser(bytes.NewReader(raw))
+	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
 		if field, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
@@ -308,6 +314,10 @@ func DeviceToken(r *http.Request) string {
 func CurrentUser(r *http.Request) (store.User, bool) {
 	u, ok := r.Context().Value(userKey).(store.User)
 	return u, ok
+}
+
+func WithUser(ctx context.Context, u store.User) context.Context {
+	return context.WithValue(context.WithValue(ctx, userKey, u), sessionKey, nil)
 }
 
 func CurrentSession(r *http.Request) (store.Session, bool) {
