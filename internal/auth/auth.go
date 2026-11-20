@@ -92,6 +92,8 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		"POST /api/v1/me/totp/begin":             h.totpBegin,
 		"POST /api/v1/me/totp/confirm":           h.totpConfirm,
 		"POST /api/v1/me/recovery-codes":         h.recoveryCodes,
+		"POST /api/v1/me/reauthenticate/begin":   h.reauthBegin,
+		"POST /api/v1/me/reauthenticate":         h.reauthenticate,
 		"GET /api/v1/me/password":                h.myPassword,
 		"PUT /api/v1/me/password":                h.setMyPassword,
 		"GET /api/v1/me/sessions":                h.sessions,

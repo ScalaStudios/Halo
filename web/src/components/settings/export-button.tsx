@@ -4,11 +4,10 @@ import { Download } from "lucide-react";
 import { useMutation } from "@/components/console/use-mutation";
 import { ActionError } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
-import { toApiError } from "@/lib/api/error";
+import { send } from "@/lib/api/client";
 
 async function fetchExport() {
-  const res = await fetch("/api/v1/export", { credentials: "same-origin" });
-  if (!res.ok) throw await toApiError(res, "Halo could not build the export. Try again.");
+  const res = await send("/export", {}, "Halo could not build the export. Try again.");
   const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? "halo-export.json";
   return { name, blob: await res.blob() };
 }

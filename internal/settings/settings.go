@@ -67,6 +67,7 @@ var fields = []struct {
 	{"approvalActions", "changes that need approval", true},
 	{"emergencyAccessIds", "emergency access accounts", true},
 	{"impersonationGroupIds", "groups whose members can be impersonated", true},
+	{"reauthMinutes", "re-authentication interval", true},
 	{"clientRegistration", "client registration", false},
 	{"botProtection", "bot protection", false},
 	{"botProtectionSiteKey", "bot protection site key", false},
@@ -398,6 +399,8 @@ func validate(s store.Settings) error {
 		return httpx.Invalid("ID tokens must last between 5 and 1,440 minutes (24 hours).")
 	case !between(s.RefreshTokenHours, 1, 2160):
 		return httpx.Invalid("Refresh tokens must last between 1 and 2,160 hours (90 days).")
+	case !between(s.ReauthMinutes, 1, 1440):
+		return httpx.Invalid("Identity confirmations must last between 1 and 1,440 minutes (24 hours).")
 	case !between(s.SessionLimit, 0, 100):
 		return httpx.Invalid("The session limit must be between 1 and 100 sessions, or 0 for no limit.")
 	case s.SessionLimitAction != "refuse" && s.SessionLimitAction != "end-oldest":

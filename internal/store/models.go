@@ -136,6 +136,8 @@ type Session struct {
 	Client       string     `json:"client,omitempty"`
 
 	ImpersonationID string `json:"impersonationId,omitempty"`
+
+	ReauthenticatedAt *time.Time `json:"-"`
 }
 
 type SignInEvent struct {

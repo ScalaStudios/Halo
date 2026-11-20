@@ -16,7 +16,7 @@ export default async function SecurityDefaultsPage() {
         title="Security defaults"
         description={`Sessions last ${settings.sessionHours} hours and ${settings.lockoutThreshold} incorrect passwords or codes lock an account for ${settings.lockoutMinutes} minutes. Changes reach every Halo server within 30 seconds.`}
       />
-      <SecurityForm settings={settings} canEdit={hasRole(me, "security_admin")} />
+      <SecurityForm settings={settings} canEdit={hasRole(me, "security_admin")} canEditGlobal={hasRole(me)} />
       <SessionLimitForm settings={settings} groups={groups} canEdit={hasRole(me, "security_admin")} />
       <ImpersonationForm settings={settings} groups={groups} canEdit={hasRole(me)} />
       <ClientRegistrationForm settings={settings} issuer={issuer} canEdit={hasRole(me, "security_admin")} />

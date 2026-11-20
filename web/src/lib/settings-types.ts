@@ -32,6 +32,7 @@ export type Settings = {
   approvalActions: ApprovalAction[];
   emergencyAccessIds: string[];
   impersonationGroupIds: string[];
+  reauthMinutes: number;
   clientRegistration: "off" | "open" | "token" | "approval";
   botProtection: "" | Challenge["provider"];
   botProtectionSiteKey: string;

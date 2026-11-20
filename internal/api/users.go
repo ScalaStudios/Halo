@@ -121,6 +121,9 @@ func (h *handlers) inviteUser(w http.ResponseWriter, r *http.Request, actor stor
 		if _, err := httpx.RequireRole(r); err != nil {
 			return err
 		}
+		if err := httpx.RequireRecentSignIn(r, h.st); err != nil {
+			return err
+		}
 	}
 	if err := h.gate.RefuseGlobalAdmin(r.Context(), roles); err != nil {
 		return err

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -58,12 +59,12 @@ func (s *Store) CreateSession(ctx context.Context, in NewSession) (Session, stri
 	return sess, token, nil
 }
 
-const sessionColumns = `id, user_id, method, second_factor, ip, location, user_agent, created_at, last_active_at, expires_at, revoked_at, coalesce(client_id, ''), coalesce(impersonation_id, '')`
+const sessionColumns = `id, user_id, method, second_factor, ip, location, user_agent, created_at, last_active_at, expires_at, revoked_at, coalesce(client_id, ''), coalesce(impersonation_id, ''), reauthenticated_at`
 
 func scanSession(row rowScanner) (Session, error) {
 	var sess Session
 	var ua string
-	err := row.Scan(&sess.ID, &sess.UserID, &sess.Method, &sess.SecondFactor, &sess.IP, &sess.Location, &ua, &sess.CreatedAt, &sess.LastActiveAt, &sess.ExpiresAt, &sess.RevokedAt, &sess.Client, &sess.ImpersonationID)
+	err := row.Scan(&sess.ID, &sess.UserID, &sess.Method, &sess.SecondFactor, &sess.IP, &sess.Location, &ua, &sess.CreatedAt, &sess.LastActiveAt, &sess.ExpiresAt, &sess.RevokedAt, &sess.Client, &sess.ImpersonationID, &sess.ReauthenticatedAt)
 	sess.Device, sess.OS, sess.Browser = ParseUserAgent(ua)
 	return sess, err
 }
@@ -80,6 +81,21 @@ func (s Session) AMR() []string {
 		return []string{"pwd"}
 	}
 	return []string{"otp"}
+}
+
+func (s Session) StrongSignInAt() time.Time {
+	if s.ReauthenticatedAt != nil {
+		return *s.ReauthenticatedAt
+	}
+	if s.Client == "" && slices.Contains([]string{"passkey", "security-key", "recovery-codes"}, s.Method) {
+		return s.CreatedAt
+	}
+	return time.Time{}
+}
+
+func (s *Store) MarkReauthenticated(ctx context.Context, sessionID string) error {
+	_, err := s.db.Exec(ctx, `update sessions set reauthenticated_at = now() where id = $1`, sessionID)
+	return err
 }
 
 func (s *Store) SessionByToken(ctx context.Context, token string) (Session, error) {

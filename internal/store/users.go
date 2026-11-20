@@ -29,6 +29,10 @@ func (u User) HasRole(keys ...string) bool {
 	return false
 }
 
+func (u User) CanReauthenticate() bool {
+	return slices.ContainsFunc(u.Methods, func(m Method) bool { return m.Kind == "passkey" || m.Kind == "security-key" || m.Kind == "totp" })
+}
+
 const userColumns = `id, email, name, title, department, location, status, manager_id, source, created_at, last_sign_in_at, kind, email_verified, avatar_updated_at`
 
 type rowScanner interface {
