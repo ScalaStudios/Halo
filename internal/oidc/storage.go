@@ -3,6 +3,7 @@ package oidc
 import (
 	"context"
 	"errors"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -149,6 +150,9 @@ func (s *storage) CreateAuthRequest(ctx context.Context, req *oidc.AuthRequest, 
 		Prompt:              req.Prompt,
 		MaxAge:              maxAge,
 		LoginHint:           req.LoginHint,
+	}
+	if r, ok := ctx.Value(requestKey{}).(*http.Request); ok {
+		a.DomainHint = r.Form.Get("domain_hint")
 	}
 	granted, err := s.st.GrantedResources(ctx, req.ClientID)
 	if err != nil {

@@ -349,8 +349,26 @@ func (h *handler) federationCookie(value string, maxAge int) *http.Cookie {
 	return &http.Cookie{Name: federationCookie, Value: value, Path: "/api/v1/auth/federated", MaxAge: maxAge, HttpOnly: true, Secure: !h.auth.Dev, SameSite: http.SameSiteLaxMode}
 }
 
+func (h *handler) route(ctx context.Context, hint string) (map[string]string, error) {
+	all, err := h.st.ListIdentityProviders(ctx)
+	if err != nil {
+		return nil, err
+	}
+	domain := emailDomain(strings.TrimSpace(hint))
+	for _, p := range all {
+		if p.Enabled && p.RouteByDomain && slices.Contains(p.AllowedDomains, domain) {
+			return map[string]string{"id": p.ID, "name": p.Name, "kind": p.Kind}, nil
+		}
+	}
+	return nil, nil
+}
+
+func emailDomain(email string) string {
+	return strings.ToLower(email[strings.LastIndex(email, "@")+1:])
+}
+
 func domainAllowed(domains []string, email string) bool {
-	domain := email[strings.LastIndex(email, "@")+1:]
+	domain := emailDomain(email)
 	return len(domains) == 0 || slices.ContainsFunc(domains, func(d string) bool { return strings.EqualFold(d, domain) })
 }
 

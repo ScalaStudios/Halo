@@ -95,6 +95,7 @@ export function ProvidersConsole({ callbackUrl, providers, groups }: { callbackU
                 {p.enabled ? "On" : "Off"}
               </Badge>
               {p.enabled && !p.showOnSignIn ? <span className="text-caption whitespace-nowrap text-fg-3">Hidden from sign-in page</span> : null}
+              {p.enabled && p.routeByDomain ? <span className="text-caption whitespace-nowrap text-fg-3">Routes by email domain</span> : null}
             </span>,
             <span key="domains" className="flex flex-wrap gap-1">
               {p.allowedDomains.length ? p.allowedDomains.map((d) => <Tag key={d}>{d}</Tag>) : <span className="text-fg-3">Any domain</span>}
@@ -184,6 +185,7 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
   const [domains, setDomains] = useState(provider?.allowedDomains.join(" ") ?? "");
   const [enabled, setEnabled] = useState(provider?.enabled ?? true);
   const [showOnSignIn, setShowOnSignIn] = useState(provider?.showOnSignIn ?? false);
+  const [routeByDomain, setRouteByDomain] = useState(provider?.routeByDomain ?? false);
   const [jit, setJit] = useState(provider?.jit ?? false);
   const [jitGroupIds, setJitGroupIds] = useState(provider?.jitGroupIds ?? []);
   const [errors, setErrors] = useState<Partial<Record<"name" | "issuer" | "tenant" | "clientId" | "clientSecret" | "domains", string>>>({});
@@ -204,7 +206,14 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
       issuer: kind === "oidc" && !issuer.trim() ? "Enter the issuer URL, for example https://auth.example.com." : undefined,
       clientId: clientId.trim() ? undefined : "Enter the client ID from the provider's app registration.",
       clientSecret: secretRequired && !clientSecret.trim() ? "Enter the client secret from the provider's app registration." : undefined,
-      domains: jit && words(domains).length === 0 ? "Add at least one domain so only people from your organization get an account." : undefined,
+      domains:
+        words(domains).length > 0
+          ? undefined
+          : jit
+            ? "Add at least one domain so only people from your organization get an account."
+            : routeByDomain
+              ? "Add at least one domain to send people straight to this provider."
+              : undefined,
     };
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
@@ -217,6 +226,7 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
       scopes: words(scopes),
       enabled,
       showOnSignIn,
+      routeByDomain,
       allowedDomains: words(domains),
       jit,
       jitGroupIds: jit ? jitGroupIds : [],
@@ -230,7 +240,11 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
       (saved) => {
         toast({
           title: provider ? `${saved.name} saved` : `${saved.name} added`,
-          description: saved.showOnSignIn ? "Its button is on the sign-in page." : "Use Test sign-in to check it, then show it on the sign-in page.",
+          description: saved.showOnSignIn
+            ? "Its button is on the sign-in page."
+            : saved.routeByDomain
+              ? `People from ${saved.allowedDomains.join(", ")} go straight to it when they sign in.`
+              : "Use Test sign-in to check it, then show it on the sign-in page.",
         });
         onClose();
       },
@@ -332,7 +346,18 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
         <fieldset className="flex flex-col gap-4">
           <legend className="mb-3 text-label text-fg">Sign-in</legend>
           <Toggle checked={enabled} onChange={setEnabled} label="Turned on" description="People with a linked account can sign in with it. Test sign-in needs it on." />
-          <Toggle checked={showOnSignIn} onChange={setShowOnSignIn} label="Show on the sign-in page" description="Leave off to test it from here before everyone sees the button." />
+          <Toggle
+            checked={showOnSignIn}
+            onChange={setShowOnSignIn}
+            label="Show on the sign-in page"
+            description="Leave off to test it from here before everyone sees the button, or to reach it only by email domain."
+          />
+          <Toggle
+            checked={routeByDomain}
+            onChange={setRouteByDomain}
+            label="Send allowed domains straight to this provider"
+            description="People who enter an address at an allowed domain skip the other sign-in options. Works with the button hidden."
+          />
           <Toggle
             checked={jit}
             onChange={setJit}

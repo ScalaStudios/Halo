@@ -292,13 +292,7 @@ paths:
             application/json:
               schema:
                 type: array
-                items:
-                  type: object
-                  required: [id, name, kind]
-                  properties:
-                    id: {type: string, examples: [idp_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
-                    name: {type: string, examples: [Google]}
-                    kind: {$ref: '#/components/schemas/ProviderKind'}
+                items: {$ref: '#/components/schemas/SignInProvider'}
   /auth/request/{id}:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -309,13 +303,17 @@ paths:
       security: []
       responses:
         '200':
-          description: The application's name, homepage and logo.
+          description: The application's name, homepage and logo, and the hints the application sent.
           content:
             application/json:
               schema:
                 type: object
-                required: [application]
+                required: [application, loginHint]
                 properties:
+                  loginHint: {type: string, description: 'The `login_hint` from the authorization request, empty when there was none.'}
+                  provider:
+                    $ref: '#/components/schemas/SignInProvider'
+                    description: Present when the request's `domain_hint`, or the domain of its `login_hint` when there is no `domain_hint`, is sent straight to an identity provider. The sign-in page goes there without showing the other options.
                   application:
                     type: object
                     required: [name, homepage, logoUrl]
@@ -366,7 +364,7 @@ paths:
       tags: [Sign-in]
       operationId: identify
       summary: List the methods to offer for an email address
-      description: Answers `["passkey", "totp"]` for addresses without an account, so the response does not reveal whether an account exists.
+      description: Answers `["passkey", "totp"]` for addresses without an account, so the response does not reveal whether an account exists. For an address at a domain that an identity provider takes straight to it, answers no methods and that provider, the same for every address at the domain.
       security: []
       requestBody:
         required: true
@@ -389,6 +387,9 @@ paths:
                   methods:
                     type: array
                     items: {type: string, enum: [access-pass, passkey, security-key, totp, password, recovery-codes]}
+                  provider:
+                    $ref: '#/components/schemas/SignInProvider'
+                    description: The identity provider to send the person to. Present only when the address's domain is routed.
         '400': {$ref: '#/components/responses/BadJSON'}
   /auth/totp:
     post:
@@ -4971,6 +4972,7 @@ components:
                 items: {type: string}
               enabled: {type: boolean}
               showOnSignIn: {type: boolean}
+              routeByDomain: {type: boolean, description: 'Send people who enter an address at an allowed domain straight to this provider, even when its button is hidden. Requires at least one allowed domain, and each domain can be routed by one provider.'}
               allowedDomains:
                 type: array
                 description: Email domains allowed to sign in with this provider. Empty allows every domain.
@@ -5361,6 +5363,13 @@ components:
     ProviderKind:
       type: string
       enum: [google, microsoft, github, oidc]
+    SignInProvider:
+      type: object
+      required: [id, name, kind]
+      properties:
+        id: {type: string, examples: [idp_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        name: {type: string, examples: [Google]}
+        kind: {$ref: '#/components/schemas/ProviderKind'}
     NamedRef:
       type: object
       required: [id, name]
@@ -6136,7 +6145,7 @@ components:
         updatedAt: {type: string, format: date-time}
     IdentityProvider:
       type: object
-      required: [id, kind, name, issuer, clientId, hasSecret, scopes, enabled, showOnSignIn, allowedDomains, jit, jitGroupIds, linkedCount, createdAt, updatedAt]
+      required: [id, kind, name, issuer, clientId, hasSecret, scopes, enabled, showOnSignIn, routeByDomain, allowedDomains, jit, jitGroupIds, linkedCount, createdAt, updatedAt]
       properties:
         id: {type: string, examples: [idp_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         kind: {$ref: '#/components/schemas/ProviderKind'}
@@ -6149,6 +6158,7 @@ components:
           items: {type: string}
         enabled: {type: boolean}
         showOnSignIn: {type: boolean}
+        routeByDomain: {type: boolean}
         allowedDomains:
           type: array
           items: {type: string}

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"net/http"
@@ -313,11 +314,24 @@ func noContent(w http.ResponseWriter) error {
 }
 
 func (h *handler) authRequest(w http.ResponseWriter, r *http.Request) error {
-	app, err := h.target(r.Context(), r.PathValue("id"))
+	ctx := r.Context()
+	app, err := h.target(ctx, r.PathValue("id"))
 	if err != nil {
 		return err
 	}
-	return httpx.JSON(w, http.StatusOK, map[string]any{"application": map[string]any{"name": app.Name, "homepage": app.Homepage, "logoUrl": app.LogoURL}})
+	req, err := h.st.GetAuthRequest(ctx, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	out := map[string]any{"application": map[string]any{"name": app.Name, "homepage": app.Homepage, "logoUrl": app.LogoURL}, "loginHint": req.LoginHint}
+	provider, err := h.route(ctx, cmp.Or(req.DomainHint, req.LoginHint))
+	if err != nil {
+		return err
+	}
+	if provider != nil {
+		out["provider"] = provider
+	}
+	return httpx.JSON(w, http.StatusOK, out)
 }
 
 func (h *handler) identify(w http.ResponseWriter, r *http.Request) error {
@@ -326,6 +340,13 @@ func (h *handler) identify(w http.ResponseWriter, r *http.Request) error {
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
+	}
+	provider, err := h.route(r.Context(), in.Email)
+	if err != nil {
+		return err
+	}
+	if provider != nil {
+		return httpx.JSON(w, http.StatusOK, map[string]any{"methods": []string{}, "provider": provider})
 	}
 	u, err := h.st.GetUserByEmail(r.Context(), in.Email)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {

@@ -31,6 +31,7 @@ type providerInput struct {
 	Scopes         []string `json:"scopes"`
 	Enabled        bool     `json:"enabled"`
 	ShowOnSignIn   bool     `json:"showOnSignIn"`
+	RouteByDomain  bool     `json:"routeByDomain"`
 	AllowedDomains []string `json:"allowedDomains"`
 	JIT            bool     `json:"jit"`
 	JITGroupIDs    []string `json:"jitGroupIds"`
@@ -74,18 +75,17 @@ func (h *handler) saveProvider(w http.ResponseWriter, r *http.Request, existing 
 	if existing.ID != "" {
 		in.Kind = existing.Kind
 	}
-	p, err := h.validProvider(r, in, existing.HasSecret)
+	p, err := h.validProvider(r, in, existing)
 	if err != nil {
 		return err
 	}
 	p.ID = existing.ID
 	action, summary := "identity_provider.create", "Added identity provider"
-	if existing.ID != "" {
-		action, summary = "identity_provider.update", "Changed identity provider settings"
-	}
 	change := providerChange(existing, p.Name, "Add the identity provider")
 	if existing.ID != "" {
-		change.Summary = "Change the identity provider's " + providerFields(existing, p, strings.TrimSpace(in.ClientSecret) != "")
+		fields := providerFields(existing, p, strings.TrimSpace(in.ClientSecret) != "")
+		action, summary = "identity_provider.update", "Changed the identity provider's "+fields
+		change.Summary = "Change the identity provider's " + fields
 	}
 	if held, err := h.gate.Hold(w, r, actor, change); held || err != nil {
 		return err
@@ -170,6 +170,7 @@ func providerFields(old, p store.IdentityProvider, secret bool) string {
 		{"scopes", !slices.Equal(old.Scopes, p.Scopes)},
 		{"on or off state", old.Enabled != p.Enabled},
 		{"sign-in page button", old.ShowOnSignIn != p.ShowOnSignIn},
+		{"email domain routing", old.RouteByDomain != p.RouteByDomain},
 		{"allowed email domains", !slices.Equal(old.AllowedDomains, p.AllowedDomains)},
 		{"account creation on first sign-in", old.JIT != p.JIT},
 		{"groups for new accounts", !slices.Equal(old.JITGroupIDs, p.JITGroupIDs)},
@@ -206,15 +207,16 @@ func (h *handler) writeProvider(w http.ResponseWriter, r *http.Request, actor st
 	return httpx.JSON(w, http.StatusOK, saved)
 }
 
-func (h *handler) validProvider(r *http.Request, in providerInput, hasSecret bool) (store.IdentityProvider, error) {
+func (h *handler) validProvider(r *http.Request, in providerInput, existing store.IdentityProvider) (store.IdentityProvider, error) {
 	p := store.IdentityProvider{
-		Kind:         in.Kind,
-		Name:         strings.TrimSpace(in.Name),
-		Issuer:       strings.TrimSpace(in.Issuer),
-		ClientID:     strings.TrimSpace(in.ClientID),
-		Enabled:      in.Enabled,
-		ShowOnSignIn: in.ShowOnSignIn,
-		JIT:          in.JIT,
+		Kind:          in.Kind,
+		Name:          strings.TrimSpace(in.Name),
+		Issuer:        strings.TrimSpace(in.Issuer),
+		ClientID:      strings.TrimSpace(in.ClientID),
+		Enabled:       in.Enabled,
+		ShowOnSignIn:  in.ShowOnSignIn,
+		RouteByDomain: in.RouteByDomain,
+		JIT:           in.JIT,
 	}
 	defaults, known := defaultScopes[p.Kind]
 	switch {
@@ -224,7 +226,7 @@ func (h *handler) validProvider(r *http.Request, in providerInput, hasSecret boo
 		return p, httpx.Invalid("Enter a name of up to 100 characters. People see it on the sign-in button, as in “Continue with Google”.")
 	case p.ClientID == "":
 		return p, httpx.Invalid("Enter the client ID from the provider's app registration.")
-	case strings.TrimSpace(in.ClientSecret) == "" && !hasSecret && p.Kind != "oidc":
+	case strings.TrimSpace(in.ClientSecret) == "" && !existing.HasSecret && p.Kind != "oidc":
 		return p, httpx.Invalid("Enter the client secret from the provider's app registration.")
 	}
 	switch p.Kind {
@@ -265,6 +267,22 @@ func (h *handler) validProvider(r *http.Request, in providerInput, hasSecret boo
 	}
 	if p.JIT && len(p.AllowedDomains) == 0 {
 		return p, httpx.Invalid("Add at least one allowed email domain before creating accounts on first sign-in, so only people from your organization get an account.")
+	}
+	if p.RouteByDomain && len(p.AllowedDomains) == 0 {
+		return p, httpx.Invalid("Add at least one allowed email domain before sending people to this provider by their email domain.")
+	}
+	if p.RouteByDomain {
+		all, err := h.st.ListIdentityProviders(r.Context())
+		if err != nil {
+			return p, err
+		}
+		for _, other := range all {
+			for _, d := range p.AllowedDomains {
+				if other.ID != existing.ID && other.RouteByDomain && slices.Contains(other.AllowedDomains, d) {
+					return p, httpx.Invalid("People from " + d + " already go straight to " + other.Name + ". Turn off email domain routing there first, or remove the domain here.")
+				}
+			}
+		}
 	}
 	p.JITGroupIDs = []string{}
 	if len(in.JITGroupIDs) > 0 {
