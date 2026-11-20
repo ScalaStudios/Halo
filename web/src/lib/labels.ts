@@ -1,4 +1,4 @@
-import { Fingerprint, KeyRound, ListOrdered, Mail, Network, RectangleEllipsis, Smartphone, TicketCheck, type LucideIcon } from "lucide-react";
+import { Fingerprint, IdCard, KeyRound, ListOrdered, Mail, Network, RectangleEllipsis, Smartphone, TicketCheck, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/badge";
 import type { AuthStrength, Group, JoinPolicy, MethodKind, RiskLevel, Scope, SignInEvent, SignInResult, UserStatus } from "./types";
 
@@ -24,6 +24,7 @@ export const METHOD: Record<MethodKind, { label: string; icon: LucideIcon; phish
   password: { label: "Password", icon: RectangleEllipsis, phishingResistant: false },
   federated: { label: "Identity provider", icon: Network, phishingResistant: false },
   "access-pass": { label: "Temporary access pass", icon: TicketCheck, phishingResistant: false },
+  certificate: { label: "Client certificate", icon: IdCard, phishingResistant: false },
 };
 
 export const RESULT: Record<SignInResult, { label: string; tone: Tone }> = {

@@ -19,8 +19,8 @@ const haloApp = "halo"
 var (
 	riskLevels    = []string{"none", "low", "medium", "high"}
 	severity      = map[string]int{access.Allow: 0, access.RequireTerms: 1, access.RequirePhishingResistant: 2, access.Block: 3}
-	methodUsing   = map[string]string{"passkey": "a passkey", "security-key": "a security key", "totp": "an authenticator app", "magic-link": "a magic link", "recovery-codes": "a recovery code", "password": "a password", "federated": "an identity provider", "access-pass": "a temporary access pass"}
-	methodPlurals = map[string]string{"passkey": "passkeys", "security-key": "security keys", "totp": "authenticator apps", "magic-link": "magic links", "recovery-codes": "recovery codes", "password": "passwords", "federated": "identity providers"}
+	methodUsing   = map[string]string{"passkey": "a passkey", "security-key": "a security key", "totp": "an authenticator app", "magic-link": "a magic link", "recovery-codes": "a recovery code", "password": "a password", "federated": "an identity provider", "access-pass": "a temporary access pass", "certificate": "a client certificate"}
+	methodPlurals = map[string]string{"passkey": "passkeys", "security-key": "security keys", "totp": "authenticator apps", "magic-link": "magic links", "recovery-codes": "recovery codes", "password": "passwords", "federated": "identity providers", "certificate": "client certificates"}
 	effectVerbs   = map[string]string{access.Allow: "Allows", access.RequirePhishingResistant: "Requires a passkey or security key for", access.Block: "Blocks"}
 )
 

@@ -30,6 +30,7 @@ const DESCRIPTION: Record<MethodKind, string> = {
   password: "For people who can't use a passkey yet, such as during a move from another identity provider. Passwords can be phished, guessed or reused from a breach elsewhere.",
   federated: "Sign-in through Google, Microsoft Entra, GitHub or another OpenID Connect provider. Only as strong as that provider's sign-in.",
   "access-pass": "A time-limited pass an administrator gives someone to set up a new passkey. It never signs anyone in by itself.",
+  certificate: "A certificate from your organization's certificate authority, such as on a smart card. Your reverse proxy asks the browser for it and passes it to Halo.",
 };
 
 const HAVE: Record<MethodKind, string> = {
@@ -41,6 +42,7 @@ const HAVE: Record<MethodKind, string> = {
   password: "a password",
   federated: "a linked identity provider account",
   "access-pass": "a temporary access pass",
+  certificate: "",
 };
 
 function people(n: number) {
@@ -48,6 +50,7 @@ function people(n: number) {
 }
 
 function usage(m: MethodSetting) {
+  if (m.method === "certificate") return "Matches each certificate to a person through the trusted certificate authorities below.";
   if (m.method === "magic-link") return `${people(m.users)} ${m.users === 1 ? "has" : "have"} no passkey, security key or authenticator app.`;
   return `${people(m.users)} ${m.users === 1 ? "has" : "have"} ${HAVE[m.method]}.`;
 }

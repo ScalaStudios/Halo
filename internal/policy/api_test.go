@@ -240,7 +240,7 @@ func TestMethodsAndDevicesAPI(t *testing.T) {
 	}
 	methods := decode[[]method](t, call(t, h, token, "GET", "/api/v1/methods", nil))
 	totpRow := methods[slices.IndexFunc(methods, func(m method) bool { return m.Method == "totp" })]
-	if len(methods) != 6 || methods[0].Method != "passkey" || methods[5].Method != "password" || methods[5].Enabled || totpRow.Users != 1 || totpRow.Exclusive != 1 {
+	if len(methods) != 7 || methods[0].Method != "passkey" || methods[5].Method != "password" || methods[5].Enabled || methods[6].Method != "certificate" || methods[6].Enabled || totpRow.Users != 1 || totpRow.Exclusive != 1 {
 		t.Fatalf("methods: %+v", methods)
 	}
 	for _, kind := range []string{"passkey", "security-key", "totp"} {

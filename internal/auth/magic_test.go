@@ -81,7 +81,7 @@ func newMagicEnv(t *testing.T, policy access.Engine) (*env, inbox) {
 	authn := &httpx.Auth{Store: st, Public: public, Dev: true}
 	box := make(inbox, 10)
 	mux := http.NewServeMux()
-	if err := auth.Register(mux, httpx.Deps{Config: config.Config{PublicURL: public, Dev: true}, Store: st, Auth: authn, Mailer: box, Policy: policy}); err != nil {
+	if err := auth.Register(mux, httpx.Deps{Config: config.Config{PublicURL: public, Dev: true, CertHeader: "Client-Cert"}, Store: st, Auth: authn, Mailer: box, Policy: policy}); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(authn.Resolve(mux))

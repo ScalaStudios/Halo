@@ -445,6 +445,36 @@ paths:
         '403': {$ref: '#/components/responses/SignInRefused'}
         '429': {$ref: '#/components/responses/TooManyAttempts'}
         '503': {$ref: '#/components/responses/ChallengeUnavailable'}
+  /auth/certificate:
+    post:
+      tags: [Sign-in]
+      operationId: signInWithCertificate
+      summary: Sign in with a client certificate
+      description: 'Works while client certificates are turned on under `/methods`. Halo doesn''t terminate TLS, so the reverse proxy asks the browser for a certificate, checks it, and passes it in the header that `HALO_CLIENT_CERT_HEADER` names, such as `Client-Cert`: base64 DER between colons as in RFC 9440, or URL-escaped PEM such as nginx''s `$ssl_client_escaped_cert`. Halo reads no certificates while `HALO_CLIENT_CERT_HEADER` is unset, and reads the header only from addresses in `HALO_TRUSTED_PROXIES`, so the proxy must replace that header when the browser sends it. The certificate must be valid now, allow client authentication and chain to a certificate authority under `/certificate-authorities`, whose `mapping` picks the field matched to a person''s email address. When the certificate names an OCSP responder or a CRL distribution point, Halo asks the first one over HTTP and refuses revoked certificates. It refuses the sign-in when it can''t get a current, signed answer, or when the certificate names only responders and CRLs it can''t reach over HTTP, such as LDAP. Sets the `halo_session` cookie on success. Access policies and the sign-in log apply.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                authRequest: {$ref: '#/components/schemas/AuthRequestId'}
+      responses:
+        '200': {$ref: '#/components/responses/SignedIn'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401':
+          description: '`ERR_CERTIFICATE_MISSING`: `HALO_CLIENT_CERT_HEADER` is unset, or no certificate came from a trusted proxy. `ERR_CERTIFICATE_REJECTED`: the certificate could not be read, expired, was revoked, isn''t from a trusted certificate authority, or matches no person. The sign-in log records the reason.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403': {$ref: '#/components/responses/SignInRefused'}
+        '404': {$ref: '#/components/responses/AuthRequestExpired'}
+        '503':
+          description: '`ERR_REVOCATION_UNAVAILABLE`: the OCSP responder or CRL named in the certificate did not give a valid, current answer.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
   /auth/password:
     post:
       tags: [Sign-in]
@@ -3707,7 +3737,7 @@ paths:
       - name: method
         in: path
         required: true
-        schema: {type: string, enum: [passkey, security-key, totp, magic-link, recovery-codes, password]}
+        schema: {type: string, enum: [passkey, security-key, totp, magic-link, recovery-codes, password, certificate]}
     put:
       tags: [Policies]
       operationId: setMethodEnabled
@@ -4176,6 +4206,62 @@ paths:
       responses:
         '200': {$ref: '#/components/responses/IdentityProviderResponse'}
         '202': {$ref: '#/components/responses/ApprovalPending'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /certificate-authorities:
+    get:
+      tags: [Policies]
+      operationId: listCertificateAuthorities
+      summary: List certificate authorities trusted for client certificate sign-in
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The authorities, oldest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/CertificateAuthority'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Policies]
+      operationId: createCertificateAuthority
+      summary: Trust a certificate authority for client certificate sign-in
+      description: 'Roles: security administrator. Every certificate in the bundle must be a current certificate authority. A client certificate that chains to any of them signs in the person whose email address matches the field `mapping` names: the first `email` address in the subject alternative name, the `upn` (user principal name) in the subject alternative name, or the `subject` common name.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, mapping, certificates]
+              properties:
+                name: {type: string, maxLength: 200}
+                mapping: {type: string, enum: [email, upn, subject]}
+                certificates: {type: string, description: 'One or more PEM certificates of the authorities that sign client certificates. Each one is trusted on its own, so a root alone does not trust certificates its issuing authorities signed.'}
+      responses:
+        '201':
+          description: The authority is trusted.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CertificateAuthority'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /certificate-authorities/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    delete:
+      tags: [Policies]
+      operationId: deleteCertificateAuthority
+      summary: Stop trusting a certificate authority
+      description: 'Roles: security administrator. People who signed in with its certificates stay signed in.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
         '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -5397,7 +5483,7 @@ components:
       description: The id of an application's sign-in request, from the `authRequest` query parameter of the sign-in page. Omit it to sign in to Halo itself.
     MethodKind:
       type: string
-      enum: [passkey, security-key, totp, magic-link, recovery-codes, password, federated]
+      enum: [passkey, security-key, totp, magic-link, recovery-codes, password, federated, certificate]
     RoleKey:
       type: string
       enum: [global_admin, security_admin, user_admin, helpdesk_admin, app_admin, auditor]
@@ -6073,6 +6159,22 @@ components:
         name: {type: string, description: The name of the terms when they were accepted.}
         version: {type: integer}
         acceptedAt: {type: string, format: date-time}
+    CertificateAuthority:
+      type: object
+      required: [id, name, mapping, certificates, createdAt]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        mapping: {type: string, enum: [email, upn, subject]}
+        certificates:
+          type: array
+          items:
+            type: object
+            required: [subject, expiresAt]
+            properties:
+              subject: {type: string, examples: ['CN=Corporate Issuing CA,O=Example']}
+              expiresAt: {type: string, format: date-time}
+        createdAt: {type: string, format: date-time}
     NetworkZone:
       type: object
       required: [id, name, kind, cidrs, createdAt, updatedAt]

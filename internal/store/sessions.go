@@ -75,6 +75,8 @@ func (s Session) AMR() []string {
 		return []string{"hwk", "mfa"}
 	case s.Method == "federated":
 		return []string{"fed"}
+	case s.Method == "certificate":
+		return []string{"swk"}
 	case s.Method == "password" && s.SecondFactor:
 		return []string{"pwd", "otp", "mfa"}
 	case s.Method == "password":

@@ -51,6 +51,8 @@ var sensitiveRoutes = []string{
 	"DELETE /api/v1/identity-providers/{id}",
 	"POST /api/v1/identity-providers/{id}/enable",
 	"POST /api/v1/identity-providers/{id}/disable",
+	"POST /api/v1/certificate-authorities",
+	"DELETE /api/v1/certificate-authorities/{id}",
 	"GET /api/v1/export",
 	"POST /api/v1/approvals/{id}/approve",
 	"POST /api/v1/impersonations/{id}/start",

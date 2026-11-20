@@ -22,7 +22,7 @@ import { TermsStep, type SignedIn } from "./terms";
 import { VerifyCode } from "./verify-code";
 
 type Step = "loading" | "redirect" | "start" | "choose" | "passkey" | "security-key" | "code" | "recovery" | "access-pass" | "enroll" | "password" | "new-password" | "second-factor" | "inbox" | "terms" | "done" | "expired";
-type Choice = "passkey" | "security-key" | "totp" | "password" | "recovery-codes" | "magic-link" | "access-pass";
+type Choice = "passkey" | "security-key" | "totp" | "password" | "recovery-codes" | "magic-link" | "access-pass" | "certificate";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -112,6 +112,7 @@ export function SignInFlow({
   const [cooldown, setCooldown] = useState(0);
   const [resent, setResent] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [certifying, setCertifying] = useState(false);
   const home = methods.length > 0 ? "choose" : "start";
   const emailed = emailSignIn === "link" ? "link" : "code";
   const changing = step === "new-password";
@@ -250,8 +251,22 @@ export function SignInFlow({
     }
   }
 
+  async function certificate() {
+    setCertifying(true);
+    setNotice(null);
+    try {
+      finish(await api<SignedIn>("/auth/certificate", { body: { authRequest } }));
+    } catch (error) {
+      if (expired(error)) return setStep("expired");
+      setNotice(describeFailure(error));
+    } finally {
+      setCertifying(false);
+    }
+  }
+
   function pick(kind: Choice) {
     if (kind === "passkey" || kind === "security-key") return passkey(kind);
+    if (kind === "certificate") return certificate();
     if (kind === "magic-link") return sendLink();
     if (kind === "password") {
       setPassword("");
@@ -273,7 +288,7 @@ export function SignInFlow({
   }
 
   function other(kind: Choice) {
-    if (kind === "security-key" || validEmail()) pick(kind);
+    if (kind === "security-key" || kind === "certificate" || validEmail()) pick(kind);
   }
 
   async function identify(event: FormEvent) {
@@ -373,7 +388,7 @@ export function SignInFlow({
 
   const passkeys = supported && allowed.includes("passkey");
   const permitted = (kind: Choice) => kind === "access-pass" || allowed.includes(kind);
-  const otherKinds: Choice[] = (supported ? (["security-key", "totp", "password", "recovery-codes", "magic-link"] as Choice[]) : (["totp", "password", "recovery-codes", "magic-link"] as Choice[])).filter(permitted);
+  const otherKinds: Choice[] = (supported ? (["security-key", "certificate", "totp", "password", "recovery-codes", "magic-link"] as Choice[]) : (["certificate", "totp", "password", "recovery-codes", "magic-link"] as Choice[])).filter(permitted);
   const choices: Choice[] = ([...methods, "magic-link"] as Choice[]).filter(permitted);
 
   return (
@@ -457,7 +472,7 @@ export function SignInFlow({
                     const Icon = METHOD[kind].icon;
                     return (
                       <li key={kind}>
-                        <Button size="lg" className="w-full" loading={kind === "magic-link" && sending} onClick={() => other(kind)}>
+                        <Button size="lg" className="w-full" loading={(kind === "magic-link" && sending) || (kind === "certificate" && certifying)} onClick={() => other(kind)}>
                           <Icon aria-hidden="true" size={20} strokeWidth={1.75} className="text-fg-3" />
                           {choiceLabel(kind, emailed)}
                         </Button>

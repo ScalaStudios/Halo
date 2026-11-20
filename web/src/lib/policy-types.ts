@@ -65,6 +65,14 @@ export type TermsAcceptance = {
   acceptedAt: string;
 };
 
+export type CertificateAuthority = {
+  id: string;
+  name: string;
+  mapping: "email" | "upn" | "subject";
+  certificates: { subject: string; expiresAt: string }[];
+  createdAt: string;
+};
+
 export type MethodSetting = {
   method: MethodKind;
   enabled: boolean;
