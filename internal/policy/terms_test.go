@@ -2,6 +2,7 @@ package policy_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"halo/internal/access"
@@ -53,6 +54,9 @@ func TestTermsStayPendingUntilTheCurrentVersionIsAccepted(t *testing.T) {
 	}
 	if got := pending("passkey"); len(got) != 1 || got[0].Version != 2 {
 		t.Fatalf("version 2 must be asked again: %+v", got)
+	}
+	if _, err := st.SaveTerms(ctx, store.Terms{ID: "tou_missing", Name: "Gone", Text: "x"}); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("saving a missing document must not create it: %v", err)
 	}
 
 	terms.Mode = "report"

@@ -56,14 +56,14 @@ func (s *Store) GetTerms(ctx context.Context, termsID string) (Terms, error) {
 }
 
 func (s *Store) SaveTerms(ctx context.Context, t Terms) (Terms, error) {
+	query := `update terms set name = $2, text = $3, url = $4, updated_at = now(), version = version + (text <> $3 or url <> $4)::int
+		where id = $1 returning ` + termsColumns
 	if t.ID == "" {
 		t.ID = id.New("tou")
+		query = `insert into terms (id, name, text, url) values ($1, $2, $3, $4) returning ` + termsColumns
 	}
-	saved, err := scanTerms(s.db.QueryRow(ctx, `insert into terms (id, name, text, url) values ($1, $2, $3, $4)
-		on conflict (id) do update set name = excluded.name, text = excluded.text, url = excluded.url, updated_at = now(),
-			version = terms.version + (terms.text <> excluded.text or terms.url <> excluded.url)::int
-		returning `+termsColumns, t.ID, strings.TrimSpace(t.Name), t.Text, t.URL))
-	return saved, conflict(err)
+	saved, err := scanTerms(s.db.QueryRow(ctx, query, t.ID, strings.TrimSpace(t.Name), t.Text, t.URL))
+	return saved, notFound(conflict(err))
 }
 
 func (s *Store) DeleteTerms(ctx context.Context, termsID string) error {

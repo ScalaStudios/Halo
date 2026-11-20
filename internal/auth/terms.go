@@ -3,6 +3,7 @@ package auth
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"halo/internal/httpx"
 	"halo/internal/store"
@@ -63,6 +64,15 @@ func (h *handler) acceptTerms(w http.ResponseWriter, r *http.Request) error {
 	app, err := h.target(ctx, c.Request)
 	if err != nil {
 		return err
+	}
+	if current != nil && c.Request != "" {
+		req, err := h.st.GetAuthRequest(ctx, c.Request)
+		if err != nil {
+			return err
+		}
+		if req.MaxAge != nil && time.Since(current.CreatedAt) > time.Duration(*req.MaxAge)*time.Second {
+			return errReauthRequired
+		}
 	}
 	return h.finish(w, r, attempt{method: c.Method, secondFactor: c.SecondFactor, email: u.Email, user: &u, app: app, request: c.Request}, current, nil)
 }
