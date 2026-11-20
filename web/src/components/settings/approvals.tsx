@@ -61,9 +61,15 @@ function Target({ request }: { request: ApprovalRequest }) {
 
 export function PendingApprovals({ requests }: { requests: ApprovalRequest[] }) {
   const [deciding, setDeciding] = useState<{ request: ApprovalRequest; approve: boolean } | null>(null);
+  const dialog = deciding ? <DecideDialog {...deciding} onClose={() => setDeciding(null)} /> : null;
 
   if (requests.length === 0) {
-    return <EmptyState icon={Inbox} title="Nothing waiting" description="Changes that need a second global administrator appear here." className="py-8" />;
+    return (
+      <>
+        <EmptyState icon={Inbox} title="Nothing waiting" description="Changes that need a second global administrator appear here." className="py-8" />
+        {dialog}
+      </>
+    );
   }
 
   return (
@@ -98,7 +104,7 @@ export function PendingApprovals({ requests }: { requests: ApprovalRequest[] }) 
           </li>
         ))}
       </ul>
-      {deciding ? <DecideDialog {...deciding} onClose={() => setDeciding(null)} /> : null}
+      {dialog}
     </>
   );
 }

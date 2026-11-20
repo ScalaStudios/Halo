@@ -15,6 +15,7 @@ import (
 	"halo/internal/api"
 	"halo/internal/apikeys"
 	"halo/internal/approval"
+	"halo/internal/auth"
 	"halo/internal/config"
 	"halo/internal/httpx"
 	"halo/internal/mail"
@@ -48,7 +49,7 @@ func setup(t *testing.T) *env {
 	box := &outbox{}
 	d := httpx.Deps{Config: config.Config{PublicURL: public, Dev: true}, Store: st, Auth: authn, Mailer: box}
 	mux := http.NewServeMux()
-	for _, register := range []func(*http.ServeMux, httpx.Deps) error{api.Register, policy.Register, settings.Register, apikeys.Register, approval.Register} {
+	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, policy.Register, settings.Register, apikeys.Register, approval.Register} {
 		if err := register(mux, d); err != nil {
 			t.Fatal(err)
 		}
@@ -317,5 +318,93 @@ func TestApprovalSettingsNeedApprovalToChange(t *testing.T) {
 	e.st.ForgetSettings()
 	if s, _ := e.st.Settings(context.Background()); len(s.ApprovalActions) != 0 {
 		t.Fatalf("approval must be off once approved: %v", s.ApprovalActions)
+	}
+}
+
+func TestApprovalWaitsForAConcurrentChangeAndFailsAsStale(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	_, gia := e.person("gia@example.com", "global_admin")
+	_, ben := e.person("ben@example.com", "global_admin")
+	cara, _ := e.person("cara@example.com", "auditor")
+	e.expect(e.call(gia, "PATCH", "/api/v1/settings", map[string]any{"approvalActions": []string{"global-admin"}}), 200)
+	held := decode[store.ApprovalRequest](t, e.expect(e.call(gia, "PUT", "/api/v1/users/"+cara.ID+"/roles", map[string]any{"roles": []string{"global_admin", "auditor"}}), 202))
+
+	done := make(chan *httptest.ResponseRecorder, 1)
+	err := e.st.Tx(ctx, func(tx *store.Store) error {
+		if err := tx.SetUserRoles(ctx, cara.ID, []string{"user_admin"}); err != nil {
+			return err
+		}
+		go func() { done <- e.call(ben, "POST", "/api/v1/approvals/"+held.ID+"/approve", nil) }()
+		select {
+		case rec := <-done:
+			t.Fatalf("the approval must wait for the concurrent change: %d %s", rec.Code, rec.Body)
+		case <-time.After(300 * time.Millisecond):
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := e.expect(<-done, 409)
+	if !strings.Contains(stale.Body.String(), "ERR_NOT_APPLIED") || !strings.Contains(stale.Body.String(), "changed after") {
+		t.Fatalf("stale approval: %s", stale.Body)
+	}
+	if u, _ := e.st.GetUser(ctx, cara.ID); u.HasRole("global_admin") || !u.HasRole("user_admin") || u.HasRole("auditor") {
+		t.Fatalf("the approval must not apply over the concurrent change: %v", u.RoleKeys)
+	}
+	if after, _ := e.st.GetApprovalRequest(ctx, held.ID); after.Status != "failed" || after.DecidedBy == nil {
+		t.Fatalf("stale request: %+v", after)
+	}
+}
+
+func TestOversizedBodyIsNotHeldForApproval(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	_, gia := e.person("gia@example.com", "global_admin")
+	e.person("ben@example.com", "global_admin")
+	created := decode[store.AccessPolicy](t, e.expect(e.call(gia, "POST", "/api/v1/policies", map[string]any{"name": "Passkeys everywhere", "enabled": true, "mode": "enforce", "effect": "require-phishing-resistant", "conditions": map[string]any{"allUsers": true, "allApps": true}}), 201))
+	e.expect(e.call(gia, "PATCH", "/api/v1/settings", map[string]any{"approvalActions": []string{"policy-disable"}}), 200)
+
+	big := e.expect(e.call(gia, "DELETE", "/api/v1/policies/"+created.ID, strings.Repeat("a", 1<<20)), 413)
+	if !strings.Contains(big.Body.String(), "ERR_TOO_LARGE") {
+		t.Fatalf("oversized body: %s", big.Body)
+	}
+	if list, err := e.st.ListApprovalRequests(ctx); err != nil || len(list) != 0 {
+		t.Fatalf("an oversized request must not be stored: %+v %v", list, err)
+	}
+	e.expect(e.call(gia, "DELETE", "/api/v1/policies/"+created.ID, nil), 202)
+}
+
+func TestApprovedChangesApplyToEachKindOfTarget(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	_, gia := e.person("gia@example.com", "global_admin")
+	_, ben := e.person("ben@example.com", "global_admin")
+	bot, err := e.st.CreateServiceAccount(ctx, store.NewServiceAccount{Name: "Deploy bot", Roles: []string{"auditor"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.expect(e.call(gia, "PATCH", "/api/v1/settings", map[string]any{"approvalActions": []string{"global-admin", "password-sign-in", "identity-providers"}}), 200)
+
+	for _, rec := range []*httptest.ResponseRecorder{
+		e.call(gia, "PUT", "/api/v1/service-accounts/"+bot.ID+"/roles", map[string]any{"roles": []string{"global_admin"}}),
+		e.call(gia, "PUT", "/api/v1/methods/password", map[string]any{"enabled": true}),
+		e.call(gia, "POST", "/api/v1/identity-providers", map[string]any{"kind": "github", "name": "GitHub", "clientId": "halo", "clientSecret": "secret"}),
+	} {
+		held := decode[store.ApprovalRequest](t, e.expect(rec, 202))
+		e.expect(e.call(ben, "POST", "/api/v1/approvals/"+held.ID+"/approve", nil), 200)
+	}
+	if u, _ := e.st.GetUser(ctx, bot.ID); !u.HasRole("global_admin") {
+		t.Fatalf("service account roles: %v", u.RoleKeys)
+	}
+	methods, _ := e.st.ListMethodSettings(ctx)
+	for _, m := range methods {
+		if m.Method == "password" && !m.Enabled {
+			t.Fatal("password sign-in must be on once approved")
+		}
+	}
+	if providers, _ := e.st.ListIdentityProviders(ctx); len(providers) != 1 || providers[0].Name != "GitHub" {
+		t.Fatalf("identity providers: %+v", providers)
 	}
 }

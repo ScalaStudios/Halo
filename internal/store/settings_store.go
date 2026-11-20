@@ -84,9 +84,21 @@ type cachedSettings struct {
 var settingsCache sync.Map
 
 func (s *Store) Settings(ctx context.Context) (Settings, error) {
+	if s.inTx(ctx) {
+		return s.CurrentSettings(ctx)
+	}
 	if c, ok := settingsCache.Load(s.pool); ok && time.Since(c.(cachedSettings).loaded) < settingsTTL {
 		return c.(cachedSettings).settings, nil
 	}
+	settings, err := s.CurrentSettings(ctx)
+	if err != nil {
+		return Settings{}, err
+	}
+	settingsCache.Store(s.pool, cachedSettings{loaded: time.Now(), settings: settings})
+	return settings, nil
+}
+
+func (s *Store) CurrentSettings(ctx context.Context) (Settings, error) {
 	rows, err := s.db.Query(ctx, `select key, value from settings`)
 	if err != nil {
 		return Settings{}, err
@@ -110,7 +122,6 @@ func (s *Store) Settings(ctx context.Context) (Settings, error) {
 	if err := json.Unmarshal(merged, &settings); err != nil {
 		return Settings{}, err
 	}
-	settingsCache.Store(s.pool, cachedSettings{loaded: time.Now(), settings: settings})
 	return settings, nil
 }
 
@@ -120,6 +131,10 @@ func (s *Store) SaveSettings(ctx context.Context, settings Settings) error {
 	if err := json.Unmarshal(encoded, &values); err != nil {
 		return err
 	}
+	return s.SaveSettingValues(ctx, values)
+}
+
+func (s *Store) SaveSettingValues(ctx context.Context, values map[string]json.RawMessage) error {
 	for key, value := range values {
 		if _, err := s.db.Exec(ctx, `insert into settings (key, value) values ($1, $2) on conflict (key) do update set value = excluded.value, updated_at = now()`, key, value); err != nil {
 			return err
