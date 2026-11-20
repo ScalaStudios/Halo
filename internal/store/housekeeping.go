@@ -19,6 +19,7 @@ func (s *Store) Purge(ctx context.Context) error {
 		`delete from magic_links where expires_at < now() - interval '1 day'`,
 		`delete from rate_limit_windows where window_start < now() - interval '1 day'`,
 		`delete from sign_ups where verified_at is null and expires_at < now()`,
+		`delete from api_keys where credential_id is not null and expires_at < now()`,
 	} {
 		if _, err := s.db.Exec(ctx, sql); err != nil {
 			return err

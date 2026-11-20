@@ -1,6 +1,7 @@
 package apikeys
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"net/http"
@@ -24,12 +25,14 @@ func Resolver(st *store.Store) httpx.KeyResolver {
 }
 
 type handlers struct {
-	st   *store.Store
-	gate *approval.Gate
+	st     *store.Store
+	gate   *approval.Gate
+	dev    bool
+	issuer string
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
-	h := &handlers{st: d.Store, gate: approval.New(d)}
+	h := &handlers{st: d.Store, gate: approval.New(d), dev: d.Config.Dev, issuer: d.Config.Issuer()}
 	route := func(pattern string, roles []string, fn func(http.ResponseWriter, *http.Request, store.User) error) {
 		mux.Handle(pattern, httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
 			actor, err := httpx.RequireRole(r, roles...)
@@ -45,6 +48,8 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("PATCH /api/v1/service-accounts/{id}", writers, h.update)
 	route("PUT /api/v1/service-accounts/{id}/roles", writers, h.setRoles)
 	route("POST /api/v1/service-accounts/{id}/keys", writers, h.createKey)
+	route("POST /api/v1/service-accounts/{id}/federated-credentials", writers, h.createCredential)
+	route("DELETE /api/v1/service-accounts/{id}/federated-credentials/{credentialId}", writers, h.deleteCredential)
 	route("GET /api/v1/api-keys", readers, h.listKeys)
 	route("DELETE /api/v1/api-keys/{id}", writers, h.revokeKey)
 	return nil
@@ -330,17 +335,9 @@ func (h *handlers) createKey(w http.ResponseWriter, r *http.Request, actor store
 	if label == "" || len(label) > 100 {
 		return httpx.Invalid("Enter a label of up to 100 characters that says where the key is used, such as Production CI.")
 	}
-	granted := []string{}
-	for _, scope := range in.Scopes {
-		if !slices.Contains(scopes, scope) {
-			return httpx.Invalid(fmt.Sprintf("%q is not a scope. Use api for the management API, scim for SCIM provisioning or registration for OAuth client registration.", scope))
-		}
-		if !slices.Contains(granted, scope) {
-			granted = append(granted, scope)
-		}
-	}
-	if len(granted) == 0 {
-		return httpx.Invalid(`Choose at least one scope: "api" for the management API, "scim" for SCIM provisioning or "registration" for OAuth client registration.`)
+	granted, err := grantedScopes(in.Scopes)
+	if err != nil {
+		return err
 	}
 	if in.ExpiresAt != nil && !in.ExpiresAt.After(time.Now()) {
 		return httpx.Invalid("The expiry date is in the past. Pick a future date, or leave it empty for a key that does not expire.")
@@ -359,6 +356,106 @@ func (h *handlers) createKey(w http.ResponseWriter, r *http.Request, actor store
 		return err
 	}
 	return httpx.JSON(w, http.StatusCreated, map[string]any{"key": key, "secret": value})
+}
+
+func grantedScopes(requested []string) ([]string, error) {
+	granted := []string{}
+	for _, scope := range requested {
+		if !slices.Contains(scopes, scope) {
+			return nil, httpx.Invalid(fmt.Sprintf("%q is not a scope. Use api for the management API, scim for SCIM provisioning or registration for OAuth client registration.", scope))
+		}
+		if !slices.Contains(granted, scope) {
+			granted = append(granted, scope)
+		}
+	}
+	if len(granted) == 0 {
+		return nil, httpx.Invalid(`Choose at least one scope: "api" for the management API, "scim" for SCIM provisioning or "registration" for OAuth client registration.`)
+	}
+	return granted, nil
+}
+
+func (h *handlers) createCredential(w http.ResponseWriter, r *http.Request, actor store.User) error {
+	account, err := h.account(r)
+	if err != nil {
+		return err
+	}
+	var in struct {
+		Name       string            `json:"name"`
+		Issuer     string            `json:"issuer"`
+		Subject    string            `json:"subject"`
+		Audience   string            `json:"audience"`
+		Conditions map[string]string `json:"conditions"`
+		Scopes     []string          `json:"scopes"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	if err := manageable(actor, account); err != nil {
+		return err
+	}
+	c := store.FederatedCredential{ServiceAccountID: account.ID, Name: strings.TrimSpace(in.Name), Issuer: strings.TrimSpace(in.Issuer), Subject: strings.TrimSpace(in.Subject), Audience: cmp.Or(strings.TrimSpace(in.Audience), h.issuer), Conditions: map[string]string{}, CreatedBy: &actor.ID}
+	switch {
+	case c.Name == "" || len(c.Name) > 100:
+		return httpx.Invalid("Enter a name of up to 100 characters that says which workload signs in, such as Deploy workflow.")
+	case !httpx.ValidIssuer(c.Issuer, h.dev):
+		return httpx.Invalid("Enter the issuer exactly as it appears in the iss claim, starting with https://, such as https://token.actions.githubusercontent.com.")
+	case c.Subject == "" || len(c.Subject) > 500:
+		return httpx.Invalid("Enter the subject exactly as it appears in the sub claim, such as repo:acme/infra:ref:refs/heads/main.")
+	case len(c.Audience) > 500 || len(c.Issuer) > 500:
+		return httpx.Invalid("Keep the issuer and the audience under 500 characters.")
+	case len(in.Conditions) > 20:
+		return httpx.Invalid("Add at most 20 claim conditions.")
+	}
+	for claim, value := range in.Conditions {
+		claim, value = strings.TrimSpace(claim), strings.TrimSpace(value)
+		if claim == "" || value == "" || len(claim) > 100 || len(value) > 500 {
+			return httpx.Invalid("Give each claim condition a claim name and the exact value it must have, such as repository_owner_id and 1342004.")
+		}
+		c.Conditions[claim] = value
+	}
+	if c.Scopes, err = grantedScopes(in.Scopes); err != nil {
+		return err
+	}
+	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+		var err error
+		c, err = tx.CreateFederatedCredential(r.Context(), c)
+		if errors.Is(err, store.ErrConflict) {
+			return httpx.Fail(http.StatusConflict, "ERR_CONFLICT", account.Name+" already trusts this subject from this issuer for this audience.")
+		}
+		if err != nil {
+			return err
+		}
+		return record(r, tx, actor, account, "federated_credential.create", "Added federated credential “"+c.Name+"” for "+c.Subject+" from "+c.Issuer+" with scope "+strings.Join(c.Scopes, " and "))
+	})
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusCreated, c)
+}
+
+func (h *handlers) deleteCredential(w http.ResponseWriter, r *http.Request, actor store.User) error {
+	account, err := h.account(r)
+	if err != nil {
+		return err
+	}
+	if err := manageable(actor, account); err != nil {
+		return err
+	}
+	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+		c, err := tx.DeleteFederatedCredential(r.Context(), account.ID, r.PathValue("credentialId"))
+		if errors.Is(err, store.ErrNotFound) {
+			return httpx.NotFound("This federated credential")
+		}
+		if err != nil {
+			return err
+		}
+		return record(r, tx, actor, account, "federated_credential.delete", "Removed federated credential “"+c.Name+"” for "+c.Subject+" from "+c.Issuer+"; tokens issued through it stopped working")
+	})
+	if err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
 func (h *handlers) listKeys(w http.ResponseWriter, r *http.Request, _ store.User) error {

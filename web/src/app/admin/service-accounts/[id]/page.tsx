@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, Bot, TriangleAlert } from "lucide-react";
 import { AccountActions, KeyTable, RateLimitCard, RolesCard } from "@/components/provisioning/account-actions";
+import { FederatedCredentials } from "@/components/provisioning/federated-credentials";
 import { ACCOUNT_STATUS, ActivityList, StatusLabel, activeKeys, lastUsed } from "@/components/provisioning/shared";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -27,7 +28,7 @@ export default async function ServiceAccountPage({ params }: { params: Promise<{
   const owner = users.find((u) => u.id === account.ownerId);
   const names = { ...Object.fromEntries(users.map((u) => [u.id, u.name])), [account.id]: account.name };
   const activity = audit.filter((event) => event.actorId === account.id || event.targetId === account.id).slice(0, 20);
-  const used = lastUsed(account.keys);
+  const used = lastUsed([...account.keys, ...account.federatedCredentials]);
   const status = ACCOUNT_STATUS[account.status];
 
   return (
@@ -86,6 +87,8 @@ export default async function ServiceAccountPage({ params }: { params: Promise<{
         <SectionTitle title="API keys" description="Send a key as Authorization: Bearer <key>. The api scope opens the management API; the scim scope opens SCIM provisioning." />
         <KeyTable keys={account.keys} accountName={account.name} />
       </section>
+
+      <FederatedCredentials account={account} issuer={org.issuer} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <div className="flex min-w-0 flex-col gap-6 xl:col-span-5">

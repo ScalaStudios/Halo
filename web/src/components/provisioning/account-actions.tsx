@@ -183,32 +183,7 @@ function CreateKeyDialog({ account, scimUrl, open, onOpenChange }: { account: Se
           <Field label="Label" error={errors.label}>
             {(props) => <Input {...props} autoFocus autoComplete="off" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Production CI" />}
           </Field>
-          <fieldset className="flex flex-col gap-3" aria-describedby={errors.scopes ? "scopes-error" : undefined}>
-            <legend className="mb-3 text-label text-fg">Scopes</legend>
-            {(Object.keys(SCOPES) as KeyScope[]).map((scope) => (
-              <label key={scope} className="flex cursor-pointer items-start gap-3">
-                <Checkbox
-                  className="mt-0.5"
-                  checked={scopes.includes(scope)}
-                  onChange={(event) => setScopes((current) => (event.target.checked ? [...current, scope] : current.filter((s) => s !== scope)))}
-                />
-                <span className="flex flex-col">
-                  <span className="text-body-sm text-fg">
-                    {SCOPES[scope].label} <span className="font-mono text-code-sm text-fg-3">{scope}</span>
-                  </span>
-                  <span className="text-caption text-fg-3">{SCOPES[scope].description}</span>
-                  {scope === "scim" && scopes.includes("scim") && !canProvision(account) ? (
-                    <span className="text-caption text-warning">{account.name} doesn&apos;t have the User administrator role, so SCIM requests are rejected until you add it.</span>
-                  ) : null}
-                </span>
-              </label>
-            ))}
-            {errors.scopes ? (
-              <p id="scopes-error" className="text-caption text-danger">
-                {errors.scopes}
-              </p>
-            ) : null}
-          </fieldset>
+          <ScopeFieldset account={account} scopes={scopes} onChange={setScopes} error={errors.scopes} />
           <Field label="Expires">
             {(props) => (
               <Select {...props} value={expiry} onChange={(event) => setExpiry(event.target.value)}>
@@ -224,6 +199,33 @@ function CreateKeyDialog({ account, scimUrl, open, onOpenChange }: { account: Se
         </form>
       )}
     </Dialog>
+  );
+}
+
+export function ScopeFieldset({ account, scopes, onChange, error }: { account: ServiceAccount; scopes: KeyScope[]; onChange: (scopes: KeyScope[]) => void; error?: string }) {
+  return (
+    <fieldset className="flex flex-col gap-3" aria-describedby={error ? "scopes-error" : undefined}>
+      <legend className="mb-3 text-label text-fg">Scopes</legend>
+      {(Object.keys(SCOPES) as KeyScope[]).map((scope) => (
+        <label key={scope} className="flex cursor-pointer items-start gap-3">
+          <Checkbox className="mt-0.5" checked={scopes.includes(scope)} onChange={(event) => onChange(event.target.checked ? [...scopes, scope] : scopes.filter((s) => s !== scope))} />
+          <span className="flex flex-col">
+            <span className="text-body-sm text-fg">
+              {SCOPES[scope].label} <span className="font-mono text-code-sm text-fg-3">{scope}</span>
+            </span>
+            <span className="text-caption text-fg-3">{SCOPES[scope].description}</span>
+            {scope === "scim" && scopes.includes("scim") && !canProvision(account) ? (
+              <span className="text-caption text-warning">{account.name} doesn&apos;t have the User administrator role, so SCIM requests are rejected until you add it.</span>
+            ) : null}
+          </span>
+        </label>
+      ))}
+      {error ? (
+        <p id="scopes-error" className="text-caption text-danger">
+          {error}
+        </p>
+      ) : null}
+    </fieldset>
   );
 }
 
