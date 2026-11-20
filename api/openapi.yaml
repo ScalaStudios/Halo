@@ -2330,7 +2330,7 @@ paths:
       tags: [Applications]
       operationId: setApplicationSAML
       summary: Change a SAML application's settings
-      description: 'Roles: application administrator. Send any of the fields; `metadataXml` imports the entity ID and ACS URLs from the service provider''s metadata.'
+      description: 'Roles: application administrator. Send any of the fields; `metadataXml` imports the entity ID, the ACS URLs and the encryption certificate from the service provider''s metadata.'
       requestBody:
         required: true
         content:
@@ -4850,7 +4850,14 @@ components:
         nameIdFormat: {type: string, enum: [email, persistent, unspecified]}
         signResponse: {type: boolean, description: Sign the whole response as well as the assertion.}
         attributes: {$ref: '#/components/schemas/SAMLAttributes'}
-        metadataXml: {type: string, description: The service provider's metadata. Halo reads the entity ID and ACS URLs from it.}
+        metadataXml: {type: string, description: 'The service provider''s metadata. Halo reads the entity ID and ACS URLs from it, and the encryption certificate from a `KeyDescriptor use="encryption"`: the one that expires last, skipping expired certificates. It doesn''t turn on encryption.'}
+        encryption:
+          type: string
+          enum: ['off', aes256-gcm, aes256-cbc]
+          description: Encrypt the signed assertion for the service provider with AES-256-GCM, or AES-256-CBC for service providers that don't support GCM. The AES key is sent with RSA-OAEP (`rsa-oaep-mgf1p`, SHA-1). Needs `encryptionCertificate`.
+        encryptionCertificate:
+          type: string
+          description: The service provider's encryption certificate, in PEM or base64. It must hold an RSA key of at least 2048 bits and not have expired when you save it. Halo returns it in PEM.
     SAMLView:
       type: object
       description: SAML applications only.
@@ -4863,6 +4870,8 @@ components:
         signResponse: {type: boolean}
         attributes: {$ref: '#/components/schemas/SAMLAttributes'}
         metadataXml: {type: string}
+        encryption: {type: string, enum: ['off', aes256-gcm, aes256-cbc]}
+        encryptionCertificate: {type: string, description: The service provider's encryption certificate in PEM, or an empty string.}
         idp:
           type: object
           description: What to enter in the service provider.

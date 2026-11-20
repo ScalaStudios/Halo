@@ -123,21 +123,28 @@ func (h *handlers) view(ctx context.Context, app store.Application) (any, error)
 }
 
 type samlInput struct {
-	EntityID     *string               `json:"entityId"`
-	ACSURLs      *[]string             `json:"acsUrls"`
-	NameIDFormat *string               `json:"nameIdFormat"`
-	SignResponse *bool                 `json:"signResponse"`
-	Attributes   *store.SAMLAttributes `json:"attributes"`
-	MetadataXML  *string               `json:"metadataXml"`
+	EntityID              *string               `json:"entityId"`
+	ACSURLs               *[]string             `json:"acsUrls"`
+	NameIDFormat          *string               `json:"nameIdFormat"`
+	SignResponse          *bool                 `json:"signResponse"`
+	Attributes            *store.SAMLAttributes `json:"attributes"`
+	MetadataXML           *string               `json:"metadataXml"`
+	Encryption            *string               `json:"encryption"`
+	EncryptionCertificate *string               `json:"encryptionCertificate"`
 }
 
 func (in samlInput) apply(entityID string, acs []string, s store.SAMLSettings) (string, []string, store.SAMLSettings, error) {
+	current := s
 	if in.MetadataXML != nil {
 		s.MetadataXML = strings.TrimSpace(*in.MetadataXML)
 		if s.MetadataXML != "" {
 			var err error
-			if entityID, acs, err = saml.ParseMetadata(s.MetadataXML); err != nil {
+			var certificate string
+			if entityID, acs, certificate, err = saml.ParseMetadata(s.MetadataXML); err != nil {
 				return "", nil, s, httpx.Invalid(err.Error())
+			}
+			if certificate != "" {
+				s.EncryptionCertificate = certificate
 			}
 		}
 	}
@@ -156,6 +163,12 @@ func (in samlInput) apply(entityID string, acs []string, s store.SAMLSettings) (
 	if in.Attributes != nil {
 		s.Attributes = *in.Attributes
 	}
+	if in.Encryption != nil {
+		s.Encryption = *in.Encryption
+	}
+	if in.EncryptionCertificate != nil {
+		s.EncryptionCertificate = strings.TrimSpace(*in.EncryptionCertificate)
+	}
 	unprintable := func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }
 	if entityID == "" || len(entityID) > 1024 || strings.ContainsFunc(entityID, unprintable) {
 		return "", nil, s, httpx.Invalid("Enter the service provider's entity ID without spaces, for example https://slack.com. The application shows it in its SAML settings or metadata.")
@@ -171,6 +184,22 @@ func (in samlInput) apply(entityID string, acs []string, s store.SAMLSettings) (
 	}
 	if !slices.Contains([]string{"email", "persistent", "unspecified"}, s.NameIDFormat) {
 		return "", nil, s, httpx.Invalid(`Choose a NameID format: "email" sends the email address, "persistent" sends the Halo user ID, "unspecified" sends the email address without declaring a format.`)
+	}
+	if !slices.Contains([]string{"off", "aes256-gcm", "aes256-cbc"}, s.Encryption) {
+		return "", nil, s, httpx.Invalid(`Choose an assertion encryption: "off" sends the signed assertion as is, "aes256-gcm" encrypts it with AES-256-GCM, "aes256-cbc" with AES-256-CBC for service providers that don't support GCM.`)
+	}
+	if s.Encryption != "off" && s.EncryptionCertificate == "" {
+		return "", nil, s, httpx.Invalid("Add the service provider's encryption certificate to encrypt assertions. It's in the service provider's metadata, under KeyDescriptor use=\"encryption\".")
+	}
+	if s.EncryptionCertificate != "" && (s.EncryptionCertificate != current.EncryptionCertificate || s.Encryption != current.Encryption && s.Encryption != "off") {
+		cert, normalized, err := saml.EncryptionCertificate(s.EncryptionCertificate)
+		if err != nil {
+			return "", nil, s, httpx.Invalid(err.Error())
+		}
+		if time.Now().After(cert.NotAfter) {
+			return "", nil, s, httpx.Invalid("The encryption certificate expired on " + cert.NotAfter.Format("2 January 2006") + ". Ask the service provider for its current certificate.")
+		}
+		s.EncryptionCertificate = normalized
 	}
 	seen := map[string]bool{}
 	for _, name := range []*string{&s.Attributes.Email, &s.Attributes.Name, &s.Attributes.GivenName, &s.Attributes.FamilyName, &s.Attributes.Groups} {
