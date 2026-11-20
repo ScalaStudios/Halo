@@ -25,7 +25,7 @@ const DESCRIPTION: Record<MethodKind, string> = {
   passkey: "Face ID, Touch ID, Windows Hello or a phone screen lock. Bound to this domain, so a fake sign-in page can't use them.",
   "security-key": "Hardware keys such as a YubiKey or Titan Key. Phishing-resistant and portable between computers.",
   totp: "Six-digit codes from apps such as 1Password, Google Authenticator or Aegis. A convincing fake sign-in page can capture them.",
-  "magic-link": "A single-use sign-in link sent by email. Only as safe as the mailbox it goes to.",
+  "magic-link": "A single-use sign-in link or code sent by email. Only as safe as the mailbox it goes to.",
   "recovery-codes": "Single-use backup codes for people who lost their other methods.",
   password: "For people who can't use a passkey yet, such as during a move from another identity provider. Passwords can be phished, guessed or reused from a breach elsewhere.",
   federated: "Sign-in through Google, Microsoft Entra, GitHub or another OpenID Connect provider. Only as strong as that provider's sign-in.",
@@ -136,6 +136,7 @@ export function MethodSettings({ methods, settings, groups }: { methods: MethodS
       <p className="text-body-sm text-fg-3">
         Changes apply from the next sign-in. Enrolled methods are kept when you turn one off, so turning it back on restores them. People who are already signed in stay signed in.
       </p>
+      {magicLinks ? <SignInEmails settings={settings} /> : null}
       {methods.some((m) => m.method === "password" && m.enabled) ? <PasswordRules settings={settings} groups={groups} /> : null}
       <Dialog
         open={confirming?.method === "password" && !confirming.enabled}
@@ -184,6 +185,45 @@ export function MethodSettings({ methods, settings, groups }: { methods: MethodS
         }
       />
     </>
+  );
+}
+
+function SignInEmails({ settings }: { settings: Settings }) {
+  const { saving, failure, save } = useSaveSettings();
+  const [contents, setContents] = useState(settings.emailSignIn);
+
+  return (
+    <Card>
+      <CardHeader
+        title="Sign-in emails"
+        description="What people get when they ask for an email on the sign-in page. A code works when they read the email on another device, and a mail scanner that opens the link doesn't use up the code."
+      />
+      <CardBody>
+        <form
+          className="flex max-w-xl flex-col gap-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void save({ emailSignIn: contents }, "Sign-in emails saved", "Emails sent from now on follow it within 30 seconds.");
+          }}
+        >
+          <Field label="Each email contains" hint="Links and codes work once and expire after 10 minutes. A code has 5 attempts, and wrong codes count toward the lockout.">
+            {(props) => (
+              <Select {...props} value={contents} onChange={(event) => setContents(event.target.value as Settings["emailSignIn"])}>
+                <option value="link">A sign-in link</option>
+                <option value="code">A 6-digit code to enter on the sign-in page</option>
+                <option value="both">A sign-in link and a 6-digit code</option>
+              </Select>
+            )}
+          </Field>
+          <div className="flex flex-wrap items-center gap-4">
+            <Button type="submit" variant="primary" loading={saving} disabled={contents === settings.emailSignIn}>
+              Save sign-in emails
+            </Button>
+            <ActionError message={failure} />
+          </div>
+        </form>
+      </CardBody>
+    </Card>
   );
 }
 

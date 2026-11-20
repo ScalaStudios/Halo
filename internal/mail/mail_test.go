@@ -95,7 +95,7 @@ func TestOutboxRetriesWithBackoff(t *testing.T) {
 	o, st := outbox(t, server)
 	ctx := context.Background()
 	start := time.Now()
-	if err := o.Send(ctx, MagicLink("ada@example.com", "Ada", "", "https://auth.example.com/sign-in/magic?token=x")); err == nil || !strings.Contains(err.Error(), "451") {
+	if err := o.Send(ctx, MagicLink("ada@example.com", "Ada", "", "https://auth.example.com/sign-in/magic?token=x", "")); err == nil || !strings.Contains(err.Error(), "451") {
 		t.Fatalf("first attempt should fail with the server's 451: %v", err)
 	}
 	if m := latest(t, st); m.Attempts != 1 || m.SentAt != nil || !strings.Contains(m.LastError, "451") {
@@ -119,7 +119,7 @@ func TestOutboxRetriesWithBackoff(t *testing.T) {
 	}
 
 	server.Reject(100)
-	if err := o.Send(ctx, MagicLink("ada@example.com", "Ada", "Grafana", "https://auth.example.com/sign-in/magic?token=y")); err == nil {
+	if err := o.Send(ctx, MagicLink("ada@example.com", "Ada", "Grafana", "https://auth.example.com/sign-in/magic?token=y", "")); err == nil {
 		t.Fatal("want a delivery error")
 	}
 	step(2*time.Minute, 2, false)

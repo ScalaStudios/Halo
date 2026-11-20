@@ -40,6 +40,7 @@ type Settings struct {
 	PasswordSecondFactor bool     `json:"passwordSecondFactor"`
 	PasswordGroupIDs     []string `json:"passwordGroupIds"`
 	PasswordBreachCheck  bool     `json:"passwordBreachCheck"`
+	EmailSignIn          string   `json:"emailSignIn"`
 
 	SessionLimit       int                 `json:"sessionLimit"`
 	SessionLimitAction string              `json:"sessionLimitAction"`
@@ -63,6 +64,7 @@ var DefaultSettings = Settings{
 	PasswordSecondFactor: true,
 	PasswordGroupIDs:     []string{},
 	PasswordBreachCheck:  true,
+	EmailSignIn:          "link",
 	SessionLimitAction:   "refuse",
 	SessionLimitGroups:   []GroupSessionLimit{},
 }

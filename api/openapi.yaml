@@ -158,11 +158,12 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [methods]
+                required: [methods, emailSignIn]
                 properties:
                   methods:
                     type: array
                     items: {$ref: '#/components/schemas/MethodKind'}
+                  emailSignIn: {$ref: '#/components/schemas/EmailSignIn'}
   /auth/providers:
     get:
       tags: [Sign-in]
@@ -309,7 +310,7 @@ paths:
       tags: [Sign-in]
       operationId: signInWithPassword
       summary: Sign in with a password
-      description: Works only while passwords are turned on under `/methods` and, when `passwordGroupIds` is set, for members of those groups. When `passwordSecondFactor` is on, send the code from the person's authenticator app as `code`. A temporary password set by an administrator must be replaced by sending `newPassword`. Every request checks the password again, and failed passwords and codes count toward the lockout shared with `/auth/totp` and `/auth/recovery`. Passwords from a client IP address are also refused with `ERR_TOO_MANY_ATTEMPTS` once it has 4 times the lockout threshold of failed passwords within the lockout window, across all accounts.
+      description: Works only while passwords are turned on under `/methods` and, when `passwordGroupIds` is set, for members of those groups. When `passwordSecondFactor` is on, send the code from the person's authenticator app as `code`. A temporary password set by an administrator must be replaced by sending `newPassword`. Every request checks the password again, and failed passwords and codes count toward the lockout shared with `/auth/totp`, `/auth/recovery` and `/auth/magic-link/code`. Passwords from a client IP address are also refused with `ERR_TOO_MANY_ATTEMPTS` once it has 4 times the lockout threshold of failed passwords within the lockout window, across all accounts.
       security: []
       requestBody:
         required: true
@@ -344,8 +345,8 @@ paths:
     post:
       tags: [Sign-in]
       operationId: requestMagicLink
-      summary: Email a sign-in link
-      description: Emails a link that works once for 10 minutes, to active accounts only, at most 5 times per person in 15 minutes, and only while magic links are turned on under `/methods`. Answers `202` the same way whether or not the account exists or magic links are on.
+      summary: Email a sign-in link or code
+      description: Emails a link, a six-digit code for `/auth/magic-link/code`, or both, as `emailSignIn` in the settings chooses. Each works once for 10 minutes, and emails are sent to active accounts only, at most 5 times per person in 15 minutes, and only while magic links are turned on under `/methods`. Answers `202` the same way whether or not the account exists or magic links are on.
       security: []
       requestBody:
         required: true
@@ -389,6 +390,25 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
+  /auth/magic-link/code:
+    post:
+      tags: [Sign-in]
+      operationId: signInWithEmailCode
+      summary: Sign in with an emailed code
+      description: Checks the code from the newest email that `/auth/magic-link` sent to the person. Each code allows 5 attempts, and failed codes count toward the lockout shared with `/auth/password`, `/auth/totp` and `/auth/recovery`. A sign-in for an application completes `authRequest`, so enter the code in the browser that asked for it.
+      security: []
+      requestBody: {$ref: '#/components/requestBodies/CodeSignIn'}
+      responses:
+        '200': {$ref: '#/components/responses/SignedIn'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401':
+          description: '`ERR_CODE_MISMATCH`: the code did not match, expired, was already used or had 5 wrong attempts, or no account uses the address.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403': {$ref: '#/components/responses/SignInRefused'}
+        '404': {$ref: '#/components/responses/AuthRequestExpired'}
+        '429': {$ref: '#/components/responses/TooManyAttempts'}
   /auth/continue:
     post:
       tags: [Sign-in]
@@ -5015,6 +5035,7 @@ components:
         passwordSecondFactor: {type: boolean, default: true, description: Ask for an authenticator app code with every password sign-in.}
         passwordGroupIds: {type: array, items: {type: string}, description: Only members of these groups may use a password. Empty allows everyone.}
         passwordBreachCheck: {type: boolean, default: true, description: 'Refuse new passwords that the Have I Been Pwned range API reports as breached. Only the first 5 characters of the password''s SHA-1 hash leave Halo. Turn it off for installations without internet access; when the API is unreachable, Halo accepts the password and logs a warning.'}
+        emailSignIn: {$ref: '#/components/schemas/EmailSignIn'}
         sessionLimit: {type: integer, minimum: 0, maximum: 100, default: 0, description: 'The most sessions a person may hold at once. 0 sets no limit. While a limit applies, signing in again in a browser that holds one of the person''s sessions ends that session and revokes its tokens first, so it is not counted.'}
         sessionLimitAction: {type: string, enum: [refuse, end-oldest], default: refuse, description: 'At the limit, `refuse` turns the new sign-in away with `ERR_SESSION_LIMIT`; `end-oldest` ends the oldest sessions, revokes their tokens and records each in the sign-in log with the result `ended`.'}
         sessionLimitCli: {type: boolean, default: false, description: 'Also limit sessions that `halo login` starts through the device flow. They are counted separately from browser sessions, against the same limit, and checked when the sign-in is approved. When false they are not limited.'}
@@ -5027,6 +5048,11 @@ components:
             properties:
               groupId: {type: string}
               limit: {type: integer, minimum: 1, maximum: 100}
+    EmailSignIn:
+      type: string
+      enum: [link, code, both]
+      default: link
+      description: 'What sign-in emails from `/auth/magic-link` contain: a link, a six-digit code to enter on the sign-in page that asked for it, or both. A code works when the email is read on another device, and a mail scanner that opens the link does not use up the code.'
     Domain:
       type: object
       required: [id, name, token, createdAt, verifiedAt]

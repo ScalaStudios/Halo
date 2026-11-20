@@ -55,7 +55,7 @@ func TestEmailVerification(t *testing.T) {
 		t.Fatal("enrolling from a copied link must not verify the address")
 	}
 
-	token, err := e.st.CreateMagicLink(ctx, copied.ID, "", time.Now().Add(time.Minute))
+	token, err := e.st.CreateMagicLink(ctx, copied.ID, "", "", time.Now().Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}

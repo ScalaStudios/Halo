@@ -102,6 +102,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		"GET /api/v1/me/sign-ins":                h.signIns,
 		"POST /api/v1/auth/magic-link":           h.magicLink,
 		"POST /api/v1/auth/magic-link/redeem":    h.redeemMagicLink,
+		"POST /api/v1/auth/magic-link/code":      h.emailCodeSignIn,
 
 		"GET /api/v1/auth/providers":                   h.providers,
 		"GET /api/v1/auth/federated/{id}/start":        h.browser(h.federatedStart),
