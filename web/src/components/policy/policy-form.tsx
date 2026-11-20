@@ -13,8 +13,7 @@ import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input"
 import { api } from "@/lib/api/client";
 import { METHOD, RISK } from "@/lib/labels";
 import type { AccessPolicy, DeviceCondition, NetworkCondition, PolicyConditions, PolicyEffect, PolicyMode } from "@/lib/policy-types";
-import type { MethodKind } from "@/lib/types";
-import { DEVICE_CONDITION, EFFECT, HALO_APP, MODE, NETWORK_CONDITION, RISK_LEVELS, describePolicy, policyState, type Names } from "./shared";
+import { DEVICE_CONDITION, EFFECT, HALO_APP, MODE, NETWORK_CONDITION, POLICY_METHODS, RISK_LEVELS, describePolicy, policyState, type Names } from "./shared";
 
 export type Option = { id: string; name: string; detail?: string };
 
@@ -322,7 +321,7 @@ export function PolicyForm({
             <fieldset className="flex flex-col gap-3">
               <legend className="mb-2 text-label text-fg">Sign-in method</legend>
               <div className="flex flex-wrap gap-x-6 gap-y-3">
-                {(Object.keys(METHOD) as MethodKind[]).map((kind) => (
+                {POLICY_METHODS.map((kind) => (
                   <label key={kind} className="flex cursor-pointer items-center gap-2 text-body-sm text-fg">
                     <Checkbox
                       checked={c.methods.includes(kind)}

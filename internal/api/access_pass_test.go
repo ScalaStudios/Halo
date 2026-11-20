@@ -55,7 +55,7 @@ func TestAccessPass(t *testing.T) {
 
 	expect(t, call(t, h, auditor, "DELETE", "/api/v1/users/"+ada.ID+"/methods/access-pass", nil), 403)
 	expect(t, call(t, h, helpdesk, "DELETE", "/api/v1/users/"+ada.ID+"/methods/access-pass", nil), 204)
-	if used, err := st.UseAccessPass(ctx, ada.ID, out.Pass); used || err != store.ErrNotFound {
-		t.Fatalf("revoked pass: %v %v", used, err)
+	if matched, err := st.MatchAccessPass(ctx, ada.ID, out.Pass); matched || err != store.ErrNotFound {
+		t.Fatalf("revoked pass: %v %v", matched, err)
 	}
 }

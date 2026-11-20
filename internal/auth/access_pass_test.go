@@ -17,8 +17,10 @@ import (
 func TestAccessPass(t *testing.T) {
 	var policy atomic.Value
 	policy.Store(access.Allow)
+	var eventID atomic.Value
+	eventID.Store("")
 	e, _ := newMagicEnv(t, policyFunc(func(access.Input) access.Decision {
-		return access.Decision{Effect: policy.Load().(string), Reason: "Test policy."}
+		return access.Decision{Effect: policy.Load().(string), Reason: "Test policy.", EventID: eventID.Load().(string)}
 	}))
 	ctx := context.Background()
 	e.org(func(s *store.Settings) { s.LockoutThreshold = 3 })
@@ -124,11 +126,26 @@ func TestAccessPass(t *testing.T) {
 
 	dee := person("dee@example.com")
 	pass = issue(dee, 3, hour)
+	if status, redirect, _ = use(client(), "dee@example.com", pass); status != http.StatusOK {
+		t.Fatalf("pass before revoking: %d", status)
+	}
 	if err := e.st.DeleteMethod(ctx, dee.ID, "access-pass"); err != nil {
 		t.Fatal(err)
 	}
 	if status, _, _ := use(client(), "dee@example.com", pass); status != http.StatusUnauthorized {
 		t.Fatalf("revoked pass: %d", status)
+	}
+	e.expect(client(), "GET", "/api/v1/auth/enroll?token="+strings.TrimPrefix(redirect, "/enroll?token="), nil, http.StatusNotFound, "ERR_LINK_EXPIRED")
+
+	gus := person("gus@example.com")
+	pass = issue(gus, 1, hour)
+	eventID.Store(events[0].ID)
+	if status, _, _ := use(client(), "gus@example.com", pass); status != http.StatusInternalServerError {
+		t.Fatalf("setup link failing after the pass matched: %d", status)
+	}
+	eventID.Store("")
+	if status, _, _ := use(client(), "gus@example.com", pass); status != http.StatusOK {
+		t.Fatalf("a failed setup must leave the use on the pass: %d", status)
 	}
 
 	eve := person("eve@example.com")

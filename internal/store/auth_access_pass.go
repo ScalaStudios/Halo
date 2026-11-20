@@ -21,16 +21,17 @@ func (s *Store) CreateAccessPass(ctx context.Context, userID, createdBy string, 
 	return pass, err
 }
 
-func (s *Store) UseAccessPass(ctx context.Context, userID, pass string) (bool, error) {
+func (s *Store) MatchAccessPass(ctx context.Context, userID, pass string) (bool, error) {
 	var hash []byte
 	err := s.db.QueryRow(ctx, `select pass_hash from access_passes where user_id = $1 and uses_left > 0 and expires_at > now()`, userID).Scan(&hash)
 	if err != nil {
 		return false, notFound(err)
 	}
-	if !secret.Equal(hash, s.accessPassHash(pass)) {
-		return false, nil
-	}
-	tag, err := s.db.Exec(ctx, `update access_passes set uses_left = uses_left - 1, last_used_at = now() where user_id = $1 and pass_hash = $2 and uses_left > 0 and expires_at > now()`, userID, hash)
+	return secret.Equal(hash, s.accessPassHash(pass)), nil
+}
+
+func (s *Store) UseAccessPass(ctx context.Context, userID, pass string) (bool, error) {
+	tag, err := s.db.Exec(ctx, `update access_passes set uses_left = uses_left - 1, last_used_at = now() where user_id = $1 and pass_hash = $2 and uses_left > 0 and expires_at > now()`, userID, s.accessPassHash(pass))
 	return tag.RowsAffected() == 1, err
 }
 
