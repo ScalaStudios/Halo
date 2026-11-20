@@ -36,12 +36,13 @@ var (
 )
 
 type handler struct {
-	st     *store.Store
-	client *http.Client
+	st      *store.Store
+	client  *http.Client
+	guarded *http.Client
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
-	h := &handler{st: d.Store, client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	h := &handler{st: d.Store, client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: noRedirect}, guarded: guardedClient()}
 	if d.Jobs != nil {
 		d.Jobs.Every("deliver webhooks", 10*time.Second, func(ctx context.Context) error { return h.run(ctx, time.Now()) })
 	}
@@ -61,8 +62,16 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("PUT /api/v1/webhooks/{id}", writers, h.update)
 	route("DELETE /api/v1/webhooks/{id}", writers, h.delete)
 	route("POST /api/v1/webhooks/{id}/test", writers, h.test)
+	route("GET /api/v1/notification-rules", readers, h.listRules)
+	route("POST /api/v1/notification-rules", writers, h.createRule)
+	route("GET /api/v1/notification-rules/{id}", readers, h.getRule)
+	route("PUT /api/v1/notification-rules/{id}", writers, h.updateRule)
+	route("DELETE /api/v1/notification-rules/{id}", writers, h.deleteRule)
+	route("POST /api/v1/notification-rules/{id}/test", writers, h.testRule)
 	return nil
 }
+
+func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 func sign(secret []byte, at time.Time, body []byte) string {
 	t := strconv.FormatInt(at.Unix(), 10)
@@ -102,7 +111,7 @@ func (h *handler) run(ctx context.Context, now time.Time) error {
 				}
 			}
 		}
-		return nil
+		return notify(ctx, tx, events, now)
 	})
 	if err != nil {
 		return err
@@ -120,15 +129,29 @@ func (h *handler) run(ctx context.Context, now time.Time) error {
 }
 
 func (h *handler) attempt(ctx context.Context, d store.WebhookDelivery, now time.Time) error {
-	endpoint, err := h.st.GetWebhook(ctx, d.EndpointID)
+	client, target, sealed := h.client, "", []byte(nil)
+	if d.RuleID != "" {
+		rule, err := h.st.GetNotificationRule(ctx, d.RuleID)
+		if err != nil {
+			return err
+		}
+		plain, err := h.st.Sealer.Open(rule.URLSealed)
+		if err != nil {
+			return err
+		}
+		client, target, sealed = h.guarded, string(plain), rule.SecretSealed
+	} else {
+		endpoint, err := h.st.GetWebhook(ctx, d.EndpointID)
+		if err != nil {
+			return err
+		}
+		target, sealed = endpoint.URL, endpoint.Sealed
+	}
+	secret, err := h.st.Sealer.Open(sealed)
 	if err != nil {
 		return err
 	}
-	secret, err := h.st.Sealer.Open(endpoint.Sealed)
-	if err != nil {
-		return err
-	}
-	code, message := h.send(ctx, endpoint.URL, secret, []byte(d.Body))
+	code, message := send(ctx, client, target, secret, []byte(d.Body))
 	status, next := "delivered", now
 	if code < 200 || code > 299 {
 		status = "pending"
@@ -145,17 +168,17 @@ func (h *handler) attempt(ctx context.Context, d store.WebhookDelivery, now time
 	return h.st.RecordWebhookAttempt(ctx, d.ID, status, response, message, now, next)
 }
 
-func (h *handler) send(ctx context.Context, target string, secret, body []byte) (int, string) {
+func send(ctx context.Context, client *http.Client, target string, secret, body []byte) (int, string) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
-		return 0, err.Error()
+		return 0, withoutURL(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "Halo-Webhooks")
 	req.Header.Set("Halo-Signature", sign(secret, time.Now(), body))
-	res, err := h.client.Do(req)
+	res, err := client.Do(req)
 	if err != nil {
-		return 0, err.Error()
+		return 0, withoutURL(err)
 	}
 	res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
@@ -171,6 +194,14 @@ type input struct {
 	Enabled     *bool    `json:"enabled"`
 }
 
+func withoutURL(err error) string {
+	var u *url.Error
+	if errors.As(err, &u) {
+		return u.Err.Error()
+	}
+	return err.Error()
+}
+
 func (in input) validate() (store.NewWebhook, error) {
 	w := store.NewWebhook{URL: strings.TrimSpace(in.URL), Description: strings.TrimSpace(in.Description), Enabled: in.Enabled == nil || *in.Enabled}
 	u, err := url.Parse(w.URL)
@@ -180,18 +211,24 @@ func (in input) validate() (store.NewWebhook, error) {
 	if len(w.URL) > 2048 || len(w.Description) > 200 {
 		return w, httpx.Invalid("Keep the URL under 2,048 characters and the description under 200.")
 	}
-	for _, e := range in.Events {
+	w.Events, err = eventList(in.Events)
+	return w, err
+}
+
+func eventList(in []string) ([]string, error) {
+	events := []string{}
+	for _, e := range in {
 		if !eventPattern.MatchString(e) {
-			return w, httpx.Invalid(fmt.Sprintf("%q is not an event type. Use a type such as user.invite, a family such as user.*, or * for every event.", e))
+			return nil, httpx.Invalid(fmt.Sprintf("%q is not an event type. Use a type such as user.invite, a family such as user.*, or * for every event.", e))
 		}
-		if !slices.Contains(w.Events, e) {
-			w.Events = append(w.Events, e)
+		if !slices.Contains(events, e) {
+			events = append(events, e)
 		}
 	}
-	if len(w.Events) == 0 || len(w.Events) > 50 {
-		return w, httpx.Invalid("Choose between 1 and 50 event types to send to this endpoint.")
+	if len(events) == 0 || len(events) > 50 {
+		return nil, httpx.Invalid("Choose between 1 and 50 event types to send.")
 	}
-	return w, nil
+	return events, nil
 }
 
 func local(host string) bool {
@@ -336,6 +373,11 @@ func (h *handler) test(w http.ResponseWriter, r *http.Request, actor store.User)
 	if err != nil {
 		return err
 	}
+	return h.deliverNow(w, r, deliveryID, now)
+}
+
+func (h *handler) deliverNow(w http.ResponseWriter, r *http.Request, deliveryID string, now time.Time) error {
+	ctx := r.Context()
 	delivery, err := h.st.GetWebhookDelivery(ctx, deliveryID)
 	if err != nil {
 		return err
