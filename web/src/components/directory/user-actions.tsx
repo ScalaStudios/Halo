@@ -1,6 +1,6 @@
 "use client";
 
-import { Ban, Copy, MonitorX, MoreHorizontal, RectangleEllipsis, RotateCcw, Undo2, UserPen, UsersRound, VenetianMask } from "lucide-react";
+import { Ban, Copy, MonitorX, MoreHorizontal, RectangleEllipsis, RotateCcw, TicketCheck, Undo2, UserPen, UsersRound, VenetianMask } from "lucide-react";
 import { useId, useState } from "react";
 import { SecretWarning } from "@/components/applications/shared";
 import { useMutation } from "@/components/console/use-mutation";
@@ -8,10 +8,10 @@ import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { CopyField } from "@/components/ui/copy-field";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Input } from "@/components/ui/input";
+import { Field, Input, Select } from "@/components/ui/input";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { api } from "@/lib/api/client";
-import { formatDateTime, pluralize } from "@/lib/format";
+import { formatDateTime, formatDuration, pluralize } from "@/lib/format";
 import type { SetupLink } from "@/lib/mail-types";
 import { EditProfileDialog, type ProfileEdit } from "./edit-profile";
 import { ImpersonateDialog } from "./impersonation";
@@ -230,6 +230,102 @@ export function TemporaryPasswordButton({ user, warning }: { user: UserRef; warn
           </Field>
           {warning ? <SecretWarning>{warning}</SecretWarning> : null}
         </form>
+      </Dialog>
+    </>
+  );
+}
+
+type AccessPass = { pass: string; expiresAt: string; uses: number };
+
+export function AccessPassButton({ user }: { user: UserRef }) {
+  const { pending, run, errorFor, clearError } = useMutation();
+  const formId = useId();
+  const [open, setOpen] = useState(false);
+  const [lifetime, setLifetime] = useState(60);
+  const [uses, setUses] = useState(1);
+  const [created, setCreated] = useState<AccessPass | null>(null);
+
+  return (
+    <>
+      <Button
+        size="sm"
+        onClick={() => {
+          setCreated(null);
+          clearError();
+          setOpen(true);
+        }}
+      >
+        <TicketCheck aria-hidden="true" size={16} strokeWidth={1.75} />
+        Create access pass
+      </Button>
+      <Dialog
+        open={open}
+        onOpenChange={setOpen}
+        error={errorFor("pass")}
+        title={created ? "Temporary access pass" : "Create a temporary access pass"}
+        description={
+          created
+            ? `Give it to ${user.name} in person, or by phone once you've checked who they are. It works ${created.uses === 1 ? "once" : `${created.uses} times`} until ${formatDateTime(created.expiresAt)}.`
+            : `${user.name} enters it on the sign-in page to set up a new passkey. It doesn't sign them in to anything by itself, and it replaces any pass they already have.`
+        }
+        footer={
+          created ? (
+            <Button variant="primary" onClick={() => setOpen(false)}>
+              Done
+            </Button>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" type="submit" form={formId} loading={pending === "pass"}>
+                Create pass
+              </Button>
+            </>
+          )
+        }
+      >
+        {created ? (
+          <div className="flex animate-enter flex-col gap-4">
+            <CopyField label="Temporary access pass" value={created.pass} />
+            <SecretWarning>
+              Halo shows it only once. Anyone with it can set up a passkey on {user.name}&apos;s account until it expires, or until you remove it from their sign-in methods.
+            </SecretWarning>
+          </div>
+        ) : (
+          <form
+            id={formId}
+            noValidate
+            className="flex flex-col gap-4 sm:flex-row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void run("pass", () => api<AccessPass>(`/users/${user.id}/access-pass`, { body: { lifetimeMinutes: lifetime, uses } }), setCreated, "inline");
+            }}
+          >
+            <Field label="Valid for" className="flex-1">
+              {(props) => (
+                <Select {...props} value={lifetime} onChange={(event) => setLifetime(Number(event.target.value))}>
+                  {[60, 480, 1440, 10080].map((minutes) => (
+                    <option key={minutes} value={minutes}>
+                      {formatDuration(minutes * 60)}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            <Field label="Uses" className="flex-1">
+              {(props) => (
+                <Select {...props} value={uses} onChange={(event) => setUses(Number(event.target.value))}>
+                  {[1, 3, 5, 10].map((count) => (
+                    <option key={count} value={count}>
+                      {count === 1 ? "Once" : `Up to ${count} times`}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+          </form>
+        )}
       </Dialog>
     </>
   );

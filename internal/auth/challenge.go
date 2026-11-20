@@ -25,7 +25,7 @@ var (
 		"hcaptcha":  "https://api.hcaptcha.com/siteverify",
 	}
 	siteverifyClient = &http.Client{Timeout: 5 * time.Second}
-	guessedMethods   = []string{"password", "totp", "recovery-codes", "magic-link"}
+	guessedMethods   = []string{"password", "totp", "recovery-codes", "magic-link", "access-pass"}
 )
 
 func (h *handler) challenge(r *http.Request, a *attempt, token string, settings store.Settings, always bool) error {

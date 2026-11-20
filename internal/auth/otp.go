@@ -38,6 +38,9 @@ func (h *handler) codeSignIn(w http.ResponseWriter, r *http.Request, method stri
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
+	if method == "access-pass" {
+		in.AuthRequest = ""
+	}
 	ctx := r.Context()
 	app, err := h.target(ctx, in.AuthRequest)
 	if err != nil {
@@ -68,6 +71,8 @@ func (h *handler) codeSignIn(w http.ResponseWriter, r *http.Request, method stri
 		reason, err = h.useTOTP(ctx, u.ID, in.Code)
 	} else if method == "magic-link" {
 		reason, err = h.useEmailCode(ctx, u.ID, in.Code)
+	} else if method == "access-pass" {
+		reason, err = h.useAccessPass(ctx, u.ID, in.Code)
 	} else if err = h.st.UseRecoveryCode(ctx, u.ID, h.st.RecoveryCodeHash(normalizeRecoveryCode(in.Code))); errors.Is(err, store.ErrNotFound) {
 		reason, err = "The recovery code did not match an unused code.", nil
 	}

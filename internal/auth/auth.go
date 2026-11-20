@@ -37,6 +37,7 @@ var (
 	errLastMethod      = httpx.Fail(http.StatusConflict, "ERR_LAST_METHOD", "This is your last way to sign in, so it can't be removed. Add another passkey or authenticator app first.")
 	errSessionLimit    = httpx.Fail(http.StatusForbidden, "ERR_SESSION_LIMIT", "You're already signed in on as many devices as your organization allows. Sign out on a device you no longer use, or ask your administrator to end one of your sessions, then try again.")
 	errTermsExpired    = httpx.Fail(http.StatusNotFound, "ERR_TERMS_EXPIRED", "This step expired or was already used. Sign in again to read and accept the terms.")
+	errPassMismatch    = httpx.Fail(http.StatusUnauthorized, "ERR_CODE_MISMATCH", "That temporary access pass didn't match, expired or was already used. Check it, or ask your administrator for a new one.")
 )
 
 const notAssignedReason = "User is not assigned to this application."
@@ -77,6 +78,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		"POST /api/v1/auth/identify":             h.identify,
 		"POST /api/v1/auth/totp":                 h.totpSignIn,
 		"POST /api/v1/auth/recovery":             h.recoverySignIn,
+		"POST /api/v1/auth/access-pass":          h.accessPassSignIn,
 		"POST /api/v1/auth/password":             h.passwordSignIn,
 		"POST /api/v1/auth/continue":             h.continueRequest,
 		"GET /api/v1/auth/terms/{ceremony}":      h.pendingTerms,
@@ -206,9 +208,12 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 	case access.Block:
 		return h.reject(r, a, policyReason(decision), errBlockedByPolicy)
 	case access.RequirePhishingResistant:
-		if a.method != "passkey" && a.method != "security-key" {
+		if a.method != "passkey" && a.method != "security-key" && a.method != "access-pass" {
 			return h.reject(r, a, policyReason(decision), errStrongerAuth)
 		}
+	}
+	if a.method == "access-pass" {
+		return h.enrollWithPass(w, r, a)
 	}
 	redirect, token, ceremony := "/account", "", ""
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
@@ -332,7 +337,7 @@ func (h *handler) identify(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		for _, kind := range []string{"passkey", "security-key", "totp", "password", "recovery-codes"} {
+		for _, kind := range []string{"access-pass", "passkey", "security-key", "totp", "password", "recovery-codes"} {
 			if slices.ContainsFunc(u.Methods, func(m store.Method) bool { return m.Kind == kind }) && (kind != "password" || settings.PasswordAllowed(u)) {
 				methods = append(methods, kind)
 			}

@@ -20,8 +20,8 @@ import { federationProblem, ProviderButtons, useSignInProviders } from "./provid
 import { TermsStep, type SignedIn } from "./terms";
 import { VerifyCode } from "./verify-code";
 
-type Step = "loading" | "start" | "choose" | "passkey" | "security-key" | "code" | "recovery" | "password" | "new-password" | "second-factor" | "inbox" | "terms" | "done" | "expired";
-type Choice = "passkey" | "security-key" | "totp" | "password" | "recovery-codes" | "magic-link";
+type Step = "loading" | "start" | "choose" | "passkey" | "security-key" | "code" | "recovery" | "access-pass" | "enroll" | "password" | "new-password" | "second-factor" | "inbox" | "terms" | "done" | "expired";
+type Choice = "passkey" | "security-key" | "totp" | "password" | "recovery-codes" | "magic-link" | "access-pass";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -109,6 +109,7 @@ export function SignInFlow({
   const home = methods.length > 0 ? "choose" : "start";
   const emailed = emailSignIn === "link" ? "link" : "code";
   const changing = step === "new-password";
+  const pass = step === "access-pass";
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -239,7 +240,7 @@ export function SignInFlow({
     }
     setRecovery("");
     setRecoveryError(null);
-    setStep(kind === "totp" ? "code" : "recovery");
+    setStep(kind === "totp" ? "code" : kind === "access-pass" ? "access-pass" : "recovery");
   }
 
   function validEmail() {
@@ -260,7 +261,7 @@ export function SignInFlow({
     setBusy(true);
     try {
       const result = await api<{ methods: Choice[] }>("/auth/identify", { body: { email: email.trim() } });
-      setMethods(result.methods.filter((kind) => supported || (kind !== "passkey" && kind !== "security-key")));
+      setMethods(result.methods.filter((kind) => supported || (kind !== "passkey" && kind !== "security-key" && kind !== "access-pass")));
       setNotice(null);
       setStep("choose");
     } catch (error) {
@@ -279,15 +280,22 @@ export function SignInFlow({
     }
   }
 
+  async function redeemPass(code: string) {
+    const { redirect } = await guarded((token) => api<SignedIn>("/auth/access-pass", { body: { email, code, challenge: token } }));
+    setStep("enroll");
+    window.location.assign(redirect);
+  }
+
   async function submitRecovery(event: FormEvent) {
     event.preventDefault();
     if (!recovery.trim()) {
-      setRecoveryError("Enter one of your recovery codes, like abcd-efgh-ijkl-mnop.");
+      setRecoveryError(pass ? "Enter the temporary access pass your administrator gave you, like abcd-efgh-ijkl-mnop." : "Enter one of your recovery codes, like abcd-efgh-ijkl-mnop.");
       return;
     }
     setBusy(true);
     try {
-      await signInWithCode("/auth/recovery", recovery.trim());
+      if (pass) await redeemPass(recovery.trim());
+      else await signInWithCode("/auth/recovery", recovery.trim());
     } catch (error) {
       setRecoveryError(describeFailure(error));
     } finally {
@@ -342,16 +350,16 @@ export function SignInFlow({
   ) : null;
 
   const passkeys = supported && allowed.includes("passkey");
-  const permitted = (kind: Choice) => allowed.includes(kind);
+  const permitted = (kind: Choice) => kind === "access-pass" || allowed.includes(kind);
   const otherKinds: Choice[] = (supported ? (["security-key", "totp", "password", "recovery-codes", "magic-link"] as Choice[]) : (["totp", "password", "recovery-codes", "magic-link"] as Choice[])).filter(permitted);
   const choices: Choice[] = ([...methods, "magic-link"] as Choice[]).filter(permitted);
 
   return (
     <div key={step} className="flex animate-enter flex-col gap-8">
-      {step === "loading" ? (
+      {step === "loading" || step === "enroll" ? (
         <div role="status" className="flex items-center justify-center gap-3 text-body-sm text-fg-3">
           <Spinner size={20} />
-          {app ? `Continuing to ${app}` : "Checking your session"}
+          {step === "enroll" ? "Opening passkey setup" : app ? `Continuing to ${app}` : "Checking your session"}
         </div>
       ) : null}
 
@@ -542,14 +550,18 @@ export function SignInFlow({
         </>
       ) : null}
 
-      {step === "recovery" ? (
+      {step === "recovery" || pass ? (
         <>
           <div className="flex flex-col gap-4">
-            <h1 className="text-center text-h3 text-fg">Enter a recovery code</h1>
+            <h1 className="text-center text-h3 text-fg">{pass ? "Enter your temporary access pass" : "Enter a recovery code"}</h1>
             {account}
           </div>
           <form noValidate className="flex flex-col gap-4" onSubmit={submitRecovery}>
-            <Field label="Recovery code" hint="One of the codes you saved when you set up Halo. Each code works once." error={recoveryError}>
+            <Field
+              label={pass ? "Temporary access pass" : "Recovery code"}
+              hint={pass ? "The pass your administrator gave you. Next you'll set up a new passkey and sign in with it." : "One of the codes you saved when you set up Halo. Each code works once."}
+              error={recoveryError}
+            >
               {(field) => (
                 <Input
                   {...field}
@@ -569,7 +581,7 @@ export function SignInFlow({
               )}
             </Field>
             <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy}>
-              Sign in
+              {pass ? "Continue" : "Sign in"}
             </Button>
           </form>
           <button type="button" onClick={differentMethod} className={linkButton}>

@@ -72,6 +72,7 @@ export const METHOD_PLURAL: Record<MethodKind, string> = {
   "recovery-codes": "recovery codes",
   password: "passwords",
   federated: "identity providers",
+  "access-pass": "temporary access passes",
 };
 
 export type Names = {

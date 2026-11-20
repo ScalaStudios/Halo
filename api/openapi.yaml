@@ -379,7 +379,7 @@ paths:
                 email: {type: string, format: email}
       responses:
         '200':
-          description: The methods the person has, out of passkey, security-key, totp, recovery-codes and password. A password is listed only when the person may sign in with one.
+          description: The methods the person has, out of access-pass, passkey, security-key, totp, password and recovery-codes. `access-pass` comes first while an administrator's temporary access pass is active. A password is listed only when the person may sign in with one.
           content:
             application/json:
               schema:
@@ -388,7 +388,7 @@ paths:
                 properties:
                   methods:
                     type: array
-                    items: {$ref: '#/components/schemas/MethodKind'}
+                    items: {type: string, enum: [access-pass, passkey, security-key, totp, password, recovery-codes]}
         '400': {$ref: '#/components/responses/BadJSON'}
   /auth/totp:
     post:
@@ -421,12 +421,35 @@ paths:
         '404': {$ref: '#/components/responses/AuthRequestExpired'}
         '429': {$ref: '#/components/responses/TooManyAttempts'}
         '503': {$ref: '#/components/responses/ChallengeUnavailable'}
+  /auth/access-pass:
+    post:
+      tags: [Sign-in]
+      operationId: signInWithAccessPass
+      summary: Use a temporary access pass to set up a passkey
+      description: Send the pass an administrator created as `code`; case, dashes and spaces are ignored. Each request uses up one of the pass's uses. The pass doesn't start a session or complete `authRequest`, which is ignored. Instead `redirect` is a setup link that expires in 15 minutes, where the person creates a passkey and is then signed in with it. Access policies, the sign-in log and the lockout shared with `/auth/password`, `/auth/totp`, `/auth/recovery` and `/auth/magic-link/code` apply. A policy that requires a passkey or security key allows the pass, because the session that follows starts with the new passkey.
+      security: []
+      requestBody: {$ref: '#/components/requestBodies/CodeSignIn'}
+      responses:
+        '200':
+          description: The pass matched.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [redirect]
+                properties:
+                  redirect: {type: string, examples: ['/enroll?token=…']}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/CodeMismatch'}
+        '403': {$ref: '#/components/responses/SignInRefused'}
+        '429': {$ref: '#/components/responses/TooManyAttempts'}
+        '503': {$ref: '#/components/responses/ChallengeUnavailable'}
   /auth/password:
     post:
       tags: [Sign-in]
       operationId: signInWithPassword
       summary: Sign in with a password
-      description: Works only while passwords are turned on under `/methods` and, when `passwordGroupIds` is set, for members of those groups. When `passwordSecondFactor` is on, send the code from the person's authenticator app as `code`. A temporary password set by an administrator must be replaced by sending `newPassword`. Every request checks the password again, and failed passwords and codes count toward the lockout shared with `/auth/totp`, `/auth/recovery` and `/auth/magic-link/code`. Passwords from a client IP address are also refused with `ERR_TOO_MANY_ATTEMPTS` once it has 4 times the lockout threshold of failed passwords within the lockout window, across all accounts.
+      description: Works only while passwords are turned on under `/methods` and, when `passwordGroupIds` is set, for members of those groups. When `passwordSecondFactor` is on, send the code from the person's authenticator app as `code`. A temporary password set by an administrator must be replaced by sending `newPassword`. Every request checks the password again, and failed passwords and codes count toward the lockout shared with `/auth/totp`, `/auth/recovery`, `/auth/magic-link/code` and `/auth/access-pass`. Passwords from a client IP address are also refused with `ERR_TOO_MANY_ATTEMPTS` once it has 4 times the lockout threshold of failed passwords within the lockout window, across all accounts.
       security: []
       requestBody:
         required: true
@@ -516,7 +539,7 @@ paths:
       tags: [Sign-in]
       operationId: signInWithEmailCode
       summary: Sign in with an emailed code
-      description: Checks the code from the newest email that `/auth/magic-link` sent to the person. Each code allows 5 attempts, and failed codes count toward the lockout shared with `/auth/password`, `/auth/totp` and `/auth/recovery`. A sign-in for an application completes `authRequest`, so enter the code in the browser that asked for it.
+      description: Checks the code from the newest email that `/auth/magic-link` sent to the person. Each code allows 5 attempts, and failed codes count toward the lockout shared with `/auth/password`, `/auth/totp`, `/auth/recovery` and `/auth/access-pass`. A sign-in for an application completes `authRequest`, so enter the code in the browser that asked for it.
       security: []
       requestBody: {$ref: '#/components/requestBodies/CodeSignIn'}
       responses:
@@ -668,7 +691,7 @@ paths:
     get:
       tags: [Sign-in]
       operationId: getEnrollment
-      summary: Get the person an invite or reset link belongs to
+      summary: Get the person a setup link belongs to
       security: []
       parameters:
         - name: token
@@ -690,7 +713,7 @@ paths:
                     properties:
                       name: {type: string}
                       email: {type: string}
-                  purpose: {type: string, enum: [invite, reset]}
+                  purpose: {type: string, enum: [invite, reset, access-pass], description: '`access-pass` for a link from `/auth/access-pass`.'}
         '403': {$ref: '#/components/responses/Suspended'}
         '404': {$ref: '#/components/responses/LinkExpired'}
   /auth/enroll/begin:
@@ -2185,12 +2208,46 @@ paths:
       tags: [Users]
       operationId: deleteUserMethod
       summary: Remove one of a person's sign-in methods
-      description: 'Roles: user or helpdesk administrator.'
+      description: 'Roles: user or helpdesk administrator; only a global administrator can remove one from an administrator. The id `access-pass` revokes the person''s temporary access pass.'
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
         '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /users/{id}/access-pass:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Users]
+      operationId: createAccessPass
+      summary: Create a temporary access pass
+      description: 'Roles: user or helpdesk administrator; only a global administrator can create one for an administrator, and nobody can create one for themselves. The person signs in with it at `/auth/access-pass` to set up a new passkey. A new pass replaces the person''s active one. Halo stores only a hash, so the pass is shown once in this response; give it to the person in person or by phone after checking who they are. Halo emails the person that a pass was created, without the pass. Revoke it with `DELETE /users/{id}/methods/access-pass`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lifetimeMinutes: {type: integer, minimum: 10, maximum: 10080, default: 60}
+                uses: {type: integer, minimum: 1, maximum: 10, default: 1, description: How many times the pass works before it ends.}
+      responses:
+        '201':
+          description: The pass, shown only this once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pass, expiresAt, uses]
+                properties:
+                  pass: {type: string, examples: [k7mq-x2pd-r4tn-wb6e]}
+                  expiresAt: {type: string, format: date-time}
+                  uses: {type: integer}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /users/{id}/password:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -4737,7 +4794,7 @@ components:
       name: kind
       in: path
       required: true
-      schema: {type: string, enum: [invite, reset, magic_link, magic_code, sign_up, access_request, access_approved, access_denied]}
+      schema: {type: string, enum: [invite, reset, magic_link, magic_code, sign_up, access_request, access_approved, access_denied, access_pass]}
     UserId:
       name: userId
       in: path
@@ -5333,8 +5390,8 @@ components:
       type: object
       required: [id, kind, label, addedAt, lastUsedAt]
       properties:
-        id: {type: string, description: '`recovery-codes` for the set of recovery codes, `password` for the password.'}
-        kind: {type: string, enum: [passkey, security-key, totp, recovery-codes, password]}
+        id: {type: string, description: '`recovery-codes` for the set of recovery codes, `password` for the password, `access-pass` for an active temporary access pass.'}
+        kind: {type: string, enum: [passkey, security-key, totp, recovery-codes, password, access-pass]}
         label: {type: string, examples: [Passkey · Safari on iOS]}
         addedAt: {type: string, format: date-time}
         lastUsedAt: {type: [string, 'null'], format: date-time}
@@ -6157,7 +6214,7 @@ components:
           readOnly: true
           additionalProperties: {$ref: '#/components/schemas/EmailTemplateText'}
           description: Custom email subjects and bodies by template kind, left out when there are none. Change them through `/email-templates/{kind}`.
-        botProtection: {type: string, enum: ['', turnstile, hcaptcha], default: '', description: 'Ask for a check from Cloudflare Turnstile or hCaptcha on `/auth/magic-link` and `/auth/sign-up`, and on `/auth/password`, `/auth/totp`, `/auth/recovery` and `/auth/magic-link/code` once the client IP address has `lockoutThreshold` failed sign-ins within the lockout window. Passkeys are never checked. Empty turns it off. Turning it on needs `botProtectionSiteKey` and a stored `botProtectionSecret`.'}
+        botProtection: {type: string, enum: ['', turnstile, hcaptcha], default: '', description: 'Ask for a check from Cloudflare Turnstile or hCaptcha on `/auth/magic-link` and `/auth/sign-up`, and on `/auth/password`, `/auth/totp`, `/auth/recovery`, `/auth/magic-link/code` and `/auth/access-pass` once the client IP address has `lockoutThreshold` failed sign-ins within the lockout window. Passkeys are never checked. Empty turns it off. Turning it on needs `botProtectionSiteKey` and a stored `botProtectionSecret`.'}
         botProtectionSiteKey: {type: string, pattern: '^[A-Za-z0-9_-]{1,100}$', description: The public site key from the provider. The sign-in page uses it to show the check.}
         signUp: {type: string, enum: ['off', open, approval], default: 'off', description: 'Who can create an account at `/auth/sign-up`: nobody, anyone at an allowed domain once they confirm their address and create a passkey, or the same people after a user administrator approves them under `/sign-ups`. Turning it on with an empty `signUpDomains` needs a verified domain.'}
         signUpDomains: {type: array, default: [], maxItems: 100, items: {type: string, examples: [example.com]}, description: 'Email domains people can sign up with, matched exactly and without case. Empty allows the verified domains under `/domains`.'}
@@ -6175,7 +6232,7 @@ components:
       type: object
       required: [kind, label, description, variables, default, custom]
       properties:
-        kind: {type: string, enum: [invite, reset, magic_link, magic_code, sign_up, access_request, access_approved, access_denied]}
+        kind: {type: string, enum: [invite, reset, magic_link, magic_code, sign_up, access_request, access_approved, access_denied, access_pass]}
         label: {type: string, examples: [Invitation]}
         description: {type: string}
         variables:

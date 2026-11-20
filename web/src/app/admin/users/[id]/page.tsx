@@ -9,7 +9,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { DescriptionList } from "@/components/ui/description-list";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TabNav } from "@/components/ui/tab-nav";
-import { TemporaryPasswordButton, UserActions } from "@/components/directory/user-actions";
+import { AccessPassButton, TemporaryPasswordButton, UserActions } from "@/components/directory/user-actions";
 import { ImpersonationNotices } from "@/components/directory/impersonation";
 import { EditProfileButton, type ProfileEdit } from "@/components/directory/edit-profile";
 import { EditRolesButton, PasskeyWarning } from "@/components/directory/edit-roles";
@@ -143,7 +143,14 @@ export default async function UserPage({ params, searchParams }: { params: Promi
             <SectionTitle
               title="Sign-in methods"
               description={STRENGTH[user.strength].description}
-              action={edit ? <TemporaryPasswordButton user={{ id: user.id, name: user.name }} warning={passwordWarning} /> : undefined}
+              action={
+                edit ? (
+                  <div className="flex flex-wrap gap-2">
+                    {me.id === user.id ? null : <AccessPassButton user={{ id: user.id, name: user.name }} />}
+                    <TemporaryPasswordButton user={{ id: user.id, name: user.name }} warning={passwordWarning} />
+                  </div>
+                ) : undefined
+              }
             />
             <MethodList
               key={user.methods.map((m) => m.id).join()}

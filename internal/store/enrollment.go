@@ -16,6 +16,9 @@ func (s *Store) CreateEnrollmentToken(ctx context.Context, userID, purpose strin
 	}
 	token := secret.Token(32)
 	expires := time.Now().Add(time.Duration(settings.InviteDays) * 24 * time.Hour)
+	if purpose == "access-pass" {
+		expires = time.Now().Add(AccessPassEnrollLifetime)
+	}
 	_, err = s.db.Exec(ctx, `update enrollment_tokens set used_at = now() where user_id = $1 and used_at is null`, userID)
 	if err != nil {
 		return "", time.Time{}, err
