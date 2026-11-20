@@ -24,6 +24,7 @@ import {
   Server,
   Shield,
   ShieldAlert,
+  ShieldCheck,
   SlidersHorizontal,
   Stamp,
   UserRoundCog,
@@ -43,7 +44,10 @@ export const nav: NavGroup[] = [
   {
     id: "home",
     label: null,
-    items: [{ label: "Overview", href: `${BASE}`, icon: LayoutGrid, summary: "What needs your attention across the organization." }],
+    items: [
+      { label: "Overview", href: `${BASE}`, icon: LayoutGrid, summary: "What needs your attention across the organization." },
+      { label: "Recommendations", href: `${BASE}/recommendations`, icon: ShieldCheck, summary: "Settings, administrators and keys checked against a recommended baseline, with a link to fix each one." },
+    ],
   },
   {
     id: "directory",

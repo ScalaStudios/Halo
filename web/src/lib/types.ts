@@ -193,6 +193,16 @@ export type Overview = {
   counts: { users: number; activeUsers: number; applications: number; activeApplications: number };
 };
 
+export type Recommendation = {
+  id: string;
+  title: string;
+  status: "pass" | "attention" | "fail";
+  detail: string;
+  href: string;
+  action: string;
+  dismissal: { reason: string; by: NamedRef | null; at: string } | null;
+};
+
 export type SigningAlgorithm = "RS256" | "ES256" | "EdDSA";
 
 export const SIGNING_ALGORITHMS: [SigningAlgorithm, string][] = [

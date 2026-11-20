@@ -11,6 +11,8 @@ import (
 	"halo/internal/secret"
 )
 
+const CLIClientID = "halo-cli"
+
 const appColumns = `id, name, description, protocol, app_type, status, client_id, homepage, redirect_uris, post_logout_uris, scopes, access_token_ttl, refresh_token_ttl, id_token_ttl, id_token_alg, refresh_rotation, token_exchange,
 	array(select x.resource_id from app_exchange_sources x where x.app_id = applications.id order by x.resource_id), setup_guide, owner_id, created_at, logo_updated_at, registration_hash, awaiting_approval, max_auth_age, requires_consent`
 
