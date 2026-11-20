@@ -35,6 +35,7 @@ var (
 	errStrongerAuth    = httpx.Fail(http.StatusForbidden, "ERR_STRONGER_AUTH_REQUIRED", "This application requires a passkey or security key. Sign in with one of those instead.")
 	errLastMethod      = httpx.Fail(http.StatusConflict, "ERR_LAST_METHOD", "This is your last way to sign in, so it can't be removed. Add another passkey or authenticator app first.")
 	errSessionLimit    = httpx.Fail(http.StatusForbidden, "ERR_SESSION_LIMIT", "You're already signed in on as many devices as your organization allows. Sign out on a device you no longer use, or ask your administrator to end one of your sessions, then try again.")
+	errTermsExpired    = httpx.Fail(http.StatusNotFound, "ERR_TERMS_EXPIRED", "This step expired or was already used. Sign in again to read and accept the terms.")
 )
 
 const notAssignedReason = "User is not assigned to this application."
@@ -76,6 +77,8 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		"POST /api/v1/auth/recovery":             h.recoverySignIn,
 		"POST /api/v1/auth/password":             h.passwordSignIn,
 		"POST /api/v1/auth/continue":             h.continueRequest,
+		"GET /api/v1/auth/terms/{ceremony}":      h.pendingTerms,
+		"POST /api/v1/auth/terms":                h.acceptTerms,
 		"GET /api/v1/auth/enroll":                h.enrollInfo,
 		"POST /api/v1/auth/enroll/begin":         h.enrollBegin,
 		"POST /api/v1/auth/enroll/finish":        h.enrollFinish,
@@ -193,12 +196,21 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 			return h.reject(r, a, policyReason(decision), errStrongerAuth)
 		}
 	}
-	redirect, token := "/account", ""
+	redirect, token, ceremony := "/account", "", ""
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
 		if extra != nil {
 			if err := extra(tx); err != nil {
 				return err
 			}
+		}
+		if len(decision.Terms) > 0 {
+			c := termsCeremony{Method: a.method, SecondFactor: a.secondFactor, Request: a.request, Terms: decision.Terms}
+			if current != nil {
+				c.SessionID = current.ID
+			}
+			var err error
+			ceremony, err = tx.CreateCeremony(ctx, "terms", &u.ID, c)
+			return err
 		}
 		sess := current
 		if sess == nil {
@@ -238,6 +250,9 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 	}
 	if err != nil {
 		return err
+	}
+	if ceremony != "" {
+		return httpx.JSON(w, http.StatusOK, map[string]string{"redirect": "/sign-in?terms=" + ceremony, "terms": ceremony})
 	}
 	if token != "" {
 		h.auth.SetSession(w, token)

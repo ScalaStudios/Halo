@@ -16,6 +16,7 @@ const INCLUDED = [
   "Administrator roles and who holds them",
   "Applications, with redirect URIs, scopes, token lifetimes and assigned groups",
   "Access policies, access packages and access reviews with every decision",
+  "Terms of use, and who accepted which version and when",
 ];
 
 const EXCLUDED = ["Passkeys, authenticator app secrets and recovery codes", "Client secrets, API keys, webhook secrets and signing keys", "Sessions, tokens and the sign-in and audit logs"];

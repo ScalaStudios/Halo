@@ -305,6 +305,10 @@ func (h *handler) respond(w http.ResponseWriter, r *http.Request, req *saml.IdpA
 }
 
 func (h *handler) signIn(w http.ResponseWriter, r *http.Request, req *saml.IdpAuthnRequest) {
+	h.resumeAfter(w, r, req, "/sign-in")
+}
+
+func (h *handler) resumeAfter(w http.ResponseWriter, r *http.Request, req *saml.IdpAuthnRequest, page string) {
 	next := r.URL.RequestURI()
 	if req.RequestBuffer != nil {
 		requestID, err := h.st.CreateSAMLRequest(r.Context(), store.SAMLRequest{Request: req.RequestBuffer, RelayState: req.RelayState, CreatedAt: req.Now})
@@ -314,7 +318,7 @@ func (h *handler) signIn(w http.ResponseWriter, r *http.Request, req *saml.IdpAu
 		}
 		next = "/saml/resume?id=" + requestID
 	}
-	redirectToSignIn(w, r, next)
+	http.Redirect(w, r, page+"?next="+url.QueryEscape(next), http.StatusSeeOther)
 }
 
 type flow struct {
@@ -362,6 +366,9 @@ func (f *flow) GetSession(w http.ResponseWriter, r *http.Request, req *saml.IdpA
 		return nil
 	case decision.Effect == access.RequirePhishingResistant && !strong:
 		f.refuse(w, r, reason, f.app.Name+" needs a passkey or security key", "Sign out of Halo, sign in again with a passkey or security key, then open "+f.app.Name+" again.", reason)
+		return nil
+	case len(decision.Terms) > 0:
+		f.resumeAfter(w, r, req, "/account/terms")
 		return nil
 	}
 	if f.settings, err = f.st.SAMLSettings(ctx, f.app.ID); err != nil {

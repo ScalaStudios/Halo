@@ -14,9 +14,10 @@ import { METHOD } from "@/lib/labels";
 import { getAssertion } from "@/lib/webauthn";
 import { cancelled, describeFailure, usePasskeySupport, type Ceremony } from "./passkey";
 import { federationProblem, ProviderButtons, useSignInProviders } from "./providers";
+import { TermsStep, type SignedIn } from "./terms";
 import { VerifyCode } from "./verify-code";
 
-type Step = "loading" | "start" | "choose" | "passkey" | "security-key" | "code" | "recovery" | "password" | "new-password" | "second-factor" | "inbox" | "done" | "expired";
+type Step = "loading" | "start" | "choose" | "passkey" | "security-key" | "code" | "recovery" | "password" | "new-password" | "second-factor" | "inbox" | "terms" | "done" | "expired";
 type Choice = "passkey" | "security-key" | "totp" | "password" | "recovery-codes" | "magic-link";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -39,7 +40,7 @@ function expired(error: unknown) {
   return error instanceof ApiError && error.code === "ERR_AUTH_REQUEST_EXPIRED";
 }
 
-function sameOrigin(path: string | undefined) {
+export function sameOrigin(path: string | undefined) {
   if (!path) return null;
   try {
     const url = new URL(path, window.location.origin);
@@ -57,6 +58,7 @@ export function SignInFlow({
   next,
   signedIn,
   allowed,
+  terms,
 }: {
   authRequest?: string;
   app: string | null;
@@ -65,6 +67,7 @@ export function SignInFlow({
   next?: string;
   signedIn: boolean;
   allowed: string[];
+  terms?: string;
 }) {
   const optionsId = useId();
   const emailRef = useRef<HTMLInputElement>(null);
@@ -74,8 +77,9 @@ export function SignInFlow({
   const providers = useSignInProviders();
   const failure = useSearchParams().get("error");
   const [step, setStep] = useState<Step>(
-    requestExpired || failure === "ERR_AUTH_REQUEST_EXPIRED" ? "expired" : authRequest && signedIn && !failure ? "loading" : "start",
+    terms ? "terms" : requestExpired || failure === "ERR_AUTH_REQUEST_EXPIRED" ? "expired" : authRequest && signedIn && !failure ? "loading" : "start",
   );
+  const [termsCeremony, setTermsCeremony] = useState(terms ?? "");
   const [email, setEmail] = useState("");
   const [methods, setMethods] = useState<Choice[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -103,11 +107,8 @@ export function SignInFlow({
   useEffect(() => {
     if (step !== "loading" || checked.current) return;
     checked.current = true;
-    api<{ redirect: string }>("/auth/continue", { body: { authRequest } })
-      .then(({ redirect }) => {
-        setStep("done");
-        window.location.assign(redirect);
-      })
+    api<SignedIn>("/auth/continue", { body: { authRequest } })
+      .then(finish)
       .catch((error) => {
         if (expired(error)) return setStep("expired");
         if (!(error instanceof ApiError && error.status === 401)) setNotice(describeFailure(error));
@@ -115,9 +116,14 @@ export function SignInFlow({
       });
   }, [step, authRequest]);
 
-  function finish(redirect: string) {
+  function finish(result: SignedIn) {
+    if (result.terms) {
+      setTermsCeremony(result.terms);
+      setStep("terms");
+      return;
+    }
     setStep("done");
-    window.location.assign(authRequest ? redirect : (sameOrigin(next) ?? redirect));
+    window.location.assign(authRequest ? result.redirect : (sameOrigin(next) ?? result.redirect));
   }
 
   function back(to: Step = home) {
@@ -150,8 +156,7 @@ export function SignInFlow({
     try {
       const { ceremony, options } = await api<Ceremony>("/auth/passkey/begin", { method: "POST" });
       const credential = await getAssertion(options, controller.signal);
-      const { redirect } = await api<{ redirect: string }>("/auth/passkey/finish", { body: { ceremony, credential, authRequest } });
-      finish(redirect);
+      finish(await api<SignedIn>("/auth/passkey/finish", { body: { ceremony, credential, authRequest } }));
     } catch (error) {
       if (attempt.current !== controller) return;
       attempt.current = null;
@@ -228,8 +233,7 @@ export function SignInFlow({
 
   async function signInWithCode(path: "/auth/totp" | "/auth/recovery", code: string) {
     try {
-      const { redirect } = await api<{ redirect: string }>(path, { body: { email, code, authRequest } });
-      finish(redirect);
+      finish(await api<SignedIn>(path, { body: { email, code, authRequest } }));
     } catch (error) {
       if (expired(error)) setStep("expired");
       throw error;
@@ -254,8 +258,7 @@ export function SignInFlow({
 
   async function signInWithPassword(code = "") {
     try {
-      const { redirect } = await api<{ redirect: string }>("/auth/password", { body: { email, password, newPassword, code, authRequest } });
-      finish(redirect);
+      finish(await api<SignedIn>("/auth/password", { body: { email, password, newPassword, code, authRequest } }));
     } catch (error) {
       if (expired(error)) return setStep("expired");
       if (!(error instanceof ApiError) || !["ERR_PASSWORD_CHANGE_REQUIRED", "ERR_SECOND_FACTOR_REQUIRED"].includes(error.code)) throw error;
@@ -582,6 +585,8 @@ export function SignInFlow({
           </button>
         </>
       ) : null}
+
+      {step === "terms" ? <TermsStep key={termsCeremony} ceremony={termsCeremony} app={app} onAccepted={finish} onLeave={forget} /> : null}
 
       {step === "done" ? (
         <div role="status" className="flex flex-col items-center gap-3 text-center">

@@ -18,6 +18,7 @@ type Option = { id: string; name: string };
 const OUTCOME: Record<Simulation["outcome"], { title: string; icon: LucideIcon; box: string; color: string }> = {
   allow: { title: "Sign-in allowed", icon: EFFECT.allow.icon, box: "border-success/20 bg-success-container", color: "text-success" },
   require: { title: "Passkey or security key required", icon: EFFECT["require-phishing-resistant"].icon, box: "border-warning/20 bg-warning-container", color: "text-warning" },
+  terms: { title: "Terms of use must be accepted first", icon: EFFECT["require-terms"].icon, box: "border-info/20 bg-info-container", color: "text-info" },
   block: { title: "Sign-in blocked", icon: EFFECT.block.icon, box: "border-danger/20 bg-danger-container", color: "text-danger" },
 };
 
@@ -26,7 +27,9 @@ function verdict(p: Simulation["policies"][number]): string {
   const report = p.mode === "report";
   if (p.outcome === "block") return report ? "Would block" : "Blocks";
   if (p.outcome === "require") return report ? "Would require a passkey or security key" : "Requires a passkey or security key";
+  if (p.outcome === "terms") return report ? "Would ask for the terms of use" : "Asks for the terms of use";
   if (p.effect === "require-phishing-resistant") return "Requirement met";
+  if (p.effect === "require-terms") return "Terms accepted";
   return report ? "Would allow" : "Allows";
 }
 

@@ -3,22 +3,24 @@ import { Plus } from "lucide-react";
 import { PolicyList, ReportInsights } from "@/components/policy/policy-list";
 import type { Names } from "@/components/policy/shared";
 import { SimulateDialog } from "@/components/policy/simulate-dialog";
+import { TermsSection } from "@/components/policy/terms";
 import { ZonesSection } from "@/components/policy/zones";
 import { buttonClasses } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { TabNav } from "@/components/ui/tab-nav";
 import { apiGet } from "@/lib/api/server";
 import { pluralize } from "@/lib/format";
-import type { NetworkZone, PolicyWithActivity } from "@/lib/policy-types";
+import type { NetworkZone, PolicyWithActivity, Terms } from "@/lib/policy-types";
 import type { Application, Group, User } from "@/lib/types";
 
 export const metadata = { title: "Policies" };
 
 export default async function PoliciesPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const { tab = "policies" } = await searchParams;
-  const [policies, zones, groups, users, applications] = await Promise.all([
+  const [policies, zones, terms, groups, users, applications] = await Promise.all([
     apiGet<PolicyWithActivity[]>("/policies"),
     apiGet<NetworkZone[]>("/network-zones"),
+    apiGet<Terms[]>("/terms"),
     apiGet<Group[]>("/groups"),
     apiGet<User[]>("/users"),
     apiGet<Application[]>("/applications"),
@@ -28,8 +30,10 @@ export default async function PoliciesPage({ searchParams }: { searchParams: Pro
     users: Object.fromEntries(users.map((u) => [u.id, u.name])),
     apps: Object.fromEntries(applications.map((a) => [a.id, a.name])),
     zones: Object.fromEntries(zones.map((z) => [z.id, z.name])),
+    terms: Object.fromEntries(terms.map((t) => [t.id, t.name])),
   };
   const usedBy = Object.fromEntries(zones.map((z) => [z.id, policies.filter((p) => p.conditions.zoneIds.includes(z.id)).map((p) => p.name)]));
+  const termsUsedBy = Object.fromEntries(terms.map((t) => [t.id, policies.filter((p) => p.termsId === t.id).map((p) => p.name)]));
   const enforced = policies.filter((p) => p.enabled && p.mode === "enforce").length;
   const report = policies.filter((p) => p.enabled && p.mode === "report").length;
 
@@ -58,6 +62,7 @@ export default async function PoliciesPage({ searchParams }: { searchParams: Pro
         tabs={[
           { id: "policies", label: "Policies", count: policies.length },
           { id: "networks", label: "Networks", count: zones.length },
+          { id: "terms", label: "Terms", count: terms.length },
         ]}
         active={tab}
         hrefFor={(id) => (id === "policies" ? "/admin/policies" : `/admin/policies?tab=${id}`)}
@@ -65,6 +70,8 @@ export default async function PoliciesPage({ searchParams }: { searchParams: Pro
       <div key={tab} className="flex animate-enter flex-col gap-8">
         {tab === "networks" ? (
           <ZonesSection zones={zones} usedBy={usedBy} />
+        ) : tab === "terms" ? (
+          <TermsSection terms={terms} usedBy={termsUsedBy} />
         ) : (
           <>
             <ReportInsights policies={policies} />

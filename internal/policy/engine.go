@@ -18,7 +18,7 @@ const haloApp = "halo"
 
 var (
 	riskLevels    = []string{"none", "low", "medium", "high"}
-	severity      = map[string]int{access.Allow: 0, access.RequirePhishingResistant: 1, access.Block: 2}
+	severity      = map[string]int{access.Allow: 0, access.RequireTerms: 1, access.RequirePhishingResistant: 2, access.Block: 3}
 	methodUsing   = map[string]string{"passkey": "a passkey", "security-key": "a security key", "totp": "an authenticator app", "magic-link": "a magic link", "recovery-codes": "a recovery code", "password": "a password", "federated": "an identity provider"}
 	methodPlurals = map[string]string{"passkey": "passkeys", "security-key": "security keys", "totp": "authenticator apps", "magic-link": "magic links", "recovery-codes": "recovery codes", "password": "passwords", "federated": "identity providers"}
 	effectVerbs   = map[string]string{access.Allow: "Allows", access.RequirePhishingResistant: "Requires a passkey or security key for", access.Block: "Blocks"}
@@ -37,15 +37,16 @@ type signal struct {
 }
 
 type attempt struct {
-	user    store.User
-	appID   string
-	appName string
-	method  string
-	ip      string
-	addr    netip.Addr
-	trust   string
-	risk    string
-	signals []signal
+	user     store.User
+	appID    string
+	appName  string
+	method   string
+	ip       string
+	addr     netip.Addr
+	trust    string
+	risk     string
+	signals  []signal
+	accepted map[string]int
 }
 
 type state struct {
@@ -53,6 +54,7 @@ type state struct {
 	zones    []store.NetworkZone
 	methods  map[string]bool
 	groups   map[string]string
+	terms    map[string]store.Terms
 	org      store.Settings
 }
 
@@ -75,10 +77,19 @@ func newAttempt(u store.User, app *store.Application, method, ip string) attempt
 }
 
 func (e *engine) load(ctx context.Context) (state, error) {
-	s := state{methods: map[string]bool{}, groups: map[string]string{}}
+	s := state{methods: map[string]bool{}, groups: map[string]string{}, terms: map[string]store.Terms{}}
 	var err error
 	if s.policies, err = e.st.ListAccessPolicies(ctx); err != nil {
 		return s, err
+	}
+	if slices.ContainsFunc(s.policies, func(p store.AccessPolicy) bool { return p.Effect == access.RequireTerms }) {
+		terms, err := e.st.ListTerms(ctx)
+		if err != nil {
+			return s, err
+		}
+		for _, t := range terms {
+			s.terms[t.ID] = t
+		}
 	}
 	if s.zones, err = e.st.ListNetworkZones(ctx); err != nil {
 		return s, err
@@ -99,6 +110,18 @@ func (e *engine) load(ctx context.Context) (state, error) {
 	}
 	s.org, err = e.st.Settings(ctx)
 	return s, err
+}
+
+func (e *engine) acceptances(ctx context.Context, s state, a *attempt) error {
+	a.accepted = map[string]int{}
+	if len(s.terms) == 0 {
+		return nil
+	}
+	accepted, err := e.st.TermsAcceptances(ctx, a.user.ID)
+	for _, t := range accepted {
+		a.accepted[t.TermsID] = max(a.accepted[t.TermsID], t.Version)
+	}
+	return err
 }
 
 func (e *engine) Evaluate(ctx context.Context, in access.Input) (access.Decision, error) {
@@ -124,12 +147,15 @@ func (e *engine) Evaluate(ctx context.Context, in access.Input) (access.Decision
 	if err := e.assess(ctx, &a, s.zones, others); err != nil {
 		return access.Decision{}, err
 	}
+	if err := e.acceptances(ctx, s, &a); err != nil {
+		return access.Decision{}, err
+	}
 	results, decision := decide(s, a)
 	decision.Risk, decision.EventID = a.risk, id.New("evt")
 	err = e.st.Tx(ctx, func(tx *store.Store) error {
 		var deviceID *string
 		if hash != nil {
-			signedIn := outcome(decision.Effect, a.method) == "allow"
+			signedIn := outcome(decision.Effect, a.method) == "allow" && len(decision.Terms) == 0
 			touched, err := tx.TouchDevice(ctx, a.user.ID, hash, in.UserAgent, a.ip, signedIn)
 			if err != nil {
 				return err
@@ -240,8 +266,18 @@ func decide(s state, a attempt) ([]result, access.Decision) {
 		r := result{policy: p}
 		if r.matched, r.detail = s.match(p, a); r.matched {
 			r.outcome = outcome(p.Effect, a.method)
+			if t, ok := s.document(p); ok && a.accepted[t.ID] < t.Version {
+				r.outcome = "terms"
+			}
 		}
 		results = append(results, r)
+	}
+	pending := []store.Terms{}
+	for _, r := range results {
+		t, _ := s.document(r.policy)
+		if r.outcome == "terms" && r.policy.Mode == "enforce" && !slices.ContainsFunc(pending, func(p store.Terms) bool { return p.ID == t.ID }) {
+			pending = append(pending, t)
+		}
 	}
 	var winner *result
 	for i, r := range results {
@@ -262,9 +298,24 @@ func decide(s state, a attempt) ([]result, access.Decision) {
 		}
 		return results, access.Decision{Effect: access.Block, Reason: "Sign-in with passwords is limited to members of " + strings.Join(groups, " or ") + "."}
 	case winner != nil:
-		return results, access.Decision{Effect: winner.policy.Effect, Policy: winner.policy.Name, Reason: winner.detail}
+		return results, access.Decision{Effect: winner.policy.Effect, Policy: winner.policy.Name, Reason: winner.detail, Terms: pending}
 	}
-	return results, access.Decision{Effect: access.Allow}
+	return results, access.Decision{Effect: access.Allow, Terms: pending}
+}
+
+func (s state) document(p store.AccessPolicy) (store.Terms, bool) {
+	if p.Effect != access.RequireTerms || p.TermsID == nil {
+		return store.Terms{}, false
+	}
+	t, ok := s.terms[*p.TermsID]
+	return t, ok
+}
+
+func (s state) verb(p store.AccessPolicy) string {
+	if t, ok := s.document(p); ok {
+		return fmt.Sprintf("Requires accepting “%s” version %d for", t.Name, t.Version)
+	}
+	return effectVerbs[p.Effect]
 }
 
 func (s state) group(groupID string) string {
@@ -364,9 +415,9 @@ func (s state) match(p store.AccessPolicy, a attempt) (bool, string) {
 		scope = append(scope, "using "+methodUsing[a.method])
 	}
 	if len(scope) == 0 {
-		return true, effectVerbs[p.Effect] + " every sign-in."
+		return true, s.verb(p) + " every sign-in."
 	}
-	reason := effectVerbs[p.Effect] + " sign-ins " + strings.Join(scope, " ") + "."
+	reason := s.verb(p) + " sign-ins " + strings.Join(scope, " ") + "."
 	if len(c.Risk) > 0 && a.risk != "none" {
 		evidence := []string{}
 		for _, sig := range a.signals {
@@ -416,8 +467,14 @@ func (e *engine) simulate(ctx context.Context, u store.User, app *store.Applicat
 	if err := e.assess(ctx, &a, s.zones, 0); err != nil {
 		return simulation{}, err
 	}
+	if err := e.acceptances(ctx, s, &a); err != nil {
+		return simulation{}, err
+	}
 	results, d := decide(s, a)
 	sim := simulation{Effect: d.Effect, Outcome: outcome(d.Effect, method), Policy: d.Policy, Reason: d.Reason, Risk: a.risk, Signals: append([]signal{}, a.signals...), Policies: []simulatedPolicy{}}
+	if sim.Outcome == "allow" && len(d.Terms) > 0 {
+		sim.Outcome = "terms"
+	}
 	for _, r := range results {
 		sim.Policies = append(sim.Policies, simulatedPolicy{ID: r.policy.ID, Name: r.policy.Name, Mode: r.policy.Mode, Effect: r.policy.Effect, Matched: r.matched, Outcome: r.outcome, Detail: r.detail})
 	}

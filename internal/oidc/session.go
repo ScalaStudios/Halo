@@ -58,6 +58,8 @@ func (s *storage) silent(ctx context.Context, a *store.AuthRequest, app store.Ap
 		return fail(policyReason(decision), oidc.ErrInteractionRequired().WithDescription("The organization's access policy blocked this sign-in."))
 	case decision.Effect == access.RequirePhishingResistant && sess.Method != "passkey" && sess.Method != "security-key":
 		return fail(policyReason(decision), oidc.ErrLoginRequired().WithDescription("This application requires signing in with a passkey or security key."))
+	case len(decision.Terms) > 0:
+		return oidc.ErrInteractionRequired().WithDescription("The user must accept the organization's terms of use first.")
 	}
 	a.ID, a.UserID, a.SessionID, a.AuthTime, a.AMR, a.Done = id.New(silentPrefix), &u.ID, &sess.ID, &sess.CreatedAt, sess.AMR(), true
 	event.Result = "success"

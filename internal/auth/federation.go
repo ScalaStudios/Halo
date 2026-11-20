@@ -178,9 +178,12 @@ func (h *handler) federatedCallback(w http.ResponseWriter, r *http.Request, s *s
 	for _, c := range rec.Header().Values("Set-Cookie") {
 		w.Header().Add("Set-Cookie", c)
 	}
-	var out struct{ Redirect string }
+	var out struct{ Redirect, Terms string }
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		return "", err
+	}
+	if s.AuthRequest == "" && s.Next != "" && out.Terms != "" {
+		return out.Redirect + "&next=" + url.QueryEscape(s.Next), nil
 	}
 	if s.AuthRequest == "" && s.Next != "" {
 		return s.Next, nil
