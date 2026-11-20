@@ -36,4 +36,4 @@ tofu import halo_group.engineering grp_01J9Z8Q4M2N5P7R9T1V3X5Z7B9
 
 Halo cannot delete people, so destroying a `halo_user` suspends the account. Applications are OpenID Connect and OAuth only; manage SAML applications in the console.
 
-Run the provider's acceptance tests against a throwaway Halo and PostgreSQL with `TF_ACC=1 go test ./internal/terraform`. They need `terraform` on the `PATH`, or `TF_ACC_TERRAFORM_PATH` set to a `tofu` binary together with `TF_ACC_PROVIDER_NAMESPACE=hashicorp`.
+Run the provider's acceptance tests against a throwaway Halo and PostgreSQL with `TF_ACC=1 go test ./internal/terraform`. To run them with OpenTofu, also set `TF_ACC_TERRAFORM_PATH` to the `tofu` binary and `TF_ACC_PROVIDER_NAMESPACE=hashicorp`.

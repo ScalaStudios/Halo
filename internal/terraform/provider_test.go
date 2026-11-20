@@ -92,28 +92,24 @@ func TestAcc(t *testing.T) {
 	}
 	endpoint, key := halo(t)
 	provider := fmt.Sprintf("provider \"halo\" {\n  endpoint = %q\n  api_key  = %q\n}\n", endpoint, key)
-	config := func(title, policyName string, allUsers bool) string {
-		policyUsers := "group_ids = [halo_group.engineering.id]"
-		if allUsers {
-			policyUsers = "all_users = true"
-		}
+	config := func(v map[string]string) string {
 		return provider + fmt.Sprintf(`
 resource "halo_user" "ada" {
   email = "ada@example.com"
   name  = "Ada Lovelace"
-  title = %q
+  title = %[1]q
 }
 
 resource "halo_group" "engineering" {
   name        = "Engineering"
-  description = "Builds the product"
+  description = %[2]q
   kind        = "assigned"
 }
 
 resource "halo_group" "berlin" {
   name = "Berlin"
   kind = "dynamic"
-  rule = "user.location == \"Berlin\""
+  rule = %[3]q
 }
 
 resource "halo_group_member" "ada" {
@@ -122,20 +118,27 @@ resource "halo_group_member" "ada" {
 }
 
 resource "halo_application" "grafana" {
-  name          = "Grafana"
+  name          = %[4]q
   protocol      = "oidc"
   type          = "web"
-  redirect_uris = ["https://grafana.example.com/login/generic_oauth"]
+  redirect_uris = [%[5]s]
   group_ids     = [halo_group.engineering.id]
 }
 
+resource "halo_application" "dashboard" {
+  name          = %[6]q
+  protocol      = "oidc"
+  type          = "spa"
+  redirect_uris = ["https://dashboard.example.com/callback"]
+}
+
 resource "halo_access_policy" "phishing_resistant" {
-  name    = %q
+  name    = %[7]q
   enabled = false
   mode    = "report"
   effect  = "require-phishing-resistant"
   conditions = {
-    %s
+    %[8]s
     app_ids = [halo_application.grafana.id]
     risk    = ["high", "medium"]
   }
@@ -144,13 +147,25 @@ resource "halo_access_policy" "phishing_resistant" {
 resource "halo_api_resource" "billing" {
   name             = "Billing API"
   identifier       = "https://billing.example.com"
-  access_token_ttl = 900
+  access_token_ttl = %[9]s
   scopes = [
     { name = "billing:read", description = "Read invoices" },
-    { name = "billing:write" },
+    %[10]s
   ]
 }
-`, title, policyName, policyUsers)
+`, v["title"], v["description"], v["rule"], v["app"], v["redirects"], v["spa"], v["policy"], v["users"], v["ttl"], v["scopes"])
+	}
+	first := map[string]string{
+		"title": "Engineer", "description": "Builds the product", "rule": `user.location == "Berlin"`,
+		"app": "Grafana", "redirects": `"https://grafana.example.com/login/generic_oauth"`, "spa": "Dashboard",
+		"policy": "Phishing-resistant for Grafana", "users": "group_ids = [halo_group.engineering.id]",
+		"ttl": "900", "scopes": `{ name = "billing:write" },`,
+	}
+	second := map[string]string{
+		"title": "Principal engineer", "description": "Builds and runs the product", "rule": `user.location == "Berlin" or user.location == "Potsdam"`,
+		"app": "Grafana Cloud", "redirects": `"https://grafana.example.com/login/generic_oauth", "https://grafana.example.org/login/generic_oauth"`, "spa": "Status dashboard",
+		"policy": "Phishing-resistant everywhere", "users": "all_users = true",
+		"ttl": "1800", "scopes": `{ name = "billing:write", description = "Change invoices" }, { name = "billing:refund" },`,
 	}
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: map[string]func() (tfprotov6.ProviderServer, error){
@@ -158,19 +173,26 @@ resource "halo_api_resource" "billing" {
 		},
 		Steps: []resource.TestStep{
 			{
-				Config: config("Engineer", "Phishing-resistant for Grafana", false),
+				Config: config(first),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("halo_user.ada", "status", "invited"),
 					resource.TestCheckResourceAttr("halo_application.grafana", "scopes.#", "4"),
 					resource.TestCheckResourceAttrSet("halo_application.grafana", "client_secret"),
+					resource.TestCheckNoResourceAttr("halo_application.dashboard", "client_secret"),
 					resource.TestCheckResourceAttr("halo_access_policy.phishing_resistant", "conditions.network", "any"),
 					resource.TestCheckResourceAttr("halo_api_resource.billing", "scopes.#", "2"),
 				),
 			},
 			{
-				Config: config("Principal engineer", "Phishing-resistant everywhere", true),
+				Config: config(second),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("halo_user.ada", "title", "Principal engineer"),
+					resource.TestCheckResourceAttr("halo_group.engineering", "description", "Builds and runs the product"),
+					resource.TestCheckResourceAttr("halo_application.grafana", "redirect_uris.#", "2"),
+					resource.TestCheckResourceAttrSet("halo_application.grafana", "client_secret"),
+					resource.TestCheckResourceAttr("halo_application.dashboard", "name", "Status dashboard"),
+					resource.TestCheckResourceAttr("halo_api_resource.billing", "access_token_ttl", "1800"),
+					resource.TestCheckResourceAttr("halo_api_resource.billing", "scopes.#", "3"),
 					resource.TestCheckResourceAttr("halo_access_policy.phishing_resistant", "conditions.all_users", "true"),
 					resource.TestCheckResourceAttr("halo_access_policy.phishing_resistant", "conditions.group_ids.#", "0"),
 				),
@@ -180,6 +202,7 @@ resource "halo_api_resource" "billing" {
 			{ResourceName: "halo_group.berlin", ImportState: true, ImportStateVerify: true},
 			{ResourceName: "halo_group_member.ada", ImportState: true, ImportStateVerify: true},
 			{ResourceName: "halo_application.grafana", ImportState: true, ImportStateVerify: true, ImportStateVerifyIgnore: []string{"client_secret"}},
+			{ResourceName: "halo_application.dashboard", ImportState: true, ImportStateVerify: true},
 			{ResourceName: "halo_access_policy.phishing_resistant", ImportState: true, ImportStateVerify: true},
 			{ResourceName: "halo_api_resource.billing", ImportState: true, ImportStateVerify: true},
 		},
