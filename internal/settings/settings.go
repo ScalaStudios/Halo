@@ -251,7 +251,7 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	}
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
 		if change.Action != "" {
-			if err := tx.LockApprovalTarget(ctx, "settings"); err != nil {
+			if err := tx.LockApprovalTarget(ctx, "settings", ""); err != nil {
 				return err
 			}
 			current, err := tx.CurrentSettings(ctx)

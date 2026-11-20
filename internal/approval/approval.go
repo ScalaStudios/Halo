@@ -252,7 +252,7 @@ func (h *handler) decide(approve bool) httpx.HandlerFunc {
 
 func (h *handler) apply(tx *store.Store, r *http.Request, req store.ApprovalRequest) error {
 	ctx := r.Context()
-	if err := tx.LockApprovalTarget(ctx, req.TargetType); err != nil {
+	if err := tx.LockApprovalTarget(ctx, req.TargetType, req.TargetID); err != nil {
 		return err
 	}
 	requester, err := tx.GetUser(ctx, req.Requester.ID)

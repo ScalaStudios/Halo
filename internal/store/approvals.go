@@ -38,21 +38,24 @@ type ApprovalRequest struct {
 	State       string     `json:"-"`
 }
 
-var approvalTargetTables = map[string]string{
-	"user":              "users, user_roles, role_eligibilities, role_activations",
-	"service_account":   "users, user_roles",
-	"policy":            "access_policies",
-	"identity_provider": "identity_providers",
-	"method":            "sign_in_method_settings",
-	"settings":          "settings",
+var approvalTargetLocks = map[string]struct{ tables, row string }{
+	"user":              {"user_roles, role_eligibilities, role_activations", "users"},
+	"service_account":   {"user_roles", "users"},
+	"policy":            {"access_policies", ""},
+	"identity_provider": {"identity_providers", ""},
+	"method":            {"sign_in_method_settings", ""},
+	"settings":          {"settings", ""},
 }
 
-func (s *Store) LockApprovalTarget(ctx context.Context, targetType string) error {
-	tables, ok := approvalTargetTables[targetType]
+func (s *Store) LockApprovalTarget(ctx context.Context, targetType, targetID string) error {
+	lock, ok := approvalTargetLocks[targetType]
 	if !ok {
 		return fmt.Errorf("no lock for approval target %q", targetType)
 	}
-	_, err := s.db.Exec(ctx, `lock table `+tables+` in share row exclusive mode`)
+	if _, err := s.db.Exec(ctx, `lock table `+lock.tables+` in share row exclusive mode`); err != nil || lock.row == "" {
+		return err
+	}
+	_, err := s.db.Exec(ctx, `select 1 from `+lock.row+` where id = $1 for update`, targetID)
 	return err
 }
 
