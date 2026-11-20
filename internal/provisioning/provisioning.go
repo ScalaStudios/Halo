@@ -33,7 +33,7 @@ type handlers struct {
 func Register(mux *http.ServeMux, d httpx.Deps) error {
 	h := &handlers{st: d.Store, client: &http.Client{Timeout: 15 * time.Second}, issuer: d.Config.Issuer()}
 	if d.Jobs != nil {
-		d.Jobs.Every("push assigned people to applications over SCIM", 2*time.Minute, h.syncDue)
+		d.Jobs.Every("push assigned people and groups to applications over SCIM", 2*time.Minute, h.syncDue)
 	}
 	route := func(pattern string, roles []string, fn func(http.ResponseWriter, *http.Request, store.User) error) {
 		mux.Handle(pattern, httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
@@ -87,9 +87,10 @@ func (h *handlers) configure(w http.ResponseWriter, r *http.Request, actor store
 		return err
 	}
 	var in struct {
-		BaseURL string `json:"baseUrl"`
-		Token   string `json:"token"`
-		Enabled bool   `json:"enabled"`
+		BaseURL  string    `json:"baseUrl"`
+		Token    string    `json:"token"`
+		Enabled  bool      `json:"enabled"`
+		GroupIDs *[]string `json:"groupIds"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -120,9 +121,36 @@ func (h *handlers) configure(w http.ResponseWriter, r *http.Request, actor store
 	if in.Enabled {
 		summary = "Set the SCIM endpoint to " + base + " with provisioning on"
 	}
+	groupIDs, names := []string{}, []string{}
+	if in.GroupIDs != nil {
+		groups, err := h.st.ListGroupsRaw(r.Context())
+		if err != nil {
+			return err
+		}
+		for _, g := range groups {
+			if slices.Contains(*in.GroupIDs, g.ID) {
+				groupIDs, names = append(groupIDs, g.ID), append(names, g.Name)
+			}
+		}
+		for _, groupID := range *in.GroupIDs {
+			if !slices.Contains(groupIDs, groupID) {
+				return httpx.Invalid("One of the selected groups no longer exists. Reload the page and choose the groups again.")
+			}
+		}
+		pushing := "no groups"
+		if len(names) > 0 {
+			pushing = "the groups " + strings.Join(names, ", ")
+		}
+		summary += ", pushing " + pushing
+	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 		if err := tx.SaveAppProvisioning(r.Context(), app.ID, base, sealed, in.Enabled); err != nil {
 			return err
+		}
+		if in.GroupIDs != nil {
+			if err := tx.SetProvisioningGroups(r.Context(), app.ID, groupIDs); err != nil {
+				return err
+			}
 		}
 		return tx.RecordAudit(r.Context(), store.AuditEvent{ActorID: &actor.ID, Action: "provisioning.configure", Summary: summary, TargetType: "application", TargetID: app.ID, TargetLabel: app.Name, IP: httpx.ClientIP(r)})
 	})
@@ -176,6 +204,9 @@ func (h *handlers) syncNow(w http.ResponseWriter, r *http.Request, actor store.U
 		return err
 	}
 	summary := fmt.Sprintf("Pushed people over SCIM: %d created, %d updated, %d deactivated", c.Created, c.Updated, c.Deactivated)
+	if len(c.GroupIDs) > 0 || c.GroupsDeleted > 0 {
+		summary += fmt.Sprintf("; groups: %d created, %d updated, %d deleted", c.GroupsCreated, c.GroupsUpdated, c.GroupsDeleted)
+	}
 	if c.LastError != "" {
 		summary += ". Some changes failed: " + c.LastError
 	}
@@ -210,8 +241,9 @@ func (h *handlers) syncDue(ctx context.Context) error {
 }
 
 type run struct {
-	created, updated, deactivated, failed int
-	first                                 string
+	created, updated, deactivated, failed       int
+	groupsCreated, groupsUpdated, groupsDeleted int
+	first                                       string
 }
 
 func (r *run) fail(who string, err error) bool {
@@ -247,7 +279,7 @@ func (h *handlers) sync(ctx context.Context, c store.AppProvisioning, users []st
 	defer h.mu.Unlock()
 	remote, err := h.remote(c)
 	if err != nil {
-		return h.st.RecordProvisioningRun(ctx, c.AppID, 0, 0, 0, err.Error())
+		return h.st.RecordProvisioningRun(ctx, c.AppID, 0, 0, 0, 0, 0, 0, err.Error())
 	}
 	known, err := h.st.ListProvisionedUsers(ctx, c.AppID)
 	if err != nil {
@@ -274,7 +306,7 @@ func (h *handlers) sync(ctx context.Context, c store.AppProvisioning, users []st
 		if seen && prev.Active && prev.Hash == hash {
 			continue
 		}
-		remoteID, created, err := remote.push(ctx, prev.RemoteID, resource)
+		remoteID, created, err := remote.push(ctx, "Users", prev.RemoteID, resource, nil, "userName", resource.UserName)
 		if err != nil {
 			aborted = result.fail(u.Email, err)
 			continue
@@ -302,7 +334,112 @@ func (h *handlers) sync(ctx context.Context, c store.AppProvisioning, users []st
 		}
 		result.deactivated++
 	}
-	return h.st.RecordProvisioningRun(ctx, c.AppID, result.created, result.updated, result.deactivated, result.message())
+	if !aborted {
+		if err := h.pushGroups(ctx, remote, c, users, &result); err != nil {
+			return err
+		}
+	}
+	return h.st.RecordProvisioningRun(ctx, c.AppID, result.created, result.updated, result.deactivated, result.groupsCreated, result.groupsUpdated, result.groupsDeleted, result.message())
+}
+
+func (h *handlers) pushGroups(ctx context.Context, remote *client, c store.AppProvisioning, users []store.User, result *run) error {
+	pushed, err := h.st.ListProvisionedGroups(ctx, c.AppID)
+	if err != nil {
+		return err
+	}
+	if len(c.GroupIDs) == 0 && len(pushed) == 0 {
+		return nil
+	}
+	provisioned, err := h.st.ListProvisionedUsers(ctx, c.AppID)
+	if err != nil {
+		return err
+	}
+	groups, err := h.st.ListGroupsRaw(ctx)
+	if err != nil {
+		return err
+	}
+	desired := map[string]bool{}
+	aborted := false
+	for _, g := range groups {
+		if aborted || !slices.Contains(c.GroupIDs, g.ID) {
+			continue
+		}
+		desired[g.ID] = true
+		members := []string{}
+		for _, u := range users {
+			if p := provisioned[u.ID]; p.Active && slices.Contains(u.GroupIDs, g.ID) {
+				members = append(members, p.RemoteID)
+			}
+		}
+		slices.Sort(members)
+		prev, seen := pushed[g.ID]
+		if seen && prev.Name == g.Name && slices.Equal(prev.Members, members) {
+			continue
+		}
+		var patch any
+		if seen {
+			patch = groupPatch(prev, g.Name, members)
+		}
+		resource := map[string]any{"schemas": []string{scim.GroupSchema}, "externalId": g.ID, "displayName": g.Name, "members": memberRefs(members)}
+		remoteID, created, err := remote.push(ctx, "Groups", prev.RemoteID, resource, patch, "displayName", g.Name)
+		if err != nil {
+			aborted = result.fail(g.Name, err)
+			continue
+		}
+		if err := h.st.SaveProvisionedGroup(ctx, c.AppID, g.ID, store.ProvisionedGroup{RemoteID: remoteID, Name: g.Name, Members: members}); err != nil {
+			return err
+		}
+		if created {
+			result.groupsCreated++
+		} else {
+			result.groupsUpdated++
+		}
+	}
+	for groupID, prev := range pushed {
+		if aborted || desired[groupID] {
+			continue
+		}
+		if err := remote.do(ctx, http.MethodDelete, "/Groups/"+url.PathEscape(prev.RemoteID), nil, nil); err != nil && !isStatus(err, http.StatusNotFound) {
+			aborted = result.fail(prev.Name, err)
+			continue
+		}
+		if err := h.st.DeleteProvisionedGroup(ctx, c.AppID, groupID); err != nil {
+			return err
+		}
+		result.groupsDeleted++
+	}
+	return nil
+}
+
+func memberRefs(remoteIDs []string) []map[string]string {
+	refs := make([]map[string]string, len(remoteIDs))
+	for i, remoteID := range remoteIDs {
+		refs[i] = map[string]string{"value": remoteID}
+	}
+	return refs
+}
+
+func groupPatch(prev store.ProvisionedGroup, name string, members []string) map[string]any {
+	ops := []map[string]any{}
+	if prev.Name != name {
+		ops = append(ops, map[string]any{"op": "replace", "path": "displayName", "value": name})
+	}
+	var added []string
+	for _, m := range members {
+		if !slices.Contains(prev.Members, m) {
+			added = append(added, m)
+		}
+	}
+	if len(added) > 0 {
+		ops = append(ops, map[string]any{"op": "add", "path": "members", "value": memberRefs(added)})
+	}
+	for _, m := range prev.Members {
+		if !slices.Contains(members, m) {
+			quoted, _ := json.Marshal(m)
+			ops = append(ops, map[string]any{"op": "remove", "path": "members[value eq " + string(quoted) + "]"})
+		}
+	}
+	return map[string]any{"schemas": []string{scim.PatchSchema}, "Operations": ops}
 }
 
 type statusError struct {
@@ -374,9 +511,13 @@ func (c *client) do(ctx context.Context, method, path string, body, out any) err
 	return nil
 }
 
-func (c *client) push(ctx context.Context, remoteID string, u scim.User) (string, bool, error) {
+func (c *client) push(ctx context.Context, kind, remoteID string, resource, patch any, attr, value string) (string, bool, error) {
 	if remoteID != "" {
-		err := c.do(ctx, http.MethodPut, "/Users/"+url.PathEscape(remoteID), u, nil)
+		method, body := http.MethodPut, resource
+		if patch != nil {
+			method, body = http.MethodPatch, patch
+		}
+		err := c.do(ctx, method, "/"+kind+"/"+url.PathEscape(remoteID), body, nil)
 		if !isStatus(err, http.StatusNotFound) {
 			return remoteID, false, err
 		}
@@ -384,21 +525,21 @@ func (c *client) push(ctx context.Context, remoteID string, u scim.User) (string
 	var created struct {
 		ID string `json:"id"`
 	}
-	err := c.do(ctx, http.MethodPost, "/Users", u, &created)
+	err := c.do(ctx, http.MethodPost, "/"+kind, resource, &created)
 	if isStatus(err, http.StatusConflict) {
-		userName, _ := json.Marshal(u.UserName)
+		quoted, _ := json.Marshal(value)
 		var found struct {
 			Resources []struct {
 				ID string `json:"id"`
 			} `json:"Resources"`
 		}
-		if err := c.do(ctx, http.MethodGet, "/Users?filter="+url.QueryEscape("userName eq "+string(userName)), nil, &found); err != nil {
+		if err := c.do(ctx, http.MethodGet, "/"+kind+"?filter="+url.QueryEscape(attr+" eq "+string(quoted)), nil, &found); err != nil {
 			return "", false, err
 		}
 		if len(found.Resources) == 0 {
-			return "", false, &statusError{status: http.StatusConflict, detail: "the user exists, but filtering by userName does not find it"}
+			return "", false, &statusError{status: http.StatusConflict, detail: "the " + strings.ToLower(strings.TrimSuffix(kind, "s")) + " exists, but filtering by " + attr + " does not find it"}
 		}
-		return found.Resources[0].ID, false, c.do(ctx, http.MethodPut, "/Users/"+url.PathEscape(found.Resources[0].ID), u, nil)
+		return found.Resources[0].ID, false, c.do(ctx, http.MethodPut, "/"+kind+"/"+url.PathEscape(found.Resources[0].ID), resource, nil)
 	}
 	if err == nil && created.ID == "" {
 		err = &statusError{status: http.StatusCreated, detail: "the response has no id"}

@@ -3986,8 +3986,8 @@ paths:
     put:
       tags: [Provisioning]
       operationId: configureProvisioning
-      summary: Set an application's SCIM endpoint and token
-      description: 'Roles: application administrator. OpenID Connect and SAML applications that people sign in to only. The token is required the first time; omit it later to keep the saved one.'
+      summary: Set an application's SCIM endpoint, token and pushed groups
+      description: 'Roles: application administrator. OpenID Connect and SAML applications that people sign in to only. The token is required the first time; omit it later to keep the saved one. Omit `groupIds` to keep the selected groups; a group removed from the list is deleted in the application at the next sync.'
       requestBody:
         required: true
         content:
@@ -3999,6 +3999,10 @@ paths:
                 baseUrl: {type: string, format: uri, examples: [https://app.example.com/scim/v2]}
                 token: {type: string, maxLength: 4096}
                 enabled: {type: boolean}
+                groupIds:
+                  type: array
+                  description: Assigned or rule-based groups to push with their members. Members who are not provisioned to the application are left out.
+                  items: {type: string}
       responses:
         '200': {$ref: '#/components/responses/AppProvisioningResponse'}
         '400': {$ref: '#/components/responses/BadJSON'}
@@ -4043,7 +4047,7 @@ paths:
     post:
       tags: [Provisioning]
       operationId: syncProvisioning
-      summary: Push the assigned people now
+      summary: Push the assigned people and selected groups now
       description: 'Roles: application administrator. Runs even when provisioning is paused. Failures are reported in `lastError` with status 200.'
       responses:
         '200': {$ref: '#/components/responses/AppProvisioningResponse'}
@@ -6111,7 +6115,7 @@ components:
         createdAt: {type: string, format: date-time}
     AppProvisioning:
       type: object
-      required: [appId, baseUrl, enabled, lastSyncAt, lastError, created, updated, deactivated, provisioned, updatedAt]
+      required: [appId, baseUrl, enabled, lastSyncAt, lastError, created, updated, deactivated, provisioned, groupIds, groupsCreated, groupsUpdated, groupsDeleted, updatedAt]
       properties:
         appId: {type: string}
         baseUrl: {type: string, format: uri}
@@ -6122,6 +6126,13 @@ components:
         updated: {type: integer}
         deactivated: {type: integer}
         provisioned: {type: integer, description: Users currently active in the application.}
+        groupIds:
+          type: array
+          description: Groups pushed to the application, ordered by name.
+          items: {type: string}
+        groupsCreated: {type: integer, description: Groups created in the last run.}
+        groupsUpdated: {type: integer}
+        groupsDeleted: {type: integer}
         updatedAt: {type: string, format: date-time}
     IdentityProvider:
       type: object

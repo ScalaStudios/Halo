@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -23,10 +24,36 @@ import (
 )
 
 type fake struct {
-	mu     sync.Mutex
-	users  map[string]map[string]any
-	next   int
-	reject string
+	mu         sync.Mutex
+	users      map[string]map[string]any
+	groups     map[string]*remoteGroup
+	groupCalls []string
+	next       int
+	reject     string
+}
+
+type remoteGroup struct {
+	displayName, externalID string
+	members                 []string
+}
+
+func (f *fake) group(displayName string) *remoteGroup {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, g := range f.groups {
+		if g.displayName == displayName {
+			copied := *g
+			slices.Sort(copied.members)
+			return &copied
+		}
+	}
+	return nil
+}
+
+func (f *fake) calls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.groupCalls)
 }
 
 func (f *fake) find(userName string) (string, map[string]any) {
@@ -105,9 +132,90 @@ func (f *fake) handler(token string) http.Handler {
 		}
 		reply(w, 200, map[string]any{"id": r.PathValue("id")})
 	})
+	values := func(raw any) []string {
+		var ids []string
+		for _, m := range raw.([]any) {
+			ids = append(ids, m.(map[string]any)["value"].(string))
+		}
+		return ids
+	}
+	findGroup := func(displayName string) string {
+		for id, g := range f.groups {
+			if g.displayName == displayName {
+				return id
+			}
+		}
+		return ""
+	}
+	mux.HandleFunc("GET /scim/v2/Groups", func(w http.ResponseWriter, r *http.Request) {
+		displayName := strings.TrimSuffix(strings.TrimPrefix(r.URL.Query().Get("filter"), `displayName eq "`), `"`)
+		resources := []map[string]any{}
+		if id := findGroup(displayName); id != "" {
+			resources = append(resources, map[string]any{"id": id})
+		}
+		reply(w, 200, map[string]any{"totalResults": len(resources), "Resources": resources})
+	})
+	mux.HandleFunc("POST /scim/v2/Groups", func(w http.ResponseWriter, r *http.Request) {
+		body := read(r)
+		if body["displayName"] == f.reject {
+			reply(w, 400, map[string]any{"detail": "displayName is reserved"})
+			return
+		}
+		if findGroup(body["displayName"].(string)) != "" {
+			reply(w, 409, map[string]any{"detail": "displayName taken"})
+			return
+		}
+		f.next++
+		id := fmt.Sprintf("remote-group-%d", f.next)
+		f.groups[id] = &remoteGroup{displayName: body["displayName"].(string), externalID: body["externalId"].(string), members: values(body["members"])}
+		reply(w, 201, map[string]any{"id": id})
+	})
+	mux.HandleFunc("PUT /scim/v2/Groups/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if f.groups[r.PathValue("id")] == nil {
+			reply(w, 404, map[string]any{"detail": "no such group"})
+			return
+		}
+		body := read(r)
+		f.groups[r.PathValue("id")] = &remoteGroup{displayName: body["displayName"].(string), externalID: body["externalId"].(string), members: values(body["members"])}
+		reply(w, 200, map[string]any{"id": r.PathValue("id")})
+	})
+	mux.HandleFunc("PATCH /scim/v2/Groups/{id}", func(w http.ResponseWriter, r *http.Request) {
+		g := f.groups[r.PathValue("id")]
+		if g == nil {
+			reply(w, 404, map[string]any{"detail": "no such group"})
+			return
+		}
+		for _, op := range read(r)["Operations"].([]any) {
+			op := op.(map[string]any)
+			path := op["path"].(string)
+			switch {
+			case op["op"] == "replace" && path == "displayName":
+				g.displayName = op["value"].(string)
+			case op["op"] == "add" && path == "members":
+				g.members = append(g.members, values(op["value"])...)
+			case op["op"] == "remove" && strings.HasPrefix(path, `members[value eq "`):
+				g.members = slices.DeleteFunc(g.members, func(m string) bool { return path == `members[value eq "`+m+`"]` })
+			default:
+				reply(w, 400, map[string]any{"detail": "unsupported operation"})
+				return
+			}
+		}
+		reply(w, 200, map[string]any{"id": r.PathValue("id")})
+	})
+	mux.HandleFunc("DELETE /scim/v2/Groups/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if f.groups[r.PathValue("id")] == nil {
+			reply(w, 404, map[string]any{"detail": "no such group"})
+			return
+		}
+		delete(f.groups, r.PathValue("id"))
+		w.WriteHeader(204)
+	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
+		if strings.HasPrefix(r.URL.Path, "/scim/v2/Groups") {
+			f.groupCalls = append(f.groupCalls, r.Method)
+		}
 		if r.Header.Get("Authorization") != "Bearer "+token {
 			reply(w, 401, map[string]any{"detail": "invalid token"})
 			return
@@ -289,6 +397,153 @@ func TestOutboundProvisioning(t *testing.T) {
 	}
 	audit, err := st.ListAudit(ctx, 1)
 	if err != nil || audit[0].Action != "provisioning.sync" || audit[0].TargetID != slack.ID {
+		t.Fatalf("audit: %+v %v", audit, err)
+	}
+}
+
+func TestOutboundGroupProvisioning(t *testing.T) {
+	st := testdb.New(t)
+	ctx := context.Background()
+	public, _ := url.Parse("http://localhost:3200")
+	secret := make([]byte, 32)
+	_, _ = rand.Read(secret)
+	app, err := server.New(config.Config{Organization: "Test", PublicURL: public, SecretKey: secret, Dev: true}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := app.Handler
+	remote := &fake{users: map[string]map[string]any{}, groups: map[string]*remoteGroup{}}
+	srv := httptest.NewServer(remote.handler("secret-token"))
+	defer srv.Close()
+
+	newGroup := func(name string, rule *string) store.Group {
+		kind := "assigned"
+		if rule != nil {
+			kind = "dynamic"
+		}
+		g, err := st.CreateGroup(ctx, store.NewGroup{Name: name, Kind: kind, Rule: rule})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return g
+	}
+	design := `user.department == "Design"`
+	staff, sre, designers, platform := newGroup("Staff", nil), newGroup("SRE", nil), newGroup("Designers", &design), newGroup("Platform", nil)
+	grafana, err := st.CreateApplication(ctx, store.NewApplication{Name: "Grafana", Protocol: "oidc", Type: "web", GroupIDs: []string{staff.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	people := map[string]store.User{}
+	for _, p := range []struct {
+		name, department string
+		groups           []string
+	}{{"ada", "Engineering", []string{staff.ID, sre.ID}}, {"bob", "Engineering", []string{staff.ID}}, {"cy", "Engineering", []string{sre.ID}}, {"dee", "Design", []string{staff.ID}}, {"eli", "Design", nil}} {
+		if people[p.name], err = st.CreateUser(ctx, store.NewUser{Email: p.name + "@example.com", Name: p.name, Department: p.department, Status: "active", GroupIDs: p.groups}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	u, err := st.CreateUser(ctx, store.NewUser{Email: "abe@example.com", Name: "Abe", Status: "active", Roles: []string{"app_admin"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, admin, err := st.CreateSession(ctx, store.NewSession{UserID: u.ID, Method: "passkey"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	base := "/api/v1/provisioning/applications/" + grafana.ID
+	configure := func(body map[string]any) store.AppProvisioning {
+		t.Helper()
+		body["baseUrl"], body["enabled"] = srv.URL+"/scim/v2", true
+		rec := call(t, h, admin, "PUT", base, body)
+		expect(t, rec, 200)
+		var c store.AppProvisioning
+		_ = json.Unmarshal(rec.Body.Bytes(), &c)
+		return c
+	}
+	sync := func() store.AppProvisioning {
+		t.Helper()
+		rec := call(t, h, admin, "POST", base+"/sync", nil)
+		expect(t, rec, 200)
+		var c store.AppProvisioning
+		_ = json.Unmarshal(rec.Body.Bytes(), &c)
+		return c
+	}
+	if c := configure(map[string]any{"token": "secret-token"}); c.GroupIDs == nil || len(c.GroupIDs) != 0 {
+		t.Fatalf("a new configuration pushes no groups: %+v", c)
+	}
+	if c := sync(); c.Created != 3 || len(remote.calls()) != 0 {
+		t.Fatalf("groups were pushed without being selected: %+v %v", c, remote.calls())
+	}
+	expect(t, call(t, h, admin, "PUT", base, map[string]any{"baseUrl": srv.URL + "/scim/v2", "enabled": true, "groupIds": []string{sre.ID, "grp_missing"}}), 422)
+	if c := configure(map[string]any{"groupIds": []string{sre.ID, designers.ID, sre.ID}}); !slices.Equal(c.GroupIDs, []string{designers.ID, sre.ID}) {
+		t.Fatalf("selection: %+v", c.GroupIDs)
+	}
+	if c := configure(map[string]any{}); !slices.Equal(c.GroupIDs, []string{designers.ID, sre.ID}) {
+		t.Fatalf("saving without groupIds must keep the selection: %+v", c.GroupIDs)
+	}
+
+	provisioned, err := st.ListProvisionedUsers(ctx, grafana.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := func(name string) string { return provisioned[people[name].ID].RemoteID }
+
+	c := sync()
+	if c.GroupsCreated != 2 || c.GroupsUpdated != 0 || c.GroupsDeleted != 0 || c.LastError != "" {
+		t.Fatalf("first group push: %+v", c)
+	}
+	if g := remote.group("SRE"); g == nil || g.externalID != sre.ID || !slices.Equal(g.members, []string{member("ada")}) {
+		t.Fatalf("SRE must hold only the provisioned member: %+v", g)
+	}
+	if g := remote.group("Designers"); g == nil || !slices.Equal(g.members, []string{member("dee")}) {
+		t.Fatalf("the rule-based group must hold only the provisioned member: %+v", g)
+	}
+
+	before := len(remote.calls())
+	if c = sync(); c.GroupsCreated != 0 || c.GroupsUpdated != 0 || len(remote.calls()) != before {
+		t.Fatalf("unchanged groups were pushed again: %+v %v", c, remote.calls()[before:])
+	}
+
+	sre.Name = "Site reliability"
+	if err := st.UpdateGroup(ctx, sre); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddGroupMember(ctx, sre.ID, people["bob"].ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RemoveGroupMember(ctx, sre.ID, people["ada"].ID); err != nil {
+		t.Fatal(err)
+	}
+	if c = sync(); c.GroupsUpdated != 1 || !slices.Equal(remote.calls()[before:], []string{"PATCH"}) {
+		t.Fatalf("rename and membership change must be one PATCH: %+v %v", c, remote.calls()[before:])
+	}
+	if g := remote.group("Site reliability"); g == nil || !slices.Equal(g.members, []string{member("bob")}) || remote.group("SRE") != nil {
+		t.Fatalf("rename and membership: %+v", g)
+	}
+
+	remote.reject = "Platform"
+	configure(map[string]any{"groupIds": []string{sre.ID, designers.ID, platform.ID}})
+	if c = sync(); c.GroupsCreated != 0 || !strings.Contains(c.LastError, "Platform") || !strings.Contains(c.LastError, "displayName is reserved") {
+		t.Fatalf("a rejected group must be reported: %+v", c)
+	}
+	remote.reject = ""
+	if c = sync(); c.GroupsCreated != 1 || c.LastError != "" || remote.group("Platform") == nil {
+		t.Fatalf("the rejected group must be retried at the next sync: %+v", c)
+	}
+
+	configure(map[string]any{"groupIds": []string{sre.ID, platform.ID}})
+	if c = sync(); c.GroupsDeleted != 1 || remote.group("Designers") != nil {
+		t.Fatalf("a deselected group must be deleted: %+v", c)
+	}
+	if err := st.DeleteGroup(ctx, platform.ID); err != nil {
+		t.Fatal(err)
+	}
+	if c = sync(); c.GroupsDeleted != 1 || remote.group("Platform") != nil || !slices.Equal(c.GroupIDs, []string{sre.ID}) {
+		t.Fatalf("a group deleted in Halo must be deleted: %+v", c)
+	}
+	audit, err := st.ListAudit(ctx, 1)
+	if err != nil || audit[0].Action != "provisioning.sync" || !strings.Contains(audit[0].Summary, "groups: 0 created, 0 updated, 1 deleted") {
 		t.Fatalf("audit: %+v %v", audit, err)
 	}
 }
