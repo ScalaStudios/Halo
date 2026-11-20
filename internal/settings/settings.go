@@ -304,7 +304,11 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 				return err
 			}
 		}
-		return record(r, tx, actor, store.AuditEvent{Action: "settings.update", Summary: "Changed the " + strings.Join(changed, ", "), TargetType: "settings", TargetLabel: "Organization settings"})
+		diff := store.Diff(state, values)
+		if botSecret != "" {
+			diff = append(diff, store.Change{Field: "botProtectionSecretKey", Redacted: true})
+		}
+		return record(r, tx, actor, store.AuditEvent{Action: "settings.update", Summary: "Changed the " + strings.Join(changed, ", "), TargetType: "settings", TargetLabel: "Organization settings", Changes: diff})
 	})
 	h.st.ForgetSettings()
 	if err != nil {

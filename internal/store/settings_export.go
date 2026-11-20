@@ -33,6 +33,7 @@ var ExportSections = []ExportSection{
 		array(select v.user_id from access_review_reviewers v where v.review_id = r.id order by v.user_id) as reviewer_ids,
 		(select coalesce(json_agg(json_build_object('userId', i.user_id, 'decision', i.decision, 'note', i.note, 'decidedBy', i.decided_by, 'decidedAt', i.decided_at, 'outcome', i.outcome) order by i.user_id), '[]')
 			from access_review_items i where i.review_id = r.id) as items from access_reviews r order by r.created_at`},
+	{"auditEvents", "audit_events", `select id, time, actor_id, action, summary, target_type, target_id, target_label, ip, changes from audit_events order by time, id`},
 }
 
 func (s *Store) ExportRows(ctx context.Context, section ExportSection, emit func(json.RawMessage) error) (bool, error) {

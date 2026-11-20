@@ -8,9 +8,11 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"encoding/xml"
 	"errors"
+	"maps"
 	"net/url"
 	"reflect"
 	"slices"
@@ -31,6 +33,19 @@ func lastAudit(t *testing.T, st *store.Store) store.AuditEvent {
 		t.Fatalf("audit: %+v %v", events, err)
 	}
 	return events[0]
+}
+
+func diff(e store.AuditEvent) map[string]string {
+	out := map[string]string{}
+	for _, c := range e.Changes {
+		before, _ := json.Marshal(c.Before)
+		after, _ := json.Marshal(c.After)
+		out[c.Field] = string(before) + " → " + string(after)
+		if c.Redacted {
+			out[c.Field] = "redacted"
+		}
+	}
+	return out
 }
 
 func TestUpdateUserProfile(t *testing.T) {
@@ -57,6 +72,8 @@ func TestUpdateUserProfile(t *testing.T) {
 	}
 	if e := lastAudit(t, st); e.Action != "user.update" || e.Summary != "Updated name, email, department, location" || e.TargetID != sam.ID || e.TargetLabel != "Sam Lee" {
 		t.Fatalf("audit: %+v", e)
+	} else if got := diff(e); !reflect.DeepEqual(got, map[string]string{"name": `"sam" → "Sam Lee"`, "email": `"sam@example.com" → "sam.lee@example.com"`, "department": `"" → "Engineering"`, "location": `"" → "Lisbon"`}) {
+		t.Fatalf("user changes: %v", got)
 	}
 
 	expect(t, call(t, h, userAdmin, "PATCH", path, map[string]any{"title": "", "name": "Sam Lee"}), 200)
@@ -80,6 +97,15 @@ func TestUpdateUserProfile(t *testing.T) {
 	expect(t, call(t, h, appAdmin, "PATCH", path, map[string]any{"title": "x"}), 403)
 	expect(t, call(t, h, userAdmin, "PATCH", "/api/v1/users/"+auditor.ID, map[string]any{"title": "Auditor"}), 403)
 	expect(t, call(t, h, global, "PATCH", "/api/v1/users/"+auditor.ID, map[string]any{"title": "Auditor"}), 200)
+
+	expect(t, call(t, h, global, "PUT", path+"/roles", map[string]any{"roles": []string{"helpdesk_admin", "auditor"}}), 200)
+	if got := diff(lastAudit(t, st)); !reflect.DeepEqual(got, map[string]string{"roles": `[] → ["auditor","helpdesk_admin"]`}) {
+		t.Fatalf("role changes: %v", got)
+	}
+	expect(t, call(t, h, global, "PUT", path+"/roles", map[string]any{"roles": []string{"auditor"}}), 200)
+	if got := diff(lastAudit(t, st)); !reflect.DeepEqual(got, map[string]string{"roles": `["auditor","helpdesk_admin"] → ["auditor"]`}) {
+		t.Fatalf("role changes: %v", got)
+	}
 }
 
 func TestUpdateUserManager(t *testing.T) {
@@ -167,6 +193,8 @@ func TestGroupEditMembersAndDelete(t *testing.T) {
 	}
 	if e := lastAudit(t, st); e.Action != "group.update" || e.Summary != "Updated name, description" || e.TargetLabel != "Operations" {
 		t.Fatalf("audit: %+v", e)
+	} else if got := diff(e); !reflect.DeepEqual(got, map[string]string{"name": `"Ops" → "Operations"`, "description": `"" → "Runs production"`}) {
+		t.Fatalf("group changes: %v", got)
 	}
 	expect(t, call(t, h, admin, "PATCH", "/api/v1/groups/"+ops.ID, map[string]any{"name": "platform"}), 409)
 	expect(t, call(t, h, admin, "PATCH", "/api/v1/groups/"+ops.ID, map[string]any{"kind": "dynamic"}), 422)
@@ -236,8 +264,14 @@ func TestUpdateApplication(t *testing.T) {
 		t.Fatalf("application not updated: %+v", got)
 	}
 	want := "Updated name, homepage, redirect URIs, post-logout URIs, scopes, refresh token rotation, token lifetimes, owner"
-	if e := lastAudit(t, st); e.Action != "application.update" || e.Summary != want || e.TargetLabel != "Dashboards" {
+	e := lastAudit(t, st)
+	if e.Action != "application.update" || e.Summary != want || e.TargetLabel != "Dashboards" {
 		t.Fatalf("audit: %+v", e)
+	}
+	changes := diff(e)
+	if fields := slices.Sorted(maps.Keys(changes)); !slices.Equal(fields, []string{"homepage", "name", "owner", "postLogoutUris", "redirectUris", "scopes", "tokenPolicy.accessTokenTtl", "tokenPolicy.refreshTokenTtl", "tokenPolicy.rotation"}) ||
+		changes["redirectUris"] != `["https://grafana.example.com/login"] → ["https://grafana.example.com/login","http://localhost:3000/login"]` || changes["owner"] != `null → "`+owner.ID+`"` || changes["name"] != `"Grafana" → "Dashboards"` {
+		t.Fatalf("application changes: %v", changes)
 	}
 
 	for _, body := range []map[string]any{

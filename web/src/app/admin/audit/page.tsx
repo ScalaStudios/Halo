@@ -7,7 +7,8 @@ import type { AuditEvent, User } from "@/lib/types";
 
 export const metadata = { title: "Audit log" };
 
-export default async function AuditPage() {
+export default async function AuditPage({ searchParams }: { searchParams: Promise<{ event?: string }> }) {
+  const { event } = await searchParams;
   const [audit, users, services] = await Promise.all([
     apiGet<AuditEvent[]>("/audit"),
     apiGet<User[]>("/users"),
@@ -22,7 +23,7 @@ export default async function AuditPage() {
         title="Audit log"
         description={`${pluralize(audit.length, "administrative change")}, made by ${pluralize(people, "administrator or service account", "administrators and service accounts")}${system ? " and Halo itself" : ""}.`}
       />
-      <AuditTable events={audit} userNames={names} />
+      <AuditTable events={audit} userNames={names} initialEventId={event} />
     </div>
   );
 }

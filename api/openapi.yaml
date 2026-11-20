@@ -60,7 +60,7 @@ tags:
   - name: Settings
     description: Organization settings, branding, domains and data export.
   - name: Webhooks
-    description: Signed HTTP delivery of audit and sign-in events.
+    description: Signed HTTP delivery of audit and sign-in events. An audit event's `data` has the fields of an `AuditEvent`, including `changes`.
   - name: API resources
     description: Your own APIs, their scopes, and which applications may request them.
   - name: SSH
@@ -3872,7 +3872,7 @@ paths:
       tags: [Settings]
       operationId: exportOrganization
       summary: Download the organization as JSON
-      description: 'Roles: global administrator. Streams the organization, settings, users, groups, memberships, roles, applications, policies, access packages and access reviews as one JSON document, without secrets. Writes an audit event.'
+      description: 'Roles: global administrator. Streams the organization, settings, users, groups, memberships, roles, applications, policies, access packages, access reviews and the audit log, with the changes each event recorded, as one JSON document, without secrets. Writes an audit event.'
       responses:
         '200':
           description: A JSON attachment named `halo-export-YYYY-MM-DD.json`.
@@ -3892,6 +3892,7 @@ paths:
                   policies: {type: array, items: {type: object}}
                   accessPackages: {type: array, items: {type: object}}
                   accessReviews: {type: array, items: {type: object}}
+                  auditEvents: {type: array, items: {type: object}}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
   /signing-keys:
@@ -5187,7 +5188,7 @@ components:
         challenge: {type: string, enum: [passed, failed, unavailable], description: The result of the bot protection check. Absent when no check was asked for.}
     AuditEvent:
       type: object
-      required: [id, time, actorId, action, summary, targetType, targetId, target, ip]
+      required: [id, time, actorId, action, summary, targetType, targetId, target, ip, changes]
       properties:
         id: {type: string, examples: [aud_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         time: {type: string, format: date-time}
@@ -5198,6 +5199,18 @@ components:
         targetId: {type: string}
         target: {type: string, description: The target's name when the change happened.}
         ip: {type: string}
+        changes:
+          type: array
+          description: 'The fields an update changed, with their old and new values, for changes to users, roles, groups, applications, access policies and settings. Empty for other events and for events recorded before Halo kept changes.'
+          items: {$ref: '#/components/schemas/AuditChange'}
+    AuditChange:
+      type: object
+      required: [field]
+      properties:
+        field: {type: string, description: 'The field''s name, with nested fields joined by dots.', examples: [tokenPolicy.accessTokenTtl]}
+        before: {description: The value before the change. Absent when the field did not exist.}
+        after: {description: The value after the change. Absent when the field was removed.}
+        redacted: {type: boolean, description: 'True when the field holds a secret, such as a client secret, key or hash. Halo records that it changed but never its value, so `before` and `after` are absent.'}
     Overview:
       type: object
       required: [weakAdmins, expiringCredentials, highRiskSignIns, recentSignIns, failureRates, counts]

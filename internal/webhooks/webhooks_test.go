@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -162,7 +163,7 @@ func TestDeliverySignatureAndBackoff(t *testing.T) {
 	}
 	time.Sleep(10 * time.Millisecond)
 	for _, action := range []string{"user.invite", "group.create"} {
-		if err := st.RecordAudit(ctx, store.AuditEvent{Action: action, Summary: "Test " + action, TargetType: "user", TargetLabel: "Ada"}); err != nil {
+		if err := st.RecordAudit(ctx, store.AuditEvent{Action: action, Summary: "Test " + action, TargetType: "user", TargetLabel: "Ada", Changes: []store.Change{{Field: "name", Before: json.RawMessage(`"Ada"`), After: json.RawMessage(`"Ada L"`)}}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -209,7 +210,8 @@ func TestDeliverySignatureAndBackoff(t *testing.T) {
 		Time time.Time      `json:"time"`
 		Data map[string]any `json:"data"`
 	}
-	if err := json.Unmarshal([]byte(rc.bodies[2]), &event); err != nil || event.Type != "user.invite" || !strings.HasPrefix(event.ID, "aud_") || event.Data["summary"] != "Test user.invite" || event.Time.IsZero() {
+	if err := json.Unmarshal([]byte(rc.bodies[2]), &event); err != nil || event.Type != "user.invite" || !strings.HasPrefix(event.ID, "aud_") || event.Data["summary"] != "Test user.invite" || event.Time.IsZero() ||
+		!reflect.DeepEqual(event.Data["changes"], []any{map[string]any{"field": "name", "before": "Ada", "after": "Ada L"}}) {
 		t.Fatalf("payload: %s", rc.bodies[2])
 	}
 	for i := range rc.bodies {

@@ -1,7 +1,13 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"maps"
+	"regexp"
+	"slices"
+	"strings"
 	"time"
 
 	"halo/internal/id"
@@ -56,8 +62,11 @@ func (s *Store) RecordAudit(ctx context.Context, e AuditEvent) error {
 	if e.Time.IsZero() {
 		e.Time = time.Now()
 	}
-	_, err := s.db.Exec(ctx, `insert into audit_events (id, time, actor_id, action, summary, target_type, target_id, target_label, ip) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		e.ID, e.Time, e.ActorID, e.Action, e.Summary, e.TargetType, e.TargetID, e.TargetLabel, e.IP)
+	if e.Changes == nil {
+		e.Changes = []Change{}
+	}
+	_, err := s.db.Exec(ctx, `insert into audit_events (id, time, actor_id, action, summary, target_type, target_id, target_label, ip, changes) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		e.ID, e.Time, e.ActorID, e.Action, e.Summary, e.TargetType, e.TargetID, e.TargetLabel, e.IP, e.Changes)
 	return err
 }
 
@@ -65,7 +74,7 @@ func (s *Store) ListAudit(ctx context.Context, limit int) ([]AuditEvent, error) 
 	if limit <= 0 || limit > 1000 {
 		limit = 500
 	}
-	rows, err := s.db.Query(ctx, `select id, time, actor_id, action, summary, target_type, target_id, target_label, ip from audit_events order by time desc limit $1`, limit)
+	rows, err := s.db.Query(ctx, `select id, time, actor_id, action, summary, target_type, target_id, target_label, ip, changes from audit_events order by time desc limit $1`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -73,10 +82,47 @@ func (s *Store) ListAudit(ctx context.Context, limit int) ([]AuditEvent, error) 
 	events := []AuditEvent{}
 	for rows.Next() {
 		var e AuditEvent
-		if err := rows.Scan(&e.ID, &e.Time, &e.ActorID, &e.Action, &e.Summary, &e.TargetType, &e.TargetID, &e.TargetLabel, &e.IP); err != nil {
+		if err := rows.Scan(&e.ID, &e.Time, &e.ActorID, &e.Action, &e.Summary, &e.TargetType, &e.TargetID, &e.TargetLabel, &e.IP, &e.Changes); err != nil {
 			return nil, err
 		}
 		events = append(events, e)
 	}
 	return events, rows.Err()
+}
+
+var secretField = regexp.MustCompile(`(?i)secret|hash|seed|sealed|privatekey|password$`)
+
+func Diff(before, after any) []Change {
+	old, updated := map[string]json.RawMessage{}, map[string]json.RawMessage{}
+	flatten("", before, old)
+	flatten("", after, updated)
+	fields := append(slices.Collect(maps.Keys(old)), slices.Collect(maps.Keys(updated))...)
+	slices.Sort(fields)
+	changes := []Change{}
+	for _, field := range slices.Compact(fields) {
+		name := field[strings.LastIndex(field, ".")+1:]
+		switch {
+		case name == "updatedAt" || bytes.Equal(old[field], updated[field]):
+		case secretField.MatchString(name):
+			changes = append(changes, Change{Field: field, Redacted: true})
+		default:
+			changes = append(changes, Change{Field: field, Before: old[field], After: updated[field]})
+		}
+	}
+	return changes
+}
+
+func flatten(prefix string, value any, out map[string]json.RawMessage) {
+	raw, _ := json.Marshal(value)
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || fields == nil {
+		out[prefix] = raw
+		return
+	}
+	for key, child := range fields {
+		if prefix != "" {
+			key = prefix + "." + key
+		}
+		flatten(key, child, out)
+	}
 }

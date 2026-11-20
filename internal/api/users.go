@@ -413,7 +413,11 @@ func (h *handlers) setRoles(w http.ResponseWriter, r *http.Request, actor store.
 		if err := tx.SetUserRoles(r.Context(), target.ID, roles); err != nil {
 			return err
 		}
-		return record(r, tx, actor, roleEvent(target, labels))
+		standing := slices.DeleteFunc(slices.Clone(target.RoleKeys), func(role string) bool { return activated(target, role) })
+		slices.Sort(roles)
+		event := roleEvent(target, labels)
+		event.Changes = store.Diff(map[string][]string{"roles": standing}, map[string][]string{"roles": roles})
+		return record(r, tx, actor, event)
 	})
 	if err != nil {
 		return err
@@ -597,7 +601,7 @@ func (h *handlers) updateUser(w http.ResponseWriter, r *http.Request, actor stor
 		} else if err != nil {
 			return err
 		}
-		return record(r, tx, actor, store.AuditEvent{Action: "user.update", Summary: "Updated " + strings.Join(changed, ", "), TargetType: "user", TargetID: target.ID, TargetLabel: next.Name})
+		return record(r, tx, actor, store.AuditEvent{Action: "user.update", Summary: "Updated " + strings.Join(changed, ", "), TargetType: "user", TargetID: target.ID, TargetLabel: next.Name, Changes: store.Diff(target, next)})
 	})
 	if err != nil {
 		return err

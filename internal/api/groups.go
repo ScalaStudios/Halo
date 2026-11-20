@@ -266,7 +266,7 @@ func (h *handlers) updateGroup(w http.ResponseWriter, r *http.Request, actor sto
 		} else if err != nil {
 			return err
 		}
-		return record(r, tx, actor, store.AuditEvent{Action: "group.update", Summary: "Updated " + strings.Join(changed, ", "), TargetType: "group", TargetID: g.ID, TargetLabel: next.Name})
+		return record(r, tx, actor, store.AuditEvent{Action: "group.update", Summary: "Updated " + strings.Join(changed, ", "), TargetType: "group", TargetID: g.ID, TargetLabel: next.Name, Changes: store.Diff(g, next)})
 	})
 	if err != nil {
 		return err
