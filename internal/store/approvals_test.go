@@ -28,23 +28,23 @@ func TestApprovalTargetLockHoldsOffEveryWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
-		target string
-		write  func(context.Context) error
+		target, id string
+		write      func(context.Context) error
 	}{
-		{"user", func(ctx context.Context) error { return st.SetUserRoles(ctx, u.ID, nil) }},
-		{"user", func(ctx context.Context) error { _, err := st.SetEligibleRoles(ctx, u.ID, nil); return err }},
-		{"user", func(ctx context.Context) error {
+		{"user", u.ID, func(ctx context.Context) error { return st.SetUserRoles(ctx, u.ID, nil) }},
+		{"user", u.ID, func(ctx context.Context) error { _, err := st.SetEligibleRoles(ctx, u.ID, nil); return err }},
+		{"user", u.ID, func(ctx context.Context) error {
 			_, err := st.ActivateRole(ctx, u.ID, "auditor", "incident", time.Now().Add(time.Hour))
 			return err
 		}},
-		{"user", func(ctx context.Context) error { u.Name = "Renamed"; return st.UpdateUserProfile(ctx, u) }},
-		{"policy", func(ctx context.Context) error { _, err := st.UpdateAccessPolicy(ctx, p); return err }},
-		{"identity_provider", func(ctx context.Context) error { _, err := st.SaveIdentityProvider(ctx, idp, "rotated"); return err }},
-		{"method", func(ctx context.Context) error { return st.SetMethodEnabled(ctx, "password", true) }},
-		{"settings", func(ctx context.Context) error { return st.SaveSettings(ctx, store.DefaultSettings) }},
+		{"user", u.ID, func(ctx context.Context) error { u.Name = "Renamed"; return st.UpdateUserProfile(ctx, u) }},
+		{"policy", p.ID, func(ctx context.Context) error { _, err := st.UpdateAccessPolicy(ctx, p); return err }},
+		{"identity_provider", idp.ID, func(ctx context.Context) error { _, err := st.SaveIdentityProvider(ctx, idp, "rotated"); return err }},
+		{"method", "password", func(ctx context.Context) error { return st.SetMethodEnabled(ctx, "password", true) }},
+		{"settings", "", func(ctx context.Context) error { return st.SaveSettings(ctx, store.DefaultSettings) }},
 	} {
 		err := st.Tx(ctx, func(tx *store.Store) error {
-			if err := tx.LockApprovalTarget(ctx, c.target); err != nil {
+			if err := tx.LockApprovalTarget(ctx, c.target, c.id); err != nil {
 				return err
 			}
 			short, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
@@ -58,7 +58,7 @@ func TestApprovalTargetLockHoldsOffEveryWriter(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if st.LockApprovalTarget(ctx, "unknown") == nil {
+	if st.LockApprovalTarget(ctx, "unknown", "") == nil {
 		t.Fatal("an unknown target must not go unlocked")
 	}
 }

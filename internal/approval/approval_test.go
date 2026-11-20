@@ -408,3 +408,30 @@ func TestApprovedChangesApplyToEachKindOfTarget(t *testing.T) {
 		t.Fatalf("identity providers: %+v", providers)
 	}
 }
+
+func TestApprovedProviderSecretMakesTheOtherPendingSecretStale(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	_, gia := e.person("gia@example.com", "global_admin")
+	_, ben := e.person("ben@example.com", "global_admin")
+	provider := func(secret string) map[string]any {
+		return map[string]any{"kind": "github", "name": "GitHub", "clientId": "halo", "clientSecret": secret, "allowedDomains": []string{"example.com"}}
+	}
+	created := decode[store.IdentityProvider](t, e.expect(e.call(gia, "POST", "/api/v1/identity-providers", provider("first")), 201))
+	policy := decode[store.AccessPolicy](t, e.expect(e.call(gia, "POST", "/api/v1/policies", map[string]any{"name": "Passkeys everywhere", "enabled": true, "mode": "enforce", "effect": "require-phishing-resistant", "conditions": map[string]any{"allUsers": true, "allApps": true}}), 201))
+	e.expect(e.call(gia, "PATCH", "/api/v1/settings", map[string]any{"approvalActions": []string{"identity-providers", "policy-disable"}}), 200)
+
+	second := decode[store.ApprovalRequest](t, e.expect(e.call(gia, "PUT", "/api/v1/identity-providers/"+created.ID, provider("second")), 202))
+	third := decode[store.ApprovalRequest](t, e.expect(e.call(gia, "PUT", "/api/v1/identity-providers/"+created.ID, provider("third")), 202))
+	e.expect(e.call(ben, "POST", "/api/v1/approvals/"+second.ID+"/approve", nil), 200)
+	stale := e.expect(e.call(ben, "POST", "/api/v1/approvals/"+third.ID+"/approve", nil), 409)
+	if !strings.Contains(stale.Body.String(), "changed after") {
+		t.Fatalf("the older secret must not replace the approved one: %s", stale.Body)
+	}
+
+	off := decode[store.ApprovalRequest](t, e.expect(e.call(gia, "PUT", "/api/v1/policies/"+policy.ID, map[string]any{"name": "Passkeys everywhere", "enabled": false, "mode": "enforce", "effect": "require-phishing-resistant", "conditions": map[string]any{"allUsers": true, "allApps": true}}), 202))
+	e.expect(e.call(ben, "POST", "/api/v1/approvals/"+off.ID+"/approve", nil), 200)
+	if p, err := e.st.GetAccessPolicy(ctx, policy.ID); err != nil || p.Enabled {
+		t.Fatalf("the approved policy change must apply: %+v %v", p, err)
+	}
+}
