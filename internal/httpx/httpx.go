@@ -118,11 +118,24 @@ func trusted(ip net.IP) bool {
 	return ip != nil && nets != nil && slices.ContainsFunc(*nets, func(n *net.IPNet) bool { return n.Contains(ip) })
 }
 
-func ClientIP(r *http.Request) string {
+func peer(r *http.Request) string {
 	client, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		client = r.RemoteAddr
+		return r.RemoteAddr
 	}
+	return client
+}
+
+func ClientCertificate(r *http.Request, header string) string {
+	values := r.Header.Values(header)
+	if header == "" || len(values) != 1 || !trusted(net.ParseIP(peer(r))) {
+		return ""
+	}
+	return values[0]
+}
+
+func ClientIP(r *http.Request) string {
+	client := peer(r)
 	if !trusted(net.ParseIP(client)) {
 		return client
 	}

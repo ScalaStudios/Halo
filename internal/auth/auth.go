@@ -82,6 +82,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		"POST /api/v1/auth/recovery":             h.recoverySignIn,
 		"POST /api/v1/auth/access-pass":          h.accessPassSignIn,
 		"POST /api/v1/auth/password":             h.passwordSignIn,
+		"POST /api/v1/auth/certificate":          h.certificateSignIn,
 		"POST /api/v1/auth/continue":             h.continueRequest,
 		"GET /api/v1/auth/terms/{ceremony}":      h.pendingTerms,
 		"POST /api/v1/auth/terms":                h.acceptTerms,
@@ -132,6 +133,9 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		"DELETE /api/v1/identity-providers/{id}":       h.deleteProvider,
 		"POST /api/v1/identity-providers/{id}/enable":  h.setProviderEnabled(true),
 		"POST /api/v1/identity-providers/{id}/disable": h.setProviderEnabled(false),
+		"GET /api/v1/certificate-authorities":          h.listCertificateAuthorities,
+		"POST /api/v1/certificate-authorities":         h.createCertificateAuthority,
+		"DELETE /api/v1/certificate-authorities/{id}":  h.deleteCertificateAuthority,
 	} {
 		mux.Handle(pattern, httpx.Handle(fn))
 	}

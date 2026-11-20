@@ -15,6 +15,7 @@ type Config struct {
 	SMTP           SMTP
 	S3             S3
 	TrustedProxies []string
+	CertHeader     string
 	PublicURL      *url.URL
 	Listen         string
 	SecretKey      []byte
@@ -127,6 +128,8 @@ func Load() (Config, error) {
 			cfg.TrustedProxies = append(cfg.TrustedProxies, cidr)
 		}
 	}
+
+	cfg.CertHeader = strings.TrimSpace(os.Getenv("HALO_CLIENT_CERT_HEADER"))
 
 	key, err := base64.StdEncoding.DecodeString(os.Getenv("HALO_SECRET_KEY"))
 	if err != nil || len(key) != 32 {

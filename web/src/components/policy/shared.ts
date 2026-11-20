@@ -74,6 +74,7 @@ export const METHOD_PLURAL: Record<MethodKind, string> = {
   password: "passwords",
   federated: "identity providers",
   "access-pass": "temporary access passes",
+  certificate: "client certificates",
 };
 
 export const POLICY_METHODS = (Object.keys(METHOD) as MethodKind[]).filter((kind) => kind !== "access-pass");

@@ -52,6 +52,8 @@ var catalog = []eventType{
 	{"approval.request", "A change was saved to wait for approval by another global administrator"},
 	{"branding.logo.remove", "The sign-in logo was removed"},
 	{"branding.logo.update", "A new sign-in logo was uploaded"},
+	{"certificate_authority.create", "A certificate authority was trusted for client certificate sign-in"},
+	{"certificate_authority.delete", "A certificate authority stopped being trusted for client certificate sign-in"},
 	{"collection.create", "An account portal collection was created"},
 	{"collection.delete", "An account portal collection was deleted"},
 	{"collection.update", "An account portal collection's name, applications or groups changed"},

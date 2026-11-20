@@ -204,7 +204,7 @@ func (s *Store) ExistingIDs(ctx context.Context, table string, ids []string) (ma
 	return existing, rows.Err()
 }
 
-var MethodKinds = []string{"passkey", "security-key", "totp", "magic-link", "recovery-codes", "password", "federated"}
+var MethodKinds = []string{"passkey", "security-key", "totp", "magic-link", "recovery-codes", "password", "federated", "certificate"}
 
 type MethodSetting struct {
 	Method    string    `json:"method"`
