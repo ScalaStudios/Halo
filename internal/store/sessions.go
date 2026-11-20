@@ -145,7 +145,10 @@ func (s *Store) MakeRoomForSession(ctx context.Context, u User, cli bool, replac
 	if _, err := s.db.Exec(ctx, `select 1 from users where id = $1 for update`, u.ID); err != nil {
 		return err
 	}
-	rows, err := s.db.Query(ctx, `select `+sessionColumns+` from sessions where user_id = $1 and id <> $2 and (client_id is not null) = $3 and revoked_at is null and expires_at > now() order by created_at`, u.ID, replacing, cli)
+	if _, err := s.revokeSessions(ctx, `id = $1 and user_id = $2`, replacing, u.ID); err != nil {
+		return err
+	}
+	rows, err := s.db.Query(ctx, `select `+sessionColumns+` from sessions where user_id = $1 and (client_id is not null) = $2 and revoked_at is null and expires_at > now() order by created_at`, u.ID, cli)
 	if err != nil {
 		return err
 	}

@@ -50,7 +50,7 @@ test("a webhook endpoint takes single events and whole families, and editing kee
   await dialog.getByRole("button", { name: "Add endpoint" }).click();
   await page.getByRole("dialog", { name: "Endpoint added" }).getByRole("button", { name: "Done" }).click();
   const created = await endpoint();
-  expect(created?.events.toSorted()).toEqual(["sign_in.interrupted", "sign_in.success", "user.suspend"]);
+  expect(created?.events.toSorted()).toEqual(["sign_in.ended", "sign_in.interrupted", "sign_in.success", "user.suspend"]);
 
   const kept = ["application.*", "scim.user.*", "user.provision", "user.suspend"];
   await json(await admin.put(`/api/v1/webhooks/${created?.id}`, { data: { url, events: kept } }));
