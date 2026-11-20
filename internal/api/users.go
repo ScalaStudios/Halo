@@ -403,7 +403,7 @@ func (h *handlers) setRoles(w http.ResponseWriter, r *http.Request, actor store.
 		return httpx.Invalid("You cannot remove your own global administrator role. Ask another global administrator to do it, so the organization always keeps one.")
 	}
 	change := approval.Change{Summary: roleEvent(target, labels).Summary, TargetType: "user", TargetID: target.ID, TargetLabel: target.Name, State: target.RoleKeys}
-	if slices.Contains(roles, "global_admin") && !target.HasRole("global_admin") {
+	if slices.Contains(roles, "global_admin") && (!target.HasRole("global_admin") || activated(target, "global_admin")) {
 		change.Action = "global-admin"
 	}
 	if held, err := h.gate.Hold(w, r, actor, change); held || err != nil {
@@ -446,14 +446,21 @@ func (h *handlers) setEligibleRoles(w http.ResponseWriter, r *http.Request, acto
 	if err != nil {
 		return err
 	}
+	summary := "Removed every eligible role"
+	if len(labels) > 0 {
+		summary = "Set eligible roles to " + strings.Join(labels, ", ")
+	}
+	change := approval.Change{Summary: summary, TargetType: "user", TargetID: target.ID, TargetLabel: target.Name, State: target.EligibleRoles}
+	if slices.Contains(roles, "global_admin") && !slices.Contains(target.EligibleRoles, "global_admin") {
+		change.Action = "global-admin"
+	}
+	if held, err := h.gate.Hold(w, r, actor, change); held || err != nil {
+		return err
+	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 		ended, err := tx.SetEligibleRoles(r.Context(), target.ID, roles)
 		if err != nil {
 			return err
-		}
-		summary := "Removed every eligible role"
-		if len(labels) > 0 {
-			summary = "Set eligible roles to " + strings.Join(labels, ", ")
 		}
 		for _, role := range ended {
 			summary += "; ended the active " + store.RoleLabels[role] + " activation"

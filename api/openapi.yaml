@@ -1738,7 +1738,7 @@ paths:
       tags: [Users]
       operationId: setUserRoles
       summary: Replace a person's administrator roles
-      description: 'Roles: global administrator. Send the complete list; an empty list removes every role. You cannot remove your own global administrator role or give yourself a role, including one you activated.'
+      description: 'Roles: global administrator. Send the complete list; an empty list removes every role. You cannot remove your own global administrator role or give yourself a role, including one you activated. While `global-admin` is in `approvalActions`, granting `global_admin` to someone who does not hold it, or holds it only through an activation, waits for another global administrator.'
       requestBody:
         required: true
         content:
@@ -1752,6 +1752,7 @@ paths:
                   items: {$ref: '#/components/schemas/RoleKey'}
       responses:
         '200': {$ref: '#/components/responses/UserResponse'}
+        '202': {$ref: '#/components/responses/ApprovalPending'}
         '400': {$ref: '#/components/responses/BadJSON'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -1764,7 +1765,7 @@ paths:
       tags: [Users]
       operationId: setUserEligibleRoles
       summary: Replace the roles a person can activate
-      description: 'Roles: global administrator. Send the complete list; an empty list removes every eligibility and ends any activation of a role that is no longer listed. You cannot change your own eligible roles.'
+      description: 'Roles: global administrator. Send the complete list; an empty list removes every eligibility and ends any activation of a role that is no longer listed. You cannot change your own eligible roles. While `global-admin` is in `approvalActions`, making someone eligible for `global_admin` waits for another global administrator, because they could then activate it themselves.'
       requestBody:
         required: true
         content:
@@ -5425,7 +5426,7 @@ components:
           type: array
           default: []
           items: {type: string, enum: [global-admin, policy-disable, password-sign-in, identity-providers]}
-          description: 'Changes that wait for a second global administrator: `global-admin` grants the global administrator role, `policy-disable` turns off, switches to report-only or deletes an enforced access policy, `password-sign-in` turns on password sign-in, `identity-providers` adds, changes, turns on or off or deletes an identity provider. While any is on, changing this list or `emergencyAccessIds` also needs approval. Turning approval on needs a second active global administrator.'
+          description: 'Changes that wait for a second global administrator: `global-admin` grants the global administrator role or makes someone eligible to activate it, `policy-disable` turns off, switches to report-only or deletes an enforced access policy, `password-sign-in` turns on password sign-in, `identity-providers` adds, changes, turns on or off or deletes an identity provider. While any is on, changing this list or `emergencyAccessIds` also needs approval. Turning approval on needs a second active global administrator.'
         emergencyAccessIds:
           type: array
           default: []

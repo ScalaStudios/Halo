@@ -171,6 +171,44 @@ func TestGrantingGlobalAdminWaitsForAnotherAdministrator(t *testing.T) {
 	}
 }
 
+func TestGlobalAdminEligibilityWaitsForAnotherAdministrator(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	_, gia := e.person("gia@example.com", "global_admin")
+	_, ben := e.person("ben@example.com", "global_admin")
+	cara, _ := e.person("cara@example.com")
+	dan, _ := e.person("dan@example.com")
+	e.expect(e.call(gia, "PATCH", "/api/v1/settings", map[string]any{"approvalActions": []string{"global-admin"}}), 200)
+
+	e.expect(e.call(gia, "PUT", "/api/v1/users/"+dan.ID+"/eligible-roles", map[string]any{"roles": []string{"security_admin"}}), 200)
+	held := decode[store.ApprovalRequest](t, e.expect(e.call(gia, "PUT", "/api/v1/users/"+cara.ID+"/eligible-roles", map[string]any{"roles": []string{"global_admin"}}), 202))
+	if held.Status != "pending" || held.Action != "global-admin" {
+		t.Fatalf("held request: %+v", held)
+	}
+	if u, _ := e.st.GetUser(ctx, cara.ID); len(u.EligibleRoles) != 0 {
+		t.Fatalf("eligibility must wait for approval: %v", u.EligibleRoles)
+	}
+
+	self := e.expect(e.call(gia, "POST", "/api/v1/approvals/"+held.ID+"/approve", nil), 403)
+	if !strings.Contains(self.Body.String(), "ERR_SELF_APPROVAL") {
+		t.Fatalf("self approval: %s", self.Body)
+	}
+	e.expect(e.call(ben, "POST", "/api/v1/approvals/"+held.ID+"/approve", nil), 200)
+	e.expect(e.call(ben, "POST", "/api/v1/approvals/"+held.ID+"/approve", nil), 409)
+	u, _ := e.st.GetUser(ctx, cara.ID)
+	if len(u.EligibleRoles) != 1 || u.EligibleRoles[0] != "global_admin" {
+		t.Fatalf("approval must make cara eligible: %v", u.EligibleRoles)
+	}
+	if n := e.audits("role.eligibility.update", cara.ID); n != 1 {
+		t.Fatalf("the change must apply exactly once, applied %d times", n)
+	}
+
+	if _, err := e.st.ActivateRole(ctx, cara.ID, "global_admin", "incident", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	e.expect(e.call(ben, "PUT", "/api/v1/users/"+cara.ID+"/roles", map[string]any{"roles": []string{"global_admin"}}), 202)
+}
+
 func mustAccount(t *testing.T, st *store.Store) store.ServiceAccount {
 	t.Helper()
 	a, err := st.CreateServiceAccount(context.Background(), store.NewServiceAccount{Name: "Automation", Roles: []string{"global_admin"}})
