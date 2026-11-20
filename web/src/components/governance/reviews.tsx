@@ -13,15 +13,11 @@ import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { api } from "@/lib/api/client";
-import { formatDate, pluralize } from "@/lib/format";
+import { formatDate, isoDay, pluralize } from "@/lib/format";
 import type { AccessReview, ReviewDecision, ReviewItem } from "@/lib/governance-types";
 import type { Group } from "@/lib/types";
 import { PeoplePicker } from "./people-picker";
 import { OUTCOME, ReviewProgress, type Person } from "./shared";
-
-function isoDay(offsetDays: number) {
-  return new Date(Date.now() + offsetDays * 86_400_000).toISOString().slice(0, 10);
-}
 
 export function StartReview({ groups, people }: { groups: Group[]; people: Person[] }) {
   const [open, setOpen] = useState(false);
@@ -254,7 +250,10 @@ export function ReviewWorkspace({ review }: { review: AccessReview }) {
           <span className="flex min-w-56 items-center gap-3">
             <Avatar name={row.original.user.name} size="md" />
             <span className="flex min-w-0 flex-col">
-              <span className="truncate font-medium text-fg">{row.original.user.name}</span>
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate font-medium text-fg">{row.original.user.name}</span>
+                {row.original.guest ? <Badge tone="info">Guest</Badge> : null}
+              </span>
               <span className="truncate text-caption text-fg-3">{row.original.title || row.original.user.email}</span>
             </span>
           </span>

@@ -36,6 +36,9 @@ type User struct {
 	CreatedAt     time.Time  `json:"createdAt"`
 	LastSignInAt  *time.Time `json:"lastSignInAt"`
 	AvatarURL     *string    `json:"avatarUrl"`
+	Guest         bool       `json:"guest"`
+	Sponsor       *NamedRef  `json:"sponsor"`
+	ExpiresAt     *time.Time `json:"expiresAt"`
 
 	EligibleRoles []string         `json:"eligibleRoles"`
 	Activations   []RoleActivation `json:"activations"`

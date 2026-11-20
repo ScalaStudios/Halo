@@ -29,6 +29,7 @@ import (
 var sensitiveRoutes = []string{
 	"PUT /api/v1/users/{id}/roles",
 	"PUT /api/v1/users/{id}/eligible-roles",
+	"PUT /api/v1/users/{id}/guest",
 	"POST /api/v1/me/role-activations",
 	"POST /api/v1/service-accounts",
 	"PUT /api/v1/service-accounts/{id}/roles",

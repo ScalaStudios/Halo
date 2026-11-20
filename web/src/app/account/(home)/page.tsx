@@ -5,9 +5,10 @@ import { PageHeader } from "@/components/ui/page-header";
 import { AvatarEditor } from "@/components/account/avatar-editor";
 import { buttonClasses } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { DescriptionList } from "@/components/ui/description-list";
 import { apiGet } from "@/lib/api/server";
-import { pluralize } from "@/lib/format";
+import { formatDateTime, pluralize } from "@/lib/format";
 import { STRENGTH } from "@/lib/labels";
 import type { Organization, Session, User } from "@/lib/types";
 
@@ -52,7 +53,10 @@ export default async function AccountPage() {
         <Card className="flex flex-col gap-6 p-6">
           <AvatarEditor name={user.name} avatarUrl={user.avatarUrl} endpoint="/api/v1/me/avatar">
             <div className="flex min-w-0 flex-col gap-1">
-              <h2 className="truncate text-h3 text-fg">{user.name}</h2>
+              <h2 className="flex min-w-0 items-center gap-3 text-h3 text-fg">
+                <span className="truncate">{user.name}</span>
+                {user.guest ? <Badge tone="info">Guest</Badge> : null}
+              </h2>
               <p className="truncate text-body-sm text-fg-3">{user.email}</p>
             </div>
           </AvatarEditor>
@@ -62,8 +66,19 @@ export default async function AccountPage() {
               { label: "Title", value: user.title || "Not set" },
               { label: "Department", value: user.department || "Not set" },
               { label: "Location", value: user.location || "Not set" },
+              ...(user.guest && user.expiresAt
+                ? [
+                    { label: "Sponsor", value: user.sponsor?.name ?? "None" },
+                    { label: "Access ends", value: formatDateTime(user.expiresAt) },
+                  ]
+                : []),
             ]}
           />
+          {user.guest ? (
+            <p className="text-body-sm text-fg-2">
+              You&apos;re a guest at {org.name}. Your access ends on its own; {user.sponsor ? `ask ${user.sponsor.name} to extend it` : "ask the person who invited you to extend it"} if you still need it.
+            </p>
+          ) : null}
           <p className="border-t border-border pt-4 text-caption text-fg-3">
             Your profile is managed by {org.name} IT. To correct something, email{" "}
             <a href="mailto:it@example.com" className="text-link underline underline-offset-3 hover:text-ember-hover">

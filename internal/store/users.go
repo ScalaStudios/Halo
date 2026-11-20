@@ -30,11 +30,20 @@ func (u User) HasRole(keys ...string) bool {
 	return false
 }
 
+func (u User) Expired() bool {
+	return u.Guest && u.ExpiresAt != nil && !u.ExpiresAt.After(time.Now())
+}
+
+func (u User) CanSponsor() bool {
+	return u.Kind == "person" && !u.Guest && u.Status == "active"
+}
+
 func (u User) CanReauthenticate() bool {
 	return slices.ContainsFunc(u.Methods, func(m Method) bool { return m.Kind == "passkey" || m.Kind == "security-key" || m.Kind == "totp" })
 }
 
-const userColumns = `id, email, name, title, department, location, status, manager_id, source, created_at, last_sign_in_at, kind, email_verified, avatar_updated_at`
+const userColumns = `id, email, name, title, department, location, status, manager_id, source, created_at, last_sign_in_at, kind, email_verified, avatar_updated_at, guest, expires_at,
+	(select json_build_object('id', s.id, 'name', s.name, 'email', s.email) from users s where s.id = users.sponsor_id)`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -43,7 +52,10 @@ type rowScanner interface {
 func scanUser(row rowScanner) (User, error) {
 	var u User
 	var avatar *time.Time
-	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Title, &u.Department, &u.Location, &u.Status, &u.ManagerID, &u.Source, &u.CreatedAt, &u.LastSignInAt, &u.Kind, &u.EmailVerified, &avatar)
+	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Title, &u.Department, &u.Location, &u.Status, &u.ManagerID, &u.Source, &u.CreatedAt, &u.LastSignInAt, &u.Kind, &u.EmailVerified, &avatar, &u.Guest, &u.ExpiresAt, &u.Sponsor)
+	if u.Expired() && (u.Status == "active" || u.Status == "invited") {
+		u.Status = "suspended"
+	}
 	if avatar != nil {
 		path := Avatars.Path(u.ID, *avatar)
 		u.AvatarURL = &path
@@ -52,7 +64,15 @@ func scanUser(row rowScanner) (User, error) {
 }
 
 func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
-	rows, err := s.db.Query(ctx, `select `+userColumns+` from users where kind = 'person' order by lower(name), id`)
+	return s.queryUsers(ctx, `kind = 'person'`)
+}
+
+func (s *Store) ListSponsoredGuests(ctx context.Context, sponsorID string) ([]User, error) {
+	return s.queryUsers(ctx, `guest and sponsor_id = $1`, sponsorID)
+}
+
+func (s *Store) queryUsers(ctx context.Context, where string, args ...any) ([]User, error) {
+	rows, err := s.db.Query(ctx, `select `+userColumns+` from users where `+where+` order by lower(name), id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -107,6 +127,9 @@ type NewUser struct {
 	Source     string
 	Roles      []string
 	GroupIDs   []string
+	Guest      bool
+	SponsorID  *string
+	ExpiresAt  *time.Time
 }
 
 func (s *Store) CreateUser(ctx context.Context, in NewUser) (User, error) {
@@ -118,8 +141,8 @@ func (s *Store) CreateUser(ctx context.Context, in NewUser) (User, error) {
 		in.Source = "Halo"
 	}
 	err := s.Tx(ctx, func(tx *Store) error {
-		_, err := tx.db.Exec(ctx, `insert into users (id, email, name, title, department, location, status, manager_id, source) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-			userID, strings.TrimSpace(in.Email), strings.TrimSpace(in.Name), in.Title, in.Department, in.Location, in.Status, in.ManagerID, in.Source)
+		_, err := tx.db.Exec(ctx, `insert into users (id, email, name, title, department, location, status, manager_id, source, guest, sponsor_id, expires_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+			userID, strings.TrimSpace(in.Email), strings.TrimSpace(in.Name), in.Title, in.Department, in.Location, in.Status, in.ManagerID, in.Source, in.Guest, in.SponsorID, in.ExpiresAt)
 		if err != nil {
 			return conflict(err)
 		}

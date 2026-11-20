@@ -16,8 +16,10 @@ import type { RoleKey } from "@/lib/provisioning-types";
 import type { Group, User } from "@/lib/types";
 import { EMAIL, OrgFields, type Org } from "./edit-profile";
 import { PasskeyWarning } from "./edit-roles";
+import { checkGuest, GuestFields, guestEnd, type GuestTerms } from "./guest-access";
 
 const NO_ORG: Org = { title: "", department: "", location: "", managerId: "" };
+const NO_GUEST: GuestTerms = { sponsorId: "", ends: "" };
 
 export function InviteDialog({
   open,
@@ -37,7 +39,8 @@ export function InviteDialog({
   const [org, setOrg] = useState<Org>(NO_ORG);
   const [selected, setSelected] = useState<string[]>([]);
   const [role, setRole] = useState<RoleKey | "">("");
-  const [errors, setErrors] = useState<{ email?: string; name?: string }>({});
+  const [guest, setGuest] = useState<GuestTerms | null>(null);
+  const [errors, setErrors] = useState<{ email?: string; name?: string; sponsor?: string; ends?: string }>({});
   const [invitation, setInvitation] = useState<SetupLink | null>(null);
   const { pending, run, errorFor, clearError } = useMutation();
 
@@ -47,6 +50,7 @@ export function InviteDialog({
     setOrg(NO_ORG);
     setSelected([]);
     setRole("");
+    setGuest(null);
     setErrors({});
     setInvitation(null);
   }
@@ -61,10 +65,12 @@ export function InviteDialog({
     const next = {
       email: EMAIL.test(email.trim()) ? undefined : "Enter a full email address, like sam@example.com.",
       name: name.trim() ? undefined : "Enter their name so other administrators can recognise them.",
+      ...(guest ? checkGuest(guest, true) : {}),
     };
     setErrors(next);
-    if (next.email || next.name) return;
-    void run("invite", () => api<SetupLink>("/users", { body: { email: email.trim(), name: name.trim(), ...org, groupIds: selected, roles: role ? [role] : [] } }), setInvitation, "inline");
+    if (Object.values(next).some(Boolean)) return;
+    const terms = guest ? { guest: true, sponsorId: guest.sponsorId, expiresAt: guestEnd(guest.ends) } : { roles: role ? [role] : [] };
+    void run("invite", () => api<SetupLink>("/users", { body: { email: email.trim(), name: name.trim(), ...org, groupIds: selected, ...terms } }), setInvitation, "inline");
   }
 
   return (
@@ -76,7 +82,7 @@ export function InviteDialog({
       description={
         invitation
           ? `${invitation.emailed ? `We emailed a setup link to ${email.trim()}` : `Send this setup link to ${name.trim()}`}. It expires ${formatDateTime(invitation.expiresAt)}.`
-          : "Halo creates a setup link they use to enroll a passkey. No password is ever created."
+          : "Halo creates a setup link they use to enroll a passkey. No password is ever created. Guests can use any email address."
       }
       footer={
         invitation ? (
@@ -119,8 +125,24 @@ export function InviteDialog({
           <Field label="Name" error={errors.name}>
             {(props) => <Input {...props} autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} />}
           </Field>
+          <Field label="Account type" hint={guest ? "Guests have a sponsor and an end date, never hold an admin role, and only join the groups chosen for them." : "Members are people at your organization."}>
+            {(props) => (
+              <Select
+                {...props}
+                value={guest ? "guest" : "member"}
+                onChange={(event) => {
+                  setGuest(event.target.value === "guest" ? NO_GUEST : null);
+                  setRole("");
+                }}
+              >
+                <option value="member">Member</option>
+                <option value="guest">Guest</option>
+              </Select>
+            )}
+          </Field>
+          {guest ? <GuestFields value={guest} onChange={setGuest} directory={directory} errors={errors} /> : null}
           <OrgFields value={org} onChange={setOrg} directory={directory} />
-          {canGrantRoles ? (
+          {canGrantRoles && !guest ? (
             <Field label="Admin role" hint={role ? ROLES[role].description : "Optional. Without one, they can only manage their own account."}>
               {(props) => (
                 <Select {...props} value={role} onChange={(event) => setRole(event.target.value as RoleKey | "")}>

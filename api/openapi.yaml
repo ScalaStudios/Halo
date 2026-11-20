@@ -10,7 +10,7 @@ info:
 
     **Authentication.** Send either the `halo_session` cookie of a signed-in person, or an API key of a service account as `Authorization: Bearer hlk_…`. API keys work only when they have the `api` scope, act with the roles of their service account, and are ignored on the personal routes under `/me` and on the sign-in routes under `/auth`. The personal routes under `/me/` (with a trailing segment, not `/me` itself) also accept an access token that `halo login` obtained for the built-in Halo CLI application.
 
-    **Re-authentication.** Sensitive operations need a recent strong sign-in when a person calls them with a session: a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, within the last `reauthMinutes` (10 by default). Otherwise they answer `401` with `ERR_REAUTH_REQUIRED`; confirm with `/me/reauthenticate/begin` and `/me/reauthenticate`, then send the same request again. A person with no passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE` instead. API keys are not affected, and an approved change applies without asking the requester again. The sensitive operations are the ones whose `401` response lists `ERR_REAUTH_REQUIRED`: granting or activating administrator roles, creating service accounts and API keys, rotating signing keys, SAML certificates and client secrets, changing access policies, sign-in methods and organization settings, resetting or changing another person's sign-in methods, changing identity providers, exporting the configuration and approving a held change. Adding or removing your own passkey, security key or authenticator app, and creating recovery codes, need it too once you have a passkey, security key or authenticator app.
+    **Re-authentication.** Sensitive operations need a recent strong sign-in when a person calls them with a session: a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, within the last `reauthMinutes` (10 by default). Otherwise they answer `401` with `ERR_REAUTH_REQUIRED`; confirm with `/me/reauthenticate/begin` and `/me/reauthenticate`, then send the same request again. A person with no passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE` instead. API keys are not affected, and an approved change applies without asking the requester again. The sensitive operations are the ones whose `401` response lists `ERR_REAUTH_REQUIRED`: granting or activating administrator roles, creating service accounts and API keys, rotating signing keys, SAML certificates and client secrets, changing access policies, sign-in methods and organization settings, resetting or changing another person's sign-in methods, extending a guest's access or changing their sponsor, changing identity providers, exporting the configuration and approving a held change. Adding or removing your own passkey, security key or authenticator app, and creating recovery codes, need it too once you have a passkey, security key or authenticator app.
 
     **Roles.** Each operation states the roles it requires. A global administrator passes every role check. "Any administrator" means security, user, helpdesk or application administrator, or auditor.
 
@@ -1895,6 +1895,21 @@ paths:
                 type: array
                 items: {$ref: '#/components/schemas/AccessReview'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/guests:
+    get:
+      tags: [Account, Users]
+      operationId: listMySponsoredGuests
+      summary: List the guests you sponsor
+      security: *personal
+      responses:
+        '200':
+          description: Guests whose sponsor you are, sorted by name, including suspended ones.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/User'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
   /users:
     get:
       tags: [Users]
@@ -1915,7 +1930,7 @@ paths:
       tags: [Users]
       operationId: inviteUser
       summary: Invite a person
-      description: 'Roles: user administrator; including `roles` requires global administrator and a recent strong sign-in, and `global_admin` is refused while granting it needs approval. Creates the account with status `invited` and a setup link, and emails the link when SMTP is configured.'
+      description: 'Roles: user administrator; including `roles` requires global administrator and a recent strong sign-in, and `global_admin` is refused while granting it needs approval. Creates the account with status `invited` and a setup link, and emails the link when SMTP is configured. With `guest`, the account is a guest: any email address works, `sponsorId` and `expiresAt` are required, and `roles` must be empty.'
       requestBody:
         required: true
         content:
@@ -1937,6 +1952,9 @@ paths:
                 roles:
                   type: array
                   items: {$ref: '#/components/schemas/RoleKey'}
+                guest: {type: boolean, description: 'Creates a guest: an external person with a sponsor and an end date, who never holds an administrator role and joins only the groups chosen for them.'}
+                sponsorId: {type: string, description: 'Guests only. Id of an active person who is not a guest, who is responsible for the guest and can extend their access.'}
+                expiresAt: {type: string, format: date-time, description: 'Guests only. When access ends, within 365 days. Halo emails the sponsor 14 days before, and suspends the account then.'}
       responses:
         '201':
           description: The new person and their setup link.
@@ -2132,7 +2150,7 @@ paths:
       tags: [Users]
       operationId: restoreUser
       summary: Restore a suspended person
-      description: 'Roles: user administrator. The person becomes `active`, or `invited` when they never signed in and have no sign-in method.'
+      description: 'Roles: user administrator. The person becomes `active`, or `invited` when they never signed in and have no sign-in method. A guest whose access ended answers `409`; change `expiresAt` with `PUT /users/{id}/guest` first.'
       responses:
         '200': {$ref: '#/components/responses/UserResponse'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -2333,7 +2351,7 @@ paths:
       tags: [Users]
       operationId: setUserRoles
       summary: Replace a person's administrator roles
-      description: 'Roles: global administrator. Send the complete list; an empty list removes every role. You cannot remove your own global administrator role or give yourself a role, including one you activated. While `global-admin` is in `approvalActions`, granting `global_admin` to someone who does not hold it, or holds it only through an activation, waits for another global administrator.'
+      description: 'Roles: global administrator. Send the complete list; an empty list removes every role. You cannot remove your own global administrator role or give yourself a role, including one you activated. Guests cannot hold roles. While `global-admin` is in `approvalActions`, granting `global_admin` to someone who does not hold it, or holds it only through an activation, waits for another global administrator.'
       requestBody:
         required: true
         content:
@@ -2360,7 +2378,7 @@ paths:
       tags: [Users]
       operationId: setUserEligibleRoles
       summary: Replace the roles a person can activate
-      description: 'Roles: global administrator. Send the complete list; an empty list removes every eligibility and ends any activation of a role that is no longer listed. You cannot change your own eligible roles. While `global-admin` is in `approvalActions`, making someone eligible for `global_admin` waits for another global administrator, because they could then activate it themselves.'
+      description: 'Roles: global administrator. Send the complete list; an empty list removes every eligibility and ends any activation of a role that is no longer listed. You cannot change your own eligible roles. Guests cannot be eligible for roles. While `global-admin` is in `approvalActions`, making someone eligible for `global_admin` waits for another global administrator, because they could then activate it themselves.'
       requestBody:
         required: true
         content:
@@ -2379,6 +2397,31 @@ paths:
         '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /users/{id}/guest:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Users]
+      operationId: updateGuest
+      summary: Extend a guest's access or change their sponsor
+      description: 'Roles: user administrator, or the guest''s sponsor. Anyone else gets `404`. The sponsor can change `expiresAt` only, and only until access ends; after that a user administrator extends it and restores the account. `expiresAt` must be within 365 days. Recorded as `guest.extend` and `guest.sponsor.change`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expiresAt: {type: string, format: date-time}
+                sponsorId: {type: string, description: User administrators only.}
+      responses:
+        '200': {$ref: '#/components/responses/UserResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/Invalid'}
   /sign-ups:
     get:
@@ -5642,6 +5685,13 @@ components:
         createdAt: {type: string, format: date-time}
         lastSignInAt: {type: [string, 'null'], format: date-time}
         avatarUrl: {type: [string, 'null'], description: 'Path of the profile picture, or null. With the `profile` scope, ID tokens and userinfo carry the absolute URL as `picture`.', examples: ['/api/v1/users/usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9/avatar?v=1790000000']}
+        guest: {type: boolean, description: 'True for a guest: an external person with a sponsor and an end date. Guests never hold administrator roles, are left out of rule-based groups and lifecycle rules that add to groups, and cannot join open groups by themselves.'}
+        sponsor:
+          description: The person responsible for a guest. Null for members.
+          oneOf:
+            - {$ref: '#/components/schemas/NamedRef'}
+            - {type: 'null'}
+        expiresAt: {type: [string, 'null'], format: date-time, description: 'When a guest''s access ends. From then on `status` is `suspended`, sign-in and sessions stop working, and a background job records the suspension.'}
     RoleActivation:
       type: object
       required: [id, role, justification, activatedAt, expiresAt]
@@ -6061,6 +6111,7 @@ components:
       properties:
         user: {$ref: '#/components/schemas/NamedRef'}
         title: {type: string}
+        guest: {type: boolean}
         decision: {type: [string, 'null'], enum: [keep, remove, null]}
         note: {type: string}
         decidedBy:

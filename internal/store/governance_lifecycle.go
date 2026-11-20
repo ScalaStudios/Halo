@@ -131,7 +131,7 @@ func (s *Store) RecordLifecycleRun(ctx context.Context, r LifecycleRun) error {
 }
 
 func (s *Store) PendingLifecycleChanges(ctx context.Context) ([]LifecycleChange, error) {
-	rows, err := s.db.Query(ctx, `select u.id, u.email, u.name, u.title, u.department, u.location, u.status, u.source, s.user_id is not null, coalesce(s.department, ''), coalesce(s.title, ''), coalesce(s.location, ''), coalesce(s.status, '')
+	rows, err := s.db.Query(ctx, `select u.id, u.email, u.name, u.title, u.department, u.location, u.status, u.source, u.guest, s.user_id is not null, coalesce(s.department, ''), coalesce(s.title, ''), coalesce(s.location, ''), coalesce(s.status, '')
 		from users u left join lifecycle_snapshots s on s.user_id = u.id
 		where u.kind = 'person' and (s.user_id is null or s.department <> u.department or s.title <> u.title or s.location <> u.location or s.status <> u.status)
 		order by u.created_at, u.id`)
@@ -142,7 +142,7 @@ func (s *Store) PendingLifecycleChanges(ctx context.Context) ([]LifecycleChange,
 		var c LifecycleChange
 		var seen bool
 		var p LifecycleSnapshot
-		if err := row.Scan(&c.User.ID, &c.User.Email, &c.User.Name, &c.User.Title, &c.User.Department, &c.User.Location, &c.User.Status, &c.User.Source, &seen, &p.Department, &p.Title, &p.Location, &p.Status); err != nil {
+		if err := row.Scan(&c.User.ID, &c.User.Email, &c.User.Name, &c.User.Title, &c.User.Department, &c.User.Location, &c.User.Status, &c.User.Source, &c.User.Guest, &seen, &p.Department, &p.Title, &p.Location, &p.Status); err != nil {
 			return c, err
 		}
 		if seen {

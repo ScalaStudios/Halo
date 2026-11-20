@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { empty, list, row } from "@/components/account/list";
 import { ActivateRole, CancelRequest, DeactivateRole, RequestAccess } from "@/components/governance/request-access";
+import { GuestAccessButton } from "@/components/directory/guest-access";
 import { PendingRequests } from "@/components/governance/requests";
 import { approversLabel, dueLabel, durationLabel, grantLabel, joinNames, REQUEST_STATUS, ReviewProgress } from "@/components/governance/shared";
 import { ROLES } from "@/components/provisioning/shared";
@@ -11,6 +12,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SectionTitle } from "@/components/ui/section-title";
 import { apiGet } from "@/lib/api/server";
 import { formatDateTime, formatRelative } from "@/lib/format";
+import { STATUS } from "@/lib/labels";
 import type { AccessPackage, AccessRequest, AccessReview } from "@/lib/governance-types";
 import type { Organization, User } from "@/lib/types";
 
@@ -30,7 +32,7 @@ function requestDetail(request: AccessRequest): string {
 }
 
 export default async function AccessPage() {
-  const [user, org, packages, requests, grants, approvals, reviews] = await Promise.all([
+  const [user, org, packages, requests, grants, approvals, reviews, guests] = await Promise.all([
     apiGet<User>("/me"),
     apiGet<Organization>("/organization"),
     apiGet<AccessPackage[]>("/me/access-packages"),
@@ -38,6 +40,7 @@ export default async function AccessPage() {
     apiGet<AccessRequest[]>("/me/access-grants"),
     apiGet<AccessRequest[]>("/me/approvals"),
     apiGet<AccessReview[]>("/me/reviews"),
+    apiGet<User[]>("/me/guests"),
   ]);
   const pendingIds = requests.filter((r) => r.status === "pending").map((r) => r.package.id);
   const admin = user.roles.length > 0;
@@ -93,6 +96,29 @@ export default async function AccessPage() {
                 >
                   Open review
                 </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {guests.length ? (
+        <section className="flex flex-col gap-4">
+          <SectionTitle title="Guests you sponsor" description="You're responsible for these external accounts. Halo emails you two weeks before access ends and suspends the account then unless you extend it." />
+          <ul className={list}>
+            {guests.map((guest) => (
+              <li key={guest.id} className={row}>
+                <div className="flex min-w-0 flex-col gap-1">
+                  <p className="flex flex-wrap items-center gap-2 text-body-sm font-semibold text-fg">
+                    {guest.name}
+                    {guest.status === "active" || guest.status === "invited" ? null : <Badge tone={STATUS[guest.status].tone}>{STATUS[guest.status].label}</Badge>}
+                  </p>
+                  <p className="text-body-sm text-fg-3">
+                    {guest.email}
+                    {guest.expiresAt ? ` · Access ends ${formatDateTime(guest.expiresAt)}` : null}
+                  </p>
+                </div>
+                {guest.status === "active" || guest.status === "invited" ? <GuestAccessButton guest={guest} /> : null}
               </li>
             ))}
           </ul>

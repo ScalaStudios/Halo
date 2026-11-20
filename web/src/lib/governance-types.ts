@@ -43,6 +43,7 @@ export type ReviewOutcome = "kept" | "removed" | "not-removed" | "no-decision";
 export type ReviewItem = {
   user: NamedRef;
   title: string;
+  guest: boolean;
   decision: ReviewDecision | null;
   note: string;
   decidedBy: NamedRef | null;

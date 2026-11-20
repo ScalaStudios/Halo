@@ -14,6 +14,7 @@ import { ImpersonationNotices } from "@/components/directory/impersonation";
 import { EditProfileButton, type ProfileEdit } from "@/components/directory/edit-profile";
 import { EditRolesButton, PasskeyWarning } from "@/components/directory/edit-roles";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
+import { GuestAccessButton } from "@/components/directory/guest-access";
 import { PROTOCOL_LABEL } from "@/components/applications/shared";
 import { MethodList } from "@/components/identity/method-list";
 import { SignInRows } from "@/components/monitoring/sign-in-rows";
@@ -125,7 +126,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
               {STRENGTH[user.strength].label}
             </span>
           </Fact>
-          <Fact label="Admin role" action={global ? <EditRolesButton user={user} /> : undefined}>
+          <Fact label="Admin role" action={global && !user.guest ? <EditRolesButton user={user} /> : undefined}>
             {user.roles.join(", ") || "None"}
           </Fact>
           <Fact label="Last sign-in">{user.lastSignInAt ? formatRelative(user.lastSignInAt) : "Never"}</Fact>
@@ -239,6 +240,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
   function OverviewTab({ user, manager }: { user: User; manager?: User }) {
     return (
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        {user.guest ? <GuestCard user={user} /> : null}
         <Card className="xl:col-span-7">
           <CardHeader title="Profile" actions={edit ? <EditProfileButton {...edit} /> : undefined} />
           <CardBody>
@@ -312,6 +314,43 @@ export default async function UserPage({ params, searchParams }: { params: Promi
     );
   }
 
+  function GuestCard({ user }: { user: User }) {
+    const sponsor = directory.find((u) => u.id === user.sponsor?.id);
+    const sponsorActive = sponsor && !sponsor.guest && sponsor.status === "active";
+    return (
+      <Card className="xl:col-span-12">
+        <CardHeader
+          title="Guest access"
+          description="An external account. It ends on its own unless the sponsor extends it, and never holds an admin role."
+          actions={global || me.roles.includes("User administrator") ? <GuestAccessButton guest={user} directory={directory} /> : undefined}
+        />
+        <CardBody className="flex flex-col gap-4">
+          <DescriptionList
+            columns={2}
+            items={[
+              {
+                label: "Sponsor",
+                value: user.sponsor ? (
+                  <Link href={`/admin/users/${user.sponsor.id}`} className="text-link underline underline-offset-3 hover:text-ember">
+                    {user.sponsor.name}
+                  </Link>
+                ) : (
+                  "None"
+                ),
+              },
+              { label: "Access ends", value: user.expiresAt ? `${formatDateTime(user.expiresAt)} · ${formatRelative(user.expiresAt)}` : "—" },
+            ]}
+          />
+          {sponsorActive ? null : (
+            <p className="rounded-md border border-warning/20 bg-warning-container p-4 text-body-sm text-fg-2">
+              {user.sponsor ? `${user.sponsor.name} is no longer active, so` : "Without a sponsor,"} global administrators get the reminder before access ends. Choose a new sponsor.
+            </p>
+          )}
+        </CardBody>
+      </Card>
+    );
+  }
+
   function AccessTab({ user }: { user: User }) {
     return (
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -331,7 +370,9 @@ export default async function UserPage({ params, searchParams }: { params: Promi
                 ))}
               </ul>
             ) : (
-              <p className="text-body-sm text-fg-3">No administrative roles. This person can only manage their own account.</p>
+              <p className="text-body-sm text-fg-3">
+                {user.guest ? "Guests can't hold administrative roles." : "No administrative roles. This person can only manage their own account."}
+              </p>
             )}
           </CardBody>
         </Card>
@@ -374,7 +415,10 @@ export default async function UserPage({ params, searchParams }: { params: Promi
 function ProfileHeading({ user }: { user: User }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <h1 className="truncate text-h2 text-fg">{user.name}</h1>
+      <h1 className="flex min-w-0 items-center gap-3 text-h2 text-fg">
+        <span className="truncate">{user.name}</span>
+        {user.guest ? <Badge tone="info">Guest</Badge> : null}
+      </h1>
       <p className="flex min-w-0 items-center gap-2 text-body text-fg-3">
         <span className="truncate">{user.email}</span>
         <Badge tone={user.emailVerified ? "success" : "neutral"}>{user.emailVerified ? "Verified" : "Not verified"}</Badge>

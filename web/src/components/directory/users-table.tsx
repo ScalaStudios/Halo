@@ -5,7 +5,7 @@ import { Ban, Copy, MonitorX, RotateCcw, ShieldAlert, ShieldCheck, ShieldX, User
 import { useState } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { Avatar } from "@/components/ui/avatar";
-import { StatusDot } from "@/components/ui/badge";
+import { Badge, StatusDot } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, facetFilter, type SavedView } from "@/components/ui/data-table";
 import { RelativeTime } from "@/components/ui/relative-time";
@@ -29,11 +29,27 @@ export const userColumns: ColumnDef<User, any>[] = [
       <span className="flex min-w-56 items-center gap-3">
         <Avatar name={row.original.name} src={row.original.avatarUrl} size="md" />
         <span className="flex min-w-0 flex-col">
-          <span className="truncate font-medium text-fg">{row.original.name}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate font-medium text-fg">{row.original.name}</span>
+            {row.original.guest ? <Badge tone="info">Guest</Badge> : null}
+          </span>
           <span className="truncate text-caption text-fg-3">{row.original.email}</span>
         </span>
       </span>
     ),
+  },
+  {
+    id: "type",
+    accessorFn: (u) => (u.guest ? "guest" : "member"),
+    header: "Type",
+    filterFn: facetFilter,
+    meta: { label: "Type" },
+    cell: ({ row }) =>
+      row.original.guest && row.original.expiresAt ? (
+        <span className="tnum whitespace-nowrap">Guest until {formatDate(row.original.expiresAt)}</span>
+      ) : (
+        <span className="text-fg-3">Member</span>
+      ),
   },
   {
     id: "status",
@@ -127,6 +143,7 @@ const views: SavedView[] = [
     ],
   },
   { id: "weak", label: "Weak authentication", filters: [{ id: "strength", value: ["multi-factor", "single-factor"] }] },
+  { id: "guests", label: "Guests", filters: [{ id: "type", value: ["guest"] }] },
   { id: "suspended", label: "Suspended", filters: [{ id: "status", value: ["suspended"] }] },
   { id: "invited", label: "Invited", filters: [{ id: "status", value: ["invited"] }] },
 ];
@@ -172,9 +189,10 @@ export function UsersTable({ users, groups, initialView, inviteOpen, canGrantRol
         searchPlaceholder="Search name, email or title"
         views={views}
         initialViewId={initialView}
-        initialVisibility={{ groups: false, source: false, created: false }}
+        initialVisibility={{ type: false, groups: false, source: false, created: false }}
         facets={[
           { column: "status", label: "Status", options: Object.entries(STATUS).map(([value, s]) => ({ value, label: s.label })) },
+          { column: "type", label: "Type", options: [{ value: "member", label: "Member" }, { value: "guest", label: "Guest" }] },
           { column: "strength", label: "Authentication", options: Object.entries(STRENGTH).map(([value, s]) => ({ value, label: s.label })) },
           { column: "department", label: "Department", options: departments.map((d) => ({ value: d, label: d })) },
           { column: "role", label: "Admin role", options: [{ value: "admin", label: "Has an admin role" }, { value: "none", label: "No admin role" }] },
