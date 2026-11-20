@@ -1,6 +1,7 @@
 "use client";
 
 import { Plus, Trash2, TriangleAlert } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { ActionError } from "@/components/ui/action-error";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,7 @@ import { CopyField } from "@/components/ui/copy-field";
 import { CheckList, FieldError } from "@/components/policy/policy-form";
 import { joinList } from "@/components/policy/shared";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
-import type { Settings } from "@/lib/settings-types";
+import type { Domain, Settings } from "@/lib/settings-types";
 import type { Group } from "@/lib/types";
 import { ReadOnlyNote, useSaveSettings } from "./shared";
 
@@ -505,7 +506,7 @@ export function BotProtectionForm({ settings, secretSet, canEdit }: { settings: 
     <Card>
       <CardHeader
         title="Bot protection"
-        description="Asks for a check from Cloudflare Turnstile or hCaptcha before Halo emails a sign-in link or code, and before passwords and codes from an IP address that reached the lockout threshold. Passkeys are never checked."
+        description="Asks for a check from Cloudflare Turnstile or hCaptcha before Halo emails a sign-in link, a code or a sign-up link, and before passwords and codes from an IP address that reached the lockout threshold. Passkeys are never checked."
       />
       <CardBody>
         <form
@@ -682,6 +683,117 @@ export function ImpersonationForm({ settings, groups, canEdit }: { settings: Set
             {chosen.length ? `Members of ${joinList(chosen)} can be impersonated.` : "Impersonation is off."} Only global administrators can change who can be impersonated.
           </ReadOnlyNote>
         )}
+      </CardBody>
+    </Card>
+  );
+}
+
+const SIGN_UP: Record<Settings["signUp"], { label: string; hint: string }> = {
+  off: { label: "Nobody", hint: "People join only by invitation, SCIM or an identity provider." },
+  open: { label: "Allowed domains, no approval", hint: "Their account is active once they confirm their email address and create a passkey." },
+  approval: { label: "Allowed domains, with approval", hint: "After they confirm their email address and create a passkey, a user administrator approves them on the Users page." },
+};
+
+export function SignUpForm({ settings, groups, domains, canEdit }: { settings: Settings; groups: Group[]; domains: Domain[]; canEdit: boolean }) {
+  const { saving, failure, save } = useSaveSettings();
+  const assigned = groups.filter((g) => g.kind === "assigned");
+  const verified = domains.filter((d) => d.verifiedAt).map((d) => d.name);
+  const [mode, setMode] = useState(settings.signUp);
+  const [listed, setListed] = useState(settings.signUpDomains.length > 0);
+  const [list, setList] = useState(settings.signUpDomains.join(" "));
+  const [groupIds, setGroupIds] = useState(() => settings.signUpGroupIds.filter((id) => assigned.some((g) => g.id === id)));
+  const [attempted, setAttempted] = useState(false);
+  const domainsChosen = listed ? list.split(/[\s,]+/).filter(Boolean).map((d) => d.toLowerCase()) : [];
+  const domainsError =
+    mode === "off" ? undefined : listed ? (domainsChosen.length ? undefined : "Enter at least one domain, such as example.com.") : verified.length ? undefined : "No domain is verified yet, so nobody could sign up.";
+  const body = { signUp: mode, signUpDomains: domainsChosen, signUpGroupIds: groupIds };
+  const dirty = JSON.stringify(body) !== JSON.stringify({ signUp: settings.signUp, signUpDomains: settings.signUpDomains, signUpGroupIds: settings.signUpGroupIds });
+
+  function submit() {
+    setAttempted(true);
+    if (domainsError) return;
+    void save(body, mode === "off" ? "Sign-up turned off" : "Sign-up saved", "The sign-up page follows it within 30 seconds.");
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Sign-up"
+        description="Lets people create their own account at /sign-up with their email address and a passkey. New accounts get no administrator roles. Bot protection, when on, checks every sign-up, and each network can sign up 10 times an hour."
+      />
+      <CardBody>
+        <form
+          noValidate
+          className="flex max-w-xl flex-col gap-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+        >
+          <Field label="Who can sign up" hint={SIGN_UP[mode].hint}>
+            {(props) => (
+              <Select {...props} disabled={!canEdit} value={mode} onChange={(event) => setMode(event.target.value as Settings["signUp"])}>
+                {(Object.keys(SIGN_UP) as Settings["signUp"][]).map((value) => (
+                  <option key={value} value={value}>
+                    {SIGN_UP[value].label}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          {mode === "off" ? null : (
+            <>
+              <Field
+                label="Allowed email domains"
+                error={attempted && !listed ? domainsError : undefined}
+                hint={
+                  listed ? undefined : verified.length ? (
+                    `Verified: ${verified.join(", ")}.`
+                  ) : (
+                    <>
+                      Verify a domain under{" "}
+                      <Link href="/admin/settings/domains" className="text-link underline underline-offset-3">
+                        Domains
+                      </Link>{" "}
+                      first, or list the domains.
+                    </>
+                  )
+                }
+              >
+                {(props) => (
+                  <Select {...props} disabled={!canEdit} value={listed ? "list" : "verified"} onChange={(event) => setListed(event.target.value === "list")}>
+                    <option value="verified">Verified domains</option>
+                    <option value="list">These domains</option>
+                  </Select>
+                )}
+              </Field>
+              {listed ? (
+                <Field label="Domains" hint="Separated by spaces. Each must match the part of the address after the @ exactly." error={attempted ? domainsError : undefined}>
+                  {(props) => (
+                    <Input {...props} mono autoComplete="off" spellCheck={false} disabled={!canEdit} value={list} onChange={(event) => setList(event.target.value)} placeholder="example.com" />
+                  )}
+                </Field>
+              ) : null}
+              <CheckList
+                legend="Add new accounts to"
+                options={assigned}
+                selected={groupIds}
+                onToggle={(id, on) => setGroupIds((current) => (on ? [...current, id] : current.filter((v) => v !== id)))}
+                empty="No assigned groups yet. Dynamic groups pick people up from their profile."
+              />
+            </>
+          )}
+          {canEdit ? (
+            <div className="flex flex-wrap items-center gap-4">
+              <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>
+                Save sign-up
+              </Button>
+              <ActionError message={failure} />
+            </div>
+          ) : (
+            <ReadOnlyNote>Only security and global administrators can change sign-up.</ReadOnlyNote>
+          )}
+        </form>
       </CardBody>
     </Card>
   );

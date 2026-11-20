@@ -69,6 +69,9 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("GET /api/v1/impersonations", readers, h.listImpersonations)
 	route("POST /api/v1/impersonations/{id}/start", []string{"helpdesk_admin"}, h.startImpersonation)
 	mux.Handle("POST /api/v1/impersonations/{id}/end", httpx.Handle(h.endImpersonation))
+	route("GET /api/v1/sign-ups", readers, h.listSignUps)
+	route("POST /api/v1/sign-ups/{id}/approve", []string{"user_admin"}, h.approveSignUp)
+	route("DELETE /api/v1/sign-ups/{id}", []string{"user_admin"}, h.rejectSignUp)
 
 	route("GET /api/v1/groups", readers, h.listGroups)
 	route("POST /api/v1/groups", []string{"user_admin"}, h.createGroup)

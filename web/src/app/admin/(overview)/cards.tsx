@@ -18,7 +18,7 @@ import { formatRelative, pluralize } from "@/lib/format";
 import { RESULT, signInApp, signInUser } from "@/lib/labels";
 import type { AccessRequest, AccessReview } from "@/lib/governance-types";
 import type { Device, PolicyWithActivity, RiskEvent } from "@/lib/policy-types";
-import type { OrganizationProfile } from "@/lib/settings-types";
+import type { OrganizationProfile, SignUp } from "@/lib/settings-types";
 import type { Application, Group, Overview, User } from "@/lib/types";
 
 function names(list: string[]) {
@@ -319,7 +319,13 @@ export function PostureSkeleton() {
 }
 
 export async function Attention() {
-  const [overview, users, reviews, risks] = await Promise.all([apiGet<Overview>("/overview"), apiGet<User[]>("/users"), apiGet<AccessReview[]>("/access-reviews"), apiGet<RiskEvent[]>("/risk-events")]);
+  const [overview, users, reviews, risks, signUps] = await Promise.all([
+    apiGet<Overview>("/overview"),
+    apiGet<User[]>("/users"),
+    apiGet<AccessReview[]>("/access-reviews"),
+    apiGet<RiskEvent[]>("/risk-events"),
+    apiGet<SignUp[]>("/sign-ups"),
+  ]);
   const userNames = Object.fromEntries(users.map((u) => [u.id, u.name]));
   const { weakAdmins, expiringCredentials: expiring } = overview;
   const invited = users.filter((u) => u.status === "invited");
@@ -362,6 +368,18 @@ export async function Attention() {
       action: "Open review",
       href: `/admin/access-reviews/${review.id}`,
     })),
+    ...(signUps.length
+      ? [
+          {
+            id: "sign-ups",
+            tone: "warning" as const,
+            title: `${pluralize(signUps.length, "sign-up")} waiting for approval`,
+            detail: `${names(signUps.map((s) => s.name))}. They confirmed their email address and can sign in once approved.`,
+            action: "Review sign-ups",
+            href: "/admin/users",
+          },
+        ]
+      : []),
     ...(invited.length
       ? [
           {

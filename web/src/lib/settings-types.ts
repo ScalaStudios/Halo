@@ -38,7 +38,12 @@ export type Settings = {
   botProtectionSiteKey: string;
   signInLogDays: number;
   auditLogDays: number;
+  signUp: "off" | "open" | "approval";
+  signUpDomains: string[];
+  signUpGroupIds: string[];
 };
+
+export type SignUp = { id: string; email: string; name: string; createdAt: string; verifiedAt: string };
 
 export type EmailTemplateText = { subject: string; body: string };
 

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"regexp"
@@ -95,6 +96,7 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (User, error) 
 }
 
 type NewUser struct {
+	ID         string
 	Email      string
 	Name       string
 	Title      string
@@ -108,7 +110,7 @@ type NewUser struct {
 }
 
 func (s *Store) CreateUser(ctx context.Context, in NewUser) (User, error) {
-	userID := id.New("usr")
+	userID := cmp.Or(in.ID, id.New("usr"))
 	if in.Status == "" {
 		in.Status = "invited"
 	}

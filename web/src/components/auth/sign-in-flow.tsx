@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronDown, CircleAlert, CircleCheck, CircleUserRound, Clock, Fingerprint } from "lucide-react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Avatar } from "@/components/ui/avatar";
@@ -24,10 +25,10 @@ type Choice = "passkey" | "security-key" | "totp" | "password" | "recovery-codes
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const linkButton =
+export const linkButton =
   "inline-flex min-h-12 items-center self-center rounded-sm text-body-sm text-link underline underline-offset-3 transition-colors duration-fast ease-brand hover:text-ember-hover";
 
-function emailProblem(value: string) {
+export function emailProblem(value: string) {
   if (!value.trim()) return "Enter your work email address, for example name@example.com.";
   if (!EMAIL.test(value.trim())) return "That doesn't look like an email address. Check it has an @ and a domain, like name@example.com.";
   return null;
@@ -62,6 +63,7 @@ export function SignInFlow({
   allowed,
   emailSignIn,
   challenge,
+  signUp,
   terms,
 }: {
   authRequest?: string;
@@ -73,6 +75,7 @@ export function SignInFlow({
   allowed: string[];
   emailSignIn: Settings["emailSignIn"];
   challenge: Challenge | null;
+  signUp: boolean;
   terms?: string;
 }) {
   const optionsId = useId();
@@ -434,6 +437,11 @@ export function SignInFlow({
                 </ul>
               ) : null}
             </div>
+            {signUp ? (
+              <Link href="/sign-up" className={linkButton}>
+                Create an account
+              </Link>
+            ) : null}
           </div>
         </>
       ) : null}

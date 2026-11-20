@@ -73,6 +73,9 @@ var fields = []struct {
 	{"botProtectionSiteKey", "bot protection site key", false},
 	{"signInLogDays", "sign-in log retention", true},
 	{"auditLogDays", "audit log retention", true},
+	{"signUp", "sign-up", false},
+	{"signUpDomains", "sign-up domains", false},
+	{"signUpGroupIds", "groups for people who sign up", false},
 }
 
 type handler struct {
@@ -189,6 +192,8 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	next.ApprovalActions = slices.Clone(before.ApprovalActions)
 	next.EmergencyAccessIDs = slices.Clone(before.EmergencyAccessIDs)
 	next.ImpersonationGroups = slices.Clone(before.ImpersonationGroups)
+	next.SignUpDomains = slices.Clone(before.SignUpDomains)
+	next.SignUpGroupIDs = slices.Clone(before.SignUpGroupIDs)
 	in := struct {
 		store.Settings
 		BotProtectionSecret string `json:"botProtectionSecret"`
@@ -221,6 +226,16 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	if next.ImpersonationGroups == nil {
 		next.ImpersonationGroups = []string{}
 	}
+	if next.SignUpGroupIDs == nil {
+		next.SignUpGroupIDs = []string{}
+	}
+	domains := []string{}
+	for _, d := range next.SignUpDomains {
+		if d = strings.ToLower(strings.TrimSpace(d)); d != "" && !slices.Contains(domains, d) {
+			domains = append(domains, d)
+		}
+	}
+	next.SignUpDomains = domains
 	if err := validate(next); err != nil {
 		return err
 	}
@@ -263,6 +278,24 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 		}
 		if slices.ContainsFunc(ids, func(id string) bool { return !existing[id] }) {
 			return httpx.Invalid("One of the groups given a session limit no longer exists. Refresh the page and choose again.")
+		}
+	}
+	if !slices.Equal(before.SignUpGroupIDs, next.SignUpGroupIDs) {
+		existing, err := h.st.ExistingIDs(ctx, "groups", next.SignUpGroupIDs)
+		if err != nil {
+			return err
+		}
+		if slices.ContainsFunc(next.SignUpGroupIDs, func(id string) bool { return !existing[id] }) {
+			return httpx.Invalid("One of the groups chosen for people who sign up no longer exists. Refresh the page and choose again.")
+		}
+	}
+	if next.SignUp != "off" && len(next.SignUpDomains) == 0 && (before.SignUp != next.SignUp || !slices.Equal(before.SignUpDomains, next.SignUpDomains)) {
+		verified, err := h.st.ListDomains(ctx)
+		if err != nil {
+			return err
+		}
+		if !slices.ContainsFunc(verified, func(d store.Domain) bool { return d.VerifiedAt != nil }) {
+			return httpx.Invalid("No domain is verified yet, so nobody could sign up. Verify a domain under Domains, or list the email domains people can sign up with.")
 		}
 	}
 	var old, updated map[string]json.RawMessage
@@ -417,6 +450,15 @@ func validate(s store.Settings) error {
 		return httpx.Invalid("Keep the sign-in log for between 7 and 3,650 days (10 years), or 0 to keep it forever.")
 	case s.AuditLogDays != 0 && !between(s.AuditLogDays, 30, 3650):
 		return httpx.Invalid("Keep the audit log for between 30 and 3,650 days (10 years), or 0 to keep it forever.")
+	case !slices.Contains([]string{"off", "open", "approval"}, s.SignUp):
+		return httpx.Invalid(`Set sign-up to "off", "open" or "approval".`)
+	case len(s.SignUpDomains) > 100:
+		return httpx.Invalid("List at most 100 email domains for sign-up.")
+	}
+	for _, d := range s.SignUpDomains {
+		if len(d) > 253 || !domainPattern.MatchString(d) {
+			return httpx.Invalid("“" + d + "” is not a domain. Enter domains like example.com, without the @ or a path.")
+		}
 	}
 	seen := map[string]bool{}
 	for _, g := range s.SessionLimitGroups {

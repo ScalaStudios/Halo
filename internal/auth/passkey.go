@@ -116,7 +116,7 @@ func (h *handler) passkeyFinish(w http.ResponseWriter, r *http.Request) error {
 	return h.finish(w, r, a, nil, nil)
 }
 
-func (h *handler) registerBegin(w http.ResponseWriter, r *http.Request, u store.User, kind string) error {
+func (h *handler) registerBegin(w http.ResponseWriter, r *http.Request, u store.User, kind string, owner *string) error {
 	creds, err := h.st.ListWebAuthnCredentials(r.Context(), u.ID)
 	if err != nil {
 		return err
@@ -136,13 +136,13 @@ func (h *handler) registerBegin(w http.ResponseWriter, r *http.Request, u store.
 	if err != nil {
 		return err
 	}
-	return h.startCeremony(w, r, "passkey-register", &u.ID, ceremony{Session: session, Kind: kind}, creation)
+	return h.startCeremony(w, r, "passkey-register", owner, ceremony{Session: session, Kind: kind}, creation)
 }
 
 func (h *handler) registerFinish(r *http.Request, u store.User, ceremonyID string, raw json.RawMessage, label string) (store.WebAuthnCredential, error) {
 	var c ceremony
 	owner, err := h.st.TakeCeremony(r.Context(), ceremonyID, "passkey-register", &c)
-	if errors.Is(err, store.ErrNotFound) || err == nil && (owner == nil || *owner != u.ID) {
+	if errors.Is(err, store.ErrNotFound) || err == nil && (owner != nil && *owner != u.ID || string(c.Session.UserID) != u.ID) {
 		return store.WebAuthnCredential{}, errCeremonyExpired
 	}
 	if err != nil {
@@ -223,7 +223,7 @@ func (h *handler) enrollBegin(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return h.registerBegin(w, r, u, "")
+	return h.registerBegin(w, r, u, "", &u.ID)
 }
 
 func (h *handler) enrollFinish(w http.ResponseWriter, r *http.Request) error {
@@ -279,7 +279,7 @@ func (h *handler) addPasskeyBegin(w http.ResponseWriter, r *http.Request) error 
 	if in.Kind != "passkey" && in.Kind != "security-key" {
 		return httpx.Invalid("Kind must be passkey or security-key.")
 	}
-	return h.registerBegin(w, r, u, in.Kind)
+	return h.registerBegin(w, r, u, in.Kind, &u.ID)
 }
 
 func (h *handler) addPasskeyFinish(w http.ResponseWriter, r *http.Request) error {
