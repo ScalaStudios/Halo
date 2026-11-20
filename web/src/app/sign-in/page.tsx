@@ -26,6 +26,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
         next={typeof params.next === "string" ? params.next : undefined}
         signedIn={(await cookies()).has("halo_session")}
         allowed={methods.data?.methods ?? ["passkey", "security-key", "totp", "recovery-codes", "magic-link"]}
+        terms={typeof params.terms === "string" ? params.terms : undefined}
       />
     </AuthFrame>
   );

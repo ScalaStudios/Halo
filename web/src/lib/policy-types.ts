@@ -1,11 +1,11 @@
 import type { MethodKind, RiskLevel } from "./types";
 
 export type PolicyMode = "enforce" | "report";
-export type PolicyEffect = "allow" | "require-phishing-resistant" | "block";
+export type PolicyEffect = "allow" | "require-phishing-resistant" | "require-terms" | "block";
 export type NetworkCondition = "any" | "in" | "not-in";
 export type DeviceCondition = "any" | "trusted" | "untrusted";
 export type DeviceTrust = "unknown" | "trusted" | "blocked";
-export type Outcome = "allow" | "require" | "block";
+export type Outcome = "allow" | "require" | "terms" | "block";
 export type RiskEventType = "risky-network" | "failed-sign-ins" | "new-device";
 
 export type PolicyConditions = {
@@ -31,6 +31,7 @@ export type AccessPolicy = {
   enabled: boolean;
   mode: PolicyMode;
   effect: PolicyEffect;
+  termsId: string | null;
   conditions: PolicyConditions;
   createdAt: string;
   updatedAt: string;
@@ -45,6 +46,23 @@ export type NetworkZone = {
   cidrs: string[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type Terms = {
+  id: string;
+  name: string;
+  version: number;
+  text: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TermsAcceptance = {
+  termsId: string;
+  name: string;
+  version: number;
+  acceptedAt: string;
 };
 
 export type MethodSetting = {

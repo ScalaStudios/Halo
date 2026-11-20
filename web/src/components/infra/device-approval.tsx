@@ -22,9 +22,11 @@ export function DeviceApproval({ initialCode, signIn }: { initialCode: string; s
   const [busy, setBusy] = useState<"lookup" | "approve" | "deny" | null>(initialCode ? "lookup" : null);
   const [error, setError] = useState<string | null>(null);
   const [signedOut, setSignedOut] = useState(false);
+  const [terms, setTerms] = useState(false);
 
   function fail(cause: unknown) {
     setSignedOut(cause instanceof ApiError && cause.status === 401);
+    setTerms(cause instanceof ApiError && cause.code === "ERR_TERMS_REQUIRED");
     setError(cause instanceof ApiError ? cause.message : "Halo could not reach the server. Try again.");
   }
 
@@ -71,6 +73,14 @@ export function DeviceApproval({ initialCode, signIn }: { initialCode: string; s
       {signedOut ? (
         <Link href={signIn} className="text-link underline underline-offset-3 hover:text-ember">
           Sign in again
+        </Link>
+      ) : null}
+      {terms && request ? (
+        <Link
+          href={`/account/terms?next=${encodeURIComponent(`/device?user_code=${encodeURIComponent(request.userCode)}`)}`}
+          className="text-link underline underline-offset-3 hover:text-ember"
+        >
+          Read and accept the terms
         </Link>
       ) : null}
     </>

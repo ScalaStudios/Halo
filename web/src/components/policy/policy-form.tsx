@@ -117,34 +117,38 @@ export function PolicyForm({
   users,
   applications,
   zones,
+  terms,
 }: {
   policy?: AccessPolicy;
   groups: Option[];
   users: Option[];
   applications: Option[];
   zones: Option[];
+  terms: Option[];
 }) {
   const { pending, run, errorFor, toast, router } = useMutation();
   const [name, setName] = useState(policy?.name ?? "");
   const [description, setDescription] = useState(policy?.description ?? "");
   const [effect, setEffect] = useState<PolicyEffect>(policy?.effect ?? "block");
+  const [termsId, setTermsId] = useState(policy?.termsId ?? "");
   const [mode, setMode] = useState<PolicyMode>(policy?.mode ?? "report");
   const [enabled, setEnabled] = useState(policy?.enabled ?? true);
   const [c, setC] = useState<PolicyConditions>(policy?.conditions ?? BLANK);
   const [attempted, setAttempted] = useState(false);
 
   const apps: Option[] = [{ id: HALO_APP, name: "Halo", detail: "The admin console and the account portal" }, ...applications];
-  const names: Names = { groups: nameMap(groups), users: nameMap(users), apps: nameMap(applications), zones: nameMap(zones) };
+  const names: Names = { groups: nameMap(groups), users: nameMap(users), apps: nameMap(applications), zones: nameMap(zones), terms: nameMap(terms) };
   const state = policyState({ enabled, mode });
   const problems = {
     name: name.trim() ? undefined : "Enter a name, for example “Block high-risk sign-ins”.",
     users: c.allUsers || c.groupIds.length + c.userIds.length ? undefined : "Choose at least one group or person, or apply the policy to all users.",
     apps: c.allApps || c.appIds.length ? undefined : "Choose at least one application, or cover all applications.",
     zones: c.network === "any" || c.zoneIds.length ? undefined : "Choose at least one network, or match any network.",
+    terms: effect !== "require-terms" || termsId ? undefined : "Choose the terms of use people must accept.",
   };
   const invalid = Object.values(problems).some(Boolean);
   const errors: Partial<typeof problems> = attempted ? problems : {};
-  const lockout = enabled && mode === "enforce" && effect !== "allow" && c.allUsers && c.excludeGroupIds.length + c.excludeUserIds.length === 0;
+  const lockout = enabled && mode === "enforce" && effect !== "allow" && effect !== "require-terms" && c.allUsers && c.excludeGroupIds.length + c.excludeUserIds.length === 0;
 
   function set<K extends keyof PolicyConditions>(key: K, value: PolicyConditions[K]) {
     setC((current) => ({ ...current, [key]: value }));
@@ -157,7 +161,7 @@ export function PolicyForm({
   function save() {
     setAttempted(true);
     if (invalid) return;
-    const body = { name: name.trim(), description: description.trim(), enabled, mode, effect, conditions: c };
+    const body = { name: name.trim(), description: description.trim(), enabled, mode, effect, termsId: effect === "require-terms" ? termsId : null, conditions: c };
     void run(
       "save",
       () => (policy ? api(`/policies/${policy.id}`, { method: "PUT", body }) : api("/policies", { body })),
@@ -336,7 +340,7 @@ export function PolicyForm({
         <Card>
           <CardHeader title="Effect" description="What happens when every condition matches." />
           <CardBody className="flex flex-col gap-6">
-            <Field label="Effect" hint="If several enforced policies match, block beats requiring a passkey, which beats allow.">
+            <Field label="Effect" hint="If several enforced policies match, block beats requiring a passkey, which beats allow. Terms of use are asked for as well, unless the sign-in is blocked.">
               {(props) => (
                 <Select {...props} value={effect} onChange={(event) => setEffect(event.target.value as PolicyEffect)}>
                   {(Object.keys(EFFECT) as PolicyEffect[]).map((value) => (
@@ -347,6 +351,33 @@ export function PolicyForm({
                 </Select>
               )}
             </Field>
+            {effect === "require-terms" ? (
+              terms.length ? (
+                <Field label="Terms of use" error={errors.terms} hint="People accept each version once, at sign-in or in their account. Publishing a new version asks them again at their next sign-in.">
+                  {(props) => (
+                    <Select {...props} value={termsId} onChange={(event) => setTermsId(event.target.value)}>
+                      <option value="">Choose terms of use</option>
+                      {terms.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} · {t.detail}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </Field>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <p className="text-body-sm text-fg-3">
+                    There are no terms of use yet.{" "}
+                    <Link href="/admin/policies?tab=terms" className="text-link underline underline-offset-3 hover:text-ember">
+                      Add them on the Terms tab
+                    </Link>
+                    .
+                  </p>
+                  <FieldError>{errors.terms}</FieldError>
+                </div>
+              )
+            ) : null}
             <Field label="Mode" hint={MODE[mode].description}>
               {(props) => (
                 <Select {...props} value={mode} onChange={(event) => setMode(event.target.value as PolicyMode)}>
@@ -371,7 +402,7 @@ export function PolicyForm({
           <Card>
             <CardHeader title="Summary" actions={<Badge tone={state.tone} dot>{state.label}</Badge>} />
             <CardBody className="flex flex-col gap-4">
-              <p className="text-body text-fg">{describePolicy({ effect, conditions: c }, names)}</p>
+              <p className="text-body text-fg">{describePolicy({ effect, termsId, conditions: c }, names)}</p>
               {lockout ? (
                 <div role="note" className="flex gap-3 rounded-md border border-warning/20 bg-warning-container p-4">
                   <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-warning" />

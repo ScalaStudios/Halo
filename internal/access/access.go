@@ -10,6 +10,7 @@ const (
 	Allow                    = "allow"
 	Block                    = "block"
 	RequirePhishingResistant = "require-phishing-resistant"
+	RequireTerms             = "require-terms"
 )
 
 type Input struct {
@@ -28,6 +29,7 @@ type Decision struct {
 	Reason  string
 	Risk    string
 	EventID string
+	Terms   []store.Terms
 }
 
 type Engine interface {

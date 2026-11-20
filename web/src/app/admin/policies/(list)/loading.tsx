@@ -13,7 +13,7 @@ export default function Loading() {
         </>
       }
     >
-      <TabsSkeleton labels={["Policies", "Networks"]} />
+      <TabsSkeleton labels={["Policies", "Networks", "Terms"]} />
       <Card>
         <CardHeader title="Report-only insights" description="What report-only policies would have done in the last 24 hours. None of these sign-ins were changed." />
         <ListSkeleton rows={2} className="border-t border-border" />

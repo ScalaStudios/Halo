@@ -303,6 +303,16 @@ func TestDeviceSessionLimit(t *testing.T) {
 	}
 }
 
+func TestDeviceApprovalTerms(t *testing.T) {
+	h := newInfra(t, policyFunc(func(access.Input) access.Decision {
+		return access.Decision{Effect: access.Allow, Terms: []store.Terms{{ID: "tou_1", Name: "Acceptable use", Version: 1}}}
+	}))
+	_, userCode := h.startDevice("openid")
+	if r := h.send(http.MethodPost, "/api/v1/device/"+userCode+"/approve", nil, cookie(h.admin)); r.status != http.StatusForbidden || r.body["error"].(map[string]any)["code"] != "ERR_TERMS_REQUIRED" {
+		t.Fatalf("approve before accepting the terms: %d %v", r.status, r.body)
+	}
+}
+
 func TestAPIResources(t *testing.T) {
 	h := newInfra(t, nil)
 	ctx := context.Background()

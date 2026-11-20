@@ -22,6 +22,7 @@ var (
 	errDeviceBlocked   = httpx.Fail(http.StatusForbidden, "ERR_BLOCKED_BY_POLICY", "Your organization's access policy blocked this sign-in. If you think this is wrong, contact your administrator.")
 	errDeviceStrongest = httpx.Fail(http.StatusForbidden, "ERR_STRONGER_AUTH_REQUIRED", "This application requires a passkey or security key. Sign out, sign in with one of those, then approve again.")
 	errDeviceSessions  = httpx.Fail(http.StatusForbidden, "ERR_SESSION_LIMIT", "You're already signed in from the command line on as many devices as your organization allows. Run halo logout on a device you no longer use, or ask your administrator to end one of your sessions, then approve again.")
+	errDeviceTerms     = httpx.Fail(http.StatusForbidden, "ERR_TERMS_REQUIRED", "Your organization asks you to accept its terms of use first. Accept them, then approve again.")
 )
 
 func ensureCLI(ctx context.Context, st *store.Store) error {
@@ -217,6 +218,8 @@ func (h *deviceHandlers) check(r *http.Request, p pendingDevice, event *store.Si
 		return policyReason(decision), errDeviceBlocked, nil
 	case decision.Effect == access.RequirePhishingResistant && p.session.Method != "passkey" && p.session.Method != "security-key":
 		return policyReason(decision), errDeviceStrongest, nil
+	case len(decision.Terms) > 0:
+		return "The terms of use are not accepted yet.", errDeviceTerms, nil
 	}
 	return "", nil, nil
 }

@@ -307,6 +307,14 @@ func TestExportExcludesSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	luna, _ := e.st.GetUserByEmail(ctx, "luna@example.com")
+	aup, err := e.st.SaveTerms(ctx, store.Terms{Name: "Acceptable use", Text: "Use company systems for work."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.AcceptTerms(ctx, luna.ID, []store.Terms{aup}); err != nil {
+		t.Fatal(err)
+	}
 
 	e.expect(e.call(security, "GET", "/api/v1/export", nil), 403)
 	rec := e.expect(e.call(admin, "GET", "/api/v1/export", nil), 200)
@@ -315,10 +323,13 @@ func TestExportExcludesSecrets(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &export); err != nil {
 		t.Fatalf("export is not valid JSON: %v", err)
 	}
-	for _, section := range []string{"exportedAt", "organization", "settings", "users", "groups", "memberships", "roles", "applications", "policies", "accessPackages", "accessReviews"} {
+	for _, section := range []string{"exportedAt", "organization", "settings", "users", "groups", "memberships", "roles", "applications", "policies", "terms", "termsAcceptances", "accessPackages", "accessReviews"} {
 		if export[section] == nil {
 			t.Errorf("export has no %s", section)
 		}
+	}
+	if accepted := export["termsAcceptances"].([]any); len(accepted) != 1 || accepted[0].(map[string]any)["userId"] != luna.ID || accepted[0].(map[string]any)["version"] != 1.0 || accepted[0].(map[string]any)["acceptedAt"] == nil {
+		t.Errorf("export terms acceptances: %v", accepted)
 	}
 	if users := export["users"].([]any); len(users) < 10 {
 		t.Errorf("export has %d users", len(users))

@@ -174,9 +174,14 @@ func (h *harness) refresh(token string) (int, string) {
 
 func TestPromptNone(t *testing.T) {
 	var effect atomic.Value
+	var terms atomic.Bool
 	effect.Store(access.Allow)
 	h := newHarness(t, policyFunc(func(access.Input) access.Decision {
-		return access.Decision{Effect: effect.Load().(string), Policy: "Office only", Reason: "Outside the office network."}
+		d := access.Decision{Effect: effect.Load().(string), Policy: "Office only", Reason: "Outside the office network."}
+		if terms.Load() {
+			d.Terms = []store.Terms{{ID: "tou_1", Name: "Acceptable use", Version: 1}}
+		}
+		return d
 	}))
 	ctx := context.Background()
 	errorOf := func(u *url.URL) string { return u.Query().Get("error") }
@@ -226,6 +231,11 @@ func TestPromptNone(t *testing.T) {
 	}
 	if location := h.silent(token, nil); location.Query().Get("code") == "" {
 		t.Fatalf("passkey session under a phishing-resistant policy: %s", location)
+	}
+	effect.Store(access.Allow)
+	terms.Store(true)
+	if got := errorOf(h.silent(token, nil)); got != "interaction_required" {
+		t.Fatalf("terms of use not accepted: %s", got)
 	}
 
 	events, err := h.st.ListSignIns(ctx, store.SignInFilter{AppID: h.app.ID})

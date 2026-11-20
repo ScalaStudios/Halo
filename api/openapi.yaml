@@ -416,6 +416,48 @@ paths:
         '403': {$ref: '#/components/responses/SignInRefused'}
         '404': {$ref: '#/components/responses/AuthRequestExpired'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /auth/terms/{ceremony}:
+    get:
+      tags: [Sign-in]
+      operationId: getTermsToAccept
+      summary: Read the terms of use a sign-in waits on
+      security: []
+      parameters:
+        - {name: ceremony, in: path, required: true, schema: {type: string}, description: The `terms` value of a sign-in response.}
+      responses:
+        '200':
+          description: The documents and the versions to accept.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [terms]
+                properties:
+                  terms:
+                    type: array
+                    items: {$ref: '#/components/schemas/Terms'}
+        '404': {$ref: '#/components/responses/TermsExpired'}
+  /auth/terms:
+    post:
+      tags: [Sign-in]
+      operationId: acceptTermsAndSignIn
+      summary: Accept the terms of use a sign-in waits on, then finish signing in
+      description: Records the acceptance of the versions shown, then checks the sign-in again and finishes it. A ceremony from an existing session only works with that same session.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ceremony]
+              properties:
+                ceremony: {type: string}
+      responses:
+        '200': {$ref: '#/components/responses/SignedIn'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '403': {$ref: '#/components/responses/SignInRefused'}
+        '404': {$ref: '#/components/responses/TermsExpired'}
   /auth/enroll:
     get:
       tags: [Sign-in]
@@ -564,7 +606,7 @@ paths:
         '200': {$ref: '#/components/responses/DeviceDecision'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403':
-          description: '`ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED`, `ERR_SESSION_LIMIT` or `ERR_CROSS_SITE`.'
+          description: '`ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED`, `ERR_SESSION_LIMIT`, `ERR_TERMS_REQUIRED` (accept the terms of use with `POST /me/terms/{id}/accept` first) or `ERR_CROSS_SITE`.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -1008,6 +1050,57 @@ paths:
                 type: array
                 items: {$ref: '#/components/schemas/Device'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/terms:
+    get:
+      tags: [Account]
+      operationId: listMyTerms
+      summary: List the terms of use you must accept and the versions you accepted
+      security: *personal
+      responses:
+        '200':
+          description: '`terms` are the documents enforced policies ask of you, with `acceptedAt` set when you accepted the current version. `accepted` is every version you accepted, newest first.'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [terms, accepted]
+                properties:
+                  terms:
+                    type: array
+                    items:
+                      allOf:
+                        - {$ref: '#/components/schemas/Terms'}
+                        - type: object
+                          required: [acceptedAt]
+                          properties:
+                            acceptedAt: {type: [string, 'null'], format: date-time}
+                  accepted:
+                    type: array
+                    items: {$ref: '#/components/schemas/TermsAcceptance'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/terms/{id}/accept:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Account]
+      operationId: acceptTerms
+      summary: Accept the current version of terms of use
+      security: *personal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version: {type: integer, description: The version you read. Refused with `409` when a newer one was published.}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /me/ssh/certificates:
     post:
       tags: [Account, SSH]
@@ -2617,6 +2710,63 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /terms:
+    get:
+      tags: [Policies]
+      operationId: listTerms
+      summary: List terms of use
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The documents.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Terms'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Policies]
+      operationId: createTerms
+      summary: Add terms of use
+      description: 'Roles: security administrator. Starts at version 1.'
+      requestBody: {$ref: '#/components/requestBodies/TermsInput'}
+      responses:
+        '201': {$ref: '#/components/responses/TermsResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /terms/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Policies]
+      operationId: updateTerms
+      summary: Replace terms of use
+      description: 'Roles: security administrator. A change to the text or link publishes the next version, which people accept at their next sign-in.'
+      requestBody: {$ref: '#/components/requestBodies/TermsInput'}
+      responses:
+        '200': {$ref: '#/components/responses/TermsResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Policies]
+      operationId: deleteTerms
+      summary: Delete terms of use
+      description: 'Roles: security administrator. Refused with `409` while a policy uses them. Acceptances stay in the export.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /methods:
     get:
       tags: [Policies]
@@ -3773,8 +3923,20 @@ components:
               description: {type: string, maxLength: 2000}
               enabled: {type: boolean}
               mode: {type: string, enum: [enforce, report]}
-              effect: {type: string, enum: [allow, require-phishing-resistant, block]}
+              effect: {type: string, enum: [allow, require-phishing-resistant, require-terms, block]}
+              termsId: {type: [string, 'null'], description: 'The terms of use to accept. Required when `effect` is `require-terms`, ignored otherwise.'}
               conditions: {$ref: '#/components/schemas/PolicyConditions'}
+    TermsInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name]
+            properties:
+              name: {type: string, maxLength: 200}
+              text: {type: string, maxLength: 100000, description: Plain text. Give the text, the link, or both.}
+              url: {type: string, format: uri, description: An http or https link to the full document.}
     NetworkZoneInput:
       required: true
       content:
@@ -3942,6 +4104,11 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
+    TermsExpired:
+      description: '`ERR_TERMS_EXPIRED`: the step expired after 15 minutes, was already used, or belongs to another session. Sign in again.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     CodeMismatch:
       description: '`ERR_CODE_MISMATCH`: the code did not match, was already used, or no account uses the address.'
       content:
@@ -3968,14 +4135,15 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     SignedIn:
-      description: Signed in. Sets the `halo_session` cookie when a new session starts. `redirect` is the application's callback when the sign-in came from an application, otherwise `/account`.
+      description: Signed in. Sets the `halo_session` cookie when a new session starts. `redirect` is the application's callback when the sign-in came from an application, otherwise `/account`. When an enforced policy asks for terms of use the person has not accepted, no session starts yet; `terms` holds the step to finish with `GET /auth/terms/{ceremony}` and `POST /auth/terms`, and `redirect` is the sign-in page that shows them.
       content:
         application/json:
           schema:
             type: object
             required: [redirect]
             properties:
-              redirect: {type: string, examples: [/account, '/oauth2/authorize/callback?id=…']}
+              redirect: {type: string, examples: [/account, '/oauth2/authorize/callback?id=…', '/sign-in?terms=cer_…']}
+              terms: {type: string, description: Present only while terms of use wait to be accepted.}
     Ceremony:
       description: A WebAuthn ceremony. Pass `options` to the browser's WebAuthn API and send the result with `ceremony` to the matching finish route within 5 minutes.
       content:
@@ -4050,6 +4218,11 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/NetworkZone'}
+    TermsResponse:
+      description: The terms of use.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Terms'}
     RiskEventResponse:
       description: The risk event.
       content:
@@ -4610,7 +4783,7 @@ components:
           items: {$ref: '#/components/schemas/MethodKind'}
     AccessPolicy:
       type: object
-      required: [id, name, description, priority, enabled, mode, effect, conditions, createdAt, updatedAt]
+      required: [id, name, description, priority, enabled, mode, effect, termsId, conditions, createdAt, updatedAt]
       properties:
         id: {type: string, examples: [pol_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
@@ -4618,7 +4791,8 @@ components:
         priority: {type: integer, description: Position in the saved order.}
         enabled: {type: boolean}
         mode: {type: string, enum: [enforce, report]}
-        effect: {type: string, enum: [allow, require-phishing-resistant, block]}
+        effect: {type: string, enum: [allow, require-phishing-resistant, require-terms, block]}
+        termsId: {type: [string, 'null'], description: 'The terms of use a `require-terms` policy asks for.'}
         conditions: {$ref: '#/components/schemas/PolicyConditions'}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
@@ -4633,13 +4807,13 @@ components:
               required: [matched, stopped]
               properties:
                 matched: {type: integer, description: Sign-ins the policy matched in the past 24 hours.}
-                stopped: {type: integer, description: 'Matched sign-ins it blocked or would have blocked, or that needed a stronger method.'}
+                stopped: {type: integer, description: 'Matched sign-ins it blocked or would have blocked, or that needed a stronger method or unaccepted terms of use.'}
     Simulation:
       type: object
       required: [effect, outcome, policy, reason, risk, signals, policies]
       properties:
-        effect: {type: string, enum: [allow, require-phishing-resistant, block]}
-        outcome: {type: string, enum: [allow, require, block], description: '`require` when the effect requires a passkey or security key and the simulated method is neither.'}
+        effect: {type: string, enum: [allow, require-phishing-resistant, require-terms, block]}
+        outcome: {type: string, enum: [allow, require, terms, block], description: '`require` when the effect requires a passkey or security key and the simulated method is neither. `terms` when an enforced policy asks for terms of use the person has not accepted.'}
         policy: {type: string, description: 'The name of the deciding policy, if any.'}
         reason: {type: string}
         risk: {type: string, enum: [none, low, medium, high]}
@@ -4661,8 +4835,27 @@ components:
               mode: {type: string, enum: [enforce, report]}
               effect: {type: string}
               matched: {type: boolean}
-              outcome: {type: string, enum: ['', allow, require, block]}
+              outcome: {type: string, enum: ['', allow, require, terms, block]}
               detail: {type: string, description: Why it matched or did not.}
+    Terms:
+      type: object
+      required: [id, name, version, text, url, createdAt, updatedAt]
+      properties:
+        id: {type: string, examples: [tou_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        name: {type: string}
+        version: {type: integer, minimum: 1, description: Goes up by one each time the text or link changes.}
+        text: {type: string}
+        url: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    TermsAcceptance:
+      type: object
+      required: [termsId, name, version, acceptedAt]
+      properties:
+        termsId: {type: string}
+        name: {type: string, description: The name of the terms when they were accepted.}
+        version: {type: integer}
+        acceptedAt: {type: string, format: date-time}
     NetworkZone:
       type: object
       required: [id, name, kind, cidrs, createdAt, updatedAt]
