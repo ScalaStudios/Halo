@@ -1,6 +1,9 @@
 package store
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 type Method struct {
 	ID         string     `json:"id"`
@@ -35,14 +38,20 @@ type User struct {
 }
 
 type Group struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Kind        string    `json:"kind"`
-	Rule        *string   `json:"rule,omitempty"`
-	MemberCount int       `json:"memberCount"`
-	Source      string    `json:"source"`
-	CreatedAt   time.Time `json:"createdAt"`
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	Kind        string     `json:"kind"`
+	Rule        *string    `json:"rule,omitempty"`
+	JoinPolicy  string     `json:"joinPolicy"`
+	Owners      []NamedRef `json:"owners"`
+	MemberCount int        `json:"memberCount"`
+	Source      string     `json:"source"`
+	CreatedAt   time.Time  `json:"createdAt"`
+}
+
+func (g Group) OwnedBy(userID string) bool {
+	return slices.ContainsFunc(g.Owners, func(o NamedRef) bool { return o.ID == userID })
 }
 
 type Claim struct {

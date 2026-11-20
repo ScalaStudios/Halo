@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { AppWindow, ArrowLeft, UsersRound } from "lucide-react";
+import { AppWindow, ArrowLeft, UserRoundCog, UsersRound } from "lucide-react";
 import { APP_STATUS, PROTOCOL_LABEL } from "@/components/applications/shared";
-import { AddMembers, DeleteGroup, EditGroupButton, GroupMembersTable } from "@/components/directory/group-detail";
+import { AddMembers, DeleteGroup, EditGroupButton, EditOwners, GroupMembersTable } from "@/components/directory/group-detail";
 import { StatusDot, Tag } from "@/components/ui/badge";
 import { DescriptionList } from "@/components/ui/description-list";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -9,6 +9,7 @@ import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { apiGet } from "@/lib/api/server";
 import { formatDate } from "@/lib/format";
+import { JOIN_POLICY } from "@/lib/labels";
 import type { Application, Group, User } from "@/lib/types";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -27,7 +28,8 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
   ]);
   const dynamic = group.kind === "dynamic";
   const groupApps = applications.filter((a) => a.groupIds.includes(group.id));
-  const candidates = users.filter((u) => u.status !== "deprovisioned" && !members.some((m) => m.id === u.id));
+  const active = users.filter((u) => u.status !== "deprovisioned");
+  const candidates = active.filter((u) => !members.some((m) => m.id === u.id));
 
   return (
     <div className="flex flex-col gap-8">
@@ -54,9 +56,10 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
           <EditGroupButton group={group} />
         </header>
         <DescriptionList
-          className="grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 xl:grid-cols-5"
+          className="grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 xl:grid-cols-6"
           items={[
             { label: "Membership", value: dynamic ? "Rule-based" : "Assigned" },
+            { label: "Who can join", value: dynamic ? "Follows the rule" : JOIN_POLICY[group.joinPolicy].label },
             { label: "Members", value: <span className="tnum">{members.length}</span> },
             { label: "Applications", value: <span className="tnum">{groupApps.length}</span> },
             { label: "Source", value: group.source },
@@ -64,6 +67,30 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
           ]}
         />
       </div>
+
+      {dynamic ? null : (
+        <section className="flex flex-col gap-6">
+          <SectionTitle
+            title="Owners"
+            description="Owners add and remove members and approve requests to join from their account, without an administrator role."
+            action={<EditOwners group={group} people={active} />}
+          />
+          {group.owners.length ? (
+            <SimpleTable
+              caption="Owners"
+              head={["Name", "Email"]}
+              rows={group.owners.map((owner) => [
+                <Link key="n" href={`/admin/users/${owner.id}`} className="font-medium text-fg hover:underline">
+                  {owner.name}
+                </Link>,
+                owner.email,
+              ])}
+            />
+          ) : (
+            <EmptyState icon={UserRoundCog} title="No owners" description="Only user administrators can change the members. Add an owner to let the team manage it." />
+          )}
+        </section>
+      )}
 
       <section className="flex flex-col gap-6">
         <SectionTitle

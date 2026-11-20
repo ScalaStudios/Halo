@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FileCheck, History, KeyRound, LayoutGrid, LogOut, MonitorSmartphone, ShieldCheck, UserRound, UserRoundCog } from "lucide-react";
+import { FileCheck, History, KeyRound, LayoutGrid, LogOut, MonitorSmartphone, ShieldCheck, UserRound, UserRoundCog, UsersRound } from "lucide-react";
 import { useState, useTransition, type ReactNode } from "react";
 import { HaloLogo } from "@/components/halo-mark";
 import { Avatar } from "@/components/ui/avatar";
@@ -20,6 +20,7 @@ const nav = [
   { label: "Security", href: "/account/security", icon: ShieldCheck },
   { label: "Sessions", href: "/account/sessions", icon: MonitorSmartphone },
   { label: "Applications", href: "/account/applications", icon: LayoutGrid },
+  { label: "Groups", href: "/account/groups", icon: UsersRound },
   { label: "Access", href: "/account/access", icon: KeyRound },
   { label: "Terms", href: "/account/terms", icon: FileCheck },
   { label: "Activity", href: "/account/activity", icon: History },

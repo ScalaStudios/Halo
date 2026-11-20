@@ -1,3 +1,5 @@
+import type { NamedRef } from "./governance-types";
+
 export type UserStatus = "active" | "suspended" | "invited" | "deprovisioned";
 export type AuthStrength = "phishing-resistant" | "multi-factor" | "single-factor";
 export type MethodKind = "passkey" | "security-key" | "totp" | "magic-link" | "recovery-codes" | "password" | "federated";
@@ -32,16 +34,25 @@ export type User = {
   avatarUrl: string | null;
 };
 
+export type JoinPolicy = "closed" | "request" | "open";
+
 export type Group = {
   id: string;
   name: string;
   description: string;
   kind: "assigned" | "dynamic";
   rule?: string;
+  joinPolicy: JoinPolicy;
+  owners: NamedRef[];
   memberCount: number;
   source: string;
   createdAt: string;
 };
+
+export type OwnedGroup = Group & { requestCount: number };
+export type JoinableGroup = Group & { requested: boolean };
+export type JoinRequest = { user: NamedRef; createdAt: string };
+export type OwnedGroupDetail = { group: OwnedGroup; members: Required<NamedRef>[]; requests: JoinRequest[]; people: Required<NamedRef>[] };
 
 export type Protocol = "oidc" | "saml" | "oauth" | "bookmark";
 export type AppType = "web" | "spa" | "native" | "service";

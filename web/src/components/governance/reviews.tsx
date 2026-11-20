@@ -44,6 +44,7 @@ function StartReviewDialog({ groups, people, onClose }: { groups: Group[]; peopl
   const [autoApply, setAutoApply] = useState(true);
   const [errors, setErrors] = useState<{ name?: string; group?: string; reviewers?: string; due?: string }>({});
   const { pending, run, errorFor, toast, router } = useMutation();
+  const owners = (groups.find((g) => g.id === groupId)?.owners ?? []).map((o) => o.id).filter((id) => people.some((p) => p.id === id) && !reviewerIds.includes(id));
 
   function submit() {
     const next = {
@@ -121,9 +122,17 @@ function StartReviewDialog({ groups, people, onClose }: { groups: Group[]; peopl
             </Select>
           )}
         </Field>
-        <Field label="Reviewers" error={errors.reviewers} hint="Reviewers don't need an administrator role. They decide from their Access page.">
-          {(props) => <PeoplePicker {...props} people={people} value={reviewerIds} onChange={setReviewerIds} />}
-        </Field>
+        <div className="flex flex-col gap-3">
+          <Field label="Reviewers" error={errors.reviewers} hint="Reviewers don't need an administrator role. They decide from their Access page.">
+            {(props) => <PeoplePicker {...props} people={people} value={reviewerIds} onChange={setReviewerIds} />}
+          </Field>
+          {owners.length ? (
+            <Button size="sm" variant="quiet" className="self-start" onClick={() => setReviewerIds([...new Set([...reviewerIds, ...owners])])}>
+              <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
+              Add the group&apos;s owners
+            </Button>
+          ) : null}
+        </div>
         <Field label="Due date" error={errors.due} hint="Reviews past their due date are marked overdue.">
           {(props) => <Input {...props} type="date" min={isoDay(1)} value={due} onChange={(event) => setDue(event.target.value)} />}
         </Field>

@@ -32,7 +32,7 @@ func (s *Store) ManagementChainIncludes(ctx context.Context, fromID, userID stri
 }
 
 func (s *Store) UpdateGroup(ctx context.Context, g Group) error {
-	tag, err := s.db.Exec(ctx, `update groups set name = $2, description = $3, rule = $4 where id = $1`, g.ID, g.Name, g.Description, g.Rule)
+	tag, err := s.db.Exec(ctx, `update groups set name = $2, description = $3, rule = $4, join_policy = $5 where id = $1`, g.ID, g.Name, g.Description, g.Rule, g.JoinPolicy)
 	if err != nil {
 		return conflict(err)
 	}

@@ -2,7 +2,7 @@ import { DescriptionList } from "@/components/ui/description-list";
 import { SectionTitle } from "@/components/ui/section-title";
 import { DetailHeaderSkeleton, PageSkeleton, SkeletonText, TableSkeleton } from "@/components/ui/skeleton";
 
-const facts = ["Membership", "Members", "Applications", "Source", "Created"];
+const facts = ["Membership", "Who can join", "Members", "Applications", "Source", "Created"];
 
 export default function Loading() {
   return (
@@ -12,7 +12,7 @@ export default function Loading() {
         <>
           <DetailHeaderSkeleton media="icon" />
           <DescriptionList
-            className="grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 xl:grid-cols-5"
+            className="grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 xl:grid-cols-6"
             items={facts.map((label) => ({ label, value: <SkeletonText chars={12} /> }))}
           />
         </>

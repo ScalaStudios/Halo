@@ -38,6 +38,15 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 			return fn(w, r, actor)
 		}))
 	}
+	signedIn := func(pattern string, fn handler) {
+		mux.Handle(pattern, httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
+			actor, _, err := httpx.RequireUser(r)
+			if err != nil {
+				return err
+			}
+			return fn(w, r, actor)
+		}))
+	}
 
 	route("GET /api/v1/users", readers, h.listUsers)
 	route("GET /api/v1/users/{id}", readers, h.getUser)
@@ -55,8 +64,15 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 
 	route("GET /api/v1/groups", readers, h.listGroups)
 	route("POST /api/v1/groups", []string{"user_admin"}, h.createGroup)
-	route("POST /api/v1/groups/{id}/members", []string{"user_admin"}, h.addMember)
-	route("DELETE /api/v1/groups/{id}/members/{userId}", []string{"user_admin"}, h.removeMember)
+	signedIn("POST /api/v1/groups/{id}/members", h.addMember)
+	signedIn("DELETE /api/v1/groups/{id}/members/{userId}", h.removeMember)
+	route("PUT /api/v1/groups/{id}/owners", []string{"user_admin"}, h.setGroupOwners)
+	signedIn("POST /api/v1/me/groups/{id}/join", h.joinGroup)
+	signedIn("POST /api/v1/groups/{id}/join-requests/{userId}/approve", h.decideJoinRequest(true))
+	signedIn("POST /api/v1/groups/{id}/join-requests/{userId}/deny", h.decideJoinRequest(false))
+	signedIn("GET /api/v1/me/owned-groups", h.myOwnedGroups)
+	signedIn("GET /api/v1/me/owned-groups/{id}", h.myOwnedGroup)
+	signedIn("GET /api/v1/me/joinable-groups", h.myJoinableGroups)
 	route("GET /api/v1/groups/{id}", readers, h.getGroup)
 	route("GET /api/v1/groups/{id}/members", readers, h.groupMembers)
 	route("PATCH /api/v1/groups/{id}", []string{"user_admin"}, h.updateGroup)

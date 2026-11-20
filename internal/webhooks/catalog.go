@@ -52,6 +52,8 @@ var catalog = []eventType{
 	{"domain.verify", "A domain was verified with a DNS TXT record"},
 	{"group.create", "A group was created"},
 	{"group.delete", "A group was deleted"},
+	{"group.join.deny", "A group owner declined a request to join a group"},
+	{"group.join.request", "A person asked to join a group"},
 	{"group.member.add", "A person was added to a group"},
 	{"group.member.remove", "A person was removed from a group"},
 	{"group.update", "A group's settings were changed"},
