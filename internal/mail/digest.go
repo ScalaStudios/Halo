@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"slices"
 	"strings"
 	"time"
 
 	"halo/internal/config"
+	"halo/internal/posture"
 	"halo/internal/store"
 )
 
@@ -47,7 +49,7 @@ func plural(n int, one, many string) string {
 	return fmt.Sprintf("%d %s", n, many)
 }
 
-func WeeklyDigest(to, name, organization string, d store.Digest, base string) (Message, error) {
+func WeeklyDigest(to, name, organization string, d store.Digest, fresh []posture.Check, base string) (Message, error) {
 	var text strings.Builder
 	row := func(label string, value int) { fmt.Fprintf(&text, "  %-28s %d\n", label, value) }
 	period := d.From.UTC().Format("2 January") + " – " + d.To.UTC().Format("2 January 2006")
@@ -63,6 +65,13 @@ func WeeklyDigest(to, name, organization string, d store.Digest, base string) (M
 		row(store.RoleLabels[r.Role], r.Members)
 	}
 	text.WriteString("\nReview risk events: " + base + "/admin/risk\nReview role holders: " + base + "/admin/roles")
+	if len(fresh) > 0 {
+		text.WriteString("\n\nNew security recommendations\n")
+		for _, c := range fresh {
+			text.WriteString("  " + c.Title + ". " + c.Detail + "\n")
+		}
+		text.WriteString("Review them: " + base + "/admin/recommendations")
+	}
 
 	riskNote, riskTone := "None this week", calm
 	if d.HighRiskEvents > 0 {
@@ -85,6 +94,8 @@ func WeeklyDigest(to, name, organization string, d store.Digest, base string) (M
 	headline := "All clear this week"
 	if d.OpenRiskEvents > 0 {
 		headline = plural(d.OpenRiskEvents, "risk event needs", "risk events need") + " review"
+	} else if len(fresh) > 0 {
+		headline = plural(len(fresh), "new security recommendation", "new security recommendations")
 	}
 	roles := make([]roleRow, len(d.Roles))
 	for i, r := range d.Roles {
@@ -110,6 +121,8 @@ func WeeklyDigest(to, name, organization string, d store.Digest, base string) (M
 		"Roles":              roles,
 		"RisksURL":           base + "/admin/risk",
 		"RolesURL":           base + "/admin/roles",
+		"Recommendations":    fresh,
+		"RecommendationsURL": base + "/admin/recommendations",
 		"ConsoleURL":         base + "/admin",
 	})
 	return Message{To: to, Subject: "Your weekly Halo security digest", Text: text.String(), HTML: html.String()}, err
@@ -124,10 +137,24 @@ func SendWeeklyDigest(ctx context.Context, m Mailer, cfg config.Config, st *stor
 	if err != nil {
 		return err
 	}
+	checks, err := posture.List(ctx, st, d.To)
+	if err != nil {
+		return err
+	}
+	open := posture.Open(checks)
+	ids := make([]string, len(open))
+	for i, c := range open {
+		ids[i] = c.ID
+	}
+	reported, err := st.SwapDigestRecommendations(ctx, ids)
+	if err != nil {
+		return err
+	}
+	fresh := slices.DeleteFunc(open, func(c posture.Check) bool { return slices.Contains(reported, c.ID) })
 	org := organization(ctx, cfg, st)
 	var failed []error
 	for _, u := range d.Recipients {
-		msg, err := WeeklyDigest(u.Email, u.Name, org, d, cfg.Issuer())
+		msg, err := WeeklyDigest(u.Email, u.Name, org, d, fresh, cfg.Issuer())
 		if err == nil {
 			err = m.Send(ctx, msg)
 		}

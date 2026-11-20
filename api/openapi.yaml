@@ -40,7 +40,7 @@ tags:
   - name: Applications
     description: OpenID Connect, OAuth and SAML applications, bookmarks, their secrets and group assignments, and the collections that group them in the account portal.
   - name: Activity
-    description: Sessions, the sign-in log, the audit log and the overview.
+    description: Sessions, the sign-in log, the audit log, the overview and security recommendations.
   - name: Access packages
     description: Bundles of groups that people can request.
   - name: Access requests
@@ -3134,6 +3134,71 @@ paths:
               schema: {$ref: '#/components/schemas/Overview'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /recommendations:
+    get:
+      tags: [Activity]
+      operationId: listRecommendations
+      summary: List security recommendations
+      description: 'Roles: any administrator. Every check Halo runs against the current settings, administrators, API keys, policies, applications and signing keys, in a fixed order, with dismissed checks included. The weekly digest lists checks that newly need action and are not dismissed.'
+      responses:
+        '200':
+          description: The checks.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Recommendation'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /recommendations/{id}/dismissal:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: string, examples: [password-everyone]}
+    put:
+      tags: [Activity]
+      operationId: dismissRecommendation
+      summary: Dismiss a recommendation
+      description: 'Roles: security administrator. Only a check that does not pass can be dismissed. It stays dismissed, also when it later passes and fails again, until it is restored. Records `recommendation.dismiss` with the reason in the audit log.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: {type: string, maxLength: 500, description: Why the recommendation does not apply. Shown to other administrators and recorded in the audit log.}
+      responses:
+        '200':
+          description: Every check, after the change.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Recommendation'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Activity]
+      operationId: restoreRecommendation
+      summary: Restore a dismissed recommendation
+      description: 'Roles: security administrator. Records `recommendation.restore` in the audit log.'
+      responses:
+        '200':
+          description: Every check, after the change.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Recommendation'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /access-packages:
     get:
       tags: [Access packages]
@@ -5883,6 +5948,30 @@ components:
             activeUsers: {type: integer}
             applications: {type: integer}
             activeApplications: {type: integer}
+    Recommendation:
+      type: object
+      required: [id, title, status, detail, href, action, dismissal]
+      properties:
+        id:
+          type: string
+          enum: [admin-sign-in, global-admins, global-admin-approval, emergency-access, password-everyone, lockout, session-lifetime, bot-protection, api-key-expiry, api-key-unused, report-only-policies, signing-key-age, unassigned-apps, log-retention]
+        title: {type: string, examples: [Limit password sign-in to the groups that need it]}
+        status: {type: string, enum: [pass, attention, fail], description: '`fail` for administrators without a passkey or security key, `attention` for every other check that does not pass.'}
+        detail: {type: string, description: 'What Halo found, naming the people, keys, policies or applications involved.'}
+        href: {type: string, description: The console page that fixes it., examples: [/admin/methods]}
+        action: {type: string, description: The label of the link to `href`., examples: [Open sign-in methods]}
+        dismissal:
+          oneOf:
+            - type: object
+              required: [reason, by, at]
+              properties:
+                reason: {type: string}
+                by:
+                  oneOf:
+                    - {$ref: '#/components/schemas/NamedRef'}
+                    - {type: 'null'}
+                at: {type: string, format: date-time}
+            - {type: 'null'}
     AccessPackage:
       type: object
       required: [id, name, description, owner, groups, approvers, maxDays, requireJustification, archived, pendingRequests, activeGrants, createdAt]

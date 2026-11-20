@@ -112,6 +112,9 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("GET /api/v1/sign-ins", readers, h.listSignIns)
 	route("GET /api/v1/audit", readers, h.listAudit)
 	route("GET /api/v1/overview", readers, h.overview)
+	route("GET /api/v1/recommendations", readers, h.listRecommendations)
+	route("PUT /api/v1/recommendations/{id}/dismissal", []string{"security_admin"}, h.dismissRecommendation)
+	route("DELETE /api/v1/recommendations/{id}/dismissal", []string{"security_admin"}, h.restoreRecommendation)
 
 	route("GET /api/v1/signing-keys", readers, h.listSigningKeys)
 	route("POST /api/v1/signing-keys/rotate", nil, h.rotateSigningKey)

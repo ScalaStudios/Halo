@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/mail"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -165,6 +166,15 @@ func TestWeeklyDigestGoesToSecurityAdminsOncePerWeek(t *testing.T) {
 	if err := st.RecordRiskEvent(ctx, store.RiskEvent{Type: "risky-network", Level: "high", UserID: &admin.ID}); err != nil {
 		t.Fatal(err)
 	}
+	if err := st.SetMethodEnabled(ctx, "password", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DismissRecommendation(ctx, "global-admin-approval", "Only one administrator until we hire", admin.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SwapDigestRecommendations(ctx, []string{"admin-sign-in"}); err != nil {
+		t.Fatal(err)
+	}
 	for range 2 {
 		if err := SendWeeklyDigest(ctx, o, o.cfg, st); err != nil {
 			t.Fatal(err)
@@ -198,9 +208,18 @@ func TestWeeklyDigestGoesToSecurityAdminsOncePerWeek(t *testing.T) {
 	if !strings.Contains(parts["text/plain"], "High-risk events             1") {
 		t.Fatalf("text part:\n%s", parts["text/plain"])
 	}
-	for _, want := range []string{"1 risk event needs review", "Hi Uma,", "Fernway Systems", "1 high risk", "Global administrator", "https://auth.example.com/admin/risk"} {
+	for _, want := range []string{"1 risk event needs review", "Hi Uma,", "Fernway Systems", "1 high risk", "Global administrator", "https://auth.example.com/admin/risk", "Limit password sign-in to the groups that need it", "https://auth.example.com/admin/recommendations"} {
 		if !strings.Contains(parts["text/html"], want) {
 			t.Fatalf("html part missing %q:\n%s", want, parts["text/html"])
 		}
+	}
+	for _, part := range parts {
+		if !strings.Contains(part, "Turn on bot protection") || strings.Contains(part, "Give every administrator a passkey") || strings.Contains(part, "Require approval to grant global administrator") {
+			t.Fatalf("only new, undismissed recommendations:\n%s", part)
+		}
+	}
+	reported, err := st.SwapDigestRecommendations(ctx, nil)
+	if err != nil || !slices.Equal(reported, []string{"admin-sign-in", "password-everyone", "bot-protection"}) {
+		t.Fatalf("reported: %v %v", reported, err)
 	}
 }

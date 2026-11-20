@@ -11,7 +11,7 @@ import (
 	"halo/internal/store"
 )
 
-const CLIClientID = "halo-cli"
+const CLIClientID = store.CLIClientID
 
 type client struct {
 	app     store.Application
