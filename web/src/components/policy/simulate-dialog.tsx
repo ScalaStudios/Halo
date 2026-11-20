@@ -11,7 +11,7 @@ import { cn } from "@/lib/cn";
 import { METHOD, RISK } from "@/lib/labels";
 import type { DeviceTrust, Simulation } from "@/lib/policy-types";
 import type { MethodKind } from "@/lib/types";
-import { EFFECT, HALO_APP, TRUST, policyState } from "./shared";
+import { EFFECT, HALO_APP, POLICY_METHODS, TRUST, policyState } from "./shared";
 
 type Option = { id: string; name: string };
 
@@ -136,7 +136,7 @@ export function SimulateDialog({ users, applications }: { users: Option[]; appli
           <Field label="Sign-in method">
             {(props) => (
               <Select {...props} value={method} onChange={(event) => setMethod(event.target.value as MethodKind)}>
-                {(Object.keys(METHOD) as MethodKind[]).map((kind) => (
+                {POLICY_METHODS.map((kind) => (
                   <option key={kind} value={kind}>
                     {METHOD[kind].label}
                   </option>

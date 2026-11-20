@@ -72,7 +72,7 @@ func (h *handler) codeSignIn(w http.ResponseWriter, r *http.Request, method stri
 	} else if method == "magic-link" {
 		reason, err = h.useEmailCode(ctx, u.ID, in.Code)
 	} else if method == "access-pass" {
-		reason, err = h.useAccessPass(ctx, u.ID, in.Code)
+		reason, err = h.matchAccessPass(ctx, u.ID, in.Code)
 	} else if err = h.st.UseRecoveryCode(ctx, u.ID, h.st.RecoveryCodeHash(normalizeRecoveryCode(in.Code))); errors.Is(err, store.ErrNotFound) {
 		reason, err = "The recovery code did not match an unused code.", nil
 	}
@@ -82,7 +82,11 @@ func (h *handler) codeSignIn(w http.ResponseWriter, r *http.Request, method stri
 	if reason != "" {
 		return h.reject(r, a, reason, mismatch)
 	}
-	return h.finish(w, r, a, nil, nil)
+	var extra func(*store.Store) error
+	if method == "access-pass" {
+		extra = useAccessPass(ctx, u.ID, in.Code)
+	}
+	return h.finish(w, r, a, nil, extra)
 }
 
 func (h *handler) lockout(r *http.Request, a attempt, settings store.Settings, guesses string) error {

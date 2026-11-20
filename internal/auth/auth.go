@@ -213,7 +213,7 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 		}
 	}
 	if a.method == "access-pass" {
-		return h.enrollWithPass(w, r, a)
+		return h.enrollWithPass(w, r, a, extra)
 	}
 	redirect, token, ceremony := "/account", "", ""
 	err = h.st.Tx(ctx, func(tx *store.Store) error {

@@ -245,12 +245,16 @@ export function AccessPassButton({ user }: { user: UserRef }) {
   const [uses, setUses] = useState(1);
   const [created, setCreated] = useState<AccessPass | null>(null);
 
+  function close() {
+    setOpen(false);
+    setCreated(null);
+  }
+
   return (
     <>
       <Button
         size="sm"
         onClick={() => {
-          setCreated(null);
           clearError();
           setOpen(true);
         }}
@@ -260,7 +264,7 @@ export function AccessPassButton({ user }: { user: UserRef }) {
       </Button>
       <Dialog
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={close}
         error={errorFor("pass")}
         title={created ? "Temporary access pass" : "Create a temporary access pass"}
         description={
@@ -270,12 +274,12 @@ export function AccessPassButton({ user }: { user: UserRef }) {
         }
         footer={
           created ? (
-            <Button variant="primary" onClick={() => setOpen(false)}>
+            <Button variant="primary" onClick={close}>
               Done
             </Button>
           ) : (
             <>
-              <Button variant="secondary" onClick={() => setOpen(false)}>
+              <Button variant="secondary" onClick={close}>
                 Cancel
               </Button>
               <Button variant="primary" type="submit" form={formId} loading={pending === "pass"}>

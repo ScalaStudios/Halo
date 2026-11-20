@@ -1,6 +1,7 @@
 import { Ban, Check, FileCheck, KeyRound, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/badge";
 import { pluralize } from "@/lib/format";
+import { METHOD } from "@/lib/labels";
 import type {
   AccessPolicy,
   DeviceCondition,
@@ -74,6 +75,8 @@ export const METHOD_PLURAL: Record<MethodKind, string> = {
   federated: "identity providers",
   "access-pass": "temporary access passes",
 };
+
+export const POLICY_METHODS = (Object.keys(METHOD) as MethodKind[]).filter((kind) => kind !== "access-pass");
 
 export type Names = {
   groups: Record<string, string>;

@@ -179,12 +179,22 @@ func (s *Store) SetUserRoles(ctx context.Context, userID string, roles []string)
 
 func (s *Store) DeleteAuthenticationMethods(ctx context.Context, userID string) error {
 	return s.Tx(ctx, func(tx *Store) error {
-		for _, table := range []string{"webauthn_credentials", "totp_secrets", "recovery_codes", "passwords", "access_passes"} {
+		for _, table := range []string{"webauthn_credentials", "totp_secrets", "recovery_codes", "passwords"} {
 			if _, err := tx.db.Exec(ctx, `delete from `+table+` where user_id = $1`, userID); err != nil {
 				return err
 			}
 		}
-		return nil
+		return tx.deleteAccessPass(ctx, userID)
+	})
+}
+
+func (s *Store) deleteAccessPass(ctx context.Context, userID string) error {
+	return s.Tx(ctx, func(tx *Store) error {
+		if _, err := tx.db.Exec(ctx, `delete from access_passes where user_id = $1`, userID); err != nil {
+			return err
+		}
+		_, err := tx.db.Exec(ctx, `update enrollment_tokens set used_at = now() where user_id = $1 and purpose = 'access-pass' and used_at is null`, userID)
+		return err
 	})
 }
 
@@ -198,7 +208,10 @@ func (s *Store) DeleteMethod(ctx context.Context, userID, methodID string) error
 			return nil
 		}
 	}
-	table := map[string]string{"recovery-codes": "recovery_codes", "password": "passwords", "access-pass": "access_passes"}[methodID]
+	if methodID == "access-pass" {
+		return s.deleteAccessPass(ctx, userID)
+	}
+	table := map[string]string{"recovery-codes": "recovery_codes", "password": "passwords"}[methodID]
 	if table == "" {
 		return ErrNotFound
 	}
