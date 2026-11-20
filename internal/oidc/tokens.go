@@ -82,6 +82,9 @@ func (s *storage) grant(ctx context.Context, req op.TokenRequest) (store.OIDCTok
 	case *op.DeviceAuthorizationState:
 		t.SessionID, err = s.deviceSession(ctx, app)
 	case *refreshRequest:
+		if t.AuthTime != nil && app.ReauthRequired(*t.AuthTime) {
+			return t, app, oidc.ErrInvalidGrant().WithDescription("The person signed in longer ago than the application's sign-in frequency allows. Send them to sign in again.")
+		}
 		if t.SessionID != nil {
 			err = s.st.TouchClientSession(ctx, *t.SessionID, time.Now().Add(seconds(app.TokenPolicy.RefreshTokenTTL)))
 		}

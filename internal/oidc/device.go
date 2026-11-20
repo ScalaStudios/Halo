@@ -23,6 +23,7 @@ var (
 	errDeviceStrongest = httpx.Fail(http.StatusForbidden, "ERR_STRONGER_AUTH_REQUIRED", "This application requires a passkey or security key. Sign out, sign in with one of those, then approve again.")
 	errDeviceSessions  = httpx.Fail(http.StatusForbidden, "ERR_SESSION_LIMIT", "You're already signed in from the command line on as many devices as your organization allows. Run halo logout on a device you no longer use, or ask your administrator to end one of your sessions, then approve again.")
 	errDeviceTerms     = httpx.Fail(http.StatusForbidden, "ERR_TERMS_REQUIRED", "Your organization asks you to accept its terms of use first. Accept them, then approve again.")
+	errDeviceReauth    = httpx.Fail(http.StatusUnauthorized, "ERR_REAUTH_REQUIRED", "This application asks you to sign in again before you approve it.")
 )
 
 func ensureCLI(ctx context.Context, st *store.Store) error {
@@ -163,6 +164,9 @@ func (h *deviceHandlers) decide(approve bool) httpx.HandlerFunc {
 		event := store.SignInEvent{Result: "interrupted", Method: p.session.Method, UserID: &p.user.ID, Email: p.user.Email, AppID: &p.app.ID, IP: httpx.ClientIP(r), Device: browser + " · " + os,
 			Reason: "Denied on the device confirmation page."}
 		if approve {
+			if p.app.ReauthRequired(p.session.CreatedAt) {
+				return errDeviceReauth
+			}
 			reason, refusal, err := h.check(r, p, &event)
 			if err != nil {
 				return err

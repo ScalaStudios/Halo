@@ -288,6 +288,8 @@ func TestUpdateApplication(t *testing.T) {
 		{"tokenPolicy": map[string]any{"refreshTokenTtl": 90*86400 + 1}},
 		{"tokenPolicy": map[string]any{"refreshTokenTtl": -1}},
 		{"tokenPolicy": map[string]any{"idTokenAlg": "HS256"}},
+		{"maxAuthAge": 59},
+		{"maxAuthAge": 90*86400 + 1},
 		{"owner": "usr_missing"},
 	} {
 		if rec := call(t, h, admin, "PATCH", path, body); rec.Code != 422 {
@@ -336,6 +338,11 @@ func TestUpdateApplication(t *testing.T) {
 		t.Fatal(err)
 	}
 	expect(t, call(t, h, admin, "PATCH", "/api/v1/applications/"+spa.ID, map[string]any{"tokenPolicy": map[string]any{"exchange": true}}), 422)
+	service, err := st.CreateApplication(ctx, store.NewApplication{Name: "Billing sync", Protocol: "oidc", Type: "service"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, call(t, h, admin, "PATCH", "/api/v1/applications/"+service.ID, map[string]any{"maxAuthAge": 3600}), 422)
 
 	ops, err := st.CreateGroup(ctx, store.NewGroup{Name: "Ops", Kind: "assigned"})
 	if err != nil {
@@ -384,6 +391,14 @@ func TestUpdateApplication(t *testing.T) {
 	expect(t, rec, 200)
 	if got := decode[store.Application](t, rec); got.Name != "Slack Enterprise" || !slices.Equal(got.RedirectURIs, []string{"https://example.slack.com/sso/saml"}) {
 		t.Fatalf("saml app: %+v", got)
+	}
+	rec = call(t, h, admin, "PATCH", "/api/v1/applications/"+saml.ID, map[string]any{"maxAuthAge": 3600})
+	expect(t, rec, 200)
+	if got := decode[store.Application](t, rec); got.MaxAuthAge != 3600 {
+		t.Fatalf("sign-in frequency not saved: %+v", got)
+	}
+	if e := lastAudit(t, st); e.Action != "application.update" || e.Summary != "Updated sign-in frequency" || e.TargetID != saml.ID {
+		t.Fatalf("sign-in frequency audit: %+v", e)
 	}
 
 	samlPath := "/api/v1/applications/" + saml.ID + "/saml"

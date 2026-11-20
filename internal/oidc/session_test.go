@@ -256,6 +256,53 @@ func TestPromptNone(t *testing.T) {
 	}
 }
 
+func TestSignInFrequency(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx := context.Background()
+	wiki, err := h.st.CreateApplication(ctx, store.NewApplication{Name: "Wiki", Protocol: "oidc", Type: "web", RedirectURIs: []string{callback}, GroupIDs: []string{h.group.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, token := h.session(h.user, "passkey")
+	time.Sleep(1100 * time.Millisecond)
+	limited := h.app
+	limited.MaxAuthAge = 1
+	if err := h.st.UpdateApplication(ctx, limited); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := h.silent(token, nil).Query().Get("error"); got != "login_required" {
+		t.Fatalf("silent sign-in past the sign-in frequency: %s", got)
+	}
+	if location := h.silent(token, url.Values{"client_id": {wiki.ClientID}}); location.Query().Get("code") == "" {
+		t.Fatalf("an application without a sign-in frequency keeps single sign-on: %s", location)
+	}
+
+	stored := func(clientID string, extra url.Values) *int {
+		t.Helper()
+		q := url.Values{"client_id": {clientID}, "redirect_uri": {callback}, "response_type": {"code"}, "scope": {"openid"}, "state": {"st-1"},
+			"code_challenge": {oidc.NewSHACodeChallenge(pkceSecret)}, "code_challenge_method": {"S256"}}
+		for k, v := range extra {
+			q[k] = v
+		}
+		status, location := h.get("/oauth2/authorize?"+q.Encode(), token)
+		req, err := h.st.GetAuthRequest(ctx, location.Query().Get("authRequest"))
+		if status != http.StatusFound || location.Path != "/sign-in" || err != nil {
+			t.Fatalf("authorize: %d %s %v", status, location, err)
+		}
+		return req.MaxAge
+	}
+	if got := stored(h.app.ClientID, nil); got == nil || *got != 1 {
+		t.Fatalf("the sign-in frequency becomes the request's max_age: %v", got)
+	}
+	if got := stored(h.app.ClientID, url.Values{"max_age": {"0"}}); got == nil || *got != 0 {
+		t.Fatalf("a shorter max_age from the application wins: %v", got)
+	}
+	if got := stored(wiki.ClientID, nil); got != nil {
+		t.Fatalf("an application without a sign-in frequency sets no max_age: %v", *got)
+	}
+}
+
 func TestPasswordAMR(t *testing.T) {
 	h := newHarness(t, nil)
 	for _, c := range []struct {

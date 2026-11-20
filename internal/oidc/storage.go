@@ -132,6 +132,9 @@ func (s *storage) CreateAuthRequest(ctx context.Context, req *oidc.AuthRequest, 
 		age := int(*req.MaxAge)
 		maxAge = &age
 	}
+	if app.MaxAuthAge > 0 && (maxAge == nil || *maxAge > app.MaxAuthAge) {
+		maxAge = &app.MaxAuthAge
+	}
 	a := store.AuthRequest{
 		ID:                  id.New("are"),
 		ClientID:            req.ClientID,

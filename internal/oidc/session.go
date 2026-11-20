@@ -35,7 +35,7 @@ func (s *storage) silent(ctx context.Context, a *store.AuthRequest, app store.Ap
 	case hintSubject != "" && hintSubject != u.ID:
 		return oidc.ErrLoginRequired().WithDescription("A different user is signed in to Halo than the one in id_token_hint.")
 	case a.MaxAge != nil && time.Since(sess.CreatedAt) > time.Duration(*a.MaxAge)*time.Second:
-		return oidc.ErrLoginRequired().WithDescription("The Halo session is older than max_age allows.")
+		return oidc.ErrLoginRequired().WithDescription("The Halo session is older than max_age or the application's sign-in frequency allows.")
 	}
 	_, os, browser := store.ParseUserAgent(r.UserAgent())
 	event := store.SignInEvent{Result: "failure", Method: sess.Method, UserID: &u.ID, Email: u.Email, AppID: &app.ID, IP: httpx.ClientIP(r), Device: browser + " · " + os}

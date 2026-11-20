@@ -99,6 +99,7 @@ export type Application = {
   signIns7d: number;
   failureRate7d: number;
   tokenPolicy: { accessTokenTtl: number; refreshTokenTtl: number; idTokenTtl: number; idTokenAlg: SigningAlgorithm; rotation: boolean; exchange: boolean; exchangeFrom: string[] };
+  maxAuthAge: number;
   setupGuide: "grafana" | "forgejo" | "aether" | "generic-oidc" | "generic-saml" | "kubernetes" | "aws-iam-identity-center" | "slack";
   logoUrl: string | null;
   registeredDynamically: boolean;

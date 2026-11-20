@@ -339,6 +339,21 @@ func TestIdentityProvider(t *testing.T) {
 	if rec := call("GET", "/saml/launch/app_missing", passkey, nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("launching a missing application: %d", rec.Code)
 	}
+
+	time.Sleep(1100 * time.Millisecond)
+	limited, err := st.GetApplication(ctx, app.ID)
+	must(err)
+	limited.MaxAuthAge = 1
+	must(st.UpdateApplication(ctx, limited))
+	stale := call("GET", redirect.String(), passkey, nil)
+	location, _ = url.Parse(stale.Header().Get("Location"))
+	next = location.Query().Get("next")
+	if stale.Code != http.StatusSeeOther || location.Path != "/sign-in" || !strings.HasPrefix(next, "/saml/resume?id=srq_") {
+		t.Fatalf("a session past the sign-in frequency must sign in again: %d %q", stale.Code, location)
+	}
+	if a, _, _ := assertion(call("GET", next, session(ada.ID, "passkey"), nil), sp, request.ID); a.Subject.NameID.Value != ada.Email {
+		t.Fatalf("after signing in again: %+v", a.Subject.NameID)
+	}
 }
 
 func TestParseMetadata(t *testing.T) {

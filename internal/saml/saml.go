@@ -443,6 +443,10 @@ func (f *flow) GetSession(w http.ResponseWriter, r *http.Request, req *saml.IdpA
 		f.refuse(w, r, "User is not assigned to this application.", "You don't have access to "+f.app.Name, "Ask your administrator to assign "+f.app.Name+" to you, then open it again.", "")
 		return nil
 	}
+	if f.app.ReauthRequired(f.session.CreatedAt) {
+		f.signIn(w, r, req)
+		return nil
+	}
 	decision, err := f.policy.Evaluate(ctx, access.Input{User: f.user, App: &f.app, Method: f.session.Method, IP: httpx.ClientIP(r), UserAgent: r.UserAgent(), DeviceToken: httpx.DeviceToken(r), Session: &f.session})
 	if err != nil {
 		internal(w, r, err)

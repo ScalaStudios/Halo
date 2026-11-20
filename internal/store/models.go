@@ -105,12 +105,17 @@ type Application struct {
 	SignIns7d      int          `json:"signIns7d"`
 	FailureRate7d  float64      `json:"failureRate7d"`
 	TokenPolicy    TokenPolicy  `json:"tokenPolicy"`
+	MaxAuthAge     int          `json:"maxAuthAge"`
 	SetupGuide     string       `json:"setupGuide"`
 	LogoURL        *string      `json:"logoUrl"`
 
 	RegisteredDynamically bool   `json:"registeredDynamically"`
 	AwaitingApproval      bool   `json:"awaitingApproval"`
 	RegistrationHash      []byte `json:"-"`
+}
+
+func (a Application) ReauthRequired(authTime time.Time) bool {
+	return a.MaxAuthAge > 0 && time.Since(authTime) > time.Duration(a.MaxAuthAge)*time.Second
 }
 
 type Session struct {
