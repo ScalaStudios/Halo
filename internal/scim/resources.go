@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"halo/internal/httpx"
+	"halo/internal/scim/filter"
 	"halo/internal/store"
 )
 
@@ -278,24 +279,25 @@ func (s *server) checkManager(r *http.Request, managerID *string, self string) e
 	return err
 }
 
+func compile(r *http.Request, schema filter.Schema) (string, []any, error) {
+	where, args, err := filter.Compile(r.URL.Query().Get("filter"), schema)
+	if err != nil {
+		return "", nil, fail(http.StatusBadRequest, "invalidFilter", err.Error())
+	}
+	return where, args, nil
+}
+
 func (s *server) listUsers(w http.ResponseWriter, r *http.Request, _ store.User) error {
-	attr, value, err := parseFilter(r.URL.Query().Get("filter"), `userName eq "sam@example.com"`, "username", "emails.value", "emails", "externalid")
+	where, args, err := compile(r, store.SCIMUserFilter)
 	if err != nil {
 		return err
 	}
 	start, count := paging(r)
-	resources := []User{}
-	if attr != "" && value == "" {
-		return list(w, 0, start, resources)
-	}
-	email, externalID := value, ""
-	if attr == "externalid" {
-		email, externalID = "", value
-	}
-	users, total, err := s.st.SCIMUsers(r.Context(), email, externalID, start-1, count)
+	users, total, err := s.st.SCIMUsers(r.Context(), where, args, start-1, count)
 	if err != nil {
 		return err
 	}
+	resources := []User{}
 	for _, u := range users {
 		resources = append(resources, s.user(u))
 	}
@@ -604,23 +606,16 @@ func names(list []string) string {
 }
 
 func (s *server) listGroups(w http.ResponseWriter, r *http.Request, _ store.User) error {
-	attr, value, err := parseFilter(r.URL.Query().Get("filter"), `displayName eq "Engineering"`, "displayname", "externalid")
+	where, args, err := compile(r, store.SCIMGroupFilter)
 	if err != nil {
 		return err
 	}
 	start, count := paging(r)
-	resources := []group{}
-	if attr != "" && value == "" {
-		return list(w, 0, start, resources)
-	}
-	name, externalID := value, ""
-	if attr == "externalid" {
-		name, externalID = "", value
-	}
-	groups, total, err := s.st.SCIMGroups(r.Context(), name, externalID, start-1, count)
+	groups, total, err := s.st.SCIMGroups(r.Context(), where, args, start-1, count)
 	if err != nil {
 		return err
 	}
+	resources := []group{}
 	withMembers := !strings.Contains(strings.ToLower(r.URL.Query().Get("excludedAttributes")), "members")
 	for _, g := range groups {
 		resources = append(resources, s.group(g, withMembers))

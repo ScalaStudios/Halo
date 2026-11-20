@@ -2,7 +2,11 @@ package store
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"time"
+
+	"halo/internal/scim/filter"
 )
 
 type SCIMUser struct {
@@ -37,19 +41,65 @@ const scimUserQuery = `select u.id, u.email, u.name, u.title, u.department, u.st
 	exists (select 1 from user_roles r where r.user_id = u.id) or exists (select 1 from role_eligibilities e where e.user_id = u.id), u.created_at, u.updated_at
 	from users u left join users m on m.id = u.manager_id where u.kind = 'person' and u.status <> 'deprovisioned'`
 
+var SCIMUserFilter = filter.Schema{
+	Prefixes: map[string]string{"urn:ietf:params:scim:schemas:core:2.0:user:": "", "urn:ietf:params:scim:schemas:extension:enterprise:2.0:user:": "enterprise:"},
+	Attrs: map[string]filter.Attr{
+		"id":                             {Expr: "u.id", Exact: true},
+		"externalid":                     {Expr: "u.external_id", Exact: true},
+		"username":                       {Expr: "u.email"},
+		"emails":                         {Expr: "u.email"},
+		"emails.value":                   {Expr: "u.email"},
+		"emails.type":                    {Expr: "'work'"},
+		"emails.primary":                 {Expr: "true", Kind: filter.Boolean},
+		"displayname":                    {Expr: "u.name"},
+		"name.formatted":                 {Expr: "u.name"},
+		"name.givenname":                 {Expr: "split_part(u.name, ' ', 1)"},
+		"name.familyname":                {Expr: "substr(u.name, length(split_part(u.name, ' ', 1)) + 2)"},
+		"title":                          {Expr: "u.title"},
+		"active":                         {Expr: "u.status <> 'suspended'", Kind: filter.Boolean},
+		"meta.created":                   {Expr: "u.created_at", Kind: filter.DateTime},
+		"meta.lastmodified":              {Expr: "u.updated_at", Kind: filter.DateTime},
+		"enterprise:department":          {Expr: "u.department"},
+		"enterprise:manager":             {Expr: "u.manager_id", Exact: true},
+		"enterprise:manager.value":       {Expr: "u.manager_id", Exact: true},
+		"enterprise:manager.displayname": {Expr: "m.name"},
+	},
+}
+
+var SCIMGroupFilter = filter.Schema{
+	Prefixes: map[string]string{"urn:ietf:params:scim:schemas:core:2.0:group:": ""},
+	Multi: map[string]string{"members": `exists (select 1 from group_members gm join users mu on mu.id = gm.user_id
+		where gm.group_id = g.id and mu.kind = 'person' and mu.status <> 'deprovisioned' and %s)`},
+	Attrs: map[string]filter.Attr{
+		"id":                {Expr: "g.id", Exact: true},
+		"externalid":        {Expr: "g.external_id", Exact: true},
+		"displayname":       {Expr: "g.name"},
+		"meta.created":      {Expr: "g.created_at", Kind: filter.DateTime},
+		"meta.lastmodified": {Expr: "g.created_at", Kind: filter.DateTime},
+		"members":           {Expr: "gm.user_id", Exact: true},
+		"members.value":     {Expr: "gm.user_id", Exact: true},
+		"members.display":   {Expr: "mu.name"},
+	},
+}
+
 func scanSCIMUser(row rowScanner) (SCIMUser, error) {
 	var u SCIMUser
 	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Title, &u.Department, &u.Status, &u.ManagerID, &u.ManagerName, &u.ExternalID, &u.Privileged, &u.CreatedAt, &u.UpdatedAt)
 	return u, err
 }
 
-func (s *Store) SCIMUsers(ctx context.Context, email, externalID string, offset, limit int) ([]SCIMUser, int, error) {
-	where := ` and ($1 = '' or lower(u.email) = lower($1)) and ($2 = '' or u.external_id = $2)`
+func scimPage(order string, args []any, offset, limit int) (string, []any) {
+	return fmt.Sprintf(` order by %s offset $%d limit $%d`, order, len(args)+1, len(args)+2), append(slices.Clip(args), offset, limit)
+}
+
+func (s *Store) SCIMUsers(ctx context.Context, filter string, args []any, offset, limit int) ([]SCIMUser, int, error) {
+	query := scimUserQuery + ` and (` + filter + `)`
 	var total int
-	if err := s.db.QueryRow(ctx, `select count(*) from (`+scimUserQuery+where+`) matched`, email, externalID).Scan(&total); err != nil {
+	if err := s.db.QueryRow(ctx, `select count(*) from (`+query+`) matched`, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.db.Query(ctx, scimUserQuery+where+` order by u.created_at, u.id offset $3 limit $4`, email, externalID, offset, limit)
+	page, pageArgs := scimPage("u.created_at, u.id", args, offset, limit)
+	rows, err := s.db.Query(ctx, query+page, pageArgs...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -101,13 +151,14 @@ func (s *Store) SCIMPeople(ctx context.Context, ids []string) (map[string]string
 
 const scimGroupQuery = `select g.id, g.name, g.external_id, g.created_at from groups g where g.kind = 'assigned'`
 
-func (s *Store) SCIMGroups(ctx context.Context, name, externalID string, offset, limit int) ([]SCIMGroup, int, error) {
-	where := ` and ($1 = '' or lower(g.name) = lower($1)) and ($2 = '' or g.external_id = $2)`
+func (s *Store) SCIMGroups(ctx context.Context, filter string, args []any, offset, limit int) ([]SCIMGroup, int, error) {
+	query := scimGroupQuery + ` and (` + filter + `)`
 	var total int
-	if err := s.db.QueryRow(ctx, `select count(*) from (`+scimGroupQuery+where+`) matched`, name, externalID).Scan(&total); err != nil {
+	if err := s.db.QueryRow(ctx, `select count(*) from (`+query+`) matched`, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.db.Query(ctx, scimGroupQuery+where+` order by g.created_at, g.id offset $3 limit $4`, name, externalID, offset, limit)
+	page, pageArgs := scimPage("g.created_at, g.id", args, offset, limit)
+	rows, err := s.db.Query(ctx, query+page, pageArgs...)
 	if err != nil {
 		return nil, 0, err
 	}

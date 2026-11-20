@@ -2,6 +2,7 @@ package scim_test
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -166,7 +168,7 @@ func TestUserLifecycle(t *testing.T) {
 	if resources, _ := body["Resources"].([]any); rec.Code != 200 || body["totalResults"] != float64(0) || resources == nil || len(resources) != 0 {
 		t.Fatalf("empty filter result: %s", rec.Body)
 	}
-	rec, body = e.call("GET", "/scim/v2/Users?filter="+url.QueryEscape(`title eq "Engineer"`), nil)
+	rec, body = e.call("GET", "/scim/v2/Users?filter="+url.QueryEscape(`nickName eq "Engineer"`), nil)
 	e.expectError(rec, body, 400, "invalidFilter")
 	rec, body = e.call("GET", "/scim/v2/Users?startIndex=2&count=1", nil)
 	if resources, _ := body["Resources"].([]any); rec.Code != 200 || body["totalResults"] != float64(2) || body["startIndex"] != float64(2) || len(resources) != 1 {
@@ -380,7 +382,7 @@ func TestAuthenticationDiscoveryAndGuards(t *testing.T) {
 
 	rec, body = e.call("GET", "/scim/v2/ServiceProviderConfig", nil)
 	e.expect(rec, 200)
-	if body["patch"].(map[string]any)["supported"] != true || body["bulk"].(map[string]any)["supported"] != false {
+	if body["patch"].(map[string]any)["supported"] != true || body["bulk"].(map[string]any)["supported"] != true || body["bulk"].(map[string]any)["maxOperations"] != float64(100) {
 		t.Fatalf("service provider config: %s", rec.Body)
 	}
 	rec, body = e.call("GET", "/scim/v2/ResourceTypes", nil)
@@ -414,4 +416,187 @@ func TestAuthenticationDiscoveryAndGuards(t *testing.T) {
 	_, weak, _ := e.st.CreateAPIKey(ctx, noRole.ID, "Reporting", []string{"scim"}, nil, nil)
 	rec, body = e.as("Bearer "+weak, "GET", "/scim/v2/Users", nil)
 	e.expectError(rec, body, 403, "")
+}
+
+func (e *env) names(path, filter string) string {
+	e.t.Helper()
+	rec, body := e.call("GET", path+"?filter="+url.QueryEscape(filter), nil)
+	e.expect(rec, 200)
+	resources, _ := body["Resources"].([]any)
+	if body["totalResults"] != float64(len(resources)) {
+		e.t.Fatalf("%s: totalResults %v for %d resources", filter, body["totalResults"], len(resources))
+	}
+	names := []string{}
+	for _, r := range resources {
+		res := r.(map[string]any)
+		name, _ := res["userName"].(string)
+		names = append(names, cmp.Or(name, res["displayName"].(string)))
+	}
+	slices.Sort(names)
+	return strings.Join(names, ",")
+}
+
+func TestFilters(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	ada, err := e.st.CreateUser(ctx, store.NewUser{Email: "ada@example.com", Name: "Ada Lovelace", Title: "Engineer", Department: "Engineering", Status: "active"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob := e.person("bob@example.org")
+	carol := e.person("carol@example.com")
+	if err := errors.Join(e.st.SetUserStatus(ctx, bob.ID, "suspended"), e.st.SetUserStatus(ctx, carol.ID, "deprovisioned")); err != nil {
+		t.Fatal(err)
+	}
+	ada0, bob0 := "ada@example.com", "bob@example.org"
+	for filter, want := range map[string]string{
+		`userName eq "ADA@example.com" and active eq true`:                                       ada0,
+		`userName ew "example.org" or userName sw "ada"`:                                         ada0 + "," + bob0,
+		`not (active eq true)`:                                                                   bob0,
+		`active eq false or userName pr`:                                                         ada0 + "," + bob0,
+		`emails[type eq "work" and value co "ADA"]`:                                              ada0,
+		`emails[type eq "work"].value eq "bob@example.org"`:                                      bob0,
+		`urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:department eq "engineering"`: ada0,
+		`externalId ne "x" and not (name.familyName eq "Lovelace")`:                              bob0,
+		`meta.created gt "2000-01-01T00:00:00Z" and (title eq "Engineer" or title eq "Nobody")`:  ada0,
+		`id eq "` + bob.ID + `"`:                                                                 bob0,
+		`userName eq "x' or '1'='1"`:                                                             "",
+		`userName eq "ada@example.com\" or \"1\"=\"1"`:                                           "",
+		`userName co "%" or userName sw "_"`:                                                     "",
+	} {
+		if got := e.names("/scim/v2/Users", filter); got != want {
+			t.Errorf("%s: got %q, want %q", filter, got, want)
+		}
+	}
+	for _, filter := range []string{`userName eq`, `nickName eq "x"`, `active eq "yes"`, `userName eq "a" and`, `(userName pr`, `userName) or 1=1 --`, `title gt 3`, `meta.created lt "soon"`} {
+		rec, body := e.call("GET", "/scim/v2/Users?filter="+url.QueryEscape(filter), nil)
+		e.expectError(rec, body, 400, "invalidFilter")
+	}
+
+	for name, members := range map[string][]string{"Engineers": {ada.ID}, "Ops": {bob.ID}, "Empty": nil} {
+		refs := []map[string]any{}
+		for _, id := range members {
+			refs = append(refs, map[string]any{"value": id})
+		}
+		rec, _ := e.call("POST", "/scim/v2/Groups", map[string]any{"displayName": name, "members": refs})
+		e.expect(rec, 201)
+	}
+	rule := `user.department == "Engineering"`
+	if _, err := e.st.CreateGroup(ctx, store.NewGroup{Name: "Engineering", Kind: "dynamic", Rule: &rule}); err != nil {
+		t.Fatal(err)
+	}
+	for filter, want := range map[string]string{
+		`members[value eq "` + ada.ID + `"]`:                               "Engineers",
+		`members.value eq "` + bob.ID + `" or displayName sw "eng"`:        "Engineers,Ops",
+		`members[display co "lovelace"]`:                                   "Engineers",
+		`not (members pr)`:                                                 "Empty",
+		`members eq "` + bob.ID + `" and not (displayName eq "Engineers")`: "Ops",
+	} {
+		if got := e.names("/scim/v2/Groups", filter); got != want {
+			t.Errorf("%s: got %q, want %q", filter, got, want)
+		}
+	}
+	rec, body := e.call("GET", "/scim/v2/Groups?filter="+url.QueryEscape(`members[value eq "x"`), nil)
+	e.expectError(rec, body, 400, "invalidFilter")
+}
+
+func TestBulk(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	remaining := func() int {
+		rec, _ := e.call("GET", "/scim/v2/ServiceProviderConfig", nil)
+		_, after, _ := strings.Cut(rec.Header().Get("RateLimit"), "r=")
+		n, _ := strconv.Atoi(strings.Split(after, ";")[0])
+		return n
+	}
+	before := remaining()
+	patch := map[string]any{"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"}, "Operations": []map[string]any{{"op": "replace", "path": "title", "value": "Lead"}}}
+	ops := []map[string]any{
+		{"method": "POST", "path": "/Groups", "bulkId": "g1", "data": map[string]any{"displayName": "Bulk team", "members": []map[string]any{{"value": "bulkId:u1"}}}},
+		{"method": "POST", "path": "/Users", "bulkId": "u1", "data": map[string]any{"userName": "dana@example.com", "displayName": "Dana Scully"}},
+		{"method": "PATCH", "path": "/Users/bulkId:u1", "data": patch},
+		{"method": "POST", "path": "/Users", "bulkId": "bad", "data": map[string]any{"userName": "not-an-email"}},
+		{"method": "POST", "path": "/Users", "bulkId": "c1", "data": map[string]any{"userName": "c1@example.com", enterprise: map[string]any{"manager": map[string]any{"value": "bulkId:c2"}}}},
+		{"method": "POST", "path": "/Users", "bulkId": "c2", "data": map[string]any{"userName": "c2@example.com", enterprise: map[string]any{"manager": map[string]any{"value": "bulkId:c1"}}}},
+		{"method": "GET", "path": "/Users"},
+		{"method": "POST", "path": "/Bulk", "bulkId": "nested", "data": map[string]any{}},
+		{"method": "DELETE", "path": "/Users/bulkId:missing"},
+		{"method": "POST", "path": "/Users", "data": map[string]any{"userName": "nobulk@example.com"}},
+		{"method": "DELETE", "path": "/Users/../Groups"},
+	}
+	rec, body := e.call("POST", "/scim/v2/Bulk", map[string]any{"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:BulkRequest"}, "Operations": ops})
+	e.expect(rec, 200)
+	results, _ := body["Operations"].([]any)
+	statuses := []string{}
+	for _, r := range results {
+		statuses = append(statuses, r.(map[string]any)["status"].(string))
+	}
+	if strings.Join(statuses, ",") != "201,201,200,400,409,409,400,400,409,400,400" || body["schemas"].([]any)[0] != "urn:ietf:params:scim:api:messages:2.0:BulkResponse" {
+		t.Fatalf("bulk statuses %v: %s", statuses, rec.Body)
+	}
+	first, failed, circular := results[0].(map[string]any), results[3].(map[string]any), results[4].(map[string]any)
+	if first["bulkId"] != "g1" || first["method"] != "POST" || !strings.HasPrefix(first["location"].(string), "http://localhost:3200/scim/v2/Groups/") {
+		t.Fatalf("created group result: %v", first)
+	}
+	if _, has := failed["location"]; has || failed["response"].(map[string]any)["scimType"] != "invalidValue" {
+		t.Fatalf("failed POST result: %v", failed)
+	}
+	if circular["response"].(map[string]any)["status"] != "409" {
+		t.Fatalf("circular result: %v", circular)
+	}
+	groupID := strings.TrimPrefix(first["location"].(string), "http://localhost:3200/scim/v2/Groups/")
+	g, err := e.st.GetSCIMGroup(ctx, groupID)
+	if err != nil || len(g.Members) != 1 || g.Members[0].Name != "Dana Scully" {
+		t.Fatalf("group members: %+v %v", g, err)
+	}
+	if got := e.names("/scim/v2/Users", `title eq "Lead"`); got != "dana@example.com" {
+		t.Fatalf("patched through bulkId: %q", got)
+	}
+	if got := e.names("/scim/v2/Users", `userName sw "c" or userName sw "nobulk"`); got != "" {
+		t.Fatalf("circular or rejected users were created: %q", got)
+	}
+	if used := before - remaining(); used != 1+4+3 {
+		t.Fatalf("rate limit: %d requests counted, want the bulk request, its 4 executed operations and 3 GETs", used)
+	}
+	audit, err := e.st.ListAudit(ctx, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions := []string{}
+	for _, a := range audit {
+		if a.ActorID == nil || *a.ActorID != e.bot.ID {
+			t.Fatalf("audit without the service account: %+v", a)
+		}
+		actions = append(actions, a.Action)
+	}
+	slices.Sort(actions)
+	if strings.Join(actions, ",") != "scim.group.create,scim.user.create,scim.user.update" {
+		t.Fatalf("audit: %v", actions)
+	}
+
+	rec, body = e.call("POST", "/scim/v2/Bulk", map[string]any{"failOnErrors": 1, "Operations": []map[string]any{
+		{"method": "POST", "path": "/Users", "bulkId": "bad", "data": map[string]any{"userName": "nope"}},
+		{"method": "POST", "path": "/Users", "bulkId": "eve", "data": map[string]any{"userName": "eve@example.com"}},
+	}})
+	e.expect(rec, 200)
+	if results, _ = body["Operations"].([]any); len(results) != 1 || e.names("/scim/v2/Users", `userName eq "eve@example.com"`) != "" {
+		t.Fatalf("failOnErrors: %s", rec.Body)
+	}
+
+	tooMany := make([]map[string]any, 101)
+	for i := range tooMany {
+		tooMany[i] = map[string]any{"method": "DELETE", "path": "/Users/x"}
+	}
+	rec, body = e.call("POST", "/scim/v2/Bulk", map[string]any{"Operations": tooMany})
+	e.expectError(rec, body, 413, "")
+	if !strings.Contains(body["detail"].(string), "maxOperations (100)") {
+		t.Fatalf("413 must name the limit: %s", rec.Body)
+	}
+	rec, body = e.call("POST", "/scim/v2/Bulk", map[string]any{"Operations": []map[string]any{{"method": "POST", "path": "/Groups", "bulkId": "big", "data": map[string]any{"displayName": strings.Repeat("a", 1<<20)}}}})
+	e.expectError(rec, body, 413, "")
+	if !strings.Contains(body["detail"].(string), "maxPayloadSize (1048576") {
+		t.Fatalf("413 must name the limit: %s", rec.Body)
+	}
+	rec, body = e.call("POST", "/scim/v2/Bulk", "{not json")
+	e.expectError(rec, body, 400, "invalidSyntax")
 }
