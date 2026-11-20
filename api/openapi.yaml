@@ -1872,6 +1872,7 @@ paths:
                     idTokenTtl: {type: integer, minimum: 60, maximum: 86400, description: Services may use 0.}
                     refreshTokenTtl: {type: integer, minimum: 0, maximum: 7776000, description: 0 stops issuing refresh tokens.}
                     rotation: {type: boolean}
+                    exchange: {type: boolean, description: Lets a web or service application exchange people's access tokens at the token endpoint. Single-page and native applications can't turn it on.}
                 owner: {type: string, description: Id of a person. An empty string removes the owner.}
                 groupIds:
                   type: array
@@ -4404,12 +4405,13 @@ components:
         lastUsedAt: {type: [string, 'null'], format: date-time}
     TokenPolicy:
       type: object
-      required: [accessTokenTtl, refreshTokenTtl, idTokenTtl, rotation]
+      required: [accessTokenTtl, refreshTokenTtl, idTokenTtl, rotation, exchange]
       properties:
         accessTokenTtl: {type: integer, description: Seconds.}
         refreshTokenTtl: {type: integer, description: Seconds. 0 means no refresh tokens.}
         idTokenTtl: {type: integer, description: Seconds.}
         rotation: {type: boolean, description: Replace the refresh token on every use.}
+        exchange: {type: boolean, description: 'Allow the urn:ietf:params:oauth:grant-type:token-exchange grant (RFC 8693). The application swaps a person''s access token for one to an API it has scopes on, with itself in the act claim.'}
     Claim:
       type: object
       required: [name, source]

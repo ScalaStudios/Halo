@@ -55,6 +55,7 @@ type TokenPolicy struct {
 	RefreshTokenTTL int  `json:"refreshTokenTtl"`
 	IDTokenTTL      int  `json:"idTokenTtl"`
 	Rotation        bool `json:"rotation"`
+	Exchange        bool `json:"exchange"`
 }
 
 type Credential struct {

@@ -61,12 +61,12 @@ func TestDiscoveryAdvertisesOnlyServedFeatures(t *testing.T) {
 		t.Errorf("response types: %v", got)
 	}
 	grants := list("grant_types_supported")
-	for _, unsupported := range []string{"implicit", string(oidc.GrantTypeBearer), string(oidc.GrantTypeTokenExchange)} {
+	for _, unsupported := range []string{"implicit", string(oidc.GrantTypeBearer)} {
 		if slices.Contains(grants, unsupported) {
 			t.Errorf("grant %s is advertised but not served: %v", unsupported, grants)
 		}
 	}
-	if !slices.Contains(grants, string(oidc.GrantTypeDeviceCode)) || !slices.Contains(grants, "client_credentials") {
+	if !slices.Contains(grants, string(oidc.GrantTypeDeviceCode)) || !slices.Contains(grants, "client_credentials") || !slices.Contains(grants, string(oidc.GrantTypeTokenExchange)) {
 		t.Errorf("grants: %v", grants)
 	}
 	claims := list("claims_supported")

@@ -108,6 +108,7 @@ var catalog = []eventType{
 	{"terms.create", "Terms of use were added"},
 	{"terms.delete", "Terms of use were deleted"},
 	{"terms.update", "Terms of use were renamed or a new version was published"},
+	{"token.exchange", "An application exchanged a person's access token for one to call an API as them"},
 	{"user.authentication.reset", "A person's sign-in methods were reset"},
 	{"user.avatar.remove", "A person's profile picture was removed"},
 	{"user.avatar.update", "A person's profile picture was changed"},

@@ -51,7 +51,8 @@ Not built yet: LDAP directory sync and pushing groups over outbound SCIM. See th
 | PKCE (RFC 7636) | Implemented | `S256`, required for single-page and native applications |
 | Device Authorization Grant (RFC 8628) | Implemented | Used by `halo login` to sign people in on the command line |
 | Token Introspection (RFC 7662) and Revocation (RFC 7009) | Implemented | Introspection for APIs that check opaque tokens, and revocation for applications that sign people out |
-| Resource Indicators (RFC 8707) | Partial | The `resource` parameter selects an API resource on authorization, device and client credentials requests, and its JWT access tokens carry it in `aud` |
+| Resource Indicators (RFC 8707) | Partial | The `resource` parameter selects an API resource on authorization, device, client credentials and token exchange requests, and its JWT access tokens carry it in `aud` |
+| Token Exchange (RFC 8693) | Partial | Web and service applications with token exchange turned on trade a person's access token for one to an API they have scopes on, with the application in the `act` claim. Access tokens only, and no `actor_token` |
 | SAML 2.0 | Implemented | Web browser single sign-on as an identity provider: SP- and IdP-initiated, HTTP-Redirect and HTTP-POST bindings, signed assertions and metadata. No single logout or encrypted assertions |
 | SCIM 2.0 (RFC 7643 and RFC 7644) | Implemented | A server for users and groups with `eq` filters and no bulk operations, and a client that provisions users into applications |
 | WebAuthn and FIDO2 | Implemented | Passkeys and security keys as discoverable credentials, for sign-in without a username |

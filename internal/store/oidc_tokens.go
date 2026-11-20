@@ -19,22 +19,23 @@ type OIDCToken struct {
 	AuthTime    *time.Time
 	CreatedAt   time.Time
 	ExpiresAt   time.Time
+	SubjectID   *string
 }
 
-const oidcTokenColumns = `id, kind, client_id, user_id, session_id, refresh_id, scopes, audience, amr, auth_time, created_at, expires_at`
+const oidcTokenColumns = `id, kind, client_id, user_id, session_id, refresh_id, scopes, audience, amr, auth_time, created_at, expires_at, subject_token_id`
 
 func scanOIDCToken(row rowScanner) (OIDCToken, error) {
 	var t OIDCToken
-	err := row.Scan(&t.ID, &t.Kind, &t.ClientID, &t.UserID, &t.SessionID, &t.RefreshID, &t.Scopes, &t.Audience, &t.AMR, &t.AuthTime, &t.CreatedAt, &t.ExpiresAt)
+	err := row.Scan(&t.ID, &t.Kind, &t.ClientID, &t.UserID, &t.SessionID, &t.RefreshID, &t.Scopes, &t.Audience, &t.AMR, &t.AuthTime, &t.CreatedAt, &t.ExpiresAt, &t.SubjectID)
 	return t, notFound(err)
 }
 
 func (s *Store) CreateOIDCTokens(ctx context.Context, tokens ...OIDCToken) error {
 	return s.Tx(ctx, func(tx *Store) error {
 		for _, t := range tokens {
-			_, err := tx.db.Exec(ctx, `insert into oidc_tokens (id, kind, client_id, user_id, session_id, refresh_token_hash, refresh_id, scopes, audience, amr, auth_time, expires_at)
-				values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-				t.ID, t.Kind, t.ClientID, t.UserID, t.SessionID, t.RefreshHash, t.RefreshID, nonNil(t.Scopes), nonNil(t.Audience), nonNil(t.AMR), t.AuthTime, t.ExpiresAt)
+			_, err := tx.db.Exec(ctx, `insert into oidc_tokens (id, kind, client_id, user_id, session_id, refresh_token_hash, refresh_id, scopes, audience, amr, auth_time, expires_at, subject_token_id)
+				values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+				t.ID, t.Kind, t.ClientID, t.UserID, t.SessionID, t.RefreshHash, t.RefreshID, nonNil(t.Scopes), nonNil(t.Audience), nonNil(t.AMR), t.AuthTime, t.ExpiresAt, t.SubjectID)
 			if err != nil {
 				return err
 			}

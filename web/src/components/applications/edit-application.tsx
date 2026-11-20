@@ -154,6 +154,7 @@ function DetailsForm({
 
 export function AuthenticationForm({ app, children }: { app: Application; children: ReactNode }) {
   const service = app.type === "service";
+  const publicClient = app.type === "spa" || app.type === "native";
   const policy = app.tokenPolicy;
   const [redirects, setRedirects] = useState(app.redirectUris);
   const [postLogout, setPostLogout] = useState(app.postLogoutUris);
@@ -161,6 +162,7 @@ export function AuthenticationForm({ app, children }: { app: Application; childr
   const [idToken, setIdToken] = useState(split(policy.idTokenTtl));
   const [refresh, setRefresh] = useState(split(policy.refreshTokenTtl));
   const [rotation, setRotation] = useState(policy.rotation);
+  const [exchange, setExchange] = useState(policy.exchange);
   const [errors, setErrors] = useState<{ access?: string; id?: string; refresh?: string; redirects?: string; redirect?: (string | undefined)[]; postLogout?: (string | undefined)[] }>({});
   const { pending, run, errorFor, toast } = useMutation();
   const refreshOff = refresh.amount.trim() === "0";
@@ -183,8 +185,8 @@ export function AuthenticationForm({ app, children }: { app: Application; childr
     setErrors(next);
     if (next.access || next.id || next.refresh || next.redirects || [...next.redirect, ...next.postLogout].some(Boolean)) return;
     const tokenPolicy = service
-      ? { accessTokenTtl: toSeconds(access) }
-      : { accessTokenTtl: toSeconds(access), idTokenTtl: toSeconds(idToken), refreshTokenTtl: toSeconds(refresh), rotation };
+      ? { accessTokenTtl: toSeconds(access), exchange }
+      : { accessTokenTtl: toSeconds(access), idTokenTtl: toSeconds(idToken), refreshTokenTtl: toSeconds(refresh), rotation, exchange };
     void run(
       "authentication",
       () =>
@@ -220,6 +222,19 @@ export function AuthenticationForm({ app, children }: { app: Application; childr
                 )}
               </Field>
             </>
+          )}
+          {publicClient ? null : (
+            <Field
+              label="Token exchange"
+              hint={exchange ? "Can trade a person's access token for one to an API it has scopes on." : "Can't call other APIs on a person's behalf."}
+            >
+              {(props) => (
+                <Select {...props} value={exchange ? "on" : "off"} onChange={(event) => setExchange(event.target.value === "on")}>
+                  <option value="on">On</option>
+                  <option value="off">Off</option>
+                </Select>
+              )}
+            </Field>
           )}
         </CardBody>
       </Card>
