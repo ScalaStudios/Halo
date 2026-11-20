@@ -537,11 +537,12 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		PostLogoutURIs *[]string `json:"postLogoutUris"`
 		Scopes         *[]string `json:"scopes"`
 		TokenPolicy    *struct {
-			AccessTokenTTL  *int  `json:"accessTokenTtl"`
-			RefreshTokenTTL *int  `json:"refreshTokenTtl"`
-			IDTokenTTL      *int  `json:"idTokenTtl"`
-			Rotation        *bool `json:"rotation"`
-			Exchange        *bool `json:"exchange"`
+			AccessTokenTTL  *int      `json:"accessTokenTtl"`
+			RefreshTokenTTL *int      `json:"refreshTokenTtl"`
+			IDTokenTTL      *int      `json:"idTokenTtl"`
+			Rotation        *bool     `json:"rotation"`
+			Exchange        *bool     `json:"exchange"`
+			ExchangeFrom    *[]string `json:"exchangeFrom"`
 		} `json:"tokenPolicy"`
 		Owner    *string   `json:"owner"`
 		GroupIDs *[]string `json:"groupIds"`
@@ -607,8 +608,13 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		if next.TokenPolicy.Exchange != before.Exchange {
 			changed = append(changed, "token exchange")
 		}
-		before.Rotation, before.Exchange = next.TokenPolicy.Rotation, next.TokenPolicy.Exchange
-		if next.TokenPolicy != before {
+		if p.ExchangeFrom != nil {
+			if from := slices.Compact(slices.Sorted(slices.Values(*p.ExchangeFrom))); !slices.Equal(from, slices.Sorted(slices.Values(before.ExchangeFrom))) {
+				next.TokenPolicy.ExchangeFrom = from
+				changed = append(changed, "accepted token sources")
+			}
+		}
+		if t := next.TokenPolicy; t.AccessTokenTTL != before.AccessTokenTTL || t.RefreshTokenTTL != before.RefreshTokenTTL || t.IDTokenTTL != before.IDTokenTTL {
 			changed = append(changed, "token lifetimes")
 		}
 	}
@@ -670,6 +676,17 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	}
 	if next.TokenPolicy.Exchange && (app.Type == "spa" || app.Type == "native") {
 		return httpx.Invalid(app.Name + " is a public client without a secret, so it can't exchange tokens. Use a web or service application.")
+	}
+	if slices.Contains(changed, "accepted token sources") {
+		resources, err := h.st.ListAPIResources(r.Context())
+		if err != nil {
+			return err
+		}
+		for _, resourceID := range next.TokenPolicy.ExchangeFrom {
+			if !slices.ContainsFunc(resources, func(res store.APIResource) bool { return res.ID == resourceID }) {
+				return httpx.Invalid("Token exchange can only accept tokens issued for an API resource in Halo. Refresh the page and pick the APIs again.")
+			}
+		}
 	}
 	if t := next.TokenPolicy; slices.Contains(changed, "token lifetimes") {
 		switch {

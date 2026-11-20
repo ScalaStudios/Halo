@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -219,7 +220,7 @@ func TestUpdateApplication(t *testing.T) {
 	expect(t, rec, 200)
 	got := decode[store.Application](t, rec)
 	if got.Name != "Dashboards" || len(got.RedirectURIs) != 2 || len(got.PostLogoutURIs) != 1 || !slices.Equal(got.Scopes, []string{"openid", "email", "offline_access"}) ||
-		got.TokenPolicy != (store.TokenPolicy{AccessTokenTTL: 300, RefreshTokenTTL: 7 * 86400, IDTokenTTL: 900, Rotation: false}) || got.Owner == nil || *got.Owner != owner.ID {
+		!reflect.DeepEqual(got.TokenPolicy, store.TokenPolicy{AccessTokenTTL: 300, RefreshTokenTTL: 7 * 86400, IDTokenTTL: 900, Rotation: false, ExchangeFrom: []string{}}) || got.Owner == nil || *got.Owner != owner.ID {
 		t.Fatalf("application not updated: %+v", got)
 	}
 	want := "Updated name, homepage, redirect URIs, post-logout URIs, scopes, refresh token rotation, token lifetimes, owner"
@@ -258,6 +259,25 @@ func TestUpdateApplication(t *testing.T) {
 	}
 	if e := lastAudit(t, st); e.Summary != "Updated token exchange" {
 		t.Fatalf("token exchange audit: %+v", e)
+	}
+	billing, err := st.SaveAPIResource(ctx, store.APIResource{Name: "Billing", Identifier: "https://billing.example.com", AccessTokenTTL: 300, Scopes: []store.APIScope{{Name: "billing:read"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec = call(t, h, admin, "PATCH", path, map[string]any{"tokenPolicy": map[string]any{"exchangeFrom": []string{billing.ID, billing.ID}}})
+	expect(t, rec, 200)
+	if got := decode[store.Application](t, rec); !slices.Equal(got.TokenPolicy.ExchangeFrom, []string{billing.ID}) {
+		t.Fatalf("accepted token sources not saved: %+v", got.TokenPolicy)
+	}
+	if e := lastAudit(t, st); e.Summary != "Updated accepted token sources" {
+		t.Fatalf("accepted token sources audit: %+v", e)
+	}
+	expect(t, call(t, h, admin, "PATCH", path, map[string]any{"tokenPolicy": map[string]any{"exchangeFrom": []string{billing.ID, "api_missing"}}}), 422)
+	if err := st.DeleteAPIResource(ctx, billing.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.GetApplication(ctx, app.ID); err != nil || len(got.TokenPolicy.ExchangeFrom) != 0 {
+		t.Fatalf("deleted API still accepted: %+v %v", got.TokenPolicy, err)
 	}
 	spa, err := st.CreateApplication(ctx, store.NewApplication{Name: "Dashboard", Protocol: "oidc", Type: "spa", RedirectURIs: []string{"https://dash.example.com/cb"}})
 	if err != nil {

@@ -63,11 +63,12 @@ type Claim struct {
 }
 
 type TokenPolicy struct {
-	AccessTokenTTL  int  `json:"accessTokenTtl"`
-	RefreshTokenTTL int  `json:"refreshTokenTtl"`
-	IDTokenTTL      int  `json:"idTokenTtl"`
-	Rotation        bool `json:"rotation"`
-	Exchange        bool `json:"exchange"`
+	AccessTokenTTL  int      `json:"accessTokenTtl"`
+	RefreshTokenTTL int      `json:"refreshTokenTtl"`
+	IDTokenTTL      int      `json:"idTokenTtl"`
+	Rotation        bool     `json:"rotation"`
+	Exchange        bool     `json:"exchange"`
+	ExchangeFrom    []string `json:"exchangeFrom"`
 }
 
 type Credential struct {

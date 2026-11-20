@@ -2113,6 +2113,10 @@ paths:
                     refreshTokenTtl: {type: integer, minimum: 0, maximum: 7776000, description: 0 stops issuing refresh tokens.}
                     rotation: {type: boolean}
                     exchange: {type: boolean, description: Lets a web or service application exchange people's access tokens at the token endpoint. Single-page and native applications can't turn it on.}
+                    exchangeFrom:
+                      type: array
+                      items: {type: string}
+                      description: Replaces the API resources, by id, whose access tokens the application may exchange. Each must be an existing API resource. An empty list accepts no tokens.
                 owner: {type: string, description: Id of a person. An empty string removes the owner.}
                 groupIds:
                   type: array
@@ -4691,13 +4695,17 @@ components:
         lastUsedAt: {type: [string, 'null'], format: date-time}
     TokenPolicy:
       type: object
-      required: [accessTokenTtl, refreshTokenTtl, idTokenTtl, rotation, exchange]
+      required: [accessTokenTtl, refreshTokenTtl, idTokenTtl, rotation, exchange, exchangeFrom]
       properties:
         accessTokenTtl: {type: integer, description: Seconds.}
         refreshTokenTtl: {type: integer, description: Seconds. 0 means no refresh tokens.}
         idTokenTtl: {type: integer, description: Seconds.}
         rotation: {type: boolean, description: Replace the refresh token on every use.}
         exchange: {type: boolean, description: 'Allow the urn:ietf:params:oauth:grant-type:token-exchange grant (RFC 8693). The application swaps a person''s access token for one to an API it has scopes on, with itself in the act claim.'}
+        exchangeFrom:
+          type: array
+          items: {type: string}
+          description: 'Ids of the API resources whose access tokens the application accepts as subject_token. The subject token''s aud must contain one of their identifiers, otherwise the exchange fails with invalid_request. Empty means no token is accepted.'
     Claim:
       type: object
       required: [name, source]

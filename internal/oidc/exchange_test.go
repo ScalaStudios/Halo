@@ -62,19 +62,21 @@ func TestTokenExchange(t *testing.T) {
 	ledger, err := h.st.SaveAPIResource(ctx, store.APIResource{Name: "Ledger", Identifier: "https://ledger.example.com", AccessTokenTTL: 3600, Scopes: []store.APIScope{{Name: "ledger:read"}, {Name: "ledger:write"}}})
 	must(err)
 	must(h.st.SetAPIResourceGrant(ctx, billing.ID, h.app.ID, []string{"billing:read"}))
-	service := func(name string, exchange bool) (store.Application, string) {
+	service := func(name string, exchange bool, from ...string) (store.Application, string) {
 		t.Helper()
 		app, err := h.st.CreateApplication(ctx, store.NewApplication{Name: name, Protocol: "oidc", Type: "service"})
 		must(err)
 		_, secret, err := h.st.AddClientSecret(ctx, app.ID, "Test", time.Hour)
 		must(err)
 		must(h.st.SetAPIResourceGrant(ctx, ledger.ID, app.ID, []string{"ledger:read", "ledger:write"}))
-		app.TokenPolicy.Exchange = exchange
+		app.TokenPolicy.Exchange, app.TokenPolicy.ExchangeFrom = exchange, from
 		must(h.st.UpdateApplication(ctx, app))
 		return app, secret
 	}
-	invoices, invoicesSecret := service("Invoices", true)
+	invoices, invoicesSecret := service("Invoices", true, billing.ID, ledger.ID)
 	reports, reportsSecret := service("Reports", false)
+	payroll, payrollSecret := service("Payroll", true, ledger.ID)
+	audit, auditSecret := service("Audit", true)
 	spa, err := h.st.CreateApplication(ctx, store.NewApplication{Name: "Dashboard", Protocol: "oidc", Type: "spa", RedirectURIs: []string{"https://dash.example.com/cb"}})
 	must(err)
 	_, spaSecret, err := h.st.AddClientSecret(ctx, spa.ID, "Test", time.Hour)
@@ -101,6 +103,10 @@ func TestTokenExchange(t *testing.T) {
 			form[k] = v
 		}
 		return h.post("/oauth2/token", form, clientID, secret)
+	}
+	unaccepted := func(r result) bool {
+		description, _ := r.body["error_description"].(string)
+		return r.status == 400 && r.body["error"] == "invalid_request" && strings.Contains(description, "accepts tokens from") && r.body["access_token"] == nil
 	}
 	exchanges := func() int {
 		t.Helper()
@@ -178,6 +184,12 @@ func TestTokenExchange(t *testing.T) {
 			t.Errorf("%s: want %d %s, got %d %v", name, c.status, c.code, r.status, r.body)
 		}
 	}
+	if r := exchange(payroll.ClientID, payrollSecret, subject, ledgerOnly); !unaccepted(r) {
+		t.Errorf("subject token for an API the application doesn't accept: %d %v", r.status, r.body)
+	}
+	if r := exchange(audit.ClientID, auditSecret, subject, ledgerOnly); !unaccepted(r) {
+		t.Errorf("exchange on with no accepted APIs: %d %v", r.status, r.body)
+	}
 
 	if r := h.post("/oauth2/revoke", url.Values{"token": {subject}}, h.app.ClientID, h.secret); r.status != http.StatusOK {
 		t.Fatalf("revoke: %d %v", r.status, r.body)
@@ -198,8 +210,8 @@ func TestTokenExchange(t *testing.T) {
 
 	must(h.st.SetAPIResourceGrant(ctx, billing.ID, h.app.ID, nil))
 	subject, _ = signIn("openid")
-	if r := exchange(invoices.ClientID, invoicesSecret, subject, ledgerOnly); strings.Count(subject, ".") == 2 || r.status != http.StatusOK {
-		t.Fatalf("opaque subject token: %d %v", r.status, r.body)
+	if r := exchange(invoices.ClientID, invoicesSecret, subject, ledgerOnly); strings.Count(subject, ".") == 2 || !unaccepted(r) {
+		t.Fatalf("opaque subject token addressed to its client id: %d %v", r.status, r.body)
 	}
 	app, err := h.st.GetApplication(ctx, h.app.ID)
 	must(err)
@@ -207,10 +219,10 @@ func TestTokenExchange(t *testing.T) {
 	must(h.st.UpdateApplication(ctx, app))
 	subject, _ = signIn("openid")
 	time.Sleep(1100 * time.Millisecond)
-	if r := exchange(invoices.ClientID, invoicesSecret, subject, ledgerOnly); r.status != 400 || r.body["error"] != "invalid_request" {
+	if r := exchange(invoices.ClientID, invoicesSecret, subject, ledgerOnly); r.status != 400 || r.body["error"] != "invalid_request" || unaccepted(r) {
 		t.Fatalf("expired subject token: %d %v", r.status, r.body)
 	}
-	if n := exchanges(); n != 5 {
+	if n := exchanges(); n != 4 {
 		t.Fatalf("failed exchanges must not be audited, got %d events", n)
 	}
 }
