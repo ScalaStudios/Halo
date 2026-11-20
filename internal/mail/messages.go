@@ -35,6 +35,10 @@ func SignUp(to, name, link string, expires time.Time) Message {
 	return build("sign_up", to, map[string]string{"Name": firstName(name), "Link": link, "Expires": expiry(expires)})
 }
 
+func AccessPass(to, name, admin string, expires time.Time) Message {
+	return build("access_pass", to, map[string]string{"Name": firstName(name), "Administrator": admin, "Expires": expiry(expires)})
+}
+
 func MagicLink(to, name, app, link, code string) Message {
 	vars := map[string]string{"Name": firstName(name), "Application": app, "Link": link, "Code": code}
 	if code == "" {

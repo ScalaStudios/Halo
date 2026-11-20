@@ -179,7 +179,7 @@ func (s *Store) SetUserRoles(ctx context.Context, userID string, roles []string)
 
 func (s *Store) DeleteAuthenticationMethods(ctx context.Context, userID string) error {
 	return s.Tx(ctx, func(tx *Store) error {
-		for _, table := range []string{"webauthn_credentials", "totp_secrets", "recovery_codes", "passwords"} {
+		for _, table := range []string{"webauthn_credentials", "totp_secrets", "recovery_codes", "passwords", "access_passes"} {
 			if _, err := tx.db.Exec(ctx, `delete from `+table+` where user_id = $1`, userID); err != nil {
 				return err
 			}
@@ -198,7 +198,7 @@ func (s *Store) DeleteMethod(ctx context.Context, userID, methodID string) error
 			return nil
 		}
 	}
-	table := map[string]string{"recovery-codes": "recovery_codes", "password": "passwords"}[methodID]
+	table := map[string]string{"recovery-codes": "recovery_codes", "password": "passwords", "access-pass": "access_passes"}[methodID]
 	if table == "" {
 		return ErrNotFound
 	}
@@ -258,8 +258,10 @@ func (s *Store) decorate(ctx context.Context, users []User) error {
 	}
 	rows.Close()
 
-	rows, err = s.db.Query(ctx, `select id, user_id, kind, label, false, created_at, last_used_at from webauthn_credentials where user_id = any($1)
-		union all select 'password', user_id, 'password', 'Password', must_change, created_at, last_used_at from passwords where user_id = any($1) order by created_at`, ids)
+	rows, err = s.db.Query(ctx, `select id, user_id, kind, label, false, 0, null::timestamptz, created_at, last_used_at from webauthn_credentials where user_id = any($1)
+		union all select 'password', user_id, 'password', 'Password', must_change, 0, null, created_at, last_used_at from passwords where user_id = any($1)
+		union all select 'access-pass', user_id, 'access-pass', 'Temporary access pass', false, uses_left, expires_at, created_at, last_used_at from access_passes
+			where user_id = any($1) and uses_left > 0 and expires_at > now() order by created_at`, ids)
 	if err != nil {
 		return err
 	}
@@ -267,12 +269,21 @@ func (s *Store) decorate(ctx context.Context, users []User) error {
 		var m Method
 		var userID string
 		var temporary bool
-		if err := rows.Scan(&m.ID, &userID, &m.Kind, &m.Label, &temporary, &m.AddedAt, &m.LastUsedAt); err != nil {
+		var left int
+		var expires *time.Time
+		if err := rows.Scan(&m.ID, &userID, &m.Kind, &m.Label, &temporary, &left, &expires, &m.AddedAt, &m.LastUsedAt); err != nil {
 			rows.Close()
 			return err
 		}
 		if temporary {
 			m.Detail = "Temporary, must be changed at the next sign-in"
+		}
+		if expires != nil {
+			uses := "uses"
+			if left == 1 {
+				uses = "use"
+			}
+			m.Detail = fmt.Sprintf("%d %s left, expires %s", left, uses, expires.UTC().Format("2 Jan 2006, 15:04 UTC"))
 		}
 		u := &users[index[userID]]
 		u.Methods = append(u.Methods, m)

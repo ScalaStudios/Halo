@@ -29,6 +29,7 @@ const DESCRIPTION: Record<MethodKind, string> = {
   "recovery-codes": "Single-use backup codes for people who lost their other methods.",
   password: "For people who can't use a passkey yet, such as during a move from another identity provider. Passwords can be phished, guessed or reused from a breach elsewhere.",
   federated: "Sign-in through Google, Microsoft Entra, GitHub or another OpenID Connect provider. Only as strong as that provider's sign-in.",
+  "access-pass": "A time-limited pass an administrator gives someone to set up a new passkey. It never signs anyone in by itself.",
 };
 
 const HAVE: Record<MethodKind, string> = {
@@ -39,6 +40,7 @@ const HAVE: Record<MethodKind, string> = {
   "recovery-codes": "recovery codes",
   password: "a password",
   federated: "a linked identity provider account",
+  "access-pass": "a temporary access pass",
 };
 
 function people(n: number) {

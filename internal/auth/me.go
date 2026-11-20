@@ -46,7 +46,9 @@ func (h *handler) removeMethod(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	linked := slices.ContainsFunc(identities, func(f store.FederatedIdentity) bool { return f.ProviderEnabled })
-	if !linked && !slices.ContainsFunc(u.Methods, func(m store.Method) bool { return m.ID != methodID && m.Kind != "recovery-codes" }) {
+	if !linked && !slices.ContainsFunc(u.Methods, func(m store.Method) bool {
+		return m.ID != methodID && m.Kind != "recovery-codes" && m.Kind != "access-pass"
+	}) {
 		return errLastMethod
 	}
 	err = h.st.Tx(ctx, func(tx *store.Store) error {

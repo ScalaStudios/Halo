@@ -356,6 +356,46 @@ func (h *handlers) setTemporaryPassword(w http.ResponseWriter, r *http.Request, 
 	return noContent(w)
 }
 
+func (h *handlers) createAccessPass(w http.ResponseWriter, r *http.Request, actor store.User) error {
+	target, err := h.user(r)
+	if err != nil {
+		return err
+	}
+	if target.ID == actor.ID {
+		return httpx.Invalid("You can't create a temporary access pass for your own account. Add a passkey from your account page instead.")
+	}
+	if err := guardAdmin(actor, target); err != nil {
+		return err
+	}
+	in := struct {
+		LifetimeMinutes int `json:"lifetimeMinutes"`
+		Uses            int `json:"uses"`
+	}{60, 1}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	if in.LifetimeMinutes < 10 || in.LifetimeMinutes > 7*24*60 {
+		return httpx.Invalid("lifetimeMinutes must be between 10 and 10080, which is 7 days.")
+	}
+	if in.Uses < 1 || in.Uses > 10 {
+		return httpx.Invalid("uses must be between 1 and 10.")
+	}
+	expires := time.Now().Add(time.Duration(in.LifetimeMinutes) * time.Minute).Truncate(time.Second)
+	var pass string
+	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+		var err error
+		if pass, err = tx.CreateAccessPass(r.Context(), target.ID, actor.ID, in.Uses, expires); err != nil {
+			return err
+		}
+		return record(r, tx, actor, store.AuditEvent{Action: "user.access-pass.create", Summary: "Created a temporary access pass for " + plural(in.Uses, "use") + ", expiring " + expires.UTC().Format("2 Jan 2006, 15:04 UTC"), TargetType: "user", TargetID: target.ID, TargetLabel: target.Name})
+	})
+	if err != nil {
+		return err
+	}
+	h.email(r, halomail.AccessPass(target.Email, target.Name, actor.Name, expires))
+	return httpx.JSON(w, http.StatusCreated, map[string]any{"pass": pass, "expiresAt": expires, "uses": in.Uses})
+}
+
 func (h *handlers) deleteMethod(w http.ResponseWriter, r *http.Request, actor store.User) error {
 	target, err := h.user(r)
 	if err != nil {

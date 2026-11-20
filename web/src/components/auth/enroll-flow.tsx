@@ -116,7 +116,9 @@ export function EnrollFlow({ token, enrollee, problem, signUp = false }: { token
               ? "An administrator reset how you sign in, so your old sign-in methods were removed. Create a new passkey to get back into your account."
               : enrollee.purpose === "sign-up"
                 ? "Last step: create the passkey you'll use to sign in to Halo with your fingerprint, face or screen lock. Your biometrics never leave your device."
-                : "You'll use it to sign in to Halo with your fingerprint, face or screen lock. Your biometrics never leave your device."}
+                : enrollee.purpose === "access-pass"
+                  ? "Your temporary access pass worked. Create a passkey in the next 15 minutes to finish signing in."
+                  : "You'll use it to sign in to Halo with your fingerprint, face or screen lock. Your biometrics never leave your device."}
           </p>
         </div>
         <div className="flex items-center gap-3 rounded-md border border-border bg-surface px-4 py-3">

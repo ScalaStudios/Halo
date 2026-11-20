@@ -34,7 +34,7 @@ var variables = map[string]Variable{
 	"Organization":   {"Organization", "Your organization's name.", "Fernway Systems"},
 	"Administrator":  {"Administrator", "The administrator who sent the email.", "Grace Hopper"},
 	"Link":           {"Link", "The link the person opens.", "https://halo.example.com/2f9c4e"},
-	"Expires":        {"Expires", "When the link stops working.", "4 March 2026, 14:00 UTC"},
+	"Expires":        {"Expires", "When the link or pass stops working.", "4 March 2026, 14:00 UTC"},
 	"Application":    {"Application", "The application the person is signing in to. Empty when they sign in to Halo itself.", "Grafana"},
 	"Code":           {"Code", "The six-digit sign-in code.", "482913"},
 	"Requester":      {"Requester", "The person who asked for access.", "Sam Lee"},
@@ -113,6 +113,13 @@ var Templates = []Template{
 		Variables: uses("Approver", "Package", "Note", "Link", "Organization"),
 		Default: store.EmailTemplate{Subject: "Your request for {{.Package}} was denied", Body: "{{.Approver}} denied your request for {{.Package}}." +
 			"{{if .Note}}\n\nNote from {{.Approver}}: {{.Note}}{{end}}\n\nSee your requests: {{.Link}}"},
+	},
+	{
+		Kind: "access_pass", Label: "Temporary access pass", Description: "Sent when an administrator creates a temporary access pass for someone. The pass itself is never emailed.",
+		Variables: uses("Name", "Administrator", "Expires", "Organization"),
+		Default: store.EmailTemplate{Subject: "A temporary access pass was created for you", Body: greetingLine +
+			"{{.Administrator}} created a temporary access pass for your Halo account. It lets you set up a new passkey and stops working {{.Expires}}.\n\n" +
+			"Halo never sends the pass by email, so expect it from {{.Administrator}} in person or by phone. If you didn't ask for one, contact your administrator."},
 	},
 }
 

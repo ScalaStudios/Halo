@@ -321,7 +321,7 @@ func (h *handler) unlinkIdentity(w http.ResponseWriter, r *http.Request) error {
 		return httpx.NotFound("The linked account")
 	}
 	otherLinks := slices.ContainsFunc(identities, func(f store.FederatedIdentity) bool { return f.ID != identityID && f.ProviderEnabled })
-	otherMethods := slices.ContainsFunc(u.Methods, func(m store.Method) bool { return m.Kind != "recovery-codes" })
+	otherMethods := slices.ContainsFunc(u.Methods, func(m store.Method) bool { return m.Kind != "recovery-codes" && m.Kind != "access-pass" })
 	if !otherLinks && !otherMethods {
 		return errLastLink
 	}
