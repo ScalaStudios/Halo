@@ -10,6 +10,7 @@ import {
   Globe,
   Inbox,
   KeyRound,
+  Layers,
   LayoutGrid,
   Laptop,
   LogIn,
@@ -57,6 +58,7 @@ export const nav: NavGroup[] = [
     label: "Applications",
     items: [
       { label: "Applications", href: `${BASE}/applications`, icon: AppWindow, summary: "Everything people sign in to: OpenID Connect, SAML and OAuth clients." },
+      { label: "Collections", href: `${BASE}/collections`, icon: Layers, summary: "Named sections of the account portal, like Engineering or HR, shown to the groups you choose." },
       { label: "API resources", href: `${BASE}/api-resources`, icon: FileKey, summary: "APIs you protect with Halo, their scopes and audiences." },
       { label: "Provisioning", href: `${BASE}/provisioning`, icon: RefreshCw, summary: "SCIM and directory sync in both directions: HR systems in, applications out." },
     ],

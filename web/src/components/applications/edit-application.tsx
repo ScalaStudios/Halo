@@ -35,7 +35,7 @@ const UNITS = [
 
 type Unit = (typeof UNITS)[number][0];
 type Duration = { amount: string; unit: Unit };
-type Details = Pick<Application, "id" | "name" | "description" | "homepage" | "owner">;
+type Details = Pick<Application, "id" | "name" | "description" | "homepage" | "owner"> & { bookmark?: boolean };
 
 function split(seconds: number): Duration {
   const [unit, size] = [...UNITS].reverse().find(([, size]) => seconds % size === 0) ?? UNITS[0];
@@ -111,7 +111,12 @@ function DetailsForm({
     event.preventDefault();
     const next = {
       name: name.trim() ? undefined : "Enter a name. People see it on the Halo sign-in screen.",
-      homepage: !homepage.trim() || /^https?:\/\/[^/\s]+/.test(homepage.trim()) ? undefined : "Enter a full address, like https://grafana.example.com.",
+      homepage:
+        !homepage.trim() && app.bookmark
+          ? "Enter the address the bookmark opens, like https://status.example.com."
+          : !homepage.trim() || /^https?:\/\/[^/\s]+/.test(homepage.trim())
+            ? undefined
+            : "Enter a full address, like https://grafana.example.com.",
     };
     setErrors(next);
     if (next.name || next.homepage) return;
@@ -126,7 +131,11 @@ function DetailsForm({
       <Field label="Description" hint="Optional. Shown next to the name in the console.">
         {(props) => <Textarea {...props} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} />}
       </Field>
-      <Field label="Homepage" error={errors.homepage} hint="Optional. Where the app launcher opens the application.">
+      <Field
+        label={app.bookmark ? "URL" : "Homepage"}
+        error={errors.homepage}
+        hint={app.bookmark ? "The address the bookmark opens from the account portal." : "Optional. Where the app launcher opens the application."}
+      >
         {(props) => <Input {...props} type="url" mono value={homepage} onChange={(event) => setHomepage(event.target.value)} placeholder="https://grafana.example.com" />}
       </Field>
       <Field label="Owner" hint="The person responsible for this application. Optional.">

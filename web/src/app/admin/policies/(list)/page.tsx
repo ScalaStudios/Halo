@@ -42,7 +42,7 @@ export default async function PoliciesPage({ searchParams }: { searchParams: Pro
           <>
             <SimulateDialog
               users={users.filter((u) => u.status !== "deprovisioned").map((u) => ({ id: u.id, name: u.name }))}
-              applications={applications.filter((a) => a.type !== "service").map((a) => ({ id: a.id, name: a.name }))}
+              applications={applications.filter((a) => a.type !== "service" && a.protocol !== "bookmark").map((a) => ({ id: a.id, name: a.name }))}
             />
             {tab === "policies" ? (
               <Link href="/admin/policies/new" className={buttonClasses("primary", "sm")}>

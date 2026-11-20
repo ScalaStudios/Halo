@@ -16,7 +16,7 @@ export default async function NewApplicationPage() {
           <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.75} />
           Applications
         </Link>
-        <PageHeader title="Add application" description="Register an application so people can sign in to it with Halo. You get its connection details and setup guide on the last step." />
+        <PageHeader title="Add application" description="Register an application so people can sign in to it with Halo, or add a bookmark to their account portal. You get its connection details and setup guide on the last step." />
       </div>
       <NewApplicationFlow issuer={org.issuer} />
     </div>
