@@ -67,7 +67,8 @@ func TestTemplateAllowsOnlyListedVariables(t *testing.T) {
 		`{{if .Name}}{{else}}{{.Code}}{{end}}{{.Link}}`: "{{.Code}} is not a variable",
 		`Set up your passkey.`:                          "Include {{.Link}} in the invitation email",
 		`{{if .Link}}Set up your passkey.{{end}}`:       "Include {{.Link}} in the invitation email",
-		`{{.Link`: "The body can't be read",
+		`{{if .Name}}{{.Link}}{{end}}`:                  "Include {{.Link}} in the invitation email",
+		`{{.Link`:                                       "The body can't be read",
 	} {
 		err := invite.Validate(store.EmailTemplate{Subject: "Welcome", Body: body})
 		if err == nil || !strings.Contains(err.Error(), want) {

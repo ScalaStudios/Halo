@@ -175,10 +175,10 @@ func (t Template) check(node parse.Node, printed map[string]bool) error {
 		if _, err := t.variable(n.Pipe); err != nil {
 			return err
 		}
-		if err := t.check(n.List, printed); err != nil || n.ElseList == nil {
+		if err := t.check(n.List, map[string]bool{}); err != nil || n.ElseList == nil {
 			return err
 		}
-		return t.check(n.ElseList, printed)
+		return t.check(n.ElseList, map[string]bool{})
 	}
 	return fmt.Errorf("Remove %s. Templates can only use {{.Variable}} and {{if .Variable}}…{{else}}…{{end}}.", node)
 }
