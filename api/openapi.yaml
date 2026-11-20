@@ -5698,6 +5698,8 @@ components:
         botProtection: {type: string, enum: ['', turnstile, hcaptcha], default: '', description: 'Ask for a check from Cloudflare Turnstile or hCaptcha on `/auth/magic-link`, and on `/auth/password`, `/auth/totp`, `/auth/recovery` and `/auth/magic-link/code` once the client IP address has `lockoutThreshold` failed sign-ins within the lockout window. Passkeys are never checked. Empty turns it off. Turning it on needs `botProtectionSiteKey` and a stored `botProtectionSecret`.'}
         botProtectionSiteKey: {type: string, pattern: '^[A-Za-z0-9_-]{1,100}$', description: The public site key from the provider. The sign-in page uses it to show the check.}
         botProtectionSecret: {type: string, maxLength: 200, writeOnly: true, description: The secret key from the provider. Stored encrypted and never returned; `botProtectionSecretSet` in the response says whether one is stored. Omit it or send an empty string to keep the stored one.}
+        signInLogDays: {type: integer, minimum: 0, maximum: 3650, default: 0, description: 'Days to keep sign-in log entries, between 7 and 3,650. 0 keeps them forever. Once a day Halo deletes older entries in batches and records the count as `log.prune` in the audit log. Only a global administrator can change it.'}
+        auditLogDays: {type: integer, minimum: 0, maximum: 3650, default: 0, description: 'Days to keep audit log entries, between 30 and 3,650. 0 keeps them forever. Once a day Halo deletes older entries in batches and records the count as `log.prune` in the audit log. Only a global administrator can change it.'}
     EmailTemplateText:
       type: object
       required: [subject, body]

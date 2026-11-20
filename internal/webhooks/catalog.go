@@ -77,6 +77,7 @@ var catalog = []eventType{
 	{"lifecycle_rule.create", "A lifecycle rule was created"},
 	{"lifecycle_rule.delete", "A lifecycle rule was deleted"},
 	{"lifecycle_rule.update", "A lifecycle rule was changed"},
+	{"log.prune", "Sign-in log or audit log entries older than their retention period were deleted"},
 	{"method.update", "A sign-in method was turned on or off for the organization"},
 	{"network_zone.create", "A network zone was added"},
 	{"network_zone.delete", "A network zone was deleted"},

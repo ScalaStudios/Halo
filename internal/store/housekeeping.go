@@ -1,6 +1,12 @@
 package store
 
-import "context"
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+)
 
 func (s *Store) Purge(ctx context.Context) error {
 	for _, sql := range []string{
@@ -17,5 +23,48 @@ func (s *Store) Purge(ctx context.Context) error {
 			return err
 		}
 	}
-	return nil
+	return s.PruneLogs(ctx, 5000)
+}
+
+func (s *Store) PruneLogs(ctx context.Context, batch int) error {
+	settings, err := s.CurrentSettings(ctx)
+	if err != nil || settings.SignInLogDays == 0 && settings.AuditLogDays == 0 {
+		return err
+	}
+	tag, err := s.db.Exec(ctx, `insert into settings (key, value) values ('logsPrunedAt', to_jsonb(now()))
+		on conflict (key) do update set value = excluded.value, updated_at = now() where settings.updated_at <= now() - interval '1 day'`)
+	if err != nil || tag.RowsAffected() == 0 {
+		return err
+	}
+	var deleted []string
+	for _, l := range []struct {
+		table, label string
+		days         int
+	}{{"sign_in_events", "the sign-in log", settings.SignInLogDays}, {"audit_events", "the audit log", settings.AuditLogDays}} {
+		if l.days == 0 {
+			continue
+		}
+		cutoff, n := time.Now().AddDate(0, 0, -l.days), int64(0)
+		for {
+			tag, err = s.db.Exec(ctx, `delete from `+l.table+` where id in (select id from `+l.table+` where time < $1 limit $2)`, cutoff, batch)
+			n += tag.RowsAffected()
+			if err != nil || tag.RowsAffected() < int64(batch) {
+				break
+			}
+		}
+		noun := "entries"
+		if n == 1 {
+			noun = "entry"
+		}
+		if n > 0 {
+			deleted = append(deleted, fmt.Sprintf("%d %s older than %d days from %s", n, noun, l.days, l.label))
+		}
+		if err != nil {
+			break
+		}
+	}
+	if len(deleted) > 0 {
+		err = errors.Join(err, s.RecordAudit(context.WithoutCancel(ctx), AuditEvent{Action: "log.prune", Summary: "Deleted " + strings.Join(deleted, " and "), TargetType: "settings", TargetLabel: "Log retention"}))
+	}
+	return err
 }

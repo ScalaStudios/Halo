@@ -116,7 +116,7 @@ export const nav: NavGroup[] = [
     id: "settings",
     label: "Settings",
     items: [
-      { label: "Organization", href: `${BASE}/settings/organization`, icon: Building2, summary: "Name, contacts and the issuer URL." },
+      { label: "Organization", href: `${BASE}/settings/organization`, icon: Building2, summary: "Name, contacts, the issuer URL and log retention." },
       { label: "Domains", href: `${BASE}/settings/domains`, icon: Globe, summary: "Verified email domains and the custom sign-in domain." },
       { label: "Branding", href: `${BASE}/settings/branding`, icon: Palette, summary: "Your logo and a message on the sign-in, setup and sign-out pages." },
       { label: "Email templates", href: `${BASE}/settings/email`, icon: Mail, summary: "The subject and text of invitations, resets, sign-in emails and access notices." },

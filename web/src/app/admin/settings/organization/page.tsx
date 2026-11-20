@@ -1,4 +1,4 @@
-import { OrganizationForm } from "@/components/settings/settings-forms";
+import { LogRetentionForm, OrganizationForm } from "@/components/settings/settings-forms";
 import { hasRole } from "@/components/settings/roles";
 import { PageHeader } from "@/components/ui/page-header";
 import { apiGet } from "@/lib/api/server";
@@ -11,8 +11,9 @@ export default async function OrganizationPage() {
   const [data, me] = await Promise.all([apiGet<SettingsResponse>("/settings"), apiGet<User>("/me")]);
   return (
     <div className="flex max-w-4xl flex-col gap-8">
-      <PageHeader title="Organization" description="The name and contact address people see when they sign in, and the issuer URL your applications trust." />
+      <PageHeader title="Organization" description="The name and contact address people see when they sign in, the issuer URL your applications trust, and how long Halo keeps its logs." />
       <OrganizationForm settings={data.settings} defaultName={data.defaultOrganizationName} issuer={data.issuer} canEdit={hasRole(me)} />
+      <LogRetentionForm settings={data.settings} canEdit={hasRole(me)} />
     </div>
   );
 }
