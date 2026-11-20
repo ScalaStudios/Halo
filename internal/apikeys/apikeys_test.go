@@ -5,11 +5,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -267,5 +269,81 @@ func TestSeedProvisioning(t *testing.T) {
 	expect(t, rec, 200)
 	if strings.Count(rec.Body.String(), `"prefix":"hlk_`) != 2 {
 		t.Fatalf("seeded keys: %s", rec.Body)
+	}
+}
+
+func freshMinute(t *testing.T) {
+	t.Helper()
+	if left := time.Until(time.Now().Truncate(time.Minute).Add(time.Minute)); left < 5*time.Second {
+		time.Sleep(left + 100*time.Millisecond)
+	}
+}
+
+func TestRateLimitPerKeyAndSession(t *testing.T) {
+	st, h := setup(t)
+	ctx := context.Background()
+	_, security := person(t, st, "sec@example.com", "security_admin")
+	_, global := person(t, st, "gia@example.com", "global_admin")
+	appBot, _ := account(t, st, "Deploy bot", []string{"app_admin"}, "api")
+	terraform, apiKey := account(t, st, "Terraform", []string{"user_admin"}, "api", "scim")
+	_, otherKey, err := st.CreateAPIKey(ctx, terraform.ID, "Second", []string{"api"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if terraform.RateLimit != 600 {
+		t.Fatalf("default rate limit: %d", terraform.RateLimit)
+	}
+
+	expect(t, call(t, h, global, "PATCH", "/api/v1/service-accounts/"+terraform.ID, map[string]any{"rateLimit": 0}), 422)
+	expect(t, call(t, h, global, "PATCH", "/api/v1/service-accounts/"+terraform.ID, map[string]any{"rateLimit": 100001}), 422)
+	expect(t, call(t, h, security, "PATCH", "/api/v1/service-accounts/"+appBot.ID, map[string]any{"rateLimit": 5}), 403)
+	expect(t, call(t, h, security, "PATCH", "/api/v1/service-accounts/"+appBot.ID, map[string]any{"disabled": true, "rateLimit": 5}), 403)
+	rec := call(t, h, global, "PATCH", "/api/v1/service-accounts/"+terraform.ID, map[string]any{"rateLimit": 2})
+	expect(t, rec, 200)
+	if got := rec.Header().Get("RateLimit-Policy"); got != `"api";q=1200;w=60` {
+		t.Fatalf("session policy: %q", got)
+	}
+	audit, err := st.ListAudit(ctx, 1)
+	if err != nil || audit[0].Summary != "Updated rate limit to 2 requests per minute" {
+		t.Fatalf("audit: %+v %v", audit, err)
+	}
+
+	freshMinute(t)
+	for i, remaining := range []int{1, 0} {
+		rec := call(t, h, apiKey, "GET", "/api/v1/applications", nil)
+		expect(t, rec, 200)
+		if policy, state := rec.Header().Get("RateLimit-Policy"), rec.Header().Get("RateLimit"); policy != `"api";q=2;w=60` || !strings.HasPrefix(state, fmt.Sprintf(`"api";r=%d;t=`, remaining)) {
+			t.Fatalf("request %d headers: %q %q", i+1, policy, state)
+		}
+	}
+	rec = call(t, h, apiKey, "GET", "/api/v1/applications", nil)
+	expect(t, rec, 429)
+	if retry, err := strconv.Atoi(rec.Header().Get("Retry-After")); err != nil || retry < 1 || retry > 60 || !strings.Contains(rec.Body.String(), "ERR_RATE_LIMITED") || !strings.HasPrefix(rec.Header().Get("RateLimit"), `"api";r=0;t=`) {
+		t.Fatalf("limited response: %q %q %s", rec.Header().Get("Retry-After"), rec.Header().Get("RateLimit"), rec.Body)
+	}
+	expect(t, call(t, h, otherKey, "GET", "/api/v1/applications", nil), 200)
+
+	rec = call(t, h, apiKey, "GET", "/scim/v2/Users", nil)
+	expect(t, rec, 200)
+	if policy, state := rec.Header().Get("RateLimit-Policy"), rec.Header().Get("RateLimit"); policy != `"scim";q=3000;w=60` || !strings.HasPrefix(state, `"scim";r=2999;t=`) {
+		t.Fatalf("scim headers: %q %q", policy, state)
+	}
+	if rec := call(t, h, "", "GET", "/api/v1/organization", nil); rec.Header().Get("RateLimit") != "" {
+		t.Fatalf("anonymous requests are not counted: %q", rec.Header().Get("RateLimit"))
+	}
+
+	if err := st.Purge(ctx); err != nil {
+		t.Fatal(err)
+	}
+	rec = call(t, h, global, "GET", "/api/v1/service-accounts/"+terraform.ID, nil)
+	expect(t, rec, 200)
+	var detail store.ServiceAccount
+	_ = json.Unmarshal(rec.Body.Bytes(), &detail)
+	hits := map[string]int{}
+	for _, k := range detail.Keys {
+		hits[k.Label] = k.RateLimitHits
+	}
+	if detail.RateLimit != 2 || hits["Terraform key"] != 1 || hits["Second"] != 0 {
+		t.Fatalf("rate limit hits: %d %+v", detail.RateLimit, hits)
 	}
 }

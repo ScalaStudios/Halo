@@ -187,18 +187,19 @@ func (h *handlers) update(w http.ResponseWriter, r *http.Request, actor store.Us
 		Name        *string `json:"name"`
 		Description *string `json:"description"`
 		OwnerID     *string `json:"ownerId"`
+		RateLimit   *int    `json:"rateLimit"`
 		Disabled    *bool   `json:"disabled"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
-	disablingOnly := in.Disabled != nil && *in.Disabled && in.Name == nil && in.Description == nil && in.OwnerID == nil
+	disablingOnly := in.Disabled != nil && *in.Disabled && in.Name == nil && in.Description == nil && in.OwnerID == nil && in.RateLimit == nil
 	if !disablingOnly {
 		if err := manageable(actor, account); err != nil {
 			return err
 		}
 	}
-	name, description, owner := account.Name, account.Description, account.OwnerID
+	name, description, owner, rateLimit := account.Name, account.Description, account.OwnerID, account.RateLimit
 	var changed []string
 	if in.Name != nil && strings.TrimSpace(*in.Name) != name {
 		name = strings.TrimSpace(*in.Name)
@@ -213,6 +214,13 @@ func (h *handlers) update(w http.ResponseWriter, r *http.Request, actor store.Us
 			return err
 		}
 		changed = append(changed, "owner")
+	}
+	if in.RateLimit != nil && *in.RateLimit != rateLimit {
+		if *in.RateLimit < 1 || *in.RateLimit > 100000 {
+			return httpx.Invalid("Set a rate limit between 1 and 100,000 requests per minute.")
+		}
+		rateLimit = *in.RateLimit
+		changed = append(changed, fmt.Sprintf("rate limit to %d requests per minute", rateLimit))
 	}
 	if name == "" || len(name) > 200 || len(description) > 2000 {
 		return httpx.Invalid("Keep the name between 1 and 200 characters and the description under 2,000.")
@@ -229,7 +237,7 @@ func (h *handlers) update(w http.ResponseWriter, r *http.Request, actor store.Us
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 		action, summary := "service_account.update", "Updated "+strings.Join(changed, ", ")
 		if len(changed) > 0 {
-			if err := tx.UpdateServiceAccount(r.Context(), account.ID, name, description, owner); err != nil {
+			if err := tx.UpdateServiceAccount(r.Context(), account.ID, name, description, owner, rateLimit); err != nil {
 				return err
 			}
 		}

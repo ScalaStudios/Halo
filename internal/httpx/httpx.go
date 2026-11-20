@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -134,7 +137,7 @@ const (
 	userKey contextKey = iota
 	sessionKey
 	deviceKey
-	scopesKey
+	apiKeyKey
 )
 
 const (
@@ -142,7 +145,7 @@ const (
 	DeviceCookie  = "halo_device"
 )
 
-type KeyResolver func(ctx context.Context, token string) (store.User, []string, error)
+type KeyResolver func(ctx context.Context, token string) (store.User, store.ResolvedKey, error)
 
 type AccessTokenResolver func(ctx context.Context, token string) (store.User, error)
 
@@ -178,10 +181,10 @@ func (a *Auth) Resolve(next http.Handler) http.Handler {
 		}
 		if _, signedIn := CurrentUser(r); !signedIn && a.Keys != nil {
 			if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok && strings.HasPrefix(token, "hlk_") && !personalRoute(r.URL.Path) {
-				user, scopes, err := a.Keys(r.Context(), token)
+				user, key, err := a.Keys(r.Context(), token)
 				if err == nil && user.Status == "active" {
 					ctx := context.WithValue(r.Context(), userKey, user)
-					r = r.WithContext(context.WithValue(ctx, scopesKey, scopes))
+					r = r.WithContext(context.WithValue(ctx, apiKeyKey, key))
 				}
 			}
 		}
@@ -204,15 +207,57 @@ func (a *Auth) KeyScope(scope string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if scopes, viaKey := KeyScopes(r); viaKey && !slices.Contains(scopes, scope) {
 			ctx := context.WithValue(r.Context(), userKey, nil)
-			r = r.WithContext(context.WithValue(ctx, scopesKey, nil))
+			r = r.WithContext(context.WithValue(ctx, apiKeyKey, nil))
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
 func KeyScopes(r *http.Request) ([]string, bool) {
-	scopes, ok := r.Context().Value(scopesKey).([]string)
-	return scopes, ok
+	key, ok := r.Context().Value(apiKeyKey).(store.ResolvedKey)
+	return key.Scopes, ok
+}
+
+const (
+	sessionRateLimit = 1200
+	scimRateLimit    = 3000
+)
+
+func (a *Auth) Throttle(w http.ResponseWriter, r *http.Request, scope string) *Error {
+	subject, limit, who := "", sessionRateLimit, "session"
+	if key, viaKey := r.Context().Value(apiKeyKey).(store.ResolvedKey); viaKey {
+		subject, limit, who = key.ID, key.RateLimit, "API key"
+		if scope == "scim" {
+			limit = scimRateLimit
+		}
+	} else if sess, ok := CurrentSession(r); ok {
+		subject = sess.ID
+	}
+	if subject == "" {
+		return nil
+	}
+	n, reset, err := a.Store.CountRequest(r.Context(), subject, scope, limit, time.Minute)
+	if err != nil {
+		return nil
+	}
+	wait := max(int(math.Ceil(time.Until(reset).Seconds())), 1)
+	w.Header().Set("RateLimit-Policy", fmt.Sprintf(`"%s";q=%d;w=60`, scope, limit))
+	w.Header().Set("RateLimit", fmt.Sprintf(`"%s";r=%d;t=%d`, scope, max(limit-n, 0), wait))
+	if n <= limit {
+		return nil
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(wait))
+	return Fail(http.StatusTooManyRequests, "ERR_RATE_LIMITED", fmt.Sprintf("This %s sent more than %d requests this minute. Wait for the next minute, then try again.", who, limit))
+}
+
+func (a *Auth) RateLimit(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if e := a.Throttle(w, r, "api"); e != nil {
+			Handle(func(http.ResponseWriter, *http.Request) error { return e })(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (a *Auth) SetSession(w http.ResponseWriter, token string) {

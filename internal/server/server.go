@@ -66,7 +66,7 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 	}
 
 	root := http.NewServeMux()
-	root.Handle("/api/", authn.Resolve(authn.KeyScope("api", authn.SameOrigin(apiMux))))
+	root.Handle("/api/", authn.Resolve(authn.KeyScope("api", authn.RateLimit(authn.SameOrigin(apiMux)))))
 	root.Handle("/oauth2/", authn.Resolve(authn.KeyScope("", provider)))
 	root.Handle("/.well-known/", provider)
 	root.Handle("/saml/", authn.Resolve(authn.KeyScope("", samlHandler)))
