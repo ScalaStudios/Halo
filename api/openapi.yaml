@@ -63,7 +63,7 @@ tags:
   - name: Settings
     description: Organization settings, branding, domains and data export.
   - name: Webhooks
-    description: Signed HTTP delivery of audit and sign-in events. An audit event's `data` has the fields of an `AuditEvent`, including `changes`.
+    description: Signed HTTP delivery of audit and sign-in events, and notification rules that send chosen events to Slack, Discord or a webhook. An audit event's `data` has the fields of an `AuditEvent`, including `changes`.
   - name: API resources
     description: Your own APIs, their scopes, and which applications may request them.
   - name: SSH
@@ -4924,6 +4924,111 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /notification-rules:
+    get:
+      tags: [Webhooks]
+      operationId: listNotificationRules
+      summary: List notification rules
+      description: 'Roles: any administrator. Destination URLs are never returned, only their host.'
+      responses:
+        '200':
+          description: The rules.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/NotificationRule'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Webhooks]
+      operationId: createNotificationRule
+      summary: Add a notification rule
+      description: 'Roles: security administrator, with a recent sign-in. A rule sends a message to a Slack-compatible, Discord-compatible or generic webhook when the events it chooses match its conditions. The URL must be https:// and resolve to a public address. A `webhook` destination gets Halo''s signed event JSON with `rule` and `count` added, and its signing secret is returned once.'
+      requestBody: {$ref: '#/components/requestBodies/NotificationRuleInput'}
+      responses:
+        '201':
+          description: The rule, and the signing secret for a `webhook` destination.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rule]
+                properties:
+                  rule: {$ref: '#/components/schemas/NotificationRule'}
+                  secret: {type: string, examples: [whsec_…]}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /notification-rules/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Webhooks]
+      operationId: getNotificationRule
+      summary: Get a rule with its 50 most recent messages
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The rule and its deliveries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rule, deliveries]
+                properties:
+                  rule: {$ref: '#/components/schemas/NotificationRule'}
+                  deliveries:
+                    type: array
+                    items: {$ref: '#/components/schemas/WebhookDelivery'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Webhooks]
+      operationId: updateNotificationRule
+      summary: Replace a rule's settings
+      description: 'Roles: security administrator, with a recent sign-in. Leave `url` empty to keep the current destination URL. Saving starts the threshold count again.'
+      requestBody: {$ref: '#/components/requestBodies/NotificationRuleInput'}
+      responses:
+        '200':
+          description: The rule.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NotificationRule'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Webhooks]
+      operationId: deleteNotificationRule
+      summary: Delete a rule and its delivery log
+      description: 'Roles: security administrator, with a recent sign-in.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /notification-rules/{id}/test:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Webhooks]
+      operationId: testNotificationRule
+      summary: Send a test message now
+      description: 'Roles: security administrator. Sends a `webhook.test` message in the rule''s format, ignoring its conditions, and answers with the delivery after the first attempt.'
+      responses:
+        '200':
+          description: The delivery.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WebhookDelivery'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /api-resources:
     get:
       tags: [API resources]
@@ -5368,6 +5473,29 @@ components:
                 type: array
                 description: Assigned groups that accounts created on first sign-in join.
                 items: {type: string}
+    NotificationRuleInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name, destination, url, events]
+            properties:
+              name: {type: string, maxLength: 100, examples: [New global administrator]}
+              destination: {type: string, enum: [webhook, slack, discord], description: 'The message format: Halo''s signed event JSON, a Slack `text` message, or a Discord embed.'}
+              url: {type: string, format: uri, maxLength: 2048, writeOnly: true, description: 'The https:// URL of the incoming webhook. Stored encrypted and never returned. Empty on update keeps the current URL.'}
+              events:
+                type: array
+                minItems: 1
+                maxItems: 50
+                description: Event types such as `role.update`, families such as `sign_in.*`, or `*` for every event.
+                items: {type: string}
+              minRisk: {type: string, enum: ['', low, medium, high], default: '', description: Only events whose `risk` is at least this level, such as sign-ins.}
+              role: {type: string, enum: ['', global_admin, security_admin, user_admin, helpdesk_admin, app_admin, auditor], default: '', description: Only role changes that give someone this role.}
+              threshold: {type: integer, minimum: 1, maximum: 100, default: 1, description: Send when this many events match within `windowMinutes`.}
+              windowMinutes: {type: integer, minimum: 1, maximum: 1440, default: 10}
+              quietMinutes: {type: integer, minimum: 1, maximum: 1440, default: 15, description: After a message, matching events are not sent for this long.}
+              enabled: {type: boolean, default: true}
     WebhookInput:
       required: true
       content:
@@ -6861,12 +6989,34 @@ components:
         updatedAt: {type: string, format: date-time}
         lastStatus: {type: [string, 'null'], enum: [pending, delivered, failed, null]}
         lastDeliveryAt: {type: [string, 'null'], format: date-time}
+    NotificationRule:
+      type: object
+      required: [id, name, destination, host, events, minRisk, role, threshold, windowMinutes, quietMinutes, enabled, createdAt, updatedAt, lastSentAt, lastStatus]
+      properties:
+        id: {type: string, examples: [ntf_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        name: {type: string}
+        destination: {type: string, enum: [webhook, slack, discord]}
+        host: {type: string, examples: [hooks.slack.com], description: The host of the destination URL. The URL itself is never returned.}
+        events:
+          type: array
+          items: {type: string}
+        minRisk: {type: string, enum: ['', low, medium, high]}
+        role: {type: string}
+        threshold: {type: integer}
+        windowMinutes: {type: integer}
+        quietMinutes: {type: integer}
+        enabled: {type: boolean}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        lastSentAt: {type: [string, 'null'], format: date-time, description: The time of the last event the rule sent a message for.}
+        lastStatus: {type: [string, 'null'], enum: [pending, delivered, failed, null]}
     WebhookDelivery:
       type: object
-      required: [id, endpointId, eventId, eventType, body, status, attempts, nextAttemptAt, lastAttemptAt, responseStatus, error, createdAt]
+      required: [id, eventId, eventType, body, status, attempts, nextAttemptAt, lastAttemptAt, responseStatus, error, createdAt]
       properties:
         id: {type: string, examples: [whd_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
-        endpointId: {type: string}
+        endpointId: {type: string, description: Set for deliveries to a webhook endpoint.}
+        ruleId: {type: string, description: Set for messages sent by a notification rule.}
         eventId: {type: string}
         eventType: {type: string}
         body: {type: string, description: The exact JSON body Halo sends.}

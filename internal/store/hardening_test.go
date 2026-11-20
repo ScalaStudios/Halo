@@ -37,6 +37,8 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	webhookID, _, err := st.CreateWebhook(ctx, store.NewWebhook{URL: "https://hooks.example.com", Events: []string{"user.create"}, Enabled: true})
 	must(err)
+	ruleID, _, err := st.CreateNotificationRule(ctx, store.NewNotificationRule{Name: "Admins", Destination: "slack", URL: "https://hooks.example.com/rule", Host: "hooks.example.com", Events: []string{"role.update"}, Threshold: 1, WindowMinutes: 10, QuietMinutes: 15})
+	must(err)
 	must(st.CreateSSHAuthority(ctx, []byte("ssh-seed"), "ssh-ed25519 AAAA"))
 	must(st.ReplaceRecoveryCodes(ctx, u.ID, [][]byte{st.RecoveryCodeHash("abcd")}))
 	approvalID, err := st.CreateApprovalRequest(ctx, store.ApprovalRequest{Action: "global-admin", Summary: "Set roles", TargetType: "user", TargetLabel: "Ada", Method: "PUT", Path: "/api/v1/users/x/roles", Body: []byte("approval-body"), State: "null", Requester: store.NamedRef{ID: u.ID}, ExpiresAt: time.Now().Add(time.Hour)})
@@ -49,7 +51,7 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	rotation, err := st.RotateSecretKey(ctx, next)
 	must(err)
-	if len(rotation.Resealed) != 11 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
+	if len(rotation.Resealed) != 13 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
 		t.Fatalf("resealed: %+v", rotation.Resealed)
 	}
 	if !slices.Equal(rotation.RecoveryCodeUsers, []string{"ada@example.com"}) {
@@ -75,6 +77,8 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	webhook, err := rotated.GetWebhook(ctx, webhookID)
 	must(err)
+	rule, err := rotated.GetNotificationRule(ctx, ruleID)
+	must(err)
 	ssh, err := rotated.GetSSHAuthority(ctx)
 	must(err)
 	pending, err := rotated.GetApprovalRequest(ctx, approvalID)
@@ -88,6 +92,9 @@ func TestRotateSecretKey(t *testing.T) {
 	}
 	if _, err := rotated.Sealer.Open(webhook.Sealed); err != nil {
 		t.Fatalf("webhook secret: %v", err)
+	}
+	if plain, err := rotated.Sealer.Open(rule.URLSealed); err != nil || string(plain) != "https://hooks.example.com/rule" {
+		t.Fatalf("notification rule URL: %q %v", plain, err)
 	}
 	if string(keys[0].PrivateKey) != "oidc-key" || mail[0].Text != "mail body" || string(saml.PrivateKey) != "saml-key" || string(ssh.Seed) != "ssh-seed" || string(pending.Body) != "approval-body" || bot != "bot-secret" {
 		t.Fatalf("rotated values: %q %q %q %q %q %q", keys[0].PrivateKey, mail[0].Text, saml.PrivateKey, ssh.Seed, pending.Body, bot)

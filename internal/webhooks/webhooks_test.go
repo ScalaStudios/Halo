@@ -53,7 +53,7 @@ func setup(t *testing.T) (*store.Store, *handler, http.Handler) {
 	if err := Register(mux, httpx.Deps{Store: st, Auth: authn}); err != nil {
 		t.Fatal(err)
 	}
-	return st, &handler{st: st, client: http.DefaultClient}, authn.Resolve(authn.SameOrigin(mux))
+	return st, &handler{st: st, client: http.DefaultClient, guarded: http.DefaultClient}, authn.Resolve(authn.SameOrigin(mux))
 }
 
 func person(t *testing.T, st *store.Store, email string, roles ...string) string {

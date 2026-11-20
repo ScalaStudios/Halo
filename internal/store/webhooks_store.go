@@ -79,7 +79,8 @@ func (s *Store) DeleteWebhook(ctx context.Context, webhookID string) error {
 
 type WebhookDelivery struct {
 	ID             string     `json:"id"`
-	EndpointID     string     `json:"endpointId"`
+	EndpointID     string     `json:"endpointId,omitempty"`
+	RuleID         string     `json:"ruleId,omitempty"`
 	EventID        string     `json:"eventId"`
 	EventType      string     `json:"eventType"`
 	Body           string     `json:"body"`
@@ -92,10 +93,10 @@ type WebhookDelivery struct {
 	CreatedAt      time.Time  `json:"createdAt"`
 }
 
-const deliveryColumns = `id, endpoint_id, event_id, event_type, body, status, attempts, next_attempt_at, last_attempt_at, response_status, error, created_at`
+const deliveryColumns = `id, coalesce(endpoint_id, ''), coalesce(rule_id, ''), event_id, event_type, body, status, attempts, next_attempt_at, last_attempt_at, response_status, error, created_at`
 
 func (s *Store) ListWebhookDeliveries(ctx context.Context, webhookID string, limit int) ([]WebhookDelivery, error) {
-	rows, err := s.db.Query(ctx, `select `+deliveryColumns+` from webhook_deliveries where endpoint_id = $1 order by created_at desc, id desc limit $2`, webhookID, limit)
+	rows, err := s.db.Query(ctx, `select `+deliveryColumns+` from webhook_deliveries where endpoint_id = $1 or rule_id = $1 order by created_at desc, id desc limit $2`, webhookID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +174,8 @@ func (s *Store) ActiveWebhooks(ctx context.Context) ([]Webhook, error) {
 
 func (s *Store) ClaimWebhookDeliveries(ctx context.Context, now time.Time, lease time.Duration, limit int) ([]WebhookDelivery, error) {
 	rows, err := s.db.Query(ctx, `update webhook_deliveries set next_attempt_at = $2 where id in (
-		select id from webhook_deliveries where status = 'pending' and next_attempt_at <= $1 and endpoint_id in (select id from webhook_endpoints where enabled)
+		select id from webhook_deliveries where status = 'pending' and next_attempt_at <= $1
+		and (endpoint_id in (select id from webhook_endpoints where enabled) or rule_id in (select id from notification_rules where enabled))
 		order by next_attempt_at limit $3 for update skip locked) returning `+deliveryColumns, now, now.Add(lease), limit)
 	if err != nil {
 		return nil, err
@@ -185,4 +187,112 @@ func (s *Store) RecordWebhookAttempt(ctx context.Context, deliveryID, status str
 	_, err := s.db.Exec(ctx, `update webhook_deliveries set status = $2, attempts = attempts + 1, response_status = $3, error = $4, last_attempt_at = $5, next_attempt_at = $6 where id = $1`,
 		deliveryID, status, responseStatus, message, at, next)
 	return err
+}
+
+type NotificationRule struct {
+	ID            string      `json:"id"`
+	Name          string      `json:"name"`
+	Destination   string      `json:"destination"`
+	Host          string      `json:"host"`
+	Events        []string    `json:"events"`
+	MinRisk       string      `json:"minRisk"`
+	Role          string      `json:"role"`
+	Threshold     int         `json:"threshold"`
+	WindowMinutes int         `json:"windowMinutes"`
+	QuietMinutes  int         `json:"quietMinutes"`
+	Enabled       bool        `json:"enabled"`
+	CreatedAt     time.Time   `json:"createdAt"`
+	UpdatedAt     time.Time   `json:"updatedAt"`
+	LastSentAt    *time.Time  `json:"lastSentAt"`
+	LastStatus    *string     `json:"lastStatus"`
+	Hits          []time.Time `json:"-"`
+	URLSealed     []byte      `json:"-"`
+	SecretSealed  []byte      `json:"-"`
+}
+
+type NewNotificationRule struct {
+	Name          string
+	Destination   string
+	URL           string
+	Host          string
+	Events        []string
+	MinRisk       string
+	Role          string
+	Threshold     int
+	WindowMinutes int
+	QuietMinutes  int
+	Enabled       bool
+}
+
+const ruleColumns = `r.id, r.name, r.destination, r.host, r.events, r.min_risk, r.role, r.threshold, r.window_minutes, r.quiet_minutes, r.enabled, r.created_at, r.updated_at, r.last_sent_at,
+	(select d.status from webhook_deliveries d where d.rule_id = r.id and d.last_attempt_at is not null order by d.last_attempt_at desc limit 1),
+	r.hits, r.url_sealed, r.secret_sealed`
+
+func (s *Store) rules(ctx context.Context, where string, args ...any) ([]NotificationRule, error) {
+	rows, err := s.db.Query(ctx, `select `+ruleColumns+` from notification_rules r `+where+` order by r.created_at`, args...)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[NotificationRule])
+}
+
+func (s *Store) ListNotificationRules(ctx context.Context) ([]NotificationRule, error) {
+	return s.rules(ctx, ``)
+}
+
+func (s *Store) ActiveNotificationRules(ctx context.Context) ([]NotificationRule, error) {
+	return s.rules(ctx, `where r.enabled`)
+}
+
+func (s *Store) GetNotificationRule(ctx context.Context, ruleID string) (NotificationRule, error) {
+	rules, err := s.rules(ctx, `where r.id = $1`, ruleID)
+	if err == nil && len(rules) == 0 {
+		return NotificationRule{}, ErrNotFound
+	}
+	if err != nil {
+		return NotificationRule{}, err
+	}
+	return rules[0], nil
+}
+
+func (s *Store) CreateNotificationRule(ctx context.Context, in NewNotificationRule) (string, string, error) {
+	ruleID, ruleSecret := id.New("ntf"), "whsec_"+secret.Token(24)
+	_, err := s.db.Exec(ctx, `insert into notification_rules (id, name, destination, host, url_sealed, secret_sealed, events, min_risk, role, threshold, window_minutes, quiet_minutes, enabled)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+		ruleID, in.Name, in.Destination, in.Host, s.Sealer.Seal([]byte(in.URL)), s.Sealer.Seal([]byte(ruleSecret)), in.Events, in.MinRisk, in.Role, in.Threshold, in.WindowMinutes, in.QuietMinutes, in.Enabled)
+	return ruleID, ruleSecret, err
+}
+
+func (s *Store) UpdateNotificationRule(ctx context.Context, ruleID string, in NewNotificationRule) error {
+	var sealed []byte
+	if in.URL != "" {
+		sealed = s.Sealer.Seal([]byte(in.URL))
+	}
+	tag, err := s.db.Exec(ctx, `update notification_rules set name = $2, destination = $3, host = coalesce(nullif($4, ''), host), url_sealed = coalesce($5, url_sealed), events = $6,
+		min_risk = $7, role = $8, threshold = $9, window_minutes = $10, quiet_minutes = $11, enabled = $12, hits = '{}', updated_at = now() where id = $1`,
+		ruleID, in.Name, in.Destination, in.Host, sealed, in.Events, in.MinRisk, in.Role, in.Threshold, in.WindowMinutes, in.QuietMinutes, in.Enabled)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+func (s *Store) DeleteNotificationRule(ctx context.Context, ruleID string) error {
+	tag, err := s.db.Exec(ctx, `delete from notification_rules where id = $1`, ruleID)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+func (s *Store) SaveNotificationRuleState(ctx context.Context, ruleID string, hits []time.Time, lastSentAt *time.Time) error {
+	_, err := s.db.Exec(ctx, `update notification_rules set hits = $2, last_sent_at = $3 where id = $1`, ruleID, hits, lastSentAt)
+	return err
+}
+
+func (s *Store) QueueNotification(ctx context.Context, ruleID string, e WebhookEvent, body []byte, next time.Time) (string, error) {
+	deliveryID := id.New("whd")
+	_, err := s.db.Exec(ctx, `insert into webhook_deliveries (id, rule_id, event_id, event_type, body, next_attempt_at) values ($1, $2, $3, $4, $5, $6) on conflict (rule_id, event_id) do nothing`,
+		deliveryID, ruleID, e.ID, e.Type, string(body), next)
+	return deliveryID, err
 }

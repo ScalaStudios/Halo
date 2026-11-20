@@ -213,7 +213,9 @@ func (h *handlers) inviteUser(w http.ResponseWriter, r *http.Request, actor stor
 		if len(roles) == 0 {
 			return nil
 		}
-		return record(r, tx, actor, roleEvent(user, labels))
+		event := roleEvent(user, labels)
+		event.Changes = store.Diff(map[string][]string{"roles": {}}, map[string][]string{"roles": roles})
+		return record(r, tx, actor, event)
 	})
 	if err != nil {
 		return err
