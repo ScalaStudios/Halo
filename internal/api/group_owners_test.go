@@ -144,6 +144,19 @@ func TestSelfServiceGroupMembership(t *testing.T) {
 		t.Fatalf("pat after joining: groups %v roles %v", u.GroupIDs, u.Roles)
 	}
 
+	sam := call(t, h, stranger, "POST", "/api/v1/me/groups/"+team.ID+"/join", nil)
+	if got := decode[map[string]string](t, ok(t, sam))["status"]; got != "requested" {
+		t.Fatalf("sam join: %s", got)
+	}
+	ok(t, call(t, h, admin, "PATCH", "/api/v1/groups/"+team.ID, map[string]any{"joinPolicy": "open"}))
+	stale := decode[[]struct {
+		ID        string `json:"id"`
+		Requested bool   `json:"requested"`
+	}](t, ok(t, call(t, h, stranger, "GET", "/api/v1/me/joinable-groups", nil)))
+	if len(stale) == 0 || stale[0].ID != team.ID || stale[0].Requested {
+		t.Fatalf("requests survived the switch to open: %+v", stale)
+	}
+
 	events, err := st.ListAudit(ctx, 100)
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +165,7 @@ func TestSelfServiceGroupMembership(t *testing.T) {
 	for _, e := range events {
 		count[e.Action]++
 	}
-	if count["group.join.request"] != 2 || count["group.join.deny"] != 1 || count["group.member.add"] != 2 {
+	if count["group.join.request"] != 3 || count["group.join.deny"] != 1 || count["group.member.add"] != 2 {
 		t.Fatalf("audit: %v", count)
 	}
 }

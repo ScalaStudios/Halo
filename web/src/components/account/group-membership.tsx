@@ -25,7 +25,7 @@ export function JoinGroup({ group }: { group: JoinableGroup }) {
   }
 
   return (
-    <Button size="sm" variant="secondary" className="shrink-0 self-start" loading={pending === "join"} onClick={join}>
+    <Button size="sm" variant="secondary" className="shrink-0 self-start" aria-label={`${group.joinPolicy === "open" ? "Join" : "Ask to join"} ${group.name}`} loading={pending === "join"} onClick={join}>
       {group.joinPolicy === "open" ? "Join" : "Ask to join"}
     </Button>
   );
@@ -58,10 +58,10 @@ export function JoinRequests({ groupId, groupName, requests }: { groupId: string
             </p>
           </div>
           <div className="flex shrink-0 gap-2">
-            <Button size="sm" variant="secondary" loading={pending === `deny:${user.id}`} onClick={() => decide(user, "deny")}>
+            <Button size="sm" variant="secondary" aria-label={`Decline ${user.name}`} loading={pending === `deny:${user.id}`} onClick={() => decide(user, "deny")}>
               Decline
             </Button>
-            <Button size="sm" variant="primary" loading={pending === `approve:${user.id}`} onClick={() => decide(user, "approve")}>
+            <Button size="sm" variant="primary" aria-label={`Approve ${user.name}`} loading={pending === `approve:${user.id}`} onClick={() => decide(user, "approve")}>
               Approve
             </Button>
           </div>
@@ -90,7 +90,7 @@ export function OwnedMembers({ groupId, groupName, members }: { groupId: string;
             <p className="text-body-sm font-semibold text-fg">{user.name}</p>
             <p className="truncate text-body-sm text-fg-3">{user.email}</p>
           </div>
-          <Button size="sm" variant="quiet" className="shrink-0 self-start" loading={pending === `remove:${user.id}`} onClick={() => remove(user)}>
+          <Button size="sm" variant="quiet" className="shrink-0 self-start" aria-label={`Remove ${user.name}`} loading={pending === `remove:${user.id}`} onClick={() => remove(user)}>
             Remove
           </Button>
         </li>
