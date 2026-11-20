@@ -12,7 +12,7 @@ export const metadata = { title: "Data export" };
 const INCLUDED = [
   "Organization profile and every setting on these pages",
   "People, with profile fields, status and manager",
-  "Groups, their rules and their members",
+  "Groups, their rules, owners and members",
   "Administrator roles and who holds them",
   "Applications, with redirect URIs, scopes, token lifetimes and assigned groups",
   "Access policies, access packages and access reviews with every decision",

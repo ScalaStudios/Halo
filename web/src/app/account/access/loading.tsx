@@ -4,7 +4,7 @@ import { ListSkeleton, PageSkeleton } from "@/components/ui/skeleton";
 const sections = [
   { title: "Your requests", description: "You get an email when an approver decides." },
   { title: "Access you were granted", description: "Approved packages. Halo removes the access when it ends." },
-  { title: "Your groups", description: "Assigned groups are managed by their owners. Dynamic groups follow your profile, such as your department." },
+  { title: "Your roles", description: "Administrative roles in Halo. Most people have none." },
 ];
 
 export default function Loading() {

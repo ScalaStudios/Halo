@@ -4,19 +4,20 @@ import { Pencil, Plus, UserMinus, UserRound } from "lucide-react";
 import { useId, useState, type FormEvent } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { PeoplePicker } from "@/components/governance/people-picker";
+import type { Person } from "@/components/governance/shared";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { Dialog } from "@/components/ui/dialog";
 import { HoldToConfirm } from "@/components/ui/hold-to-confirm";
-import { Checkbox, Field, Input } from "@/components/ui/input";
+import { Checkbox, Field, Input, Select } from "@/components/ui/input";
 import { ApiError, api } from "@/lib/api/client";
 import { pluralize } from "@/lib/format";
-import { STATUS, STRENGTH } from "@/lib/labels";
-import type { Group, User } from "@/lib/types";
+import { JOIN_POLICY, STATUS, STRENGTH } from "@/lib/labels";
+import type { Group, JoinPolicy, User } from "@/lib/types";
 import { userColumns } from "./users-table";
 
-type GroupBody = { name: string; description: string; rule?: string };
+type GroupBody = { name: string; description: string; rule?: string; joinPolicy?: JoinPolicy };
 
 export function inlineRuleError(show: (message: string) => void) {
   return (error: unknown) => {
@@ -79,6 +80,7 @@ function GroupForm({ id, group, onSave }: { id: string; group: Group; onSave: (b
   const [name, setName] = useState(group.name);
   const [description, setDescription] = useState(group.description);
   const [rule, setRule] = useState(group.rule ?? "");
+  const [joinPolicy, setJoinPolicy] = useState(group.joinPolicy);
   const [errors, setErrors] = useState<{ name?: string; rule?: string }>({});
   const [preview, setPreview] = useState<User[] | null>(null);
   const [previewing, setPreviewing] = useState(false);
@@ -107,7 +109,7 @@ function GroupForm({ id, group, onSave }: { id: string; group: Group; onSave: (b
     setErrors(next);
     if (next.name || next.rule) return;
     onSave(
-      { name: name.trim(), description: description.trim(), ...(dynamic ? { rule: rule.trim() } : {}) },
+      { name: name.trim(), description: description.trim(), ...(dynamic ? { rule: rule.trim() } : { joinPolicy }) },
       (message) => setErrors({ rule: message }),
     );
   }
@@ -120,6 +122,22 @@ function GroupForm({ id, group, onSave }: { id: string; group: Group; onSave: (b
       <Field label="Description" hint="Optional. Helps other administrators pick the right group.">
         {(props) => <Input {...props} value={description} onChange={(event) => setDescription(event.target.value)} />}
       </Field>
+      {dynamic ? null : (
+        <Field
+          label="Who can join"
+          hint={group.owners.length ? "People join or ask from the Groups page of their account." : "Add an owner to let people ask to join. Owners approve requests."}
+        >
+          {(props) => (
+            <Select {...props} value={joinPolicy} onChange={(event) => setJoinPolicy(event.target.value as JoinPolicy)}>
+              {(Object.keys(JOIN_POLICY) as JoinPolicy[]).map((policy) => (
+                <option key={policy} value={policy} disabled={policy === "request" && group.owners.length === 0}>
+                  {JOIN_POLICY[policy].label} — {JOIN_POLICY[policy].description}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+      )}
       {dynamic ? (
         <div className="flex flex-col gap-3">
           <label className="flex cursor-pointer items-start gap-3">
@@ -184,7 +202,7 @@ function GroupForm({ id, group, onSave }: { id: string; group: Group; onSave: (b
   );
 }
 
-export function AddMembers({ group, people }: { group: Group; people: User[] }) {
+export function AddMembers({ group, people }: { group: Pick<Group, "id" | "name">; people: Person[] }) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const { pending, run, errorFor, clearError, toast } = useMutation();
@@ -232,6 +250,58 @@ export function AddMembers({ group, people }: { group: Group; people: User[] }) 
         }
       >
         <Field label="People">{(props) => <PeoplePicker {...props} people={people} value={selected} onChange={setSelected} />}</Field>
+      </Dialog>
+    </>
+  );
+}
+
+export function EditOwners({ group, people }: { group: Group; people: Person[] }) {
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const { pending, run, errorFor, clearError, toast } = useMutation();
+
+  function show() {
+    setSelected(group.owners.map((o) => o.id));
+    clearError();
+    setOpen(true);
+  }
+
+  function save() {
+    void run(
+      "owners",
+      () => api<Group>(`/groups/${group.id}/owners`, { method: "PUT", body: { userIds: selected } }),
+      (saved) => {
+        setOpen(false);
+        toast({ title: `${saved.name} owners saved`, description: "Recorded in the audit log." });
+      },
+      "inline",
+    );
+  }
+
+  return (
+    <>
+      <Button size="sm" variant="secondary" onClick={show}>
+        <Pencil aria-hidden="true" size={16} strokeWidth={1.75} />
+        Edit owners
+      </Button>
+      <Dialog
+        open={open}
+        onOpenChange={setOpen}
+        error={errorFor("owners")}
+        title={`Owners of ${group.name}`}
+        description="Owners add and remove members and approve requests to join from their account. They don't get an administrator role."
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" loading={pending === "owners"} onClick={save}>
+              Save owners
+            </Button>
+          </>
+        }
+      >
+        <Field label="Owners">{(props) => <PeoplePicker {...props} people={people} value={selected} onChange={setSelected} />}</Field>
       </Dialog>
     </>
   );

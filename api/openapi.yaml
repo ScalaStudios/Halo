@@ -990,6 +990,89 @@ paths:
                 type: array
                 items: {$ref: '#/components/schemas/Group'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/groups/{id}/join:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Account, Groups]
+      operationId: joinGroup
+      summary: Join a group, or ask its owners to add you
+      description: 'Open groups add you straight away. On groups that take requests, the owners approve or decline; asking again while a request is pending changes nothing. Closed and rule-based groups refuse with `403`.'
+      security: *personal
+      responses:
+        '200':
+          description: Whether you joined or your request is waiting for an owner.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: {type: string, enum: [joined, requested]}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /me/joinable-groups:
+    get:
+      tags: [Account, Groups]
+      operationId: listJoinableGroups
+      summary: List the groups you can join or ask to join
+      description: Assigned groups that are open or take requests, and that you are not in.
+      security: *personal
+      responses:
+        '200':
+          description: The groups.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/JoinableGroup'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/owned-groups:
+    get:
+      tags: [Account, Groups]
+      operationId: listOwnedGroups
+      summary: List the groups you own
+      security: *personal
+      responses:
+        '200':
+          description: The groups, with the number of pending requests to join each.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/OwnedGroup'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/owned-groups/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Account, Groups]
+      operationId: getOwnedGroup
+      summary: Get a group you own with its members and pending requests
+      description: '`404` when you do not own the group. `people` lists everyone else in the directory who is not deprovisioned, to choose new members from.'
+      security: *personal
+      responses:
+        '200':
+          description: The group.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [group, members, requests, people]
+                properties:
+                  group: {$ref: '#/components/schemas/OwnedGroup'}
+                  members:
+                    type: array
+                    items: {$ref: '#/components/schemas/NamedRef'}
+                  requests:
+                    type: array
+                    items: {$ref: '#/components/schemas/JoinRequest'}
+                  people:
+                    type: array
+                    items: {$ref: '#/components/schemas/NamedRef'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /me/sign-ins:
     get:
       tags: [Account]
@@ -1665,7 +1748,7 @@ paths:
     patch:
       tags: [Groups]
       operationId: updateGroup
-      summary: Rename a group, or change its description or rule
+      summary: Rename a group, or change its description, rule or who can join
       description: 'Roles: user administrator. The kind cannot change.'
       requestBody:
         required: true
@@ -1678,6 +1761,7 @@ paths:
                 description: {type: string, maxLength: 2000}
                 kind: {type: string, enum: [assigned, dynamic], description: Accepted only when it equals the current kind.}
                 rule: {type: string, description: Dynamic groups only.}
+                joinPolicy: {$ref: '#/components/schemas/JoinPolicy'}
       responses:
         '200':
           description: The updated group.
@@ -1730,7 +1814,7 @@ paths:
       tags: [Groups]
       operationId: addGroupMember
       summary: Add a person to an assigned group
-      description: 'Roles: user administrator. Adding someone who is already a member succeeds.'
+      description: 'Roles: user administrator, or an owner of the group. Adding someone who is already a member succeeds.'
       requestBody:
         required: true
         content:
@@ -1756,13 +1840,72 @@ paths:
       tags: [Groups]
       operationId: removeGroupMember
       summary: Remove a person from an assigned group
-      description: 'Roles: user administrator.'
+      description: 'Roles: user administrator, or an owner of the group.'
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/DynamicGroup'}
+  /groups/{id}/owners:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Groups]
+      operationId: setGroupOwners
+      summary: Replace an assigned group's owners
+      description: 'Roles: user administrator. Owners add and remove members of this group and decide requests to join it, without an administrator role. Rule-based groups cannot have owners. A group that takes requests keeps at least one owner.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userIds]
+              properties:
+                userIds:
+                  type: array
+                  items: {type: string}
+      responses:
+        '200':
+          description: The updated group.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Group'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DynamicGroup'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /groups/{id}/join-requests/{userId}/approve:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+      - {$ref: '#/components/parameters/UserId'}
+    post:
+      tags: [Groups]
+      operationId: approveJoinRequest
+      summary: Add a person who asked to join
+      description: 'Roles: user administrator, or an owner of the group.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /groups/{id}/join-requests/{userId}/deny:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+      - {$ref: '#/components/parameters/UserId'}
+    post:
+      tags: [Groups]
+      operationId: denyJoinRequest
+      summary: Decline a request to join
+      description: 'Roles: user administrator, or an owner of the group.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /applications:
     get:
       tags: [Applications]
@@ -4381,15 +4524,44 @@ components:
         avatarUrl: {type: [string, 'null'], description: 'Path of the profile picture, or null. With the `profile` scope, ID tokens and userinfo carry the absolute URL as `picture`.', examples: ['/api/v1/users/usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9/avatar?v=1790000000']}
     Group:
       type: object
-      required: [id, name, description, kind, memberCount, source, createdAt]
+      required: [id, name, description, kind, joinPolicy, owners, memberCount, source, createdAt]
       properties:
         id: {type: string, examples: [grp_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
         description: {type: string}
         kind: {type: string, enum: [assigned, dynamic]}
         rule: {type: string, description: Dynamic groups only., examples: ['user.department == "Engineering"']}
+        joinPolicy: {$ref: '#/components/schemas/JoinPolicy'}
+        owners:
+          type: array
+          description: People who manage the members of this assigned group.
+          items: {$ref: '#/components/schemas/NamedRef'}
         memberCount: {type: integer}
         source: {type: string}
+        createdAt: {type: string, format: date-time}
+    JoinPolicy:
+      type: string
+      enum: [closed, request, open]
+      description: '`closed`: only owners and administrators add members. `request`: people ask and an owner approves. `open`: anyone can join. Rule-based groups are always `closed`.'
+    OwnedGroup:
+      allOf:
+        - {$ref: '#/components/schemas/Group'}
+        - type: object
+          required: [requestCount]
+          properties:
+            requestCount: {type: integer, description: Pending requests to join.}
+    JoinableGroup:
+      allOf:
+        - {$ref: '#/components/schemas/Group'}
+        - type: object
+          required: [requested]
+          properties:
+            requested: {type: boolean, description: You asked to join and an owner has not decided yet.}
+    JoinRequest:
+      type: object
+      required: [user, createdAt]
+      properties:
+        user: {$ref: '#/components/schemas/NamedRef'}
         createdAt: {type: string, format: date-time}
     Credential:
       type: object

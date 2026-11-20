@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { empty, list, row } from "@/components/account/list";
 import { CancelRequest, RequestAccess } from "@/components/governance/request-access";
 import { PendingRequests } from "@/components/governance/requests";
 import { approversLabel, dueLabel, durationLabel, grantLabel, joinNames, REQUEST_STATUS, ReviewProgress } from "@/components/governance/shared";
@@ -9,13 +10,9 @@ import { SectionTitle } from "@/components/ui/section-title";
 import { apiGet } from "@/lib/api/server";
 import { formatRelative } from "@/lib/format";
 import type { AccessPackage, AccessRequest, AccessReview } from "@/lib/governance-types";
-import type { Group, Organization, User } from "@/lib/types";
+import type { Organization, User } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Access" };
-
-const row = "flex flex-col gap-2 border-t border-border px-6 py-4 first:border-t-0 sm:flex-row sm:items-start sm:justify-between sm:gap-6";
-const list = "overflow-hidden rounded-lg border border-border bg-surface";
-const empty = "rounded-lg border border-border px-6 py-4 text-body-sm text-fg-3";
 
 function requestDetail(request: AccessRequest): string {
   switch (request.status) {
@@ -31,9 +28,8 @@ function requestDetail(request: AccessRequest): string {
 }
 
 export default async function AccessPage() {
-  const [user, groups, org, packages, requests, grants, approvals, reviews] = await Promise.all([
+  const [user, org, packages, requests, grants, approvals, reviews] = await Promise.all([
     apiGet<User>("/me"),
-    apiGet<Group[]>("/me/groups"),
     apiGet<Organization>("/organization"),
     apiGet<AccessPackage[]>("/me/access-packages"),
     apiGet<AccessRequest[]>("/me/access-requests"),
@@ -142,28 +138,6 @@ export default async function AccessPage() {
           </ul>
         ) : (
           <p className={empty}>No approved access right now.</p>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-4">
-        <SectionTitle
-          title="Your groups"
-          description="Assigned groups are managed by their owners. Dynamic groups follow your profile, such as your department."
-        />
-        {groups.length > 0 ? (
-          <ul className={list}>
-            {groups.map((group) => (
-              <li key={group.id} className={row}>
-                <div className="flex min-w-0 flex-col gap-1">
-                  <p className="text-body-sm font-semibold text-fg">{group.name}</p>
-                  <p className="text-body-sm text-fg-3">{group.description}</p>
-                </div>
-                <span className="shrink-0 text-caption text-fg-3">{group.kind === "dynamic" ? "Dynamic" : "Assigned"}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className={empty}>You aren&apos;t in any groups yet.</p>
         )}
       </section>
 
