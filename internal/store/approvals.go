@@ -16,6 +16,7 @@ var ApprovalActions = map[string]string{
 	"password-sign-in":   "turning on password sign-in",
 	"identity-providers": "changing identity providers",
 	"impersonation":      "impersonating someone",
+	"user-deletion":      "deleting a person permanently",
 }
 
 type ApprovalRequest struct {

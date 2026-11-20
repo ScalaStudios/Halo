@@ -36,12 +36,12 @@ var ExportSections = []ExportSection{
 	{"auditEvents", "audit_events", `select id, time, actor_id, action, summary, target_type, target_id, target_label, ip, changes from audit_events order by time, id`},
 }
 
-func (s *Store) ExportRows(ctx context.Context, section ExportSection, emit func(json.RawMessage) error) (bool, error) {
+func (s *Store) ExportRows(ctx context.Context, section ExportSection, emit func(json.RawMessage) error, args ...any) (bool, error) {
 	var exists bool
 	if err := s.db.QueryRow(ctx, `select to_regclass($1) is not null`, section.Table).Scan(&exists); err != nil || !exists {
 		return false, err
 	}
-	rows, err := s.db.Query(ctx, `select row_to_json(t) from (`+section.Query+`) t`)
+	rows, err := s.db.Query(ctx, `select row_to_json(t) from (`+section.Query+`) t`, args...)
 	if err != nil {
 		return true, err
 	}

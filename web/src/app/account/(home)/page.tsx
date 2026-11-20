@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ChevronRight, Fingerprint, LayoutGrid, MonitorSmartphone, ShieldCheck } from "lucide-react";
+import { ChevronRight, FileDown, Fingerprint, LayoutGrid, MonitorSmartphone, ShieldCheck } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { AvatarEditor } from "@/components/account/avatar-editor";
+import { ExportButton } from "@/components/settings/export-button";
 import { buttonClasses } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -129,6 +130,19 @@ export default async function AccountPage() {
             );
           })}
         </ul>
+
+        <Card className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center">
+          <span className="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-sunken">
+            <FileDown aria-hidden="true" size={20} strokeWidth={1.75} className="text-fg-3" />
+          </span>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <h2 className="text-h4 text-fg">Your data</h2>
+            <p className="text-body-sm text-fg-3">Download a copy of everything Halo stores about you as a JSON file: your profile, sign-in methods, groups, sessions, devices and sign-ins.</p>
+          </div>
+          <div className="shrink-0">
+            <ExportButton path="/me/export" label="Download your data" variant="secondary" size="sm" />
+          </div>
+        </Card>
       </div>
     </div>
   );

@@ -40,6 +40,7 @@ const ACTIONS: { value: ApprovalAction; label: string; description: string }[] =
   { value: "password-sign-in", label: "Turning on password sign-in", description: "For the whole organization, under Methods." },
   { value: "identity-providers", label: "Changing identity providers", description: "Adding, editing, turning on or off, or deleting one." },
   { value: "impersonation", label: "Impersonating someone", description: "A helpdesk administrator seeing Halo as a person for 30 minutes. They start it once approved." },
+  { value: "user-deletion", label: "Deleting a person permanently", description: "Removing their account and replacing their name and email address in the logs with a pseudonym." },
 ];
 
 const TARGET_HREF: Record<string, (id: string) => string> = {

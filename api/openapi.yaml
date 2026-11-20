@@ -1558,6 +1558,22 @@ paths:
                 type: array
                 items: {$ref: '#/components/schemas/SignInEvent'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/export:
+    get:
+      tags: [Account]
+      operationId: exportMyPersonalData
+      summary: Download everything Halo stores about you as JSON
+      description: Signed in with a session only, so not with an access token, an API key or during an impersonation. Returns the same document as `GET /users/{id}/export`. Writes a `user.export` audit event.
+      security:
+        - session: []
+      responses:
+        '200':
+          description: A JSON attachment named `halo-personal-data-<id>-YYYY-MM-DD.json`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PersonalData'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /me/consents:
     get:
       tags: [Account]
@@ -2020,6 +2036,44 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Users]
+      operationId: deleteUser
+      summary: Delete a person permanently
+      description: 'Roles: global administrator. Cannot be undone. Removes the person with their sign-in methods, sessions, tokens, devices, group memberships, consents, access requests, sign-ups and queued email, and their profile picture. In the sign-in log, the audit log, approval requests, queued webhook deliveries and SSH certificates their ID, name and email address are replaced with a pseudonym such as `deleted_01J…`, which the response returns; access policies stop listing them. Refused for yourself, a service account, an emergency access account, the last active global administrator, and someone who still has active accounts in other applications through provisioning. Needs approval when `user-deletion` is in `approvalActions`. Writes a `user.delete` audit event that names only the pseudonym.'
+      responses:
+        '200':
+          description: The person was deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pseudonym]
+                properties:
+                  pseudonym: {type: string, description: What the logs show instead of the person.}
+        '202': {$ref: '#/components/responses/ApprovalPending'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /users/{id}/export:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Users]
+      operationId: exportUser
+      summary: Download everything Halo stores about a person as JSON
+      description: 'Roles: global administrator. For access and portability requests. Includes no password hashes, secrets, token hashes or recovery codes. Writes a `user.export` audit event.'
+      responses:
+        '200':
+          description: A JSON attachment named `halo-personal-data-<id>-YYYY-MM-DD.json`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PersonalData'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /users/{id}/avatar:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -6084,12 +6138,37 @@ components:
         createdAt: {type: string, format: date-time}
         startedAt: {type: [string, 'null'], format: date-time}
         expiresAt: {type: string, format: date-time, description: When it must be started by, or when its session ends once started.}
+    PersonalData:
+      type: object
+      description: 'Everything Halo stores about one person, without secrets. `signIns` includes failed attempts with their email address, and `auditEvents` the entries where they are the target.'
+      properties:
+        exportedAt: {type: string, format: date-time}
+        person: {$ref: '#/components/schemas/User'}
+        groups: {type: array, items: {type: object}}
+        ownedGroups: {type: array, items: {type: object}}
+        groupJoinRequests: {type: array, items: {type: object}}
+        linkedAccounts: {type: array, items: {type: object}}
+        sessions: {type: array, items: {type: object}}
+        devices: {type: array, items: {type: object}}
+        signIns: {type: array, items: {type: object}}
+        auditEvents: {type: array, items: {type: object}}
+        consents: {type: array, items: {type: object}}
+        tokens: {type: array, items: {type: object}}
+        accessRequests: {type: array, items: {type: object}}
+        accessReviews: {type: array, items: {type: object}}
+        termsAcceptances: {type: array, items: {type: object}}
+        impersonations: {type: array, items: {type: object}}
+        provisionedAccounts: {type: array, items: {type: object}}
+        lifecycleRuns: {type: array, items: {type: object}}
+        sshCertificates: {type: array, items: {type: object}}
+        riskEvents: {type: array, items: {type: object}}
+        applicationPreferences: {type: array, items: {type: object}}
     ApprovalRequest:
       type: object
       required: [id, action, summary, targetType, targetId, targetLabel, requester, createdAt, expiresAt, status, decidedBy, decidedAt, outcome, canDecide]
       properties:
         id: {type: string, examples: [apr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
-        action: {type: string, enum: [global-admin, policy-disable, password-sign-in, identity-providers, impersonation, approval-settings]}
+        action: {type: string, enum: [global-admin, policy-disable, password-sign-in, identity-providers, impersonation, user-deletion, approval-settings]}
         summary: {type: string, examples: [Set roles to Global administrator]}
         targetType: {type: string, enum: [user, service_account, policy, method, identity_provider, settings]}
         targetId: {type: string, description: Empty for a new identity provider and for settings.}
@@ -6511,7 +6590,7 @@ components:
         approvalActions:
           type: array
           default: []
-          items: {type: string, enum: [global-admin, policy-disable, password-sign-in, identity-providers, impersonation]}
+          items: {type: string, enum: [global-admin, policy-disable, password-sign-in, identity-providers, impersonation, user-deletion]}
           description: 'Changes that wait for a second global administrator: `global-admin` grants the global administrator role or makes someone eligible to activate it, `policy-disable` turns off, switches to report-only or deletes an enforced access policy, `password-sign-in` turns on password sign-in, `identity-providers` adds, changes, turns on or off or deletes an identity provider, `impersonation` lets a helpdesk administrator see Halo as someone. While any is on, changing this list or `emergencyAccessIds` also needs approval. Turning approval on needs a second active global administrator.'
         emergencyAccessIds:
           type: array

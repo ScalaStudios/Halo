@@ -69,7 +69,7 @@ const columns: ColumnDef<Row, any>[] = [
 
 export function AuditTable({ events, userNames, initialEventId }: { events: AuditEvent[]; userNames: Record<string, string>; initialEventId?: string }) {
   const [openId, setOpenId] = useState(initialEventId);
-  const rows = events.map((e) => ({ ...e, actor: e.actorId ? (userNames[e.actorId] ?? "Unknown user") : "Halo" }));
+  const rows = events.map((e) => ({ ...e, actor: e.actorId ? (userNames[e.actorId] ?? e.actorId) : "Halo" }));
   const selected = rows.find((e) => e.id === openId);
   const actors = [...new Set(rows.map((e) => e.actor))].sort();
   const prefixes = [...new Set(rows.map((e) => e.action.split(".")[0]))].sort();

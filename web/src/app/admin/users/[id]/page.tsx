@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { TabNav } from "@/components/ui/tab-nav";
 import { AccessPassButton, TemporaryPasswordButton, UserActions } from "@/components/directory/user-actions";
 import { ImpersonationNotices } from "@/components/directory/impersonation";
+import { PersonalData } from "@/components/directory/personal-data";
 import { EditProfileButton, type ProfileEdit } from "@/components/directory/edit-profile";
 import { EditRolesButton, PasskeyWarning } from "@/components/directory/edit-roles";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
@@ -310,6 +311,11 @@ export default async function UserPage({ params, searchParams }: { params: Promi
             <SignInRows events={userSignIns.slice(0, 5)} appNames={appNames} />
           )}
         </Card>
+        {global ? (
+          <div className="xl:col-span-12">
+            <PersonalData user={{ id: user.id, name: user.name, email: user.email }} self={user.id === me.id} />
+          </div>
+        ) : null}
       </div>
     );
   }

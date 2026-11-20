@@ -49,7 +49,7 @@ func (r *userResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 		return schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString(""), MarkdownDescription: description}
 	}
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "A person in the directory. Creating one invites them. Halo has no way to delete a person, so destroying this resource suspends the account; inviting the same email again then conflicts until the account is restored and imported.",
+		MarkdownDescription: "A person in the directory. Creating one invites them. Destroying this resource suspends the account rather than deleting it, so inviting the same email again conflicts until the account is restored and imported. A global administrator deletes a person permanently in the console or with `DELETE /api/v1/users/{id}`.",
 		Attributes: map[string]schema.Attribute{
 			"id":         schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 			"email":      schema.StringAttribute{Required: true},

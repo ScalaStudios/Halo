@@ -127,6 +127,17 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	return nil
 }
 
+func PictureRemover(d httpx.Deps) (func(context.Context, string) error, error) {
+	if !d.Config.S3.Configured() {
+		return func(context.Context, string) error { return nil }, nil
+	}
+	b, err := newBucket(d.Config.S3)
+	if err != nil {
+		return nil, fmt.Errorf("profile picture storage: %w", err)
+	}
+	return func(ctx context.Context, userID string) error { return b.remove(ctx, avatar, userID) }, nil
+}
+
 type owner struct {
 	kind
 	typ, id, label string
