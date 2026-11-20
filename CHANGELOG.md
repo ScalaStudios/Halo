@@ -39,6 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Applications: client secrets shown once, rotation with a 24-hour grace period, revocation, enabling and disabling, group assignment, owners, and setup guides for Grafana, Forgejo, kubectl, generic OpenID Connect, generic SAML, AWS IAM Identity Center and Slack.
 - Account portal: profile, passkeys, security keys, authenticator apps, recovery codes, linked accounts, sessions, applications, access requests, approvals, access reviews and activity.
 - Management API under `/api/v1` with administrative roles: global, security, user, helpdesk and application administrator, and auditor. Every administrative change writes an audit event in the same transaction. The OpenAPI 3.1 document is served at `/api/v1/openapi.yaml`.
+- A Terraform and OpenTofu provider in `cmd/terraform-provider-halo` for users, groups, group memberships, OpenID Connect and OAuth applications, access policies and API resources, with an example in `examples/terraform`.
 - `HALO_TRUSTED_PROXIES` for client IP addresses behind reverse proxies.
 - Signing key rotation: new OpenID Connect keys sign immediately while previous keys stay in the JWKS for 7 days, and new SAML certificates are listed beside the previous one until it is removed.
 - `email_verified` in ID tokens and userinfo, set when a person redeems an emailed link or signs in through a provider that verified the address, and cleared when the address changes.
