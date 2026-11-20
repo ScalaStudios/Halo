@@ -776,7 +776,12 @@ paths:
           description: You.
           content:
             application/json:
-              schema: {$ref: '#/components/schemas/User'}
+              schema:
+                allOf:
+                  - {$ref: '#/components/schemas/User'}
+                  - type: object
+                    properties:
+                      impersonation: {$ref: '#/components/schemas/Impersonation', description: 'Present when the session is an impersonation: an administrator is viewing Halo as you.'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
   /me/passkeys/begin:
     post:
@@ -1789,6 +1794,90 @@ paths:
       description: 'Roles: user, helpdesk or security administrator. When you target yourself, your current session stays.'
       responses:
         '200': {$ref: '#/components/responses/Revoked'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /users/{id}/impersonations:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Users]
+      operationId: requestImpersonation
+      summary: Ask to see Halo as a person
+      description: 'Roles: helpdesk administrator, signed in to the console; API keys are refused. The person must be active, in one of `impersonationGroupIds`, and must not be you, a service account, an emergency access account, or hold or be eligible for any administrator role. Global administrators get no exemption. Creates an impersonation that must be started within 30 minutes with `POST /impersonations/{id}/start`. While `impersonation` is in `approvalActions`, it waits for a global administrator instead, and the impersonation is created when they approve.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: {type: string, maxLength: 500, description: Why you need it. Shown to the person in the email and recorded in the audit and sign-in logs.}
+      responses:
+        '201':
+          description: The impersonation, ready to start.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Impersonation'}
+        '202': {$ref: '#/components/responses/ApprovalPending'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /impersonations:
+    get:
+      tags: [Users]
+      operationId: listImpersonations
+      summary: List impersonations
+      description: 'Roles: any administrator.'
+      parameters:
+        - {name: user, in: query, schema: {type: string}, description: Only impersonations of this person.}
+      responses:
+        '200':
+          description: The 100 most recent, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Impersonation'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /impersonations/{id}/start:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Users]
+      operationId: startImpersonation
+      summary: Start an impersonation
+      description: 'Roles: helpdesk administrator, and only the one who asked for it, from a browser session. Works once. Ends your own session and replaces the session cookie with one for the person that lasts 30 minutes. It can read `/me`, `/me/*`, `/organization`, avatars and logos, and end itself; everything else, including changing sign-in methods, passwords, sessions or roles, approving anything, the admin console and signing in to applications, is refused with `ERR_IMPERSONATING`. It also ends as soon as you or the person no longer qualify. Emails the person, and records `impersonation.start` in the audit log and a sign-in with `impersonatorId` in the sign-in log.'
+      responses:
+        '200':
+          description: Started. Go to `redirect`.
+          headers:
+            Set-Cookie: {schema: {type: string}, description: The impersonation session.}
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [redirect]
+                properties:
+                  redirect: {type: string, examples: [/account]}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /impersonations/{id}/end:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Users]
+      operationId: endImpersonation
+      summary: End or cancel an impersonation
+      description: 'Roles: user, helpdesk or security administrator, or the impersonation session itself, which is then signed out. Records `impersonation.end` with the administrator who ended it, or with the impersonating administrator when the session ends itself. Ending one that already ended does nothing.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -3696,7 +3785,7 @@ paths:
       tags: [Settings]
       operationId: updateSettings
       summary: Change organization settings
-      description: 'Roles: security administrator. Only a global administrator can change `organizationName`, `contactEmail`, `signInMessage`, `theme`, `customCss`, `consoleBranding`, `approvalActions` and `emergencyAccessIds`. Send only the fields to change. Token lifetimes apply to applications created afterwards.'
+      description: 'Roles: security administrator. Only a global administrator can change `organizationName`, `contactEmail`, `signInMessage`, `theme`, `customCss`, `consoleBranding`, `approvalActions`, `emergencyAccessIds` and `impersonationGroupIds`. Send only the fields to change. Token lifetimes apply to applications created afterwards.'
       requestBody:
         required: true
         content:
@@ -4588,7 +4677,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     Forbidden:
-      description: '`ERR_FORBIDDEN`: your roles do not allow this. `ERR_CROSS_SITE` on changes from another website. `ERR_APPROVAL_REQUIRED`: the change needs approval, and an API key cannot ask for it.'
+      description: '`ERR_FORBIDDEN`: your roles do not allow this. `ERR_CROSS_SITE` on changes from another website. `ERR_APPROVAL_REQUIRED`: the change needs approval, and an API key cannot ask for it. `ERR_IMPERSONATING`: the session is an impersonation, which can only read the account portal.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -5172,6 +5261,7 @@ components:
         lastActiveAt: {type: string, format: date-time}
         current: {type: boolean, description: Present and true for the session making the request.}
         client: {type: string, enum: [halo-cli], description: 'Present for sessions that `halo login` started through the device flow. Ending such a session, or all of a person''s sessions, also revokes its access and refresh tokens.'}
+        impersonationId: {type: string, description: Present when an administrator holds this session through an impersonation. It does not count toward the session limit.}
     SignInEvent:
       type: object
       required: [id, time, userId, email, appId, result, method, ip, location, device, risk]
@@ -5189,6 +5279,7 @@ components:
         risk: {type: string, enum: [none, low, medium, high]}
         reason: {type: string, description: Why the sign-in failed or the session ended.}
         challenge: {type: string, enum: [passed, failed, unavailable], description: The result of the bot protection check. Absent when no check was asked for.}
+        impersonatorId: {type: string, description: 'Present when an administrator started an impersonation session as this person. `reason` then names them and says why.'}
     AuditEvent:
       type: object
       required: [id, time, actorId, action, summary, targetType, targetId, target, ip, changes]
@@ -5308,12 +5399,24 @@ components:
           items: {$ref: '#/components/schemas/NamedRef'}
         createdAt: {type: string, format: date-time}
         canDecide: {type: boolean}
+    Impersonation:
+      type: object
+      required: [id, actor, user, reason, status, createdAt, startedAt, expiresAt]
+      properties:
+        id: {type: string, examples: [imp_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        actor: {$ref: '#/components/schemas/NamedRef', description: The administrator who impersonates.}
+        user: {$ref: '#/components/schemas/NamedRef', description: The person they see Halo as.}
+        reason: {type: string}
+        status: {type: string, enum: [ready, active, ended, expired], description: '`ready` until started, `expired` if never started in time, `active` while its session lasts, then `ended`.'}
+        createdAt: {type: string, format: date-time}
+        startedAt: {type: [string, 'null'], format: date-time}
+        expiresAt: {type: string, format: date-time, description: When it must be started by, or when its session ends once started.}
     ApprovalRequest:
       type: object
       required: [id, action, summary, targetType, targetId, targetLabel, requester, createdAt, expiresAt, status, decidedBy, decidedAt, outcome, canDecide]
       properties:
         id: {type: string, examples: [apr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
-        action: {type: string, enum: [global-admin, policy-disable, password-sign-in, identity-providers, approval-settings]}
+        action: {type: string, enum: [global-admin, policy-disable, password-sign-in, identity-providers, impersonation, approval-settings]}
         summary: {type: string, examples: [Set roles to Global administrator]}
         targetType: {type: string, enum: [user, service_account, policy, method, identity_provider, settings]}
         targetId: {type: string, description: Empty for a new identity provider and for settings.}
@@ -5697,14 +5800,19 @@ components:
         approvalActions:
           type: array
           default: []
-          items: {type: string, enum: [global-admin, policy-disable, password-sign-in, identity-providers]}
-          description: 'Changes that wait for a second global administrator: `global-admin` grants the global administrator role or makes someone eligible to activate it, `policy-disable` turns off, switches to report-only or deletes an enforced access policy, `password-sign-in` turns on password sign-in, `identity-providers` adds, changes, turns on or off or deletes an identity provider. While any is on, changing this list or `emergencyAccessIds` also needs approval. Turning approval on needs a second active global administrator.'
+          items: {type: string, enum: [global-admin, policy-disable, password-sign-in, identity-providers, impersonation]}
+          description: 'Changes that wait for a second global administrator: `global-admin` grants the global administrator role or makes someone eligible to activate it, `policy-disable` turns off, switches to report-only or deletes an enforced access policy, `password-sign-in` turns on password sign-in, `identity-providers` adds, changes, turns on or off or deletes an identity provider, `impersonation` lets a helpdesk administrator see Halo as someone. While any is on, changing this list or `emergencyAccessIds` also needs approval. Turning approval on needs a second active global administrator.'
         emergencyAccessIds:
           type: array
           default: []
           maxItems: 5
           items: {type: string}
           description: People whose changes skip approval. Each use is recorded as `approval.bypass` in the audit log and emailed to the other global administrators.
+        impersonationGroupIds:
+          type: array
+          default: []
+          items: {type: string}
+          description: Helpdesk administrators can impersonate active members of these groups who hold no administrator role and are not eligible for one. Empty turns impersonation off.
         clientRegistration: {type: string, enum: ['off', open, token, approval], default: 'off', description: 'Who can register OAuth clients at `/oauth2/register`: nobody, anyone, clients that send an API key with the `registration` scope as the initial access token, or anyone with each new or changed client disabled until an application administrator approves it.'}
         emailTemplates:
           type: object

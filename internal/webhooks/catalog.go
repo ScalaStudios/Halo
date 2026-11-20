@@ -73,6 +73,8 @@ var catalog = []eventType{
 	{"identity_provider.disable", "Sign-in with an identity provider was turned off"},
 	{"identity_provider.enable", "Sign-in with an identity provider was turned on"},
 	{"identity_provider.update", "An identity provider's settings were changed"},
+	{"impersonation.end", "An impersonation was ended or cancelled, by the impersonating administrator or another administrator"},
+	{"impersonation.start", "A helpdesk administrator started seeing Halo as a person, with the reason"},
 	{"lifecycle.run", "A lifecycle rule ran for a person"},
 	{"lifecycle_rule.create", "A lifecycle rule was created"},
 	{"lifecycle_rule.delete", "A lifecycle rule was deleted"},

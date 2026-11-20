@@ -30,6 +30,7 @@ const columns: ColumnDef<Row, any>[] = [
       <span className="inline-flex items-center gap-2 whitespace-nowrap">
         {getValue<string>()}
         {row.original.current ? <Badge tone="success">This browser</Badge> : null}
+        {row.original.impersonationId ? <Badge tone="warning">Impersonation</Badge> : null}
       </span>
     ),
   },

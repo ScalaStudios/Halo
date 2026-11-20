@@ -1,4 +1,4 @@
-import { StatusDot } from "@/components/ui/badge";
+import { Badge, StatusDot } from "@/components/ui/badge";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { METHOD, RESULT, signInApp } from "@/lib/labels";
 import type { SignInEvent } from "@/lib/types";
@@ -28,7 +28,12 @@ export function SignInRows({ events, appNames = {} }: { events: SignInEvent[]; a
                   {RESULT[event.result].label}
                 </span>
               </td>
-              <td className="px-3 text-fg-2">{METHOD[event.method].label}</td>
+              <td className="px-3 text-fg-2">
+                <span className="inline-flex items-center gap-2 whitespace-nowrap" title={event.impersonatorId ? event.reason : undefined}>
+                  {METHOD[event.method].label}
+                  {event.impersonatorId ? <Badge tone="warning">Impersonation</Badge> : null}
+                </span>
+              </td>
               <td className="hidden px-3 text-fg-3 md:table-cell">{event.location}</td>
               <td className="hidden px-3 font-mono text-code-sm text-fg-3 lg:table-cell">{event.ip}</td>
               <td className="tnum px-3 pr-6 text-right whitespace-nowrap text-fg-3"><RelativeTime iso={event.time} /></td>

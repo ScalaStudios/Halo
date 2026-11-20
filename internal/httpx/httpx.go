@@ -41,6 +41,7 @@ var (
 	ErrForbidden       = Fail(http.StatusForbidden, "ERR_FORBIDDEN", "Your role does not allow this change. Ask a global administrator for access.")
 	ErrCrossSite       = Fail(http.StatusForbidden, "ERR_CROSS_SITE", "This request did not come from Halo, so it was blocked. Reload the page and try again.")
 	ErrBadJSON         = Fail(http.StatusBadRequest, "ERR_INVALID_JSON", "The request body is not valid JSON.")
+	ErrImpersonating   = Fail(http.StatusForbidden, "ERR_IMPERSONATING", "You are impersonating someone, so you can only look. End the impersonation to make changes or open applications as yourself.")
 )
 
 func NotFound(what string) *Error {
@@ -178,7 +179,7 @@ func (a *Auth) Resolve(next http.Handler) http.Handler {
 			sess, err := a.Store.SessionByToken(r.Context(), cookie.Value)
 			if err == nil {
 				user, err := a.Store.GetUser(r.Context(), sess.UserID)
-				if err == nil && user.Status != "suspended" && user.Status != "deprovisioned" {
+				if err == nil && user.Status != "suspended" && user.Status != "deprovisioned" && a.Store.ImpersonationValid(r.Context(), sess, user) {
 					ctx := context.WithValue(r.Context(), userKey, user)
 					ctx = context.WithValue(ctx, sessionKey, sess)
 					r = r.WithContext(ctx)
@@ -201,8 +202,24 @@ func (a *Auth) Resolve(next http.Handler) http.Handler {
 				}
 			}
 		}
+		if sess, ok := CurrentSession(r); ok && sess.ImpersonationID != "" && !impersonationAllows(r, sess.ImpersonationID) {
+			Handle(func(http.ResponseWriter, *http.Request) error { return ErrImpersonating })(w, r)
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func impersonationAllows(r *http.Request, impersonationID string) bool {
+	path := r.URL.Path
+	switch r.Method {
+	case http.MethodPost:
+		return path == "/api/v1/impersonations/"+impersonationID+"/end"
+	case http.MethodGet, http.MethodHead:
+		return path == "/api/v1/me" || path == "/api/v1/organization" || strings.HasPrefix(path, "/api/v1/me/") ||
+			strings.HasPrefix(path, "/api/v1/") && (strings.HasSuffix(path, "/avatar") || strings.HasSuffix(path, "/logo"))
+	}
+	return false
 }
 
 func personalRoute(path string) bool {

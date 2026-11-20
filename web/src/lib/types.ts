@@ -35,6 +35,18 @@ export type User = {
   createdAt: string;
   lastSignInAt: string | null;
   avatarUrl: string | null;
+  impersonation?: Impersonation;
+};
+
+export type Impersonation = {
+  id: string;
+  actor: { id: string; name: string };
+  user: { id: string; name: string };
+  reason: string;
+  status: "ready" | "active" | "ended" | "expired";
+  createdAt: string;
+  startedAt: string | null;
+  expiresAt: string;
 };
 
 export type RoleActivation = {
@@ -126,6 +138,7 @@ export type Session = {
   lastActiveAt: string;
   current?: boolean;
   client?: "halo-cli";
+  impersonationId?: string;
 };
 
 export type SignInResult = "success" | "failure" | "interrupted" | "ended";
@@ -145,6 +158,7 @@ export type SignInEvent = {
   risk: RiskLevel;
   reason?: string;
   challenge?: "passed" | "failed" | "unavailable";
+  impersonatorId?: string;
 };
 
 export type AuditEvent = {

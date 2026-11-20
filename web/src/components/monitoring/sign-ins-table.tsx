@@ -140,7 +140,12 @@ const columns: ColumnDef<Row, any>[] = [
     header: "Method",
     filterFn: facetFilter,
     meta: { label: "Method" },
-    cell: ({ row }) => <span className="whitespace-nowrap">{METHOD[row.original.method].label}</span>,
+    cell: ({ row }) => (
+      <span className="inline-flex items-center gap-2 whitespace-nowrap">
+        {METHOD[row.original.method].label}
+        {row.original.impersonatorId ? <Badge tone="warning">Impersonation</Badge> : null}
+      </span>
+    ),
   },
   {
     id: "risk",
@@ -277,7 +282,7 @@ function SignInDetail({ event }: { event: Row }) {
         <div className="flex items-center gap-3 rounded-md border border-success/20 bg-success-container p-4">
           <CircleCheck aria-hidden="true" size={20} strokeWidth={1.75} className="shrink-0 text-success" />
           <p className="text-body-sm text-fg">
-            <span className="font-semibold">Signed in</span> with {METHOD[event.method].label.toLowerCase()}.
+            <span className="font-semibold">Signed in</span> with {METHOD[event.method].label.toLowerCase()}.{event.impersonatorId ? ` ${event.reason}` : null}
           </p>
         </div>
       ) : (

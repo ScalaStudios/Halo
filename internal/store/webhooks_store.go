@@ -136,7 +136,7 @@ func (s *Store) PollWebhookEvents(ctx context.Context, before time.Time, limit i
 		{"audit", `select id, action, time, jsonb_build_object('id', id, 'time', time, 'actorId', actor_id, 'action', action, 'summary', summary,
 			'targetType', target_type, 'targetId', target_id, 'target', target_label, 'ip', ip, 'changes', changes) from audit_events`},
 		{"sign_in", `select id, 'sign_in.' || result, time, jsonb_build_object('id', id, 'time', time, 'userId', user_id, 'email', email, 'appId', app_id,
-			'result', result, 'method', method, 'ip', ip, 'location', location, 'device', device, 'risk', risk, 'reason', reason, 'challenge', challenge) from sign_in_events`},
+			'result', result, 'method', method, 'ip', ip, 'location', location, 'device', device, 'risk', risk, 'reason', reason, 'challenge', challenge, 'impersonatorId', impersonator_id) from sign_in_events`},
 	} {
 		var cursorTime time.Time
 		var cursorID string

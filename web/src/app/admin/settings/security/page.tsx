@@ -1,4 +1,4 @@
-import { BotProtectionForm, ClientRegistrationForm, SecurityForm, SessionLimitForm } from "@/components/settings/settings-forms";
+import { BotProtectionForm, ClientRegistrationForm, ImpersonationForm, SecurityForm, SessionLimitForm } from "@/components/settings/settings-forms";
 import { hasRole } from "@/components/settings/roles";
 import { SigningKeys } from "@/components/settings/signing-keys";
 import { PageHeader } from "@/components/ui/page-header";
@@ -18,6 +18,7 @@ export default async function SecurityDefaultsPage() {
       />
       <SecurityForm settings={settings} canEdit={hasRole(me, "security_admin")} />
       <SessionLimitForm settings={settings} groups={groups} canEdit={hasRole(me, "security_admin")} />
+      <ImpersonationForm settings={settings} groups={groups} canEdit={hasRole(me)} />
       <ClientRegistrationForm settings={settings} issuer={issuer} canEdit={hasRole(me, "security_admin")} />
       <BotProtectionForm settings={settings} secretSet={botProtectionSecretSet} canEdit={hasRole(me, "security_admin")} />
       <SigningKeys keys={keys} canRotate={hasRole(me)} />
