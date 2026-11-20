@@ -349,7 +349,9 @@ export function SessionLimitForm({ settings, groups, canEdit }: { settings: Sett
             <Checkbox className="mt-0.5" disabled={!canEdit} checked={cli} onChange={(event) => setCli(event.target.checked)} />
             <span className="flex flex-col">
               <span className="text-body-sm text-fg">Also limit Halo CLI sessions</span>
-              <span className="text-caption text-fg-3">Counted apart from browser sessions, against the same limit, when someone approves halo login. When off, the command line is never limited.</span>
+              <span className="text-caption text-fg-3">
+                Counted apart from browser sessions, against the same limit, when someone approves <code className="text-code-sm">halo login</code>. When off, the command line is never limited.
+              </span>
             </span>
           </label>
           <fieldset className="flex flex-col gap-3">
