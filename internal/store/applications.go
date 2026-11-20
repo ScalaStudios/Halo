@@ -134,6 +134,18 @@ func (s *Store) CreateApplication(ctx context.Context, in NewApplication) (Appli
 	return s.GetApplication(ctx, appID)
 }
 
+func (s *Store) ApproveRegistration(ctx context.Context, appID string, redirectURIs, postLogoutURIs []string) error {
+	tag, err := s.db.Exec(ctx, `update applications set status = 'active', awaiting_approval = false, updated_at = now()
+		where id = $1 and awaiting_approval and redirect_uris = $2::text[] and post_logout_uris = $3::text[]`, appID, redirectURIs, postLogoutURIs)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrConflict
+	}
+	return nil
+}
+
 func (s *Store) SetApplicationStatus(ctx context.Context, appID, status string, awaiting bool) error {
 	var clientID string
 	err := s.db.QueryRow(ctx, `update applications set status = $2, awaiting_approval = $3, updated_at = now() where id = $1 returning client_id`, appID, status, awaiting).Scan(&clientID)

@@ -436,8 +436,30 @@ func (h *handlers) setApplicationStatus(status string) handler {
 		} else if app.AwaitingApproval {
 			action, summary = "application.registration.approve", "Approved the dynamically registered client"
 		}
+		approving := status == "active" && app.AwaitingApproval
+		var reviewed struct {
+			RedirectURIs   []string `json:"redirectUris"`
+			PostLogoutURIs []string `json:"postLogoutUris"`
+		}
+		if approving {
+			if err := httpx.Decode(r, &reviewed); err != nil {
+				return err
+			}
+			if reviewed.RedirectURIs == nil {
+				return httpx.Invalid(app.Name + " is waiting for approval. Review its redirect URIs and use Approve, which sends the redirectUris and postLogoutUris you reviewed.")
+			}
+		}
 		err = h.st.Tx(r.Context(), func(tx *store.Store) error {
-			if err := tx.SetApplicationStatus(r.Context(), app.ID, status, false); err != nil {
+			var err error
+			if approving {
+				err = tx.ApproveRegistration(r.Context(), app.ID, reviewed.RedirectURIs, append([]string{}, reviewed.PostLogoutURIs...))
+			} else {
+				err = tx.SetApplicationStatus(r.Context(), app.ID, status, false)
+			}
+			if errors.Is(err, store.ErrConflict) {
+				return conflict(app.Name + " changed its registration after you opened it. Review its redirect URIs again, then approve.")
+			}
+			if err != nil {
 				return err
 			}
 			return record(r, tx, actor, store.AuditEvent{Action: action, Summary: summary, TargetType: "application", TargetID: app.ID, TargetLabel: app.Name})

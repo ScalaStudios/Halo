@@ -2318,7 +2318,16 @@ paths:
       tags: [Applications]
       operationId: enableApplication
       summary: Allow sign-in again
-      description: 'Roles: application administrator. For a client with `awaitingApproval`, this approves it and records `application.registration.approve`.'
+      description: 'Roles: application administrator. For a client with `awaitingApproval`, this approves it and records `application.registration.approve`. The body must then carry the `redirectUris` and `postLogoutUris` the administrator reviewed; if the client changed them since, the response is `409` and nothing is approved.'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                redirectUris: {type: array, items: {type: string}}
+                postLogoutUris: {type: array, items: {type: string}}
       responses:
         '200': {$ref: '#/components/responses/ApplicationResponse'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
