@@ -157,7 +157,10 @@ export type AuditEvent = {
   targetId: string;
   target: string;
   ip: string;
+  changes: AuditChange[];
 };
+
+export type AuditChange = { field: string; before?: unknown; after?: unknown; redacted?: boolean };
 
 export type Organization = { name: string; issuer: string };
 

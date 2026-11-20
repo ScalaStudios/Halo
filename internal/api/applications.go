@@ -763,7 +763,7 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		if err := tx.UpdateApplication(r.Context(), next); err != nil {
 			return found(err, "This application")
 		}
-		return record(r, tx, actor, store.AuditEvent{Action: "application.update", Summary: "Updated " + strings.Join(changed, ", "), TargetType: "application", TargetID: app.ID, TargetLabel: next.Name})
+		return record(r, tx, actor, store.AuditEvent{Action: "application.update", Summary: "Updated " + strings.Join(changed, ", "), TargetType: "application", TargetID: app.ID, TargetLabel: next.Name, Changes: store.Diff(app, next)})
 	})
 	if err != nil {
 		return err

@@ -136,6 +136,9 @@ func TestPolicyLifecycle(t *testing.T) {
 	if audit[0].Action != "policy.update" || audit[0].Summary != "Switched to enforced" || audit[0].TargetID != first.ID {
 		t.Fatalf("update audit: %+v", audit[0])
 	}
+	if c := audit[0].Changes; len(c) != 1 || c[0].Field != "mode" || string(c[0].Before) != `"report"` || string(c[0].After) != `"enforce"` {
+		t.Fatalf("policy changes: %+v", c)
+	}
 
 	expect(t, call(t, h, token, "PUT", "/api/v1/policies/order", map[string]any{"ids": []string{second.ID}}), 422)
 	expect(t, call(t, h, token, "PUT", "/api/v1/policies/order", map[string]any{"ids": []string{second.ID, first.ID}}), 204)

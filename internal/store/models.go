@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json"
 	"slices"
 	"time"
 )
@@ -155,4 +156,12 @@ type AuditEvent struct {
 	TargetID    string    `json:"targetId"`
 	TargetLabel string    `json:"target"`
 	IP          string    `json:"ip"`
+	Changes     []Change  `json:"changes"`
+}
+
+type Change struct {
+	Field    string          `json:"field"`
+	Before   json.RawMessage `json:"before,omitempty"`
+	After    json.RawMessage `json:"after,omitempty"`
+	Redacted bool            `json:"redacted,omitempty"`
 }

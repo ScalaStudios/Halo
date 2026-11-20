@@ -281,7 +281,7 @@ func (h *handlers) updatePolicy(w http.ResponseWriter, r *http.Request, actor st
 		if err != nil {
 			return found(err, "This policy")
 		}
-		return record(r, tx, actor, store.AuditEvent{Action: "policy.update", Summary: changes(old, updated), TargetType: "policy", TargetID: updated.ID, TargetLabel: updated.Name})
+		return record(r, tx, actor, store.AuditEvent{Action: "policy.update", Summary: changes(old, updated), TargetType: "policy", TargetID: updated.ID, TargetLabel: updated.Name, Changes: store.Diff(old, updated)})
 	})
 	if err != nil {
 		return err

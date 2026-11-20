@@ -134,6 +134,9 @@ func TestSettingsValidationCacheAndRoles(t *testing.T) {
 	if len(audit) != 1 || audit[0].Action != "settings.update" || audit[0].Summary != "Changed the session lifetime, lockout window" {
 		t.Fatalf("audit: %+v", audit)
 	}
+	if c := audit[0].Changes; len(c) != 2 || c[0].Field != "lockoutMinutes" || string(c[0].Before) != "15" || string(c[0].After) != "30" || c[1].Field != "sessionHours" || string(c[1].After) != "8" {
+		t.Fatalf("settings changes: %+v", c)
+	}
 
 	org := decode[Org](t, e.expect(e.call("", "GET", "/api/v1/organization", nil), 200))
 	if org.Name != "Fernway Systems" || org.LogoURL != nil {
@@ -323,7 +326,7 @@ func TestExportExcludesSecrets(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &export); err != nil {
 		t.Fatalf("export is not valid JSON: %v", err)
 	}
-	for _, section := range []string{"exportedAt", "organization", "settings", "users", "groups", "memberships", "roles", "eligibleRoles", "applications", "policies", "terms", "termsAcceptances", "accessPackages", "accessReviews"} {
+	for _, section := range []string{"exportedAt", "organization", "settings", "users", "groups", "memberships", "roles", "eligibleRoles", "applications", "policies", "terms", "termsAcceptances", "accessPackages", "accessReviews", "auditEvents"} {
 		if export[section] == nil {
 			t.Errorf("export has no %s", section)
 		}
@@ -460,14 +463,17 @@ func TestBotProtectionSettings(t *testing.T) {
 	if audit[0].Summary != "Changed the bot protection, bot protection site key, bot protection secret key" {
 		t.Fatalf("audit: %+v", audit)
 	}
+	if changes, _ := json.Marshal(audit[0].Changes); string(changes) != `[{"field":"botProtection","before":"","after":"turnstile"},{"field":"botProtectionSiteKey","before":"","after":"0x4AAAAAAA"},{"field":"botProtectionSecretKey","redacted":true}]` {
+		t.Fatalf("bot protection changes: %s", changes)
+	}
 
 	e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"botProtectionSecret": "rotated"}), 200)
 	if plain, _ := e.st.BotProtectionSecret(ctx); plain != "rotated" {
 		t.Fatalf("a secret-only change must be saved: %q", plain)
 	}
 	audit, _ = e.st.ListAudit(ctx, 1)
-	if audit[0].Summary != "Changed the bot protection secret key" || strings.Contains(audit[0].Summary, "rotated") {
-		t.Fatalf("audit: %+v", audit)
+	if changes, _ := json.Marshal(audit[0]); audit[0].Summary != "Changed the bot protection secret key" || !strings.Contains(string(changes), `"changes":[{"field":"botProtectionSecretKey","redacted":true}]`) || strings.Contains(string(changes), "rotated") {
+		t.Fatalf("audit: %s", changes)
 	}
 	e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"botProtection": ""}), 200)
 	if s, _ := e.st.CurrentSettings(ctx); s.BotProtection != "" {
