@@ -19,14 +19,21 @@ func PublicAddress(ip netip.Addr) bool {
 	return ip.IsGlobalUnicast() && !ip.IsPrivate() && !sharedSpace.Contains(ip)
 }
 
-func GuardedClient() *http.Client {
-	dialer := &net.Dialer{Timeout: 10 * time.Second, Control: func(_, address string, _ syscall.RawConn) error {
+func GuardedDialer() *net.Dialer {
+	return &net.Dialer{Timeout: 10 * time.Second, Control: func(_, address string, _ syscall.RawConn) error {
 		host, _, err := net.SplitHostPort(address)
 		if ip, parseErr := netip.ParseAddr(host); err != nil || parseErr != nil || !PublicAddress(ip) {
 			return errPrivate
 		}
 		return nil
 	}}
+}
+
+func GuardedClient() *http.Client {
+	return DialerClient(GuardedDialer())
+}
+
+func DialerClient(dialer *net.Dialer) *http.Client {
 	noRedirect := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &http.Client{Timeout: 10 * time.Second, CheckRedirect: noRedirect, Transport: &http.Transport{DialContext: dialer.DialContext, TLSHandshakeTimeout: 10 * time.Second, ForceAttemptHTTP2: true}}
 }

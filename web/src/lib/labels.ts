@@ -1,6 +1,6 @@
 import { Fingerprint, IdCard, KeyRound, ListOrdered, Mail, Network, RectangleEllipsis, Smartphone, TicketCheck, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/badge";
-import type { NotificationDestination } from "./settings-types";
+import type { LogExportProtocol, NotificationDestination } from "./settings-types";
 import type { AttributeType, AuthStrength, Group, JoinPolicy, MethodKind, RiskLevel, Scope, SignInEvent, SignInResult, UserStatus } from "./types";
 
 export const ATTRIBUTE_TYPE: Record<AttributeType, string> = {
@@ -50,6 +50,12 @@ export const RISK: Record<RiskLevel, { label: string; tone: Tone }> = {
   low: { label: "Low", tone: "info" },
   medium: { label: "Medium", tone: "warning" },
   high: { label: "High", tone: "danger" },
+};
+
+export const PROTOCOLS: Record<LogExportProtocol, { label: string; placeholder: string; hint: string }> = {
+  "syslog-tls": { label: "Syslog over TLS", placeholder: "siem.example.com:6514", hint: "RFC 5424 messages over TCP with TLS, one per event." },
+  "syslog-udp": { label: "Syslog over UDP", placeholder: "syslog.lab.internal:514", hint: "Unencrypted and without delivery confirmation. Use it only in a lab." },
+  "otlp-http": { label: "OpenTelemetry (OTLP/HTTP)", placeholder: "https://otel.example.com:4318/v1/logs", hint: "OTLP log records as JSON. Halo adds /v1/logs when the address has no path." },
 };
 
 export const DESTINATIONS: Record<NotificationDestination, { label: string; placeholder: string }> = {

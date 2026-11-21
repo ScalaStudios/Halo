@@ -105,6 +105,7 @@ var sealedColumns = []struct{ table, key, column string }{
 	{"ssh_authority", "id", "private_key_sealed"},
 	{"approval_requests", "id", "body_sealed"},
 	{"bot_protection", "singleton", "secret_sealed"},
+	{"log_export", "singleton", "headers_sealed"},
 }
 
 type ResealedColumn struct {

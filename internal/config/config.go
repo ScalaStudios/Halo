@@ -14,6 +14,7 @@ type Config struct {
 	DatabaseURL    string
 	SMTP           SMTP
 	S3             S3
+	LogExport      LogExport
 	TrustedProxies []string
 	CertHeader     string
 	PublicURL      *url.URL
@@ -47,6 +48,13 @@ type S3 struct {
 
 func (s S3) Configured() bool {
 	return s.Endpoint != nil && s.Endpoint.Host != "" && s.Bucket != ""
+}
+
+type LogExport struct {
+	Protocol     string
+	Endpoint     string
+	Headers      string
+	AllowPrivate bool
 }
 
 func Load() (Config, error) {
@@ -98,6 +106,13 @@ func Load() (Config, error) {
 	}
 	if cfg.SMTP.Configured() && cfg.SMTP.From == "" {
 		problems = append(problems, "HALO_SMTP_FROM is required when HALO_SMTP_HOST is set, for example: Halo <halo@example.com>")
+	}
+
+	cfg.LogExport = LogExport{
+		Protocol:     os.Getenv("HALO_LOG_EXPORT_PROTOCOL"),
+		Endpoint:     os.Getenv("HALO_LOG_EXPORT_ENDPOINT"),
+		Headers:      os.Getenv("HALO_LOG_EXPORT_HEADERS"),
+		AllowPrivate: os.Getenv("HALO_LOG_EXPORT_ALLOW_PRIVATE") == "1",
 	}
 
 	s3 := map[string]string{}

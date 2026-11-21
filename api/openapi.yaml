@@ -67,7 +67,7 @@ tags:
   - name: Settings
     description: Organization settings, branding, domains and data export.
   - name: Webhooks
-    description: Signed HTTP delivery of audit and sign-in events, and notification rules that send chosen events to Slack, Discord or a webhook. An audit event's `data` has the fields of an `AuditEvent`, including `changes`.
+    description: Signed HTTP delivery of audit and sign-in events, streaming them to syslog or OpenTelemetry, and notification rules that send chosen events to Slack, Discord or a webhook. An audit event's `data` has the fields of an `AuditEvent`, including `changes`.
   - name: API resources
     description: Your own APIs, their scopes, and which applications may request them.
   - name: SSH
@@ -5680,6 +5680,89 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /log-export:
+    get:
+      tags: [Webhooks]
+      operationId: getLogExport
+      summary: Get the log exporter and its queue
+      description: 'Roles: any administrator. Header values are never returned, only whether some are set.'
+      responses:
+        '200':
+          description: The exporter, or null when sign-in and audit events are not streamed, and the events waiting to be sent.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [exporter, queued, environment]
+                properties:
+                  exporter:
+                    oneOf:
+                      - {$ref: '#/components/schemas/LogExport'}
+                      - {type: 'null'}
+                  queued: {type: integer, description: Sign-in and audit events recorded since the last successful send.}
+                  environment: {type: boolean, description: True when `HALO_LOG_EXPORT_*` environment variables set the exporter, so it cannot be changed here.}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    put:
+      tags: [Webhooks]
+      operationId: putLogExport
+      summary: Stream sign-in and audit events to syslog or an OpenTelemetry collector
+      description: 'Roles: security administrator. Streaming starts with events recorded after the exporter is first saved. Changes are in the audit log, with header values redacted.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [protocol, endpoint]
+              properties:
+                protocol: {type: string, enum: [syslog-tls, syslog-udp, otlp-http], description: '`syslog-tls` sends RFC 5424 messages over TCP with TLS and octet-counting framing (RFC 5425), `syslog-udp` sends one message per datagram (RFC 5426) for lab use, and `otlp-http` posts OTLP/HTTP JSON.'}
+                endpoint: {type: string, examples: ['siem.example.com:6514', 'https://otel.example.com:4318/v1/logs'], description: '`host:port` for syslog, or the collector URL for OTLP. An OTLP URL without a path gets `/v1/logs`.'}
+                allowPrivate: {type: boolean, default: false, description: Send to private, loopback and link-local addresses, and allow `http://` for OTLP.}
+                headers: {type: string, examples: ['Authorization=Bearer <token>'], description: 'OTLP only: `name=value` pairs separated by commas or new lines, stored encrypted. Omit to keep the saved headers, or send an empty string to remove them.'}
+      responses:
+        '200':
+          description: The exporter, as `GET /log-export` returns it.
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409':
+          description: '`ERR_LOG_EXPORT_ENVIRONMENT`: environment variables set the exporter.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Webhooks]
+      operationId: deleteLogExport
+      summary: Stop streaming sign-in and audit events
+      description: 'Roles: security administrator.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: '`ERR_LOG_EXPORT_ENVIRONMENT`: environment variables set the exporter.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /log-export/test:
+    post:
+      tags: [Webhooks]
+      operationId: testLogExport
+      summary: Send a `log_export.test` event now
+      description: 'Roles: security administrator. The test event is sent once and is not queued.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '502':
+          description: '`ERR_LOG_EXPORT_FAILED`: the collector could not be reached or answered with an error.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
   /notification-rules:
     get:
       tags: [Webhooks]
@@ -8027,6 +8110,19 @@ components:
         token: {type: string, description: 'Publish `halo-verification=<token>` as a TXT record.'}
         createdAt: {type: string, format: date-time}
         verifiedAt: {type: [string, 'null'], format: date-time}
+    LogExport:
+      type: object
+      required: [protocol, endpoint, allowPrivate, headersSet, failures, nextAttemptAt, lastSentAt, lastError, updatedAt]
+      properties:
+        protocol: {type: string, enum: [syslog-tls, syslog-udp, otlp-http]}
+        endpoint: {type: string}
+        allowPrivate: {type: boolean}
+        headersSet: {type: boolean}
+        failures: {type: integer, description: Failed sends in a row. Halo waits longer after each one, up to 5 minutes.}
+        nextAttemptAt: {type: string, format: date-time}
+        lastSentAt: {type: [string, 'null'], format: date-time}
+        lastError: {type: string}
+        updatedAt: {type: string, format: date-time}
     Webhook:
       type: object
       required: [id, url, description, events, enabled, createdAt, updatedAt, lastStatus, lastDeliveryAt]
