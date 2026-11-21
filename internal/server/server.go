@@ -18,6 +18,7 @@ import (
 	"halo/internal/governance"
 	"halo/internal/httpx"
 	"halo/internal/jobs"
+	"halo/internal/ldapserver"
 	"halo/internal/ldapsync"
 	"halo/internal/logexport"
 	"halo/internal/mail"
@@ -103,6 +104,7 @@ type App struct {
 	Metrics http.Handler
 	RADIUS  *radius.Server
 	Jobs    *jobs.Scheduler
+	LDAP    *ldapserver.Server
 }
 
 func New(cfg config.Config, st *store.Store) (*App, error) {
@@ -158,7 +160,11 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 		}
 		w.Write([]byte("ok"))
 	})
-	app := &App{Handler: httpx.Logging(features.Gate(st, root)), RADIUS: radius.New(deps), Jobs: scheduler}
+	directory, err := ldapserver.New(deps)
+	if err != nil {
+		return nil, err
+	}
+	app := &App{Handler: httpx.Logging(features.Gate(st, root)), RADIUS: radius.New(deps), Jobs: scheduler, LDAP: directory}
 	if cfg.MetricsListen != "" || cfg.MetricsToken != "" {
 		exporter := metrics.Handler(cfg.MetricsToken, func() []metrics.Gauge {
 			pool := st.PoolStat()

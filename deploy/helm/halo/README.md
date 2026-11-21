@@ -83,6 +83,18 @@ helm install halo deploy/helm/halo -n halo \
 
 The server doesn't start while Vault is unreachable. The [main README](../../../README.md#keys-in-hashicorp-vault) lists the Vault policy, how to move existing keys and how to keep the token renewed with Vault Proxy.
 
+## LDAP
+
+Set `ldap.enabled=true` to run the read-only LDAP server on port 6360 of the container and the `halo-server` Service. It serves LDAPS with the certificate in a `kubernetes.io/tls` Secret, such as one cert-manager issues for the `publicUrl` host:
+
+```sh
+helm upgrade halo deploy/helm/halo -n halo --reuse-values \
+  --set ldap.enabled=true \
+  --set ldap.certificateSecret=halo-ldap-tls
+```
+
+The server runs without root and with every capability dropped, so keep the port at 1024 or higher. The ingress never routes to it: expose the port to the applications that need it with a LoadBalancer Service or your ingress controller's TCP routing. The server reads the certificate only when it starts, so restart it after the Secret is renewed.
+
 ## Upgrades
 
 Change the image tags, or upgrade to a newer chart, then run `helm upgrade`. The server applies database migrations when it starts and reports ready only afterwards. It runs as a single replica that is stopped before the new one starts, because background jobs run in every server process. Back up the database and `HALO_SECRET_KEY` first.
@@ -115,6 +127,10 @@ Change the image tags, or upgrade to a newer chart, then run `helm upgrade`. The
 | `metrics.serviceMonitor.enabled` | `false` | Create a Prometheus Operator ServiceMonitor. |
 | `metrics.serviceMonitor.interval` | `30s` | Scrape interval. |
 | `metrics.serviceMonitor.tokenKey` | | Key in `existingSecret` holding `HALO_METRICS_TOKEN`, usually `HALO_METRICS_TOKEN`. The ServiceMonitor sends it as a bearer token. |
+| `ldap.enabled` | `false` | Serve the read-only LDAP directory on its own container and Service port, `HALO_LDAP_LISTEN`. |
+| `ldap.port` | `6360` | LDAP port, 1024 or higher. |
+| `ldap.tls` | `ldaps` | `HALO_LDAP_TLS`: `ldaps`, `starttls`, or `none` to accept passwords without TLS. |
+| `ldap.certificateSecret` | | `kubernetes.io/tls` Secret with the certificate and key, mounted for `HALO_LDAP_CERT_FILE` and `HALO_LDAP_KEY_FILE`. Required unless `ldap.tls` is `none`. |
 | `ingress.enabled` | `false` | Create an Ingress for the `publicUrl` host that routes to the web interface. |
 | `ingress.className` | | Ingress class. |
 | `ingress.annotations` | `{}` | For example a cert-manager issuer. |

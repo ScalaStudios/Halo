@@ -47,6 +47,10 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	must(st.SetBotProtectionSecret(ctx, "bot-secret"))
 	must(st.SaveLogExport(ctx, store.LogExport{Protocol: "otlp-http", Endpoint: "https://otel.example.com/v1/logs"}, "Authorization=Bearer otel"))
+	nas, err := st.CreateApplication(ctx, store.NewApplication{Name: "NAS", Protocol: "ldap", Type: "web"})
+	must(err)
+	bindPassword, err := st.RotateLDAPSecret(ctx, nas.ID)
+	must(err)
 	sourceID, err := st.CreateComplianceSource(ctx, store.ComplianceSource{Name: "Intune", Kind: "intune", TenantID: "contoso", ClientID: "halo", MaxAgeMinutes: 1440}, "intune-secret")
 	must(err)
 	directoryID, err := st.CreateLDAPDirectory(ctx, store.LDAPDirectory{Name: "Corp", URL: "ldaps://dc1.example.com", Security: "ldaps", BindDN: "cn=halo", UserBaseDN: "dc=example", UserFilter: "(mail=*)", IntervalMinutes: 60}, "bind-password")
@@ -67,7 +71,7 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	rotation, err := st.RotateSecretKey(ctx, next)
 	must(err)
-	if len(rotation.Resealed) != 21 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
+	if len(rotation.Resealed) != 22 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
 		t.Fatalf("resealed: %+v", rotation.Resealed)
 	}
 	if !slices.Equal(rotation.RecoveryCodeUsers, []string{"ada@example.com"}) {
@@ -128,6 +132,9 @@ func TestRotateSecretKey(t *testing.T) {
 	}
 	if string(keys[0].PrivateKey) != "oidc-key" || mail[0].Text != "mail body" || string(saml.PrivateKey) != "saml-key" || string(ssh.Seed) != "ssh-seed" || string(hostCA.Seed) != "host-seed" || string(pending.Body) != "approval-body" || bot != "bot-secret" {
 		t.Fatalf("rotated values: %q %q %q %q %q %q %q", keys[0].PrivateKey, mail[0].Text, saml.PrivateKey, ssh.Seed, hostCA.Seed, pending.Body, bot)
+	}
+	if matched, err := rotated.LDAPSecretMatches(ctx, nas.ID, bindPassword); err != nil || !matched {
+		t.Fatalf("LDAP bind password: %v %v", matched, err)
 	}
 	if _, err := st.RotateSecretKey(ctx, next); err == nil {
 		t.Fatal("rotating again with the old key must fail without changing anything")

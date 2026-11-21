@@ -68,6 +68,18 @@ spec:
             - name: HALO_METRICS_LISTEN
               value: {{ printf ":%v" .Values.metrics.port | quote }}
             {{- end }}
+            {{- if .Values.ldap.enabled }}
+            - name: HALO_LDAP_LISTEN
+              value: {{ printf ":%v" .Values.ldap.port | quote }}
+            - name: HALO_LDAP_TLS
+              value: {{ .Values.ldap.tls | quote }}
+            {{- if ne .Values.ldap.tls "none" }}
+            - name: HALO_LDAP_CERT_FILE
+              value: /etc/halo/ldap/tls.crt
+            - name: HALO_LDAP_KEY_FILE
+              value: /etc/halo/ldap/tls.key
+            {{- end }}
+            {{- end }}
             {{- range $name, $value := .Values.server.env }}
             - name: {{ $name }}
               value: {{ $value | quote }}
@@ -87,6 +99,16 @@ spec:
             - name: metrics
               containerPort: {{ .Values.metrics.port }}
             {{- end }}
+            {{- if .Values.ldap.enabled }}
+            - name: ldap
+              containerPort: {{ .Values.ldap.port }}
+            {{- end }}
+          {{- if and .Values.ldap.enabled (ne .Values.ldap.tls "none") }}
+          volumeMounts:
+            - name: ldap-tls
+              mountPath: /etc/halo/ldap
+              readOnly: true
+          {{- end }}
           startupProbe:
             httpGet:
               path: /healthz
@@ -106,6 +128,12 @@ spec:
             {{- toYaml .Values.server.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.server.securityContext | nindent 12 }}
+      {{- if and .Values.ldap.enabled (ne .Values.ldap.tls "none") }}
+      volumes:
+        - name: ldap-tls
+          secret:
+            secretName: {{ required "ldap.certificateSecret is required for LDAPS and StartTLS: a kubernetes.io/tls Secret with the certificate for the publicUrl host" .Values.ldap.certificateSecret }}
+      {{- end }}
       {{- with .Values.server.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -136,6 +164,11 @@ spec:
     - name: metrics
       port: {{ .Values.metrics.port }}
       targetPort: metrics
+    {{- end }}
+    {{- if .Values.ldap.enabled }}
+    - name: ldap
+      port: {{ .Values.ldap.port }}
+      targetPort: ldap
     {{- end }}
 {{- if .Values.radius.enabled }}
 ---

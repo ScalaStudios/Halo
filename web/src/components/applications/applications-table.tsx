@@ -47,7 +47,7 @@ const columns: ColumnDef<Application, any>[] = [
     filterFn: facetFilter,
     meta: { label: "Type" },
     cell: ({ row }) =>
-      row.original.protocol === "bookmark" || row.original.protocol === "forward-auth" || row.original.protocol === "radius" ? <span className="text-fg-3">—</span> : <span className="whitespace-nowrap">{TYPE_LABEL[row.original.type]}</span>,
+      ["bookmark", "forward-auth", "radius", "ldap"].includes(row.original.protocol) ? <span className="text-fg-3">—</span> : <span className="whitespace-nowrap">{TYPE_LABEL[row.original.type]}</span>,
   },
   {
     id: "status",

@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"halo/internal/httpx"
+	"halo/internal/ldapserver"
 	"halo/internal/oidc"
 	"halo/internal/saml"
 	"halo/internal/store"
@@ -135,6 +136,12 @@ func (h *handlers) view(ctx context.Context, app store.Application) (any, error)
 			store.Application
 			RADIUSPort int `json:"radiusPort"`
 		}{app, n}, nil
+	}
+	if app.Protocol == "ldap" {
+		return struct {
+			store.Application
+			LDAP ldapserver.Connection `json:"ldap"`
+		}{app, ldapserver.Describe(h.cfg, app.ID)}, nil
 	}
 	if app.Protocol != "saml" {
 		return app, nil
@@ -311,10 +318,10 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 	}
 	switch in.Protocol {
 	case "oidc", "oauth":
-	case "saml", "bookmark", "forward-auth", "radius":
+	case "saml", "bookmark", "forward-auth", "radius", "ldap":
 		in.Type = "web"
 	default:
-		return httpx.Invalid(`Choose a protocol: "oidc" for OpenID Connect sign-in, "oauth" for API access, "saml" for SAML 2.0 sign-in, "forward-auth" for applications behind a reverse proxy, "radius" for VPNs and network devices or "bookmark" for a link in the account portal.`)
+		return httpx.Invalid(`Choose a protocol: "oidc" for OpenID Connect sign-in, "oauth" for API access, "saml" for SAML 2.0 sign-in, "forward-auth" for applications behind a reverse proxy, "radius" for VPNs and network devices, "ldap" for applications that only speak LDAP or "bookmark" for a link in the account portal.`)
 	}
 	if !slices.Contains([]string{"web", "spa", "native", "service"}, in.Type) {
 		return httpx.Invalid(`Choose an application type: "web", "spa", "native" or "service".`)
@@ -329,6 +336,9 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 		if len(in.RedirectURIs) > 0 || len(in.PostLogoutURIs) > 0 || len(in.Scopes) > 0 || in.SAML != nil {
 			return httpx.Invalid("A bookmark only opens its URL, so it takes no redirect URIs, scopes or SAML settings.")
 		}
+	}
+	if in.Protocol == "ldap" && (len(in.RedirectURIs) > 0 || len(in.PostLogoutURIs) > 0 || len(in.Scopes) > 0 || in.SAML != nil) {
+		return httpx.Invalid("An LDAP application reads people and groups over LDAP, so it takes no redirect URIs, scopes or SAML settings.")
 	}
 	if in.Protocol == "forward-auth" {
 		if len(in.Scopes) > 0 || in.SAML != nil {
@@ -405,6 +415,12 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 				return err
 			}
 			secret = &value
+		} else if in.Protocol == "ldap" {
+			value, err := tx.RotateLDAPSecret(r.Context(), created.ID)
+			if err != nil {
+				return err
+			}
+			secret = &value
 		} else if in.Protocol != "bookmark" && in.Protocol != "forward-auth" && (in.Type == "web" || in.Type == "service") {
 			_, value, err := tx.AddClientSecret(r.Context(), created.ID, "Initial", secretLifetime)
 			if err != nil {
@@ -421,6 +437,9 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 		}
 		if in.Protocol == "radius" {
 			summary = "Registered RADIUS client for " + strings.Join(in.RedirectURIs, ", ")
+		}
+		if in.Protocol == "ldap" {
+			summary = "Registered LDAP application"
 		}
 		if err := record(r, tx, actor, store.AuditEvent{Action: "application.create", Summary: summary, TargetType: "application", TargetID: created.ID, TargetLabel: created.Name}); err != nil {
 			return err
@@ -454,6 +473,20 @@ func (h *handlers) rotateSecret(w http.ResponseWriter, r *http.Request, actor st
 	}
 	if app.Protocol == "forward-auth" {
 		return httpx.Invalid(app.Name + " is checked by its reverse proxy, so it has no client secret.")
+	}
+	if app.Protocol == "ldap" {
+		var value string
+		err := h.st.Tx(r.Context(), func(tx *store.Store) error {
+			var err error
+			if value, err = tx.RotateLDAPSecret(r.Context(), app.ID); err != nil {
+				return err
+			}
+			return record(r, tx, actor, store.AuditEvent{Action: "application.secret.rotate", Summary: "Replaced the LDAP bind password; the previous one stopped working", TargetType: "application", TargetID: app.ID, TargetLabel: app.Name})
+		})
+		if err != nil {
+			return err
+		}
+		return httpx.JSON(w, http.StatusCreated, map[string]any{"clientSecret": value})
 	}
 	if app.Protocol == "saml" || (app.Type != "web" && app.Type != "service") {
 		return httpx.Invalid(app.Name + " is a public client that signs in without a client secret, so there is nothing to rotate.")
@@ -698,6 +731,9 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	}
 	if app.Protocol == "radius" && (in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil || in.RequiresConsent != nil || in.ClaimMappings != nil && len(*in.ClaimMappings) > 0 || logout) {
 		return httpx.Invalid(app.Name + " is a RADIUS client, so it has no post-logout URIs, scopes, claims, token lifetimes, consent screen or back-channel logout. Change the addresses it sends from in redirectUris.")
+	}
+	if app.Protocol == "ldap" && (in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil || in.MaxAuthAge != nil || in.RequiresConsent != nil || in.ClaimMappings != nil || logout) {
+		return httpx.Invalid(app.Name + " reads people and groups over LDAP, so it has no redirect URIs, scopes, claims, token lifetimes, sign-in frequency or back-channel logout.")
 	}
 	if app.Type == "service" && in.ClaimMappings != nil {
 		return httpx.Invalid(app.Name + " is a service application. Nobody signs in to it, so it has no ID tokens or user claims to map.")

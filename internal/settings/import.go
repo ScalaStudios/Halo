@@ -170,7 +170,7 @@ func createApplication(row map[string]any) []call {
 	body := pick(row, "name", "description", "protocol", "homepage", "redirectUris", "postLogoutUris", "scopes", "groupIds", "setupGuide")
 	body["type"] = row["appType"]
 	protocol := str(row["protocol"])
-	if protocol == "bookmark" || protocol == "forward-auth" || protocol == "radius" {
+	if protocol == "bookmark" || protocol == "forward-auth" || protocol == "radius" || protocol == "ldap" {
 		delete(body, "scopes")
 	}
 	if protocol == "saml" {
@@ -182,7 +182,7 @@ func createApplication(row map[string]any) []call {
 	if protocol == "oidc" || protocol == "oauth" {
 		later = append(later, "accessTokenTtl", "refreshTokenTtl", "idTokenTtl", "refreshRotation", "tokenExchange", "tokenExchangeFrom")
 	}
-	if protocol != "bookmark" && row["appType"] != "service" {
+	if protocol != "bookmark" && protocol != "ldap" && row["appType"] != "service" {
 		later = append(later, "maxAuthAge", "claimMappings")
 	}
 	if row["status"] == "disabled" {

@@ -21,12 +21,14 @@ export function RotateSecretDialog({
   appId,
   appName,
   label = "Client secret",
+  bind = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   appId: string;
   appName: string;
   label?: string;
+  bind?: boolean;
 }) {
   const kind = label.toLowerCase();
   const { pending, run, errorFor, clearError } = useMutation();
@@ -54,9 +56,13 @@ export function RotateSecretDialog({
       error={errorFor("rotate")}
       title={rotated ? `New ${kind}` : `Rotate ${kind}?`}
       description={
-        rotated
-          ? `Update ${appName} with this secret. The previous secrets keep working for 24 hours, until ${rotated.graceEnds}.`
-          : `Halo creates a new ${kind} for ${appName}. The current secrets keep working for 24 hours, so you can deploy the new one without downtime.`
+        bind
+          ? rotated
+            ? `Update ${appName} with this bind password. The previous one no longer works.`
+            : `Halo replaces the bind password of ${appName}. The current one stops working at once, so ${appName} can't search until you update it.`
+          : rotated
+            ? `Update ${appName} with this secret. The previous secrets keep working for 24 hours, until ${rotated.graceEnds}.`
+            : `Halo creates a new ${kind} for ${appName}. The current secrets keep working for 24 hours, so you can deploy the new one without downtime.`
       }
       footer={
         rotated ? (
@@ -69,7 +75,7 @@ export function RotateSecretDialog({
               Cancel
             </Button>
             <Button variant="primary" loading={pending === "rotate"} onClick={rotate}>
-              Rotate secret
+              {bind ? "Rotate password" : "Rotate secret"}
             </Button>
           </>
         )

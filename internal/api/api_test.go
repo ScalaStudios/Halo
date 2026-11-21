@@ -291,7 +291,7 @@ func TestApplicationCreateAndRedirectValidation(t *testing.T) {
 	} {
 		expect(t, call(t, h, admin, "POST", "/api/v1/applications", body), 422)
 	}
-	rec = call(t, h, admin, "POST", "/api/v1/applications", map[string]any{"name": "Bad", "protocol": "ldap", "type": "web"})
+	rec = call(t, h, admin, "POST", "/api/v1/applications", map[string]any{"name": "Bad", "protocol": "kerberos", "type": "web"})
 	expect(t, rec, 422)
 	for _, protocol := range []string{`\"oidc\"`, `\"oauth\"`, `\"saml\"`} {
 		if !strings.Contains(rec.Body.String(), protocol) {

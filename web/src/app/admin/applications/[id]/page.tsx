@@ -10,7 +10,7 @@ import { HookForm } from "@/components/applications/hook-form";
 import { RolesTable } from "@/components/applications/roles";
 import { SamlAttributesForm, SamlConnectionFields, SamlSettingsForm } from "@/components/applications/saml";
 import { SharedSignals } from "@/components/applications/shared-signals";
-import { APP_STATUS, PROTOCOL_LABEL, RadiusServerFields, SetupGuideCard, statusKey, TYPE_LABEL } from "@/components/applications/shared";
+import { APP_STATUS, LdapConnectionFields, PROTOCOL_LABEL, RadiusServerFields, SetupGuideCard, statusKey, TYPE_LABEL } from "@/components/applications/shared";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
 import { SessionsTable } from "@/components/monitoring/sessions-table";
 import { DeliveryLog } from "@/components/settings/webhooks";
@@ -58,9 +58,10 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const bookmark = app.protocol === "bookmark";
   const forward = app.protocol === "forward-auth";
   const radius = app.protocol === "radius";
+  const ldap = app.protocol === "ldap";
   const service = app.type === "service";
-  const hookable = !saml && !bookmark && !forward && !radius && !service && app.clientId !== "halo-cli";
-  const roleable = !bookmark && !radius && !service && app.clientId !== "halo-cli";
+  const hookable = !saml && !bookmark && !forward && !radius && !ldap && !service && app.clientId !== "halo-cli";
+  const roleable = !bookmark && !radius && !ldap && !service && app.clientId !== "halo-cli";
   const modelled = (app.protocol === "oidc" || app.protocol === "oauth") && (app.type === "web" || service) && app.clientId !== "halo-cli";
   const constrainable = (app.protocol === "oidc" || app.protocol === "oauth") && app.clientId !== "halo-cli";
   const owner = users.find((u) => u.id === app.owner);
@@ -79,6 +80,12 @@ export default async function ApplicationPage({ params, searchParams }: { params
           { id: "authentication", label: "Authentication" },
           { id: "users", label: "Users & groups", count: appGroups.length },
           { id: "credentials", label: "Credentials", count: app.credentials.length },
+          { id: "logs", label: "Logs", count: appSignIns.length },
+        ]
+    : ldap
+      ? [
+          { id: "overview", label: "Overview" },
+          { id: "users", label: "Users & groups", count: appGroups.length },
           { id: "logs", label: "Logs", count: appSignIns.length },
         ]
     : forward
@@ -138,20 +145,21 @@ export default async function ApplicationPage({ params, searchParams }: { params
               saml,
               bookmark,
               radius,
+              ldap,
               disabled: app.status === "disabled",
               awaitingApproval: app.awaitingApproval,
               redirectUris: app.redirectUris,
               postLogoutUris: app.postLogoutUris,
-              hasSecret: !saml && !bookmark && !forward && (app.type === "web" || app.type === "service"),
+              hasSecret: ldap || (!saml && !bookmark && !forward && (app.type === "web" || app.type === "service")),
             }}
             directory={users}
           />
         </header>
         <DescriptionList
-          className={`grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 ${bookmark ? "xl:grid-cols-4" : forward || radius ? "xl:grid-cols-5" : "xl:grid-cols-6"}`}
+          className={`grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 ${bookmark ? "xl:grid-cols-4" : forward || radius || ldap ? "xl:grid-cols-5" : "xl:grid-cols-6"}`}
           items={[
             { label: "Protocol", value: PROTOCOL_LABEL[app.protocol] },
-            ...(bookmark || forward || radius ? [] : [{ label: "Type", value: TYPE_LABEL[app.type] }]),
+            ...(bookmark || forward || radius || ldap ? [] : [{ label: "Type", value: TYPE_LABEL[app.type] }]),
             {
               label: "Status",
               value: (
@@ -459,6 +467,19 @@ function OverviewTab({ app, issuer }: { app: SamlApplication; issuer: string }) 
             {app.redirectUris.map((address, index) => (
               <CopyField key={address} label={app.redirectUris.length > 1 ? `Client address ${index + 1}` : "Client address"} value={address} />
             ))}
+          </CardBody>
+        </Card>
+        <DangerZone id={app.id} name={app.name} disabled={app.status === "disabled"} className="xl:col-span-12" />
+      </div>
+    );
+  }
+  if (app.ldap) {
+    return (
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <Card className="min-w-0 xl:col-span-5">
+          <CardHeader title="Connection details" description={`What ${app.name} needs to read its people and groups from Halo over LDAP. It sees only the people in its assigned groups.`} />
+          <CardBody className="flex flex-col gap-4">
+            <LdapConnectionFields ldap={app.ldap} />
           </CardBody>
         </Card>
         <DangerZone id={app.id} name={app.name} disabled={app.status === "disabled"} className="xl:col-span-12" />

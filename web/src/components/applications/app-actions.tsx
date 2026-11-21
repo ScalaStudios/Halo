@@ -27,6 +27,7 @@ type AppSummary = {
   saml: boolean;
   bookmark: boolean;
   radius: boolean;
+  ldap?: boolean;
   disabled: boolean;
   awaitingApproval: boolean;
   redirectUris: string[];
@@ -61,7 +62,7 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
           Approve
         </Button>
       ) : null}
-      {app.bookmark || app.radius ? null : (
+      {app.bookmark || app.radius || app.ldap ? null : (
         <Link href={`/admin/applications/${app.id}#setup-guide`} className={buttonClasses("secondary", "sm")}>
           <BookOpen aria-hidden="true" size={16} strokeWidth={1.75} />
           View setup guide
@@ -70,7 +71,7 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
       {app.hasSecret ? (
         <Button size="sm" variant="secondary" onClick={() => setRotate(true)}>
           <RefreshCw aria-hidden="true" size={16} strokeWidth={1.75} />
-          Rotate secret
+          {app.ldap ? "Rotate bind password" : "Rotate secret"}
         </Button>
       ) : null}
       <Menu>
@@ -88,7 +89,7 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
               Open {new URL(app.homepage).host}
             </MenuItem>
           ) : null}
-          {app.bookmark || app.radius ? null : (
+          {app.bookmark || app.radius || app.ldap ? null : (
             <MenuItem
               icon={Copy}
               onSelect={() => {
@@ -108,7 +109,7 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
           </MenuItem>
         </MenuContent>
       </Menu>
-      {app.hasSecret ? <RotateSecretDialog open={rotate} onOpenChange={setRotate} appId={app.id} appName={app.name} label={app.radius ? "Shared secret" : undefined} /> : null}
+      {app.hasSecret ? <RotateSecretDialog open={rotate} onOpenChange={setRotate} appId={app.id} appName={app.name} label={app.radius ? "Shared secret" : app.ldap ? "Bind password" : undefined} bind={app.ldap} /> : null}
       <EditDetailsDialog app={app} directory={directory} open={editing} onOpenChange={setEditing} />
     </div>
   );

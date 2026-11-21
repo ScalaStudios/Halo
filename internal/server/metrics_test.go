@@ -104,7 +104,7 @@ func TestMetricsCountWithoutPersonalLabels(t *testing.T) {
 			t.Fatalf("scrape contains %q", personal)
 		}
 	}
-	allowed := []string{"method", "result", "risk", "scope", "grant", "resource", "action", "outcome", "route", "status", "le"}
+	allowed := []string{"method", "kind", "result", "risk", "scope", "grant", "resource", "action", "outcome", "route", "status", "le"}
 	for _, m := range regexp.MustCompile(`[{,]([a-zA-Z_]+)="`).FindAllStringSubmatch(body, -1) {
 		if !slices.Contains(allowed, m[1]) {
 			t.Fatalf("unexpected label %q in:\n%s", m[1], body)
