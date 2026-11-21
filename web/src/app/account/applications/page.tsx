@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Applications" };
 
 export default async function ApplicationsPage() {
   const [apps, collections, consents] = await Promise.all([
-    apiGet<{ id: string; name: string; description: string; homepage: string; launchUrl: string; logoUrl: string | null; favourite: boolean }[]>("/me/applications"),
+    apiGet<{ id: string; name: string; description: string; homepage: string; launchUrl: string; logoUrl: string | null; favourite: boolean; roles: string[] }[]>("/me/applications"),
     apiGet<{ id: string; name: string; applicationIds: string[] }[]>("/me/collections"),
     apiGet<Consent[]>("/me/consents"),
   ]);

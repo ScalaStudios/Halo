@@ -21,6 +21,7 @@ const PROFILE = [
   ["user.department", "Department"],
   ["user.location", "Location"],
   ["user.groups", "Group names"],
+  ["user.roles", "Application roles"],
 ] as const;
 
 export function ClaimMappingsForm({ appId, appName, saml, mappings, attributes }: { appId: string; appName: string; saml: boolean; mappings: Claim[]; attributes: Attribute[] }) {

@@ -132,6 +132,7 @@ export type Application = {
   scopes: string[];
   claims: Claim[];
   claimMappings: Claim[];
+  roles: AppRole[];
   groupIds: string[];
   userCount: number;
   credentials: Credential[];
@@ -151,6 +152,8 @@ export type Application = {
 };
 
 export type Claim = { name: string; source: string };
+
+export type AppRole = { id: string; key: string; name: string; description: string; groupIds: string[]; userIds: string[] };
 
 export type Scope = { name: string; description: string };
 
