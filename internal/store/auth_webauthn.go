@@ -49,7 +49,10 @@ func (s *Store) AddWebAuthnCredential(ctx context.Context, c WebAuthnCredential)
 	err := s.db.QueryRow(ctx, `insert into webauthn_credentials (id, user_id, kind, label, credential_id, public_key, attestation_type, aaguid, sign_count, transports, backup_eligible, backup_state)
 		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning created_at`,
 		m.ID, c.UserID, c.Kind, c.Label, c.CredentialID, c.PublicKey, c.AttestationType, c.AAGUID, c.SignCount, c.Transports, c.BackupEligible, c.BackupState).Scan(&m.AddedAt)
-	return m, conflict(err)
+	if err != nil {
+		return m, conflict(err)
+	}
+	return m, s.credentialChanged(ctx, c.UserID, c.Kind, "create", c.Label)
 }
 
 func (s *Store) TouchWebAuthnCredential(ctx context.Context, credentialID string, signCount int64, backupState bool) error {

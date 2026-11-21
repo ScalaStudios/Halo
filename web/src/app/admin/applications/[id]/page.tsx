@@ -9,6 +9,7 @@ import { AuthenticationForm, BackchannelLogoutForm, ProtectedAddressesForm, Scop
 import { HookForm } from "@/components/applications/hook-form";
 import { RolesTable } from "@/components/applications/roles";
 import { SamlAttributesForm, SamlConnectionFields, SamlSettingsForm } from "@/components/applications/saml";
+import { SharedSignals } from "@/components/applications/shared-signals";
 import { APP_STATUS, PROTOCOL_LABEL, SetupGuideCard, statusKey, TYPE_LABEL } from "@/components/applications/shared";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
 import { SessionsTable } from "@/components/monitoring/sessions-table";
@@ -29,6 +30,7 @@ import type { SamlApplication } from "@/lib/saml-types";
 import type { WebhookDelivery } from "@/lib/settings-types";
 import { endpoints, proxyGuides, setupGuide } from "@/lib/setup-guides";
 import type { Application, ApplicationHook, Attribute, AuthorizationModel, Group, Organization, Session, SignInEvent, User } from "@/lib/types";
+import type { Application, ApplicationHook, Attribute, Group, Organization, Session, SignalReceiver, SignInEvent, User } from "@/lib/types";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -39,6 +41,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const { id } = await params;
   const { tab = "overview" } = await searchParams;
   const [app, groups, users, sessions, appSignIns, org, resources, hook, attributes, logouts, model] = await Promise.all([
+  const [app, groups, users, sessions, appSignIns, org, resources, hook, attributes, logouts, signals] = await Promise.all([
     apiGet<SamlApplication>(`/applications/${encodeURIComponent(id)}`),
     apiGet<Group[]>("/groups"),
     apiGet<User[]>("/users"),
@@ -50,6 +53,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
     tab === "claims" ? apiGet<Attribute[]>("/attributes") : [],
     tab === "authentication" ? apiGet<WebhookDelivery[]>(`/applications/${encodeURIComponent(id)}/logout-deliveries`) : [],
     tab === "authorization" ? apiGet<AuthorizationModel>(`/applications/${encodeURIComponent(id)}/authorization`) : null,
+    tab === "authentication" ? apiGet<{ receiver: SignalReceiver | null; deliveries: WebhookDelivery[] }>(`/applications/${encodeURIComponent(id)}/shared-signals`) : null,
   ]);
 
   const saml = app.protocol === "saml";
@@ -187,6 +191,9 @@ export default async function ApplicationPage({ params, searchParams }: { params
             {service ? null : <SignInFrequencyForm key={app.maxAuthAge} app={app} />}
             {hookable ? <HookForm key={JSON.stringify(hook)} appId={app.id} appName={app.name} hook={hook} /> : null}
             {hookable ? <BackchannelLogoutForm key={`${app.backchannelLogoutUri}:${app.backchannelLogoutSessionRequired}`} app={app} /> : null}
+            {signals && service ? (
+              <SharedSignals key={JSON.stringify(signals.receiver)} appId={app.id} appName={app.name} issuer={org.issuer} receiver={signals.receiver} deliveries={signals.deliveries} />
+            ) : null}
             {logouts.length > 0 ? (
               <section className="flex flex-col gap-6">
                 <SectionTitle title="Logout deliveries" description={`The latest ${pluralize(logouts.length, "logout")}, newest first. Each one is a Halo session that ended.`} />

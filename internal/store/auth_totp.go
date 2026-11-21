@@ -38,8 +38,11 @@ func (s *Store) ListTOTPSecrets(ctx context.Context, userID string) ([]TOTPSecre
 
 func (s *Store) ConfirmTOTPSecret(ctx context.Context, secretID, label string, step int64) (Method, error) {
 	m := Method{ID: secretID, Kind: "totp", Label: label}
-	err := s.db.QueryRow(ctx, `update totp_secrets set confirmed = true, label = $2, last_step = $3 where id = $1 and not confirmed returning created_at`, secretID, label, step).Scan(&m.AddedAt)
-	return m, notFound(err)
+	var userID string
+	if err := s.db.QueryRow(ctx, `update totp_secrets set confirmed = true, label = $2, last_step = $3 where id = $1 and not confirmed returning created_at, user_id`, secretID, label, step).Scan(&m.AddedAt, &userID); err != nil {
+		return m, notFound(err)
+	}
+	return m, s.credentialChanged(ctx, userID, "totp", "create", label)
 }
 
 func (s *Store) AdvanceTOTP(ctx context.Context, secretID string, step int64) (bool, error) {

@@ -87,6 +87,9 @@ func (s *Store) ErasePerson(ctx context.Context, u User) (string, error) {
 	if err := s.queueLogouts(ctx, `s.user_id = $1 and s.revoked_at is null and s.expires_at > now()`, u.ID); err != nil {
 		return "", err
 	}
+	if err := s.signal(ctx, accountPurged, nil, signalUser, u.ID); err != nil {
+		return "", err
+	}
 	_, err := s.db.Exec(ctx, `delete from users where id = $1`, u.ID)
 	return pseudonym, err
 }

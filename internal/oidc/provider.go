@@ -184,6 +184,7 @@ func New(d httpx.Deps) (http.Handler, error) {
 	})
 	mux.Handle("POST /oauth2/par", cors.New(*provider.CORSOptions()).Handler(st.pushAuthRequest(provider)))
 	mux.HandleFunc("GET /oauth2/logout/return", st.logoutReturn)
+	registerTransmitter(mux, d.Store, d.Config.Issuer())
 	mux.Handle("GET /oauth2/revoked", httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
 		revoked, err := d.Store.RevokedAccessTokens(r.Context())
 		if err != nil {
@@ -247,6 +248,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		d.Jobs.Every("retire superseded signing keys", time.Hour, func(ctx context.Context) error { return d.Store.RetireSigningKeys(ctx, time.Now()) })
 		d.Jobs.Every("send back-channel logouts", 10*time.Second, func(ctx context.Context) error { return DeliverLogouts(ctx, d.Store, d.Config.Issuer(), time.Now()) })
 		d.Jobs.Every("queue back-channel logouts for expired sessions", time.Minute, d.Store.QueueExpiredSessionLogouts)
+		d.Jobs.Every("push shared signals", 10*time.Second, func(ctx context.Context) error { return DeliverSignals(ctx, d.Store, d.Config.Issuer(), time.Now()) })
 	}
 	resources := &resourceHandlers{st: d.Store}
 	route("GET /api/v1/api-resources", readers, resources.list)
@@ -255,5 +257,9 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("PUT /api/v1/api-resources/{id}", writers, resources.update)
 	route("DELETE /api/v1/api-resources/{id}", writers, resources.remove)
 	route("PUT /api/v1/api-resources/{id}/grants/{appId}", writers, resources.grant)
+	signals := &signalHandlers{st: d.Store}
+	route("GET /api/v1/applications/{id}/shared-signals", readers, signals.get)
+	route("PUT /api/v1/applications/{id}/shared-signals", []string{"security_admin"}, signals.put)
+	route("DELETE /api/v1/applications/{id}/shared-signals", []string{"security_admin"}, signals.remove)
 	return nil
 }

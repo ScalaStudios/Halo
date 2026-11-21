@@ -127,15 +127,14 @@ func (s *Store) GetSCIMUser(ctx context.Context, userID string) (SCIMUser, error
 }
 
 func (s *Store) UpdateSCIMUser(ctx context.Context, u SCIMUser) error {
-	tag, err := s.db.Exec(ctx, `update users set email = $2, email_verified = email_verified and lower(email) = lower($2), name = $3, title = $4, department = $5, manager_id = $6, external_id = $7, updated_at = now() where id = $1 and kind = 'person'`,
-		u.ID, u.Email, u.Name, u.Title, u.Department, u.ManagerID, u.ExternalID)
+	var previous string
+	err := s.db.QueryRow(ctx, `with old as (select email from users where id = $1)
+		update users set email = $2, email_verified = email_verified and lower(email) = lower($2), name = $3, title = $4, department = $5, manager_id = $6, external_id = $7, updated_at = now() where id = $1 and kind = 'person' returning (select email from old)`,
+		u.ID, u.Email, u.Name, u.Title, u.Department, u.ManagerID, u.ExternalID).Scan(&previous)
 	if err != nil {
-		return conflict(err)
+		return conflict(notFound(err))
 	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return s.emailChanged(ctx, u.ID, previous, u.Email)
 }
 
 func (s *Store) SCIMPeople(ctx context.Context, ids []string) (map[string]string, error) {

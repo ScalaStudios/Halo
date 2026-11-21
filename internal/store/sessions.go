@@ -210,6 +210,9 @@ func (s *Store) revokeTokensForSessions(ctx context.Context, sessionIDs []string
 	if err := s.queueLogouts(ctx, `s.id = any($1)`, sessionIDs); err != nil {
 		return err
 	}
+	if err := s.signal(ctx, sessionRevoked, nil, `select user_id, id, '', '' from sessions where id = any($1) and impersonation_id is null`, sessionIDs); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(ctx, `update oidc_tokens set revoked_at = now(), rotated = false where session_id = any($1) and `+revocable, sessionIDs)
 	return err
 }
