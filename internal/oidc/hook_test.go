@@ -108,7 +108,7 @@ func TestTokenHook(t *testing.T) {
 		requestID, _ := strings.CutPrefix(res.Header.Get("Location"), "/sign-in?authRequest=")
 		sess, sessionToken, err := st.CreateSession(ctx, store.NewSession{UserID: user.ID, Method: "passkey"})
 		must(err)
-		must(st.CompleteAuthRequest(ctx, requestID, user.ID, sess.ID, []string{"hwk", "mfa"}, time.Now()))
+		must(st.CompleteAuthRequest(ctx, requestID, user.ID, sess.ID, []string{"hwk", "mfa"}, time.Now(), ""))
 		req, _ := http.NewRequest(http.MethodGet, srv.URL+store.AuthorizeCallbackPath(requestID), nil)
 		req.AddCookie(&http.Cookie{Name: httpx.SessionCookie, Value: sessionToken})
 		res, err = client.Do(req)

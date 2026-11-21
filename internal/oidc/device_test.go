@@ -246,6 +246,19 @@ func TestDeviceApprovalPolicy(t *testing.T) {
 	}
 }
 
+func TestDeviceApprovalContext(t *testing.T) {
+	h := newInfra(t, policyFunc(func(access.Input) access.Decision {
+		return access.Decision{Effect: access.RequireContext, Contexts: []store.AuthContext{{ID: "passkey", Name: "Passkey", Methods: []string{"passkey"}}}}
+	}))
+	_, userCode := h.startDevice("openid")
+	if r := h.send(http.MethodPost, "/api/v1/device/"+userCode+"/approve", nil, cookie(h.token)); r.status != http.StatusForbidden || r.body["error"].(map[string]any)["code"] != "ERR_STEP_UP_REQUIRED" {
+		t.Fatalf("totp session against a passkey context: %d %v", r.status, r.body)
+	}
+	if r := h.send(http.MethodPost, "/api/v1/device/"+userCode+"/approve", nil, cookie(h.admin)); r.status != http.StatusOK {
+		t.Fatalf("passkey session: %d %v", r.status, r.body)
+	}
+}
+
 func TestDeviceSessionLimit(t *testing.T) {
 	h := newInfra(t, nil)
 	ctx := context.Background()
@@ -445,7 +458,7 @@ func TestAPIResources(t *testing.T) {
 	requestID := strings.TrimPrefix(resp.Header.Get("Location"), "/sign-in?authRequest=")
 	sess, sessionToken, err := h.st.CreateSession(ctx, store.NewSession{UserID: h.user.ID, Method: "passkey"})
 	h.must(err)
-	h.must(h.st.CompleteAuthRequest(ctx, requestID, h.user.ID, sess.ID, []string{"hwk", "mfa"}, time.Now()))
+	h.must(h.st.CompleteAuthRequest(ctx, requestID, h.user.ID, sess.ID, []string{"hwk", "mfa"}, time.Now(), ""))
 	req, err := http.NewRequest(http.MethodGet, h.srv.URL+store.AuthorizeCallbackPath(requestID), nil)
 	h.must(err)
 	cookie(sessionToken)(req)

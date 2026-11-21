@@ -81,6 +81,59 @@ export function CheckList({
   );
 }
 
+function ReferenceField({
+  label,
+  hint,
+  placeholder,
+  empty,
+  tab,
+  link,
+  options,
+  value,
+  onChange,
+  error,
+}: {
+  label: string;
+  hint: string;
+  placeholder: string;
+  empty: string;
+  tab: string;
+  link: string;
+  options: Option[];
+  value: string;
+  onChange: (id: string) => void;
+  error?: string;
+}) {
+  if (!options.length) {
+    return (
+      <div className="flex flex-col gap-2">
+        <p className="text-body-sm text-fg-3">
+          {empty}{" "}
+          <Link href={`/admin/policies?tab=${tab}`} className="text-link underline underline-offset-3 hover:text-ember">
+            {link}
+          </Link>
+          .
+        </p>
+        <FieldError>{error}</FieldError>
+      </div>
+    );
+  }
+  return (
+    <Field label={label} error={error} hint={hint}>
+      {(props) => (
+        <Select {...props} value={value} onChange={(event) => onChange(event.target.value)}>
+          <option value="">{placeholder}</option>
+          {options.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name} · {o.detail}
+            </option>
+          ))}
+        </Select>
+      )}
+    </Field>
+  );
+}
+
 function PeoplePicker({ label, users, selected, onChange }: { label: string; users: Option[]; selected: string[]; onChange: (ids: string[]) => void }) {
   const names = nameMap(users);
   return (
@@ -133,6 +186,7 @@ export function PolicyForm({
   applications,
   zones,
   terms,
+  contexts,
 }: {
   policy?: AccessPolicy;
   groups: Option[];
@@ -140,19 +194,21 @@ export function PolicyForm({
   applications: Option[];
   zones: Option[];
   terms: Option[];
+  contexts: Option[];
 }) {
   const { pending, run, errorFor, toast, router } = useMutation();
   const [name, setName] = useState(policy?.name ?? "");
   const [description, setDescription] = useState(policy?.description ?? "");
   const [effect, setEffect] = useState<PolicyEffect>(policy?.effect ?? "block");
   const [termsId, setTermsId] = useState(policy?.termsId ?? "");
+  const [contextId, setContextId] = useState(policy?.contextId ?? "");
   const [mode, setMode] = useState<PolicyMode>(policy?.mode ?? "report");
   const [enabled, setEnabled] = useState(policy?.enabled ?? true);
   const [c, setC] = useState<PolicyConditions>(policy?.conditions ?? BLANK);
   const [attempted, setAttempted] = useState(false);
 
   const apps: Option[] = [{ id: HALO_APP, name: "Halo", detail: "The admin console and the account portal" }, ...applications];
-  const names: Names = { groups: nameMap(groups), users: nameMap(users), apps: nameMap(applications), zones: nameMap(zones), terms: nameMap(terms) };
+  const names: Names = { groups: nameMap(groups), users: nameMap(users), apps: nameMap(applications), zones: nameMap(zones), terms: nameMap(terms), contexts: nameMap(contexts) };
   const state = policyState({ enabled, mode });
   const problems = {
     name: name.trim() ? undefined : "Enter a name, for example “Block high-risk sign-ins”.",
@@ -160,6 +216,7 @@ export function PolicyForm({
     apps: c.allApps || c.appIds.length ? undefined : "Choose at least one application, or cover all applications.",
     zones: c.network === "any" || c.zoneIds.length ? undefined : "Choose at least one network, or match any network.",
     terms: effect !== "require-terms" || termsId ? undefined : "Choose the terms of use people must accept.",
+    context: effect !== "require-context" || contextId ? undefined : "Choose the authentication context sign-ins must meet.",
   };
   const invalid = Object.values(problems).some(Boolean);
   const errors: Partial<typeof problems> = attempted ? problems : {};
@@ -176,7 +233,7 @@ export function PolicyForm({
   function save() {
     setAttempted(true);
     if (invalid) return;
-    const body = { name: name.trim(), description: description.trim(), enabled, mode, effect, termsId: effect === "require-terms" ? termsId : null, conditions: c };
+    const body = { name: name.trim(), description: description.trim(), enabled, mode, effect, termsId: effect === "require-terms" ? termsId : null, contextId: effect === "require-context" ? contextId : null, conditions: c };
     void run(
       "save",
       () => (policy ? api(`/policies/${policy.id}`, { method: "PUT", body }) : api("/policies", { body })),
@@ -369,7 +426,7 @@ export function PolicyForm({
         <Card>
           <CardHeader title="Effect" description="What happens when every condition matches." />
           <CardBody className="flex flex-col gap-6">
-            <Field label="Effect" hint="If several enforced policies match, block beats requiring a passkey, which beats allow. Terms of use are asked for as well, unless the sign-in is blocked.">
+            <Field label="Effect" hint="If several enforced policies match, block beats requiring a passkey, which beats allow. Terms of use and authentication contexts are asked for as well, unless the sign-in is blocked.">
               {(props) => (
                 <Select {...props} value={effect} onChange={(event) => setEffect(event.target.value as PolicyEffect)}>
                   {(Object.keys(EFFECT) as PolicyEffect[]).map((value) => (
@@ -381,31 +438,32 @@ export function PolicyForm({
               )}
             </Field>
             {effect === "require-terms" ? (
-              terms.length ? (
-                <Field label="Terms of use" error={errors.terms} hint="People accept each version once, at sign-in or in their account. Publishing a new version asks them again at their next sign-in.">
-                  {(props) => (
-                    <Select {...props} value={termsId} onChange={(event) => setTermsId(event.target.value)}>
-                      <option value="">Choose terms of use</option>
-                      {terms.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name} · {t.detail}
-                        </option>
-                      ))}
-                    </Select>
-                  )}
-                </Field>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <p className="text-body-sm text-fg-3">
-                    There are no terms of use yet.{" "}
-                    <Link href="/admin/policies?tab=terms" className="text-link underline underline-offset-3 hover:text-ember">
-                      Add them on the Terms tab
-                    </Link>
-                    .
-                  </p>
-                  <FieldError>{errors.terms}</FieldError>
-                </div>
-              )
+              <ReferenceField
+                label="Terms of use"
+                hint="People accept each version once, at sign-in or in their account. Publishing a new version asks them again at their next sign-in."
+                placeholder="Choose terms of use"
+                empty="There are no terms of use yet."
+                tab="terms"
+                link="Add them on the Terms tab"
+                options={terms}
+                value={termsId}
+                onChange={setTermsId}
+                error={errors.terms}
+              />
+            ) : null}
+            {effect === "require-context" ? (
+              <ReferenceField
+                label="Authentication context"
+                hint="People whose sign-in doesn't meet it are asked to sign in again with a method it allows."
+                placeholder="Choose an authentication context"
+                empty="There are no authentication contexts yet."
+                tab="contexts"
+                link="Add one on the Contexts tab"
+                options={contexts}
+                value={contextId}
+                onChange={setContextId}
+                error={errors.context}
+              />
             ) : null}
             <Field label="Mode" hint={MODE[mode].description}>
               {(props) => (
@@ -431,7 +489,7 @@ export function PolicyForm({
           <Card>
             <CardHeader title="Summary" actions={<Badge tone={state.tone} dot>{state.label}</Badge>} />
             <CardBody className="flex flex-col gap-4">
-              <p className="text-body text-fg">{describePolicy({ effect, termsId, conditions: c }, names)}</p>
+              <p className="text-body text-fg">{describePolicy({ effect, termsId, contextId, conditions: c }, names)}</p>
               {lockout ? (
                 <div role="note" className="flex gap-3 rounded-md border border-warning/20 bg-warning-container p-4">
                   <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-warning" />

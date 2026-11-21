@@ -1,4 +1,4 @@
-import { Ban, Check, FileCheck, KeyRound, type LucideIcon } from "lucide-react";
+import { Ban, Check, FileCheck, KeyRound, ShieldCheck, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/badge";
 import { pluralize } from "@/lib/format";
 import { METHOD } from "@/lib/labels";
@@ -23,6 +23,7 @@ export const EFFECT: Record<PolicyEffect, { label: string; verb: string; icon: L
   allow: { label: "Allow", verb: "Allow", icon: Check, color: "text-success" },
   "require-phishing-resistant": { label: "Require a passkey or security key", verb: "Require a passkey or security key for", icon: KeyRound, color: "text-warning" },
   "require-terms": { label: "Require accepting terms of use", verb: "Require accepting terms of use for", icon: FileCheck, color: "text-info" },
+  "require-context": { label: "Require an authentication context", verb: "Require an authentication context for", icon: ShieldCheck, color: "text-warning" },
   block: { label: "Block", verb: "Block", icon: Ban, color: "text-danger" },
 };
 
@@ -99,6 +100,7 @@ export type Names = {
   apps: Record<string, string>;
   zones: Record<string, string>;
   terms: Record<string, string>;
+  contexts: Record<string, string>;
 };
 
 export function joinList(items: string[], joiner = "or"): string {
@@ -111,7 +113,7 @@ function people(groupIds: string[], userIds: string[], names: Names, joiner: str
   return joinList([...(groups.length ? [`members of ${joinList(groups, joiner)}`] : []), ...userIds.map((id) => names.users[id] ?? "a deleted user")], joiner);
 }
 
-export function describePolicy(p: Pick<AccessPolicy, "effect" | "termsId" | "conditions">, names: Names): string {
+export function describePolicy(p: Pick<AccessPolicy, "effect" | "termsId" | "contextId" | "conditions">, names: Names): string {
   const c = p.conditions;
   const who = c.allUsers ? "anyone" : people(c.groupIds, c.userIds, names, "or") || "nobody yet";
   const excluded = people(c.excludeGroupIds, c.excludeUserIds, names, "and");
@@ -126,7 +128,12 @@ export function describePolicy(p: Pick<AccessPolicy, "effect" | "termsId" | "con
   if (c.compliance === "not-compliant") parts.push("on devices that aren't compliant");
   if (c.risk.length) parts.push(`with ${joinList(RISK_LEVELS.filter((level) => c.risk.includes(level)))} risk`);
   if (c.methods.length) parts.push(`using ${joinList(c.methods.map((m) => METHOD_PLURAL[m]))}`);
-  const verb = p.effect === "require-terms" ? `Require accepting “${(p.termsId && names.terms[p.termsId]) || "terms of use"}” for` : EFFECT[p.effect].verb;
+  const verb =
+    p.effect === "require-terms"
+      ? `Require accepting “${(p.termsId && names.terms[p.termsId]) || "terms of use"}” for`
+      : p.effect === "require-context" && p.contextId
+        ? `Require “${names.contexts[p.contextId] ?? p.contextId}” for`
+        : EFFECT[p.effect].verb;
   return `${verb} sign-ins ${parts.join(" ")}.`;
 }
 
@@ -137,6 +144,9 @@ export function activityText(p: PolicyWithActivity): string {
   if (p.effect === "block") return `${report ? "Would have blocked" : "Blocked"} ${pluralize(stopped, "sign-in")} in the last 24 hours.`;
   if (p.effect === "require-phishing-resistant") {
     return `${report ? "Would have required" : "Required"} a passkey or security key for ${stopped} of ${pluralize(matched, "matching sign-in")} in the last 24 hours.`;
+  }
+  if (p.effect === "require-context") {
+    return `${report ? "Would have asked" : "Asked"} for a stronger sign-in in ${stopped} of ${pluralize(matched, "matching sign-in")} in the last 24 hours.`;
   }
   if (p.effect === "require-terms") {
     return `${report ? "Would have asked" : "Asked"} for the terms of use in ${stopped} of ${pluralize(matched, "matching sign-in")} in the last 24 hours.`;

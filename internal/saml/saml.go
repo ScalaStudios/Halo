@@ -482,6 +482,11 @@ func (f *flow) GetSession(w http.ResponseWriter, r *http.Request, req *saml.IdpA
 		f.resumeAfter(w, r, req, "/account/terms")
 		return nil
 	}
+	if _, unmet := decision.StepUp(nil, f.session); unmet != nil {
+		reason := "The session does not meet the authentication context “" + unmet.Name + "”."
+		f.refuse(w, r, reason, f.app.Name+" needs a stronger sign-in", "Sign out of Halo first. "+unmet.SignInAgain()+" Then open "+f.app.Name+" again.", reason)
+		return nil
+	}
 	if f.settings, err = f.st.SAMLSettings(ctx, f.app.ID); err != nil {
 		internal(w, r, err)
 		return nil

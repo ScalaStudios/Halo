@@ -61,6 +61,14 @@ func (s *storage) silent(ctx context.Context, a *store.AuthRequest, app store.Ap
 	case len(decision.Terms) > 0:
 		return oidc.ErrInteractionRequired().WithDescription("The user must accept the organization's terms of use first.")
 	}
+	requested, err := s.st.RequestedAuthContexts(ctx, a.ACRValues)
+	if err != nil {
+		return err
+	}
+	acr, unmet := decision.StepUp(requested, sess)
+	if unmet != nil {
+		return oidc.ErrLoginRequired().WithDescription("The Halo session does not meet the authentication context %s.", unmet.ID)
+	}
 	needed, err := s.needsConsent(ctx, app, u.ID, *a)
 	if err != nil {
 		return err
@@ -68,7 +76,7 @@ func (s *storage) silent(ctx context.Context, a *store.AuthRequest, app store.Ap
 	if needed {
 		return consentRequired()
 	}
-	a.ID, a.UserID, a.SessionID, a.AuthTime, a.AMR, a.Done = id.New(silentPrefix), &u.ID, &sess.ID, &sess.CreatedAt, sess.AMR(), true
+	a.ID, a.UserID, a.SessionID, a.AuthTime, a.AMR, a.ACR, a.Done = id.New(silentPrefix), &u.ID, &sess.ID, &sess.CreatedAt, sess.AMR(), acr, true
 	event.Result = "success"
 	return s.st.RecordSignIn(ctx, event)
 }

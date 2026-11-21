@@ -26,10 +26,12 @@ function verdict(p: Simulation["policies"][number]): string {
   if (!p.matched) return "Doesn't match";
   const report = p.mode === "report";
   if (p.outcome === "block") return report ? "Would block" : "Blocks";
+  if (p.outcome === "require" && p.effect === "require-context") return report ? "Would require a stronger sign-in" : "Requires a stronger sign-in";
   if (p.outcome === "require") return report ? "Would require a passkey or security key" : "Requires a passkey or security key";
   if (p.outcome === "terms") return report ? "Would ask for the terms of use" : "Asks for the terms of use";
   if (p.effect === "require-phishing-resistant") return "Requirement met";
   if (p.effect === "require-terms") return "Terms accepted";
+  if (p.effect === "require-context") return "Method meets the context";
   return report ? "Would allow" : "Allows";
 }
 
@@ -72,7 +74,7 @@ export function SimulateDialog({ users, applications }: { users: Option[]; appli
     }
   }
 
-  const outcome = result ? OUTCOME[result.outcome] : null;
+  const outcome = result ? { ...OUTCOME[result.outcome], ...(result.outcome === "require" && result.effect !== "require-phishing-resistant" ? { title: "Stronger sign-in required" } : {}) } : null;
   const OutcomeIcon = outcome?.icon;
 
   return (

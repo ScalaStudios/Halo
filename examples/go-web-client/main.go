@@ -34,6 +34,10 @@ func main() {
 	issuer := env("HALO_ISSUER", "http://localhost:3200")
 	redirect := env("REDIRECT_URI", "http://localhost:9000/callback")
 	listen := env("LISTEN", "localhost:9000")
+	var params []rp.URLParamOpt
+	if acr := os.Getenv("ACR_VALUES"); acr != "" {
+		params = append(params, rp.WithURLParam("acr_values", acr))
+	}
 	clientID, clientSecret := os.Getenv("CLIENT_ID"), os.Getenv("CLIENT_SECRET")
 	if clientID == "" || clientSecret == "" {
 		log.Fatal("set CLIENT_ID and CLIENT_SECRET from the Halo application you registered")
@@ -53,7 +57,7 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		_ = page.Execute(w, nil)
 	})
-	http.Handle("/login", rp.AuthURLHandler(func() string { return base64.RawURLEncoding.EncodeToString(random(16)) }, provider))
+	http.Handle("/login", rp.AuthURLHandler(func() string { return base64.RawURLEncoding.EncodeToString(random(16)) }, provider, params...))
 	http.Handle("/callback", rp.CodeExchangeHandler(rp.UserinfoCallback(func(w http.ResponseWriter, r *http.Request, tokens *oidc.Tokens[*oidc.IDTokenClaims], state string, _ rp.RelyingParty, info *oidc.UserInfo) {
 		claims, _ := json.MarshalIndent(tokens.IDTokenClaims, "", "  ")
 		_ = page.Execute(w, view{Name: info.Name, Email: info.Email, Claims: string(claims)})

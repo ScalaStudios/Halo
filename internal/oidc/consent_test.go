@@ -65,7 +65,7 @@ func TestConsent(t *testing.T) {
 		if !ok {
 			t.Fatalf("authorize ended at %s", location)
 		}
-		if err := h.st.CompleteAuthRequest(ctx, requestID, h.user.ID, sess.ID, sess.AMR(), sess.CreatedAt); err != nil {
+		if err := h.st.CompleteAuthRequest(ctx, requestID, h.user.ID, sess.ID, sess.AMR(), sess.CreatedAt, ""); err != nil {
 			t.Fatal(err)
 		}
 		status, location := h.get(store.AuthorizeCallbackPath(requestID), token)

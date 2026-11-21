@@ -345,6 +345,8 @@ func TestIdentityProvider(t *testing.T) {
 	engine.decision = access.Decision{Effect: access.RequirePhishingResistant, Policy: "Strong sign-in", Reason: "Helpdesk needs phishing-resistant sign-in."}
 	refused(call("GET", redirect.String(), session(ada.ID, "totp"), nil), "Helpdesk needs a passkey or security key", "Policy “Strong sign-in”: Helpdesk needs phishing-resistant sign-in.", ada.ID)
 	assertion(call("GET", redirect.String(), passkey, nil), sp, request.ID)
+	engine.decision = access.Decision{Effect: access.RequireContext, Contexts: []store.AuthContext{{ID: "keys", Name: "Security keys", Methods: []string{"security-key"}}}}
+	refused(call("GET", redirect.String(), passkey, nil), "Sign in again with a security key.", "The session does not meet the authentication context “Security keys”.", ada.ID)
 	engine.decision = access.Decision{Effect: access.Allow, Terms: []store.Terms{{ID: "tou_1", Name: "Acceptable use", Version: 1}}}
 	if rec := call("GET", redirect.String(), passkey, nil); rec.Code != http.StatusSeeOther || !strings.HasPrefix(rec.Header().Get("Location"), "/account/terms?next=%2Fsaml%2Fresume%3Fid%3D") {
 		t.Fatalf("terms not accepted: %d %s", rec.Code, rec.Header().Get("Location"))

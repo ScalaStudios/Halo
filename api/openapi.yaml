@@ -10,8 +10,10 @@ info:
 
     **Authentication.** Send either the `halo_session` cookie of a signed-in person, or an API key of a service account as `Authorization: Bearer hlk_…`. API keys work only when they have the `api` scope, act with the roles of their service account, and are ignored on the personal routes under `/me` and on the sign-in routes under `/auth`. A workload with a federated credential on a service account trades a token from its own identity provider for an API key that expires after an hour at `POST /oauth2/token`. The personal routes under `/me/` (with a trailing segment, not `/me` itself) also accept an access token that `halo login` obtained for the built-in Halo CLI application.
 
-    **Re-authentication.** Sensitive operations need a recent strong sign-in when a person calls them with a session: a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, within the last `reauthMinutes` (10 by default). Otherwise they answer `401` with `ERR_REAUTH_REQUIRED`; confirm with `/me/reauthenticate/begin` and `/me/reauthenticate`, then send the same request again. A person with no passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE` instead. API keys are not affected, and an approved change applies without asking the requester again. The sensitive operations are the ones whose `401` response lists `ERR_REAUTH_REQUIRED`: granting or activating administrator roles, creating service accounts and API keys, rotating signing keys, SAML certificates and client secrets, changing access policies, sign-in methods and organization settings, resetting or changing another person's sign-in methods, extending a guest's access or changing their sponsor, changing identity providers, exporting the configuration and approving a held change. Adding or removing your own passkey, security key or authenticator app, creating recovery codes, and choosing your security emails, need it too once you have a passkey, security key or authenticator app.
-    **Re-authentication.** Sensitive operations need a recent strong sign-in when a person calls them with a session: a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, within the last `reauthMinutes` (10 by default). Otherwise they answer `401` with `ERR_REAUTH_REQUIRED`; confirm with `/me/reauthenticate/begin` and `/me/reauthenticate`, then send the same request again. A person with no passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE` instead. API keys are not affected, and an approved change applies without asking the requester again. The sensitive operations are the ones whose `401` response lists `ERR_REAUTH_REQUIRED`: granting or activating administrator roles, creating service accounts, API keys and federated credentials, removing federated credentials, rotating signing keys, SAML certificates and client secrets, changing access policies, sign-in methods and organization settings, resetting or changing another person's sign-in methods, changing identity providers, exporting the configuration and approving a held change. Adding or removing your own passkey, security key or authenticator app, creating recovery codes, and choosing your security emails, need it too once you have a passkey, security key or authenticator app.
+    **Re-authentication.** Sensitive operations need a recent strong sign-in when a person calls them with a session: a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, within the last `reauthMinutes` (10 by default). Otherwise they answer `401` with `ERR_REAUTH_REQUIRED`; confirm with `/me/reauthenticate/begin` and `/me/reauthenticate`, then send the same request again. A person with no passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE` instead. API keys are not affected, and an approved change applies without asking the requester again. The sensitive operations are the ones whose `401` response lists `ERR_REAUTH_REQUIRED`: granting or activating administrator roles, creating service accounts and API keys, rotating signing keys, SAML certificates and client secrets, changing access policies, authentication contexts, sign-in methods and organization settings, resetting or changing another person's sign-in methods, extending a guest's access or changing their sponsor, changing identity providers, exporting the configuration and approving a held change. Adding or removing your own passkey, security key or authenticator app, creating recovery codes, and choosing your security emails, need it too once you have a passkey, security key or authenticator app.
+    **Re-authentication.** Sensitive operations need a recent strong sign-in when a person calls them with a session: a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, within the last `reauthMinutes` (10 by default). Otherwise they answer `401` with `ERR_REAUTH_REQUIRED`; confirm with `/me/reauthenticate/begin` and `/me/reauthenticate`, then send the same request again. A person with no passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE` instead. API keys are not affected, and an approved change applies without asking the requester again. The sensitive operations are the ones whose `401` response lists `ERR_REAUTH_REQUIRED`: granting or activating administrator roles, creating service accounts, API keys and federated credentials, removing federated credentials, rotating signing keys, SAML certificates and client secrets, changing access policies, authentication contexts, sign-in methods and organization settings, resetting or changing another person's sign-in methods, changing identity providers, exporting the configuration and approving a held change. Adding or removing your own passkey, security key or authenticator app, creating recovery codes, and choosing your security emails, need it too once you have a passkey, security key or authenticator app.
+
+    **Step-up authentication.** An application asks for a stronger sign-in for one action by sending `acr_values` with the identifier of an authentication context to `/oauth2/authorize`, such as `acr_values=passkey-recent`, or an `acr` claim in the `claims` parameter, such as `{"id_token":{"acr":{"essential":true,"values":["passkey-recent"]}}}`. Discovery lists the identifiers in `acr_values_supported`. A sign-in meets a context when it used one of the context's `methods` and is no older than its `maxAge`, measured from `auth_time`. Halo uses the first requested context the session meets and names it in the ID token's `acr` claim, next to `amr` and `auth_time`; otherwise the sign-in page asks the person to sign in again, `/auth/continue` and the sign-in routes answer `403` with `ERR_STEP_UP_REQUIRED`, and `prompt=none` returns `login_required`. Values Halo does not know are skipped. When `claims` marks `acr` essential and Halo knows none of its values, the request ends with `access_denied`. An access policy with the effect `require-context` makes every matching sign-in meet the context too. Only ID tokens from the authorization code flow carry `acr`: refreshed ID tokens, access tokens and introspection do not. A resource server can ask the client for a step-up with RFC 9470: it answers `401` with `WWW-Authenticate: Bearer error="insufficient_user_authentication", error_description="A passkey sign-in in the last 5 minutes is required", acr_values="passkey-recent"` (or `max_age=300`, which it can check against `auth_time` in introspection), and the client sends the person to `/oauth2/authorize` with those values, checks `acr` in the new ID token and calls again with the new access token.
 
     **Roles.** Each operation states the roles it requires. A global administrator passes every role check. "Any administrator" means security, user, helpdesk or application administrator, or auditor.
 
@@ -57,7 +59,7 @@ tags:
   - name: Lifecycle
     description: Joiner, mover and leaver rules.
   - name: Policies
-    description: Conditional access policies, network zones, sign-in methods, devices, device compliance sources and risk events.
+    description: Conditional access policies, network zones, terms of use, authentication contexts, sign-in methods, devices, device compliance sources and risk events.
   - name: Service accounts
     description: Non-human accounts, their API keys and the federated credentials that let workloads sign in without one.
   - name: Provisioning
@@ -560,7 +562,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
         '403':
-          description: '`ERR_SECOND_FACTOR_MISSING`: a second factor is required and the account has no authenticator app. Also `ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_BLOCKED_BY_HOOK`, `ERR_STRONGER_AUTH_REQUIRED`, `ERR_SESSION_LIMIT`, `ERR_CHALLENGE_REQUIRED`, `ERR_CHALLENGE_FAILED` and `ERR_CROSS_SITE`, as for other sign-in methods.'
+          description: '`ERR_SECOND_FACTOR_MISSING`: a second factor is required and the account has no authenticator app. Also `ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_BLOCKED_BY_HOOK`, `ERR_STRONGER_AUTH_REQUIRED`, `ERR_STEP_UP_REQUIRED`, `ERR_SESSION_LIMIT`, `ERR_CHALLENGE_REQUIRED`, `ERR_CHALLENGE_FAILED` and `ERR_CROSS_SITE`, as for other sign-in methods.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -664,7 +666,11 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
-        '403': {$ref: '#/components/responses/SignInRefused'}
+        '403':
+          description: '`ERR_STEP_UP_REQUIRED`: the session does not meet an authentication context the application asked for or a policy requires; sign in again with a method `message` names. Not recorded as a failed sign-in. Otherwise as for other sign-in routes: see `SignInRefused`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
         '404': {$ref: '#/components/responses/AuthRequestExpired'}
         '422': {$ref: '#/components/responses/Invalid'}
   /auth/terms/{ceremony}:
@@ -1120,7 +1126,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
         '403':
-          description: '`ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED`, `ERR_SESSION_LIMIT`, `ERR_TERMS_REQUIRED` (accept the terms of use with `POST /me/terms/{id}/accept` first) or `ERR_CROSS_SITE`.'
+          description: '`ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED`, `ERR_STEP_UP_REQUIRED` (a policy requires an authentication context the session does not meet), `ERR_SESSION_LIMIT`, `ERR_TERMS_REQUIRED` (accept the terms of use with `POST /me/terms/{id}/accept` first) or `ERR_CROSS_SITE`.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -4632,6 +4638,67 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /authentication-contexts:
+    get:
+      tags: [Policies]
+      operationId: listAuthenticationContexts
+      summary: List authentication contexts
+      description: 'Roles: any administrator. Sorted by identifier.'
+      responses:
+        '200':
+          description: The contexts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AuthenticationContext'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Policies]
+      operationId: createAuthenticationContext
+      summary: Add an authentication context
+      description: 'Roles: security administrator. Recorded as `authentication_context.create`.'
+      requestBody: {$ref: '#/components/requestBodies/AuthenticationContextInput'}
+      responses:
+        '201': {$ref: '#/components/responses/AuthenticationContextResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /authentication-contexts/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The context's identifier, such as `passkey-recent`.
+        schema: {type: string}
+    put:
+      tags: [Policies]
+      operationId: updateAuthenticationContext
+      summary: Replace an authentication context
+      description: 'Roles: security administrator. The identifier stays; `id` in the body is ignored. Refused with `ERR_LOCKOUT` when a policy requires the context and no global administrator could still sign in. Recorded as `authentication_context.update`.'
+      requestBody: {$ref: '#/components/requestBodies/AuthenticationContextInput'}
+      responses:
+        '200': {$ref: '#/components/responses/AuthenticationContextResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Policies]
+      operationId: deleteAuthenticationContext
+      summary: Delete an authentication context
+      description: 'Roles: security administrator. Refused with `409` while a policy requires it. Halo then skips it in `acr_values`. Recorded as `authentication_context.delete`.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /methods:
     get:
       tags: [Policies]
@@ -6434,9 +6501,25 @@ components:
               description: {type: string, maxLength: 2000}
               enabled: {type: boolean}
               mode: {type: string, enum: [enforce, report]}
-              effect: {type: string, enum: [allow, require-phishing-resistant, require-terms, block]}
+              effect: {type: string, enum: [allow, require-phishing-resistant, require-terms, require-context, block]}
               termsId: {type: [string, 'null'], description: 'The terms of use to accept. Required when `effect` is `require-terms`, ignored otherwise.'}
+              contextId: {type: [string, 'null'], description: 'The authentication context sign-ins must meet. Required when `effect` is `require-context`, ignored otherwise.'}
               conditions: {$ref: '#/components/schemas/PolicyConditions'}
+    AuthenticationContextInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name]
+            properties:
+              id: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$', description: Required when adding. The value applications send in `acr_values` and read in the `acr` claim.}
+              name: {type: string, maxLength: 200}
+              methods:
+                type: array
+                description: Sign-in methods that meet the context. Empty accepts every method.
+                items: {$ref: '#/components/schemas/MethodKind'}
+              maxAge: {type: integer, description: 'Oldest sign-in that meets the context, in seconds: 0 for no limit, or 60 to 7776000. Set methods, a maximum age or both.'}
     TermsInput:
       required: true
       content:
@@ -6687,7 +6770,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     SignInRefused:
-      description: '`ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED` (not in a group assigned to the application), `ERR_BLOCKED_BY_POLICY`, `ERR_BLOCKED_BY_HOOK` (the application''s hook denied the sign-in or failed and fails closed; `message` holds its reason), `ERR_STRONGER_AUTH_REQUIRED` (a policy requires a passkey or security key), `ERR_SESSION_LIMIT` (the person holds as many sessions as the session limit allows), `ERR_CHALLENGE_REQUIRED` or `ERR_CHALLENGE_FAILED` (see `ChallengeToken`), or `ERR_CROSS_SITE`. Refused sign-ins are recorded in the sign-in log.'
+      description: '`ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED` (not in a group assigned to the application), `ERR_BLOCKED_BY_POLICY`, `ERR_BLOCKED_BY_HOOK` (the application''s hook denied the sign-in or failed and fails closed; `message` holds its reason), `ERR_STRONGER_AUTH_REQUIRED` (a policy requires a passkey or security key), `ERR_STEP_UP_REQUIRED` (the method does not meet an authentication context the application asked for or a policy requires; `message` names the methods that do), `ERR_SESSION_LIMIT` (the person holds as many sessions as the session limit allows), `ERR_CHALLENGE_REQUIRED` or `ERR_CHALLENGE_FAILED` (see `ChallengeToken`), or `ERR_CROSS_SITE`. Refused sign-ins are recorded in the sign-in log.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -6859,6 +6942,11 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/NetworkZone'}
+    AuthenticationContextResponse:
+      description: The authentication context.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AuthenticationContext'}
     TermsResponse:
       description: The terms of use.
       content:
@@ -7764,7 +7852,7 @@ components:
           items: {$ref: '#/components/schemas/MethodKind'}
     AccessPolicy:
       type: object
-      required: [id, name, description, priority, enabled, mode, effect, termsId, conditions, createdAt, updatedAt]
+      required: [id, name, description, priority, enabled, mode, effect, termsId, contextId, conditions, createdAt, updatedAt]
       properties:
         id: {type: string, examples: [pol_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
@@ -7772,8 +7860,9 @@ components:
         priority: {type: integer, description: Position in the saved order.}
         enabled: {type: boolean}
         mode: {type: string, enum: [enforce, report]}
-        effect: {type: string, enum: [allow, require-phishing-resistant, require-terms, block]}
+        effect: {type: string, enum: [allow, require-phishing-resistant, require-terms, require-context, block]}
         termsId: {type: [string, 'null'], description: 'The terms of use a `require-terms` policy asks for.'}
+        contextId: {type: [string, 'null'], description: 'The authentication context a `require-context` policy asks for. Every enforced matching `require-context` policy applies, whichever policy decides the effect.'}
         conditions: {$ref: '#/components/schemas/PolicyConditions'}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
@@ -7793,8 +7882,8 @@ components:
       type: object
       required: [effect, outcome, policy, reason, risk, signals, policies]
       properties:
-        effect: {type: string, enum: [allow, require-phishing-resistant, require-terms, block]}
-        outcome: {type: string, enum: [allow, require, terms, block], description: '`require` when the effect requires a passkey or security key and the simulated method is neither. `terms` when an enforced policy asks for terms of use the person has not accepted.'}
+        effect: {type: string, enum: [allow, require-phishing-resistant, require-terms, require-context, block]}
+        outcome: {type: string, enum: [allow, require, terms, block], description: '`require` when the effect requires a passkey or security key and the simulated method is neither, or when an enforced policy requires an authentication context whose methods leave out the simulated method. `terms` when an enforced policy asks for terms of use the person has not accepted.'}
         policy: {type: string, description: 'The name of the deciding policy, if any.'}
         reason: {type: string}
         risk: {type: string, enum: [none, low, medium, high]}
@@ -7818,6 +7907,19 @@ components:
               matched: {type: boolean}
               outcome: {type: string, enum: ['', allow, require, terms, block]}
               detail: {type: string, description: Why it matched or did not.}
+    AuthenticationContext:
+      type: object
+      required: [id, name, methods, maxAge, createdAt, updatedAt]
+      properties:
+        id: {type: string, examples: [passkey-recent], description: The value applications send in `acr_values` and read in the `acr` claim.}
+        name: {type: string}
+        methods:
+          type: array
+          description: Sign-in methods that meet the context. Empty accepts every method.
+          items: {$ref: '#/components/schemas/MethodKind'}
+        maxAge: {type: integer, description: 'Oldest sign-in that meets the context, in seconds. 0 for no limit.'}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
     Terms:
       type: object
       required: [id, name, version, text, url, createdAt, updatedAt]

@@ -256,14 +256,32 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 			return h.reject(r, a, policyReason(decision), errStrongerAuth)
 		}
 	}
-	if a.app != nil && len(decision.Terms) == 0 {
-		req, err := h.st.GetAuthRequest(ctx, a.request)
-		if errors.Is(err, store.ErrNotFound) {
+	var req store.AuthRequest
+	var requested []store.AuthContext
+	if a.app != nil {
+		if req, err = h.st.GetAuthRequest(ctx, a.request); errors.Is(err, store.ErrNotFound) {
 			return errRequestExpired
 		}
 		if err != nil {
 			return err
 		}
+		if requested, err = h.st.RequestedAuthContexts(ctx, req.ACRValues); err != nil {
+			return err
+		}
+	}
+	probe := store.Session{Method: a.method, SecondFactor: a.secondFactor, CreatedAt: time.Now()}
+	if current != nil {
+		probe = *current
+	}
+	acr, unmet := decision.StepUp(requested, probe)
+	switch {
+	case unmet == nil || a.method == "access-pass":
+	case current != nil:
+		return stepUpRequired(*unmet)
+	default:
+		return h.reject(r, a, "The sign-in does not meet the authentication context “"+unmet.Name+"”.", stepUpRequired(*unmet))
+	}
+	if a.app != nil && len(decision.Terms) == 0 {
 		if a.hook, err = webhooks.RunHook(ctx, h.st, *a.app, webhooks.HookCall{Stage: webhooks.HookSignIn, User: u, Scopes: req.Scopes}); err != nil {
 			return err
 		}
@@ -317,7 +335,7 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 			}
 		}
 		if a.request != "" {
-			if err := tx.CompleteAuthRequest(ctx, a.request, u.ID, sess.ID, sess.AMR(), sess.CreatedAt); err != nil {
+			if err := tx.CompleteAuthRequest(ctx, a.request, u.ID, sess.ID, sess.AMR(), sess.CreatedAt, acr); err != nil {
 				return err
 			}
 			redirect = store.AuthorizeCallbackPath(a.request)
@@ -352,6 +370,10 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 		}
 	}
 	return httpx.JSON(w, http.StatusOK, map[string]string{"redirect": redirect})
+}
+
+func stepUpRequired(c store.AuthContext) *httpx.Error {
+	return httpx.Fail(http.StatusForbidden, "ERR_STEP_UP_REQUIRED", "This sign-in needs to meet “"+c.Name+"”. "+c.SignInAgain())
 }
 
 func policyReason(d access.Decision) string {

@@ -225,5 +225,9 @@ func (h *deviceHandlers) check(r *http.Request, p pendingDevice, event *store.Si
 	case len(decision.Terms) > 0:
 		return "The terms of use are not accepted yet.", errDeviceTerms, nil
 	}
+	if _, unmet := decision.StepUp(nil, p.session); unmet != nil {
+		return "The session does not meet the authentication context “" + unmet.Name + "”.",
+			httpx.Fail(http.StatusForbidden, "ERR_STEP_UP_REQUIRED", "This sign-in needs to meet “"+unmet.Name+"”. Sign out of Halo first. "+unmet.SignInAgain()+" Then approve again."), nil
+	}
 	return "", nil, nil
 }

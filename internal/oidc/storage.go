@@ -2,6 +2,7 @@ package oidc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
@@ -30,7 +31,7 @@ type authRequest struct {
 }
 
 func (a *authRequest) GetID() string                      { return a.ID }
-func (a *authRequest) GetACR() string                     { return "" }
+func (a *authRequest) GetACR() string                     { return a.ACR }
 func (a *authRequest) GetAMR() []string                   { return a.AMR }
 func (a *authRequest) GetAudience() []string              { return a.audience }
 func (a *authRequest) GetAuthTime() time.Time             { return deref(a.AuthTime) }
@@ -151,8 +152,20 @@ func (s *storage) CreateAuthRequest(ctx context.Context, req *oidc.AuthRequest, 
 		MaxAge:              maxAge,
 		LoginHint:           req.LoginHint,
 	}
+	values, essential := req.ACRValues, false
 	if r, ok := ctx.Value(requestKey{}).(*http.Request); ok {
 		a.DomainHint = r.Form.Get("domain_hint")
+		values, essential = requestedACR(r.Form.Get("claims"), values)
+	}
+	known, err := s.st.RequestedAuthContexts(ctx, values)
+	if err != nil {
+		return nil, err
+	}
+	if essential && len(known) == 0 {
+		return nil, oidc.ErrAccessDenied().WithDescription("Halo has none of the requested authentication contexts: %s.", strings.Join(values, ", "))
+	}
+	for _, c := range known {
+		a.ACRValues = append(a.ACRValues, c.ID)
 	}
 	granted, err := s.st.GrantedResources(ctx, req.ClientID)
 	if err != nil {
@@ -168,6 +181,27 @@ func (s *storage) CreateAuthRequest(ctx context.Context, req *oidc.AuthRequest, 
 	}
 	created, err := s.st.CreateAuthRequest(ctx, a)
 	return s.wrap(ctx, created, err)
+}
+
+func requestedACR(claims string, values []string) ([]string, bool) {
+	var parsed struct {
+		IDToken struct {
+			ACR *struct {
+				Essential bool     `json:"essential"`
+				Value     string   `json:"value"`
+				Values    []string `json:"values"`
+			} `json:"acr"`
+		} `json:"id_token"`
+	}
+	if json.Unmarshal([]byte(claims), &parsed) != nil || parsed.IDToken.ACR == nil {
+		return values, false
+	}
+	acr := parsed.IDToken.ACR
+	requested := slices.DeleteFunc(append(acr.Values, acr.Value), func(v string) bool { return v == "" })
+	if acr.Essential && len(requested) > 0 {
+		return requested, true
+	}
+	return append(requested, values...), false
 }
 
 func (s *storage) wrap(ctx context.Context, a store.AuthRequest, err error) (op.AuthRequest, error) {

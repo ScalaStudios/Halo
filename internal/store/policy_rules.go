@@ -67,16 +67,17 @@ type AccessPolicy struct {
 	Mode        string           `json:"mode"`
 	Effect      string           `json:"effect"`
 	TermsID     *string          `json:"termsId"`
+	ContextID   *string          `json:"contextId"`
 	Conditions  PolicyConditions `json:"conditions"`
 	CreatedAt   time.Time        `json:"createdAt"`
 	UpdatedAt   time.Time        `json:"updatedAt"`
 }
 
-const policyColumns = `id, name, description, priority, enabled, mode, effect, terms_id, conditions, created_at, updated_at`
+const policyColumns = `id, name, description, priority, enabled, mode, effect, terms_id, context_id, conditions, created_at, updated_at`
 
 func scanPolicy(row rowScanner) (AccessPolicy, error) {
 	var p AccessPolicy
-	err := row.Scan(&p.ID, &p.Name, &p.Description, &p.Priority, &p.Enabled, &p.Mode, &p.Effect, &p.TermsID, &p.Conditions, &p.CreatedAt, &p.UpdatedAt)
+	err := row.Scan(&p.ID, &p.Name, &p.Description, &p.Priority, &p.Enabled, &p.Mode, &p.Effect, &p.TermsID, &p.ContextID, &p.Conditions, &p.CreatedAt, &p.UpdatedAt)
 	return p, err
 }
 
@@ -104,9 +105,9 @@ func (s *Store) GetAccessPolicy(ctx context.Context, policyID string) (AccessPol
 
 func (s *Store) CreateAccessPolicy(ctx context.Context, p AccessPolicy) (AccessPolicy, error) {
 	p.ID = id.New("pol")
-	_, err := s.db.Exec(ctx, `insert into access_policies (id, name, description, priority, enabled, mode, effect, terms_id, conditions)
-		values ($1, $2, $3, (select coalesce(max(priority), 0) + 1 from access_policies), $4, $5, $6, $7, $8)`,
-		p.ID, strings.TrimSpace(p.Name), p.Description, p.Enabled, p.Mode, p.Effect, p.TermsID, p.Conditions.normalized())
+	_, err := s.db.Exec(ctx, `insert into access_policies (id, name, description, priority, enabled, mode, effect, terms_id, context_id, conditions)
+		values ($1, $2, $3, (select coalesce(max(priority), 0) + 1 from access_policies), $4, $5, $6, $7, $8, $9)`,
+		p.ID, strings.TrimSpace(p.Name), p.Description, p.Enabled, p.Mode, p.Effect, p.TermsID, p.ContextID, p.Conditions.normalized())
 	if err != nil {
 		return AccessPolicy{}, conflict(err)
 	}
@@ -114,8 +115,8 @@ func (s *Store) CreateAccessPolicy(ctx context.Context, p AccessPolicy) (AccessP
 }
 
 func (s *Store) UpdateAccessPolicy(ctx context.Context, p AccessPolicy) (AccessPolicy, error) {
-	tag, err := s.db.Exec(ctx, `update access_policies set name = $2, description = $3, enabled = $4, mode = $5, effect = $6, terms_id = $7, conditions = $8, updated_at = now() where id = $1`,
-		p.ID, strings.TrimSpace(p.Name), p.Description, p.Enabled, p.Mode, p.Effect, p.TermsID, p.Conditions.normalized())
+	tag, err := s.db.Exec(ctx, `update access_policies set name = $2, description = $3, enabled = $4, mode = $5, effect = $6, terms_id = $7, context_id = $8, conditions = $9, updated_at = now() where id = $1`,
+		p.ID, strings.TrimSpace(p.Name), p.Description, p.Enabled, p.Mode, p.Effect, p.TermsID, p.ContextID, p.Conditions.normalized())
 	if err != nil {
 		return AccessPolicy{}, conflict(err)
 	}
