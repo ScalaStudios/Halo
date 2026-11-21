@@ -14,7 +14,7 @@ func TestAttributeDefinitions(t *testing.T) {
 	st, h := setup(t)
 	_, global := person(t, st, "gia@example.com", "global_admin")
 	_, userAdmin := person(t, st, "uma@example.com", "user_admin")
-	_, plain := person(t, st, "pat@example.com")
+	pat, plain := person(t, st, "pat@example.com")
 
 	expect(t, call(t, h, userAdmin, "POST", "/api/v1/attributes", map[string]any{"name": "costCentre", "label": "Cost centre", "type": "string"}), 403)
 	for _, body := range []map[string]any{
@@ -48,9 +48,15 @@ func TestAttributeDefinitions(t *testing.T) {
 		t.Fatalf("audit: %+v %v", e, diff(e))
 	}
 
+	expect(t, call(t, h, global, "POST", "/api/v1/attributes", map[string]any{"name": "licence", "label": "Licence", "type": "string"}), 201)
+	expect(t, call(t, h, global, "PATCH", "/api/v1/users/"+pat.ID, map[string]any{"attributes": map[string]any{"costCentre": "CC-1"}}), 200)
 	list := decode[[]store.Attribute](t, call(t, h, plain, "GET", "/api/v1/attributes", nil))
-	if len(list) != 1 || list[0].ID != a.ID {
-		t.Fatalf("list: %+v", list)
+	if len(list) != 1 || list[0].ID != a.ID || list[0].People != 0 {
+		t.Fatalf("a person sees only the attributes they can change or hold: %+v", list)
+	}
+	list = decode[[]store.Attribute](t, call(t, h, userAdmin, "GET", "/api/v1/attributes", nil))
+	if len(list) != 2 || list[0].Name != "costCentre" || list[0].People != 1 || list[1].People != 0 {
+		t.Fatalf("administrators see every attribute with counts: %+v", list)
 	}
 	expect(t, call(t, h, plain, "DELETE", "/api/v1/attributes/"+a.ID, nil), 403)
 	expect(t, call(t, h, global, "DELETE", "/api/v1/attributes/atr_missing", nil), 404)

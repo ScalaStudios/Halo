@@ -98,13 +98,23 @@ func (h *handlers) updateGuest(w http.ResponseWriter, r *http.Request, actor sto
 	if err != nil {
 		return err
 	}
-	return h.respondUser(w, r, guest.ID)
+	updated, err := h.st.GetUser(r.Context(), guest.ID)
+	if err != nil {
+		return err
+	}
+	if !administrator(actor) {
+		updated.Attributes = nil
+	}
+	return httpx.JSON(w, http.StatusOK, updated)
 }
 
 func (h *handlers) mySponsoredGuests(w http.ResponseWriter, r *http.Request, actor store.User) error {
 	guests, err := h.st.ListSponsoredGuests(r.Context(), actor.ID)
 	if err != nil {
 		return err
+	}
+	for i := range guests {
+		guests[i].Attributes = nil
 	}
 	return httpx.JSON(w, http.StatusOK, nonNil(guests))
 }

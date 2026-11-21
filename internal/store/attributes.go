@@ -28,11 +28,29 @@ type Attribute struct {
 }
 
 func (s *Store) ListAttributes(ctx context.Context) ([]Attribute, error) {
-	rows, err := s.db.Query(ctx, `select a.id, a.name, a.label, a.type, a.self_service, a.created_at, (select count(*) from users u where u.attributes ? a.name) from user_attributes a order by lower(a.label), a.name`)
+	rows, err := s.db.Query(ctx, `select id, name, label, type, self_service, created_at from user_attributes order by lower(label), name`)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, pgx.RowToStructByPos[Attribute])
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Attribute, error) {
+		var a Attribute
+		return a, row.Scan(&a.ID, &a.Name, &a.Label, &a.Type, &a.SelfService, &a.CreatedAt)
+	})
+}
+
+func (s *Store) AttributeCounts(ctx context.Context) (map[string]int, error) {
+	rows, err := s.db.Query(ctx, `select key, count(*) from users, jsonb_object_keys(attributes) key group by key`)
+	if err != nil {
+		return nil, err
+	}
+	counts := map[string]int{}
+	var key string
+	var count int
+	_, err = pgx.ForEachRow(rows, []any{&key, &count}, func() error {
+		counts[key] = count
+		return nil
+	})
+	return counts, err
 }
 
 func (s *Store) CreateAttribute(ctx context.Context, a Attribute) (Attribute, error) {
@@ -49,16 +67,16 @@ func (s *Store) UpdateAttribute(ctx context.Context, a Attribute) error {
 	return err
 }
 
-func (s *Store) DeleteAttribute(ctx context.Context, a Attribute) error {
+func (s *Store) DeleteAttribute(ctx context.Context, a Attribute) (int, error) {
 	tag, err := s.db.Exec(ctx, `delete from user_attributes where id = $1`, a.ID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if tag.RowsAffected() == 0 {
-		return ErrNotFound
+		return 0, ErrNotFound
 	}
-	_, err = s.db.Exec(ctx, `update users set attributes = attributes - $1::text where attributes ? $1::text`, a.Name)
-	return err
+	tag, err = s.db.Exec(ctx, `update users set attributes = attributes - $1::text where attributes ? $1::text`, a.Name)
+	return int(tag.RowsAffected()), err
 }
 
 func (s *Store) ApplicationsMapping(ctx context.Context, source string) ([]string, error) {

@@ -50,10 +50,24 @@ func (h *handlers) attribute(r *http.Request) (store.Attribute, error) {
 	return all[i], nil
 }
 
-func (h *handlers) listAttributes(w http.ResponseWriter, r *http.Request, _ store.User) error {
+func administrator(u store.User) bool {
+	return u.HasRole("global_admin") || u.HasRole(readers...)
+}
+
+func (h *handlers) listAttributes(w http.ResponseWriter, r *http.Request, actor store.User) error {
 	all, err := h.st.ListAttributes(r.Context())
 	if err != nil {
 		return err
+	}
+	if !administrator(actor) {
+		return httpx.JSON(w, http.StatusOK, nonNil(slices.DeleteFunc(all, func(a store.Attribute) bool { return !a.SelfService && actor.Attributes[a.Name] == nil })))
+	}
+	counts, err := h.st.AttributeCounts(r.Context())
+	if err != nil {
+		return err
+	}
+	for i := range all {
+		all[i].People = counts[all[i].Name]
 	}
 	return httpx.JSON(w, http.StatusOK, nonNil(all))
 }
@@ -159,10 +173,11 @@ func (h *handlers) deleteAttribute(w http.ResponseWriter, r *http.Request, actor
 		return conflict(fmt.Sprintf("%s is mapped to a claim in %s. Remove those claim mappings first, so the applications don't lose the value without notice.", a.Label, strings.Join(apps, ", ")))
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
-		if err := tx.DeleteAttribute(r.Context(), a); err != nil {
+		people, err := tx.DeleteAttribute(r.Context(), a)
+		if err != nil {
 			return found(err, "This attribute")
 		}
-		return record(r, tx, actor, store.AuditEvent{Action: "attribute.delete", Summary: fmt.Sprintf("Deleted the attribute %s and its value for %s", a.Name, plural(a.People, "person")), TargetType: "attribute", TargetID: a.ID, TargetLabel: a.Label})
+		return record(r, tx, actor, store.AuditEvent{Action: "attribute.delete", Summary: fmt.Sprintf("Deleted the attribute %s and its value for %s", a.Name, plural(people, "person")), TargetType: "attribute", TargetID: a.ID, TargetLabel: a.Label})
 	})
 	if err != nil {
 		return err
