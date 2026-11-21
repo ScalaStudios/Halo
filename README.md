@@ -259,9 +259,23 @@ Self-hosted Halo runs on your own infrastructure and needs no external service. 
 - **Requirements.** A Linux host with Docker Engine and the Compose plugin, which the install script installs when you run it as root, a domain name, and ports 80 and 443 reachable from the internet. Images are published for `linux/amd64` and `linux/arm64`. On a test machine, the four running containers used about 200 MB of memory at idle.
 - **Choose a domain you will keep.** Halo's address is the OpenID Connect issuer that every application stores, and passkeys only work on the domain they were created for.
 - **Back up two things.** The database, and `HALO_SECRET_KEY`, which encrypts signing keys and other stored secrets. A backup cannot be restored without the key that was in use when it was taken.
-- **Run one Halo server.** Some background jobs, such as outbound SCIM, access expiry and lifecycle rules, run in every server process without coordinating with other processes.
+- **One server or several.** A single Halo server is enough for most organizations. To keep sign-in working through restarts, upgrades and host failures, run several, as [Running several instances](#running-several-instances) describes.
 - **Email is optional.** Without an SMTP server, administrators pass invite and reset links on themselves. With one, Halo emails them, and people can sign in with magic links.
 - **Kubernetes.** A Helm chart in [`deploy/helm/halo`](deploy/helm/halo) deploys the server and the web interface, with an optional PostgreSQL, and reads `HALO_SECRET_KEY` and the database URL from an existing Secret. [Its README](deploy/helm/halo/README.md) covers installation and upgrades.
+
+### Running several instances
+
+Run two or more Halo servers behind a load balancer when sign-in must keep working while one restarts or its host fails. Every instance keeps its state in PostgreSQL, so the load balancer needs no sticky sessions.
+
+- **Same database, same configuration.** Point every instance at one PostgreSQL database and give each the same `HALO_PUBLIC_URL`, `HALO_SECRET_KEY` and Vault settings. Connect directly or through a pooler in session mode: Halo holds PostgreSQL advisory locks and `LISTEN` on dedicated connections, which transaction pooling breaks. Each instance opens two connections for this beside its pool, and a third while it pushes changes over outbound SCIM.
+- **Background jobs run in one instance at a time.** The instance that holds an advisory lock runs email delivery, outbound SCIM, lifecycle rules, access expiry, webhook and log deliveries and the other jobs; the others check every 2 seconds. When it stops, another takes over within about 2 seconds, and within about 30 seconds when its host or network disappears.
+- **Shared state.** Sessions, sign-in ceremonies, authorization codes and tokens, rate limits, signing keys, and the replay checks for authenticator codes, DPoP proofs, SAML assertions and RADIUS retransmissions are rows in the database. A settings change reaches every instance at once through `LISTEN`/`NOTIFY`; if that connection drops, an instance reads settings again at least every 30 seconds.
+- **Migrations.** An instance applies migrations under an advisory lock before it listens, so instances that start together wait for each other instead of migrating twice.
+- **Health checks.** `/healthz` answers `ok` while the process runs and reaches the database. `/readyz` answers `ok` once migrations are applied, the background workers have started and the instance listens for settings changes, and `503` while it starts or stops. Point the load balancer's health check at `/readyz`.
+- **Upgrades.** Back up the database and `HALO_SECRET_KEY`, then restart the instances one at a time, and wait until `/readyz` answers `ok` on each before the next. On `SIGTERM` an instance reports `503` on `/readyz`, stops accepting connections, finishes the requests in progress for up to 10 seconds, and releases the jobs lock.
+- **RADIUS and LDAP.** Every instance can serve RADIUS and LDAP. RADIUS clients are recognized by their source address, so the load balancer must keep it.
+
+With Kubernetes, set `server.replicaCount` in the [Helm chart](deploy/helm/halo/README.md).
 
 ### Metrics
 

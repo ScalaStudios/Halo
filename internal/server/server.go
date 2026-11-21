@@ -2,7 +2,10 @@ package server
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"halo/internal/api"
@@ -105,6 +108,39 @@ type App struct {
 	RADIUS  *radius.Server
 	Jobs    *jobs.Scheduler
 	LDAP    *ldapserver.Server
+	st      *store.Store
+	ready   atomic.Bool
+}
+
+func (a *App) Run(ctx context.Context) {
+	var wg sync.WaitGroup
+	listening := make(chan struct{})
+	wg.Go(func() {
+		retry(ctx, "settings changes", func() error { return a.st.WatchSettings(ctx, sync.OnceFunc(func() { close(listening) })) })
+	})
+	wg.Go(func() {
+		retry(ctx, "background jobs", func() error { return a.st.Lead(ctx, a.Jobs.Run) })
+	})
+	select {
+	case <-listening:
+		a.ready.Store(true)
+		<-ctx.Done()
+	case <-ctx.Done():
+	}
+	a.ready.Store(false)
+	wg.Wait()
+}
+
+func retry(ctx context.Context, what string, run func() error) {
+	for ctx.Err() == nil {
+		if err := run(); err != nil && ctx.Err() == nil {
+			slog.ErrorContext(ctx, what+" lost the database connection", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 func New(cfg config.Config, st *store.Store) (*App, error) {
@@ -164,7 +200,18 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	app := &App{Handler: httpx.Logging(features.Gate(st, root)), RADIUS: radius.New(deps), Jobs: scheduler, LDAP: directory}
+	app := &App{Handler: httpx.Logging(features.Gate(st, root)), RADIUS: radius.New(deps), Jobs: scheduler, LDAP: directory, st: st}
+	root.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		if !app.ready.Load() {
+			http.Error(w, "starting or stopping", http.StatusServiceUnavailable)
+			return
+		}
+		if err := st.Ping(r.Context()); err != nil {
+			http.Error(w, "database unreachable", http.StatusServiceUnavailable)
+			return
+		}
+		w.Write([]byte("ok"))
+	})
 	if cfg.MetricsListen != "" || cfg.MetricsToken != "" {
 		exporter := metrics.Handler(cfg.MetricsToken, func() []metrics.Gauge {
 			pool := st.PoolStat()

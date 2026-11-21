@@ -26,7 +26,16 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 }
 
 func Migrate(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
-	if _, err := pool.Exec(ctx, `create table if not exists schema_migrations (version text primary key, applied_at timestamptz not null default now())`); err != nil {
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, `select pg_advisory_lock(hashtextextended('halo:migrate', 0))`); err != nil {
+		return nil, err
+	}
+	defer conn.Exec(context.Background(), `select pg_advisory_unlock(hashtextextended('halo:migrate', 0))`)
+	if _, err := conn.Exec(ctx, `create table if not exists schema_migrations (version text primary key, applied_at timestamptz not null default now())`); err != nil {
 		return nil, err
 	}
 	files, err := fs.Glob(migrations.FS, "*.sql")
@@ -38,7 +47,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
 	for _, file := range files {
 		version := strings.TrimSuffix(file, ".sql")
 		var exists bool
-		if err := pool.QueryRow(ctx, `select exists(select 1 from schema_migrations where version = $1)`, version).Scan(&exists); err != nil {
+		if err := conn.QueryRow(ctx, `select exists(select 1 from schema_migrations where version = $1)`, version).Scan(&exists); err != nil {
 			return applied, err
 		}
 		if exists {
@@ -48,7 +57,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
 		if err != nil {
 			return applied, err
 		}
-		err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
 			if _, err := tx.Exec(ctx, string(sql)); err != nil {
 				return fmt.Errorf("%s: %w", file, err)
 			}

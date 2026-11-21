@@ -42,17 +42,10 @@ type Server struct {
 	mu      sync.Mutex
 	clients []store.RADIUSClient
 	loaded  time.Time
-	replies map[string]cached
-	swept   time.Time
-}
-
-type cached struct {
-	at    time.Time
-	reply []byte
 }
 
 func New(d httpx.Deps) *Server {
-	return &Server{st: d.Store, check: auth.NewRADIUS(d), replies: map[string]cached{}}
+	return &Server{st: d.Store, check: auth.NewRADIUS(d)}
 }
 
 func (s *Server) Serve(ctx context.Context, conn *net.UDPConn) error {
@@ -103,13 +96,19 @@ func (s *Server) handle(ctx context.Context, from netip.AddrPort, b []byte) []by
 		return nil
 	}
 	p.Secret = secret.Value
-	key := from.String() + string(b[1:2]) + string(b[4:20])
-	if reply, fresh := s.remember(key); !fresh {
+	key := []byte(from.String() + string(b[1:2]) + string(b[4:20]))
+	if reply, fresh, err := s.st.ClaimRADIUSRequest(ctx, key, replayWindow); err != nil || !fresh {
+		if err != nil {
+			slog.ErrorContext(ctx, "radius retransmission not checked", "error", err)
+			metrics.RADIUSRequests.Inc("dropped")
+		}
 		return reply
 	}
 	reply, outcome := s.respond(ctx, appID, secret, nas, p)
 	metrics.RADIUSRequests.Inc(outcome)
-	s.keep(key, reply)
+	if err := s.st.KeepRADIUSReply(ctx, key, reply); err != nil {
+		slog.ErrorContext(ctx, "radius reply not kept for retransmissions", "error", err)
+	}
 	return reply
 }
 
@@ -143,35 +142,6 @@ func (s *Server) load(ctx context.Context) ([]store.RADIUSClient, error) {
 	s.clients, s.loaded = clients, time.Now()
 	s.mu.Unlock()
 	return clients, nil
-}
-
-func (s *Server) remember(key string) ([]byte, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now()
-	if now.Sub(s.swept) > replayWindow {
-		for k, c := range s.replies {
-			if now.Sub(c.at) > replayWindow {
-				delete(s.replies, k)
-			}
-		}
-		s.swept = now
-	}
-	if c, ok := s.replies[key]; ok {
-		return c.reply, false
-	}
-	s.replies[key] = cached{at: now}
-	return nil, true
-}
-
-func (s *Server) keep(key string, reply []byte) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if reply == nil {
-		delete(s.replies, key)
-		return
-	}
-	s.replies[key] = cached{at: time.Now(), reply: reply}
 }
 
 func (s *Server) respond(ctx context.Context, appID string, secret store.RADIUSSecret, nas netip.Addr, p *layeh.Packet) ([]byte, string) {

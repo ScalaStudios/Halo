@@ -128,7 +128,11 @@ func serve(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		go app.Jobs.Run(ctx)
+		running := make(chan struct{})
+		go func() {
+			defer close(running)
+			app.Run(ctx)
+		}()
 		srv := &http.Server{Addr: cfg.Listen, Handler: app.Handler, ReadHeaderTimeout: 10 * time.Second}
 		metricsSrv := &http.Server{Addr: cfg.MetricsListen, Handler: app.Metrics, ReadHeaderTimeout: 10 * time.Second}
 		errs := make(chan error, 4)
@@ -175,6 +179,10 @@ func serve(ctx context.Context) error {
 			}
 			if err := metricsSrv.Shutdown(shutdown); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				return err
+			}
+			select {
+			case <-running:
+			case <-shutdown.Done():
 			}
 			return nil
 		}

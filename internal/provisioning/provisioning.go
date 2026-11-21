@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"halo/internal/httpx"
@@ -28,7 +27,6 @@ type handlers struct {
 	st     *store.Store
 	client *http.Client
 	issuer string
-	mu     sync.Mutex
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
@@ -299,8 +297,11 @@ func (h *handlers) remote(c store.AppProvisioning) (*client, error) {
 }
 
 func (h *handlers) sync(ctx context.Context, c store.AppProvisioning, users []store.User) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	unlock, err := h.st.Lock(ctx, "halo:provisioning")
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	remote, err := h.remote(c)
 	if err != nil {
 		metrics.SCIMRuns.Inc("failure")
