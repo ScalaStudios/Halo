@@ -188,12 +188,6 @@ func evaluate(s state, now time.Time) []Check {
 		passwordFine = "Only members of " + count(len(s.settings.PasswordGroupIDs), "group", "groups") + " can sign in with a password."
 	}
 
-	approvalsOn := len(s.settings.ApprovalActions) > 0
-	emergencyFine := "No change needs approval, so there is nothing for an emergency access account to skip."
-	if len(emergency) > 0 {
-		emergencyFine = names(emergency) + " can skip approval in an emergency."
-	}
-
 	approvalProblem := "One global administrator can make anyone a global administrator, including an account they control, without a second person agreeing."
 	if len(global) < 2 {
 		approvalProblem += " Approval needs a second global administrator, so grant the role to another person first."
@@ -209,9 +203,9 @@ func evaluate(s state, now time.Time) []Check {
 		Check{ID: "global-admin-approval", Title: "Require approval to grant global administrator", Href: "/admin/approvals", Action: "Open approvals"}.when(!slices.Contains(s.settings.ApprovalActions, "global-admin"), "attention",
 			approvalProblem,
 			"Each new global administrator waits for a second global administrator to approve."),
-		Check{ID: "emergency-access", Title: "Name an emergency access account", Href: "/admin/approvals", Action: "Open approvals"}.when(approvalsOn && len(emergency) == 0, "attention",
-			"Some changes wait for a second global administrator, and nobody can skip that. If no one else is available, an urgent change waits until its request expires after 72 hours.",
-			emergencyFine),
+		Check{ID: "emergency-access", Title: "Name an emergency access account", Href: "/admin/approvals", Action: "Open approvals"}.when(len(emergency) == 0, "attention",
+			"If an access policy blocks every administrator, no account can still get in, and changes that need approval wait up to 72 hours for a second global administrator. Blocking policies never apply to an emergency access account, and it can skip approval.",
+			"Blocking policies never apply to "+names(emergency)+", who can also skip approval in an emergency."),
 		Check{ID: "password-everyone", Title: "Limit password sign-in to the groups that need it", Href: "/admin/methods", Action: "Open sign-in methods"}.when(s.passwordOn && len(s.settings.PasswordGroupIDs) == 0, "attention",
 			"Everyone in the organization can sign in with a password, which can be guessed, reused on other sites or phished. Limit passwords to the groups that can't use passkeys yet.",
 			passwordFine),

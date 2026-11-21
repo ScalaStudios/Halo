@@ -223,6 +223,7 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 		return h.enrollWithPass(w, r, a, extra)
 	}
 	redirect, token, ceremony := "/account", "", ""
+	emergency := false
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
 		if extra != nil {
 			if err := extra(tx); err != nil {
@@ -259,6 +260,9 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 			if err := tx.TouchSignIn(ctx, u.ID, created.CreatedAt); err != nil {
 				return err
 			}
+			if emergency, err = h.emergencySignIn(ctx, tx, r, u); err != nil {
+				return err
+			}
 		}
 		if a.request != "" {
 			if err := tx.CompleteAuthRequest(ctx, a.request, u.ID, sess.ID, sess.AMR(), sess.CreatedAt); err != nil {
@@ -280,6 +284,10 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 	if ceremony != "" {
 		return httpx.JSON(w, http.StatusOK, map[string]string{"redirect": "/sign-in?terms=" + ceremony, "terms": ceremony})
 	}
+	if emergency {
+		h.gate.Alert(ctx, u, u.Name+" signed in with an emergency access account", u.Name+" ("+u.Email+") signed in to Halo with an emergency access account from "+httpx.ClientIP(r)+
+			". Access policies don't block emergency access accounts, so use them only when no one else can sign in.\n\nIf you did not expect this, check the sign-in log now: "+h.cfg.Issuer()+"/admin/sign-ins")
+	}
 	if token != "" {
 		h.auth.SetSession(w, token)
 	}
@@ -295,6 +303,14 @@ func policyReason(d access.Decision) string {
 
 func assigned(u store.User, app store.Application) bool {
 	return app.Status == "active" && slices.ContainsFunc(app.GroupIDs, func(g string) bool { return slices.Contains(u.GroupIDs, g) })
+}
+
+func (h *handler) emergencySignIn(ctx context.Context, tx *store.Store, r *http.Request, u store.User) (bool, error) {
+	org, err := h.st.Settings(ctx)
+	if err != nil || !slices.Contains(org.EmergencyAccessIDs, u.ID) {
+		return false, err
+	}
+	return true, audit(ctx, tx, r, u, "emergency_access.sign_in", u.Name+" signed in with an emergency access account")
 }
 
 func audit(ctx context.Context, st *store.Store, r *http.Request, u store.User, action, summary string) error {

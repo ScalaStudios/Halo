@@ -3847,7 +3847,7 @@ paths:
       tags: [Policies]
       operationId: createPolicy
       summary: Create an access policy
-      description: 'Roles: security administrator.'
+      description: 'Roles: security administrator. An enforced policy that blocks or requires a passkey is refused with `ERR_LOCKOUT` when afterwards no active global administrator, emergency access account or you could sign in to Halo from your network and device with a method they have.'
       requestBody: {$ref: '#/components/requestBodies/PolicyInput'}
       responses:
         '201': {$ref: '#/components/responses/PolicyResponse'}
@@ -3861,7 +3861,7 @@ paths:
       tags: [Policies]
       operationId: reorderPolicies
       summary: Change the order of the policies
-      description: 'Roles: security administrator. Send every policy id exactly once.'
+      description: 'Roles: security administrator. Send every policy id exactly once. Refused with `ERR_LOCKOUT` like creating a policy, although the order never changes whether a sign-in is blocked: the most restrictive matching policy decides.'
       requestBody:
         required: true
         content:
@@ -3878,6 +3878,7 @@ paths:
         '400': {$ref: '#/components/responses/BadJSON'}
         '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/Invalid'}
   /policies/simulate:
     post:
@@ -3929,7 +3930,7 @@ paths:
       tags: [Policies]
       operationId: updatePolicy
       summary: Replace an access policy
-      description: 'Roles: security administrator.'
+      description: 'Roles: security administrator. Refused with `ERR_LOCKOUT` like creating a policy, also when an approved change is applied.'
       requestBody: {$ref: '#/components/requestBodies/PolicyInput'}
       responses:
         '200': {$ref: '#/components/responses/PolicyResponse'}
@@ -7070,7 +7071,7 @@ components:
           default: []
           maxItems: 5
           items: {type: string}
-          description: People whose changes skip approval. Each use is recorded as `approval.bypass` in the audit log and emailed to the other global administrators.
+          description: People that policies with the `block` effect never apply to and whose changes skip approval. Each skipped approval is recorded as `approval.bypass` and each sign-in as `emergency_access.sign_in` in the audit log, and both are emailed to the other global administrators.
         impersonationGroupIds:
           type: array
           default: []

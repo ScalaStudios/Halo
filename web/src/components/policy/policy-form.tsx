@@ -231,7 +231,7 @@ export function PolicyForm({
                 empty="There are no groups yet."
               />
               <PeoplePicker label="Exclude people" users={users} selected={c.excludeUserIds} onChange={(ids) => set("excludeUserIds", ids)} />
-              <p className="text-caption text-fg-3">Exclude a break-glass group or account so an administrator can always sign in, even if a policy misfires.</p>
+              <p className="text-caption text-fg-3">Blocking policies never apply to emergency access accounts. Exclude a break-glass group too, so an administrator can always sign in if a policy misfires.</p>
             </div>
           </CardBody>
         </Card>
@@ -405,7 +405,7 @@ export function PolicyForm({
               {lockout ? (
                 <div role="note" className="flex gap-3 rounded-md border border-warning/20 bg-warning-container p-4">
                   <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-warning" />
-                  <p className="text-body-sm text-fg-2">This applies to everyone, including you. Exclude a break-glass group or account, or save it as report-only first.</p>
+                  <p className="text-body-sm text-fg-2">This applies to everyone, including you. Exclude a break-glass group or account, or save it as report-only first. Halo refuses to save it if no global administrator could still sign in.</p>
                 </div>
               ) : null}
               <ActionError message={errorFor("save")} />

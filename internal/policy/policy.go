@@ -24,6 +24,7 @@ var (
 	effectNames = map[string]string{"allow": "allow", "require-phishing-resistant": "require a passkey or security key", "require-terms": "require accepting terms of use", "block": "block"}
 	riskTitles  = map[string]string{"risky-network": "Sign-in from a risky network", "failed-sign-ins": "Repeated failed sign-ins", "new-device": "Sign-in from a new device"}
 	methodNames = strings.Join(store.MethodKinds[:len(store.MethodKinds)-1], ", ") + " or " + store.MethodKinds[len(store.MethodKinds)-1]
+	errLockout  = httpx.Fail(http.StatusConflict, "ERR_LOCKOUT", "This would stop every global administrator, including you, from signing in to Halo from this network and device. Exclude yourself or a break-glass group, or name an emergency access account under Approvals first. Blocking policies never apply to emergency access accounts.")
 )
 
 type handlers struct {
@@ -220,6 +221,11 @@ func (h *handlers) createPolicy(w http.ResponseWriter, r *http.Request, actor st
 		if err != nil {
 			return err
 		}
+		if restricts(created) {
+			if err := h.refuseLockout(r, tx, actor); err != nil {
+				return err
+			}
+		}
 		return record(r, tx, actor, store.AuditEvent{Action: "policy.create", Summary: summary, TargetType: "policy", TargetID: created.ID, TargetLabel: created.Name})
 	})
 	if err != nil {
@@ -281,6 +287,11 @@ func (h *handlers) updatePolicy(w http.ResponseWriter, r *http.Request, actor st
 		if err != nil {
 			return found(err, "This policy")
 		}
+		if restricts(updated) {
+			if err := h.refuseLockout(r, tx, actor); err != nil {
+				return err
+			}
+		}
 		return record(r, tx, actor, store.AuditEvent{Action: "policy.update", Summary: changes(old, updated), TargetType: "policy", TargetID: updated.ID, TargetLabel: updated.Name, Changes: store.Diff(old, updated)})
 	})
 	if err != nil {
@@ -314,6 +325,32 @@ func enforced(p store.AccessPolicy) bool {
 	return p.Enabled && p.Mode == "enforce"
 }
 
+func restricts(p store.AccessPolicy) bool {
+	return enforced(p) && (p.Effect == access.Block || p.Effect == access.RequirePhishingResistant)
+}
+
+func (h *handlers) refuseLockout(r *http.Request, tx *store.Store, actor store.User) error {
+	ctx := r.Context()
+	trust, method := "unknown", ""
+	if token := httpx.DeviceToken(r); token != "" {
+		device, _, err := tx.FindDevice(ctx, actor.ID, secret.Hash(token))
+		if err != nil {
+			return err
+		}
+		if device != nil {
+			trust = device.Trust
+		}
+	}
+	if sess, ok := httpx.CurrentSession(r); ok {
+		method = sess.Method
+	}
+	locked, err := (&engine{st: tx}).lockedOut(ctx, actor.ID, method, httpx.ClientIP(r), trust)
+	if err == nil && locked {
+		err = errLockout
+	}
+	return err
+}
+
 func policyChange(p store.AccessPolicy, summary string) approval.Change {
 	state := p
 	state.Priority, state.UpdatedAt = 0, time.Time{}
@@ -344,6 +381,9 @@ func (h *handlers) reorderPolicies(w http.ResponseWriter, r *http.Request, actor
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 		if err := tx.ReorderAccessPolicies(r.Context(), in.IDs); err != nil {
+			return err
+		}
+		if err := h.refuseLockout(r, tx, actor); err != nil {
 			return err
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "policy.reorder", Summary: "Changed the order policies are listed and evaluated in", TargetType: "policy", TargetLabel: "Policy order"})

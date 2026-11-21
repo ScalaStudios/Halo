@@ -154,14 +154,13 @@ func TestChecksPassForTheRightReasons(t *testing.T) {
 	s.settings.PasswordGroupIDs = []string{}
 	s.settings.BotProtection = ""
 	s.settings.ApprovalActions = []string{}
-	s.settings.EmergencyAccessIDs = []string{}
 	s.keys[0].LastUsedAt = nil
 	s.keys[0].CreatedAt = *ago(89)
 	checks := evaluate(s, now)
 	for id, detail := range map[string]string{
 		"password-everyone": "Password sign-in is off.",
 		"bot-protection":    "Bot protection is off, but sign-up and password sign-in are off too.",
-		"emergency-access":  "No change needs approval",
+		"emergency-access":  "Blocking policies never apply to Uma Patel",
 		"api-key-unused":    "No active API key",
 	} {
 		if c := find(t, checks, id); c.Status != "pass" || !strings.HasPrefix(c.Detail, detail) {
@@ -170,6 +169,10 @@ func TestChecksPassForTheRightReasons(t *testing.T) {
 	}
 	if c := find(t, checks, "global-admin-approval"); c.Status != "attention" || strings.Contains(c.Detail, "grant the role to another person") {
 		t.Errorf("two global administrators can turn approval on: %+v", c)
+	}
+	s.settings.EmergencyAccessIDs = []string{}
+	if c := find(t, evaluate(s, now), "emergency-access"); c.Status != "attention" || !strings.Contains(c.Detail, "blocks every administrator") {
+		t.Errorf("no emergency access account is a lockout risk even without approval: %+v", c)
 	}
 
 	s = healthy()

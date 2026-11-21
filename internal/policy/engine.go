@@ -373,6 +373,9 @@ func (s state) match(p store.AccessPolicy, a attempt) (bool, string) {
 	if g := shared(c.ExcludeGroupIDs, a.user.GroupIDs); g != "" {
 		return false, a.user.Name + " is excluded as a member of " + s.group(g) + "."
 	}
+	if p.Effect == access.Block && slices.Contains(s.org.EmergencyAccessIDs, a.user.ID) {
+		return false, a.user.Name + " is an emergency access account, which blocking policies never apply to."
+	}
 	if !c.AllApps {
 		if !slices.Contains(c.AppIDs, a.appID) {
 			return false, "It doesn't cover " + a.appName + "."
@@ -455,6 +458,42 @@ type simulation struct {
 	Risk     string            `json:"risk"`
 	Signals  []signal          `json:"signals"`
 	Policies []simulatedPolicy `json:"policies"`
+}
+
+func (e *engine) lockedOut(ctx context.Context, actorID, actorMethod, ip, trust string) (bool, error) {
+	s, err := e.load(ctx)
+	if err != nil {
+		return false, err
+	}
+	users, err := e.st.ListUsers(ctx)
+	if err != nil {
+		return false, err
+	}
+	checked := false
+	for _, u := range users {
+		if u.Status != "active" || !u.HasRole("global_admin") && u.ID != actorID && !slices.Contains(s.org.EmergencyAccessIDs, u.ID) {
+			continue
+		}
+		checked = true
+		methods := []string{"magic-link"}
+		for _, m := range u.Methods {
+			methods = append(methods, m.Kind)
+		}
+		if u.ID == actorID && actorMethod != "" {
+			methods = append(methods, actorMethod)
+		}
+		for _, method := range methods {
+			a := newAttempt(u, nil, method, ip)
+			a.trust = trust
+			if err := e.assess(ctx, &a, s.zones, 0); err != nil {
+				return false, err
+			}
+			if _, d := decide(s, a); outcome(d.Effect, method) == "allow" {
+				return false, nil
+			}
+		}
+	}
+	return checked, nil
 }
 
 func (e *engine) simulate(ctx context.Context, u store.User, app *store.Application, method, ip, trust string) (simulation, error) {
