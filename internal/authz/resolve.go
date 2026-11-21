@@ -61,11 +61,41 @@ func (r *resolver) related(o object, relation string) ([]store.Tuple, error) {
 		return nil, errWidth
 	}
 	tuples, err := r.st.RelatedTuples(r.ctx, r.app.ID, o.typ, o.id, relation, r.user.ID, r.user.GroupIDs, maxFanOut+1)
-	if err == nil && len(tuples) > maxFanOut {
+	if err != nil {
+		return nil, err
+	}
+	if len(tuples) > maxFanOut {
 		return nil, errWidth
 	}
+	drop, err := r.unassigned(tuples)
+	if err != nil {
+		return nil, err
+	}
+	tuples = slices.DeleteFunc(tuples, drop)
 	r.cache[key] = tuples
-	return tuples, err
+	return tuples, nil
+}
+
+func (r *resolver) unassigned(tuples []store.Tuple) (func(store.Tuple) bool, error) {
+	people := map[string]bool{r.user.ID: r.user.ID != ""}
+	var ids []string
+	for _, t := range tuples {
+		if _, known := people[t.SubjectID]; t.SubjectType == "user" && !known {
+			ids = append(ids, t.SubjectID)
+		}
+	}
+	if len(ids) > 0 {
+		users, err := r.st.UsersByID(r.ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		for _, u := range users {
+			people[u.ID] = slices.Contains(u.AppIDs, r.app.ID)
+		}
+	}
+	return func(t store.Tuple) bool {
+		return t.SubjectType == "user" && !people[t.SubjectID] || t.SubjectType == "group" && !slices.Contains(r.app.GroupIDs, t.SubjectID)
+	}, nil
 }
 
 func (r *resolver) parents(o object, f store.AuthzFrom) ([]object, error) {
@@ -234,7 +264,7 @@ func (r *resolver) people(n *node) ([]string, bool, error) {
 	}
 	subjects := []string{}
 	for _, u := range all {
-		if active(u) && (users[u.ID] || slices.ContainsFunc(u.GroupIDs, func(g string) bool { return groups[g] })) {
+		if active(u) && slices.Contains(u.AppIDs, r.app.ID) && (users[u.ID] || slices.ContainsFunc(u.GroupIDs, func(g string) bool { return groups[g] })) {
 			if len(subjects) == maxResults {
 				return subjects, true, nil
 			}

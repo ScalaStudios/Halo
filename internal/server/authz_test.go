@@ -106,12 +106,22 @@ func TestApplicationAuthorization(t *testing.T) {
 	cy, _, _ := e.person("cy@example.com", "passkey", false)
 	dee, _, _ := e.person("dee@example.com", "passkey", false)
 	sam, _, _ := e.person("sam@example.com", "passkey", false)
+	eve, _, _ := e.person("eve@example.com", "passkey", false)
 	staff, err := e.st.CreateGroup(ctx, store.NewGroup{Name: "Staff", Kind: "assigned"})
 	must(err)
 	must(e.st.AddGroupMember(ctx, staff.ID, ada.ID))
 	must(e.st.AddGroupMember(ctx, staff.ID, sam.ID))
+	readers, err := e.st.CreateGroup(ctx, store.NewGroup{Name: "Readers", Kind: "assigned"})
+	must(err)
+	for _, u := range []store.User{ada, bob, cy, dee} {
+		must(e.st.AddGroupMember(ctx, readers.ID, u.ID))
+	}
+	finance, err := e.st.CreateGroup(ctx, store.NewGroup{Name: "Finance", Kind: "assigned"})
+	must(err)
+	must(e.st.AddGroupMember(ctx, finance.ID, eve.ID))
+	must(e.st.AddGroupMember(ctx, finance.ID, ada.ID))
 
-	wiki, err := e.st.CreateApplication(ctx, store.NewApplication{Name: "Wiki", Protocol: "oidc", Type: "web", RedirectURIs: []string{"https://wiki.example.com/cb"}})
+	wiki, err := e.st.CreateApplication(ctx, store.NewApplication{Name: "Wiki", Protocol: "oidc", Type: "web", RedirectURIs: []string{"https://wiki.example.com/cb"}, GroupIDs: []string{staff.ID, readers.ID}})
 	must(err)
 	_, err = e.st.CreateAppRole(ctx, wiki.ID, store.AppRole{Key: "editor", Name: "Editor", UserIDs: []string{cy.ID}})
 	must(err)
@@ -173,6 +183,15 @@ func TestApplicationAuthorization(t *testing.T) {
 		{"object": "readme", "relation": "owner", "subject": "user:" + bob.ID},
 	} {
 		app.expect("POST", "/api/v1/authz/tuples", map[string]any{"writes": []map[string]string{bad}}, http.StatusUnprocessableEntity, "ERR_INVALID")
+	}
+	for _, outsider := range []string{"group:" + finance.ID, "user:" + eve.ID, "user:usr_missing"} {
+		rec := app.expect("POST", "/api/v1/authz/tuples", map[string]any{"writes": []map[string]string{{"object": "team:core", "relation": "member", "subject": outsider}}}, http.StatusUnprocessableEntity, "ERR_INVALID")
+		if !strings.Contains(rec.Body.String(), outsider+" isn't assigned to Wiki") {
+			t.Fatalf("%s: %s", outsider, rec.Body)
+		}
+	}
+	if ok, _ := app.check("team:core", "member", eve.ID); ok {
+		t.Fatal("a person outside the application must be denied")
 	}
 	many := []map[string]string{}
 	for i := range 101 {
@@ -263,6 +282,17 @@ func TestApplicationAuthorization(t *testing.T) {
 	_ = json.Unmarshal(e.expect(auditor, "GET", "/api/v1/users/"+ada.ID+"/relationships", nil, http.StatusOK, "").Body.Bytes(), &relationships)
 	if len(relationships) != 1 || relationships[0].Object != "team:core" || relationships[0].GroupID != staff.ID || relationships[0].AppName != "Wiki" {
 		t.Fatalf("ada's relationships: %+v", relationships)
+	}
+
+	must(e.st.SetApplicationGroups(ctx, wiki.ID, []string{readers.ID}))
+	if ok, _ := app.check("document:readme", "viewer", ada.ID); ok {
+		t.Fatal("an unassigned group must not grant access")
+	}
+	if got := list(t, app.expect("POST", "/api/v1/authz/list-subjects", map[string]string{"object": "document:plan", "relation": "viewer"}, http.StatusOK, ""), "subjects"); slices.Contains(got, "user:"+ada.ID) || !slices.Contains(got, "user:"+bob.ID) {
+		t.Fatalf("plan viewers after unassigning staff: %v", got)
+	}
+	if expanded := app.expect("POST", "/api/v1/authz/expand", map[string]string{"object": "document:readme", "relation": "viewer"}, http.StatusOK, "").Body.String(); strings.Contains(expanded, staff.ID) {
+		t.Fatalf("expand names an unassigned group: %s", expanded)
 	}
 
 	app.expect("POST", "/api/v1/authz/tuples", map[string]any{"deletes": []map[string]string{{"object": "document:readme", "relation": "owner", "subject": "user:" + bob.ID}}}, http.StatusNoContent, "")
