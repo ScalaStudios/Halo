@@ -370,6 +370,12 @@ func TestOutboundProvisioning(t *testing.T) {
 	if c, ada = sync(), remote.user("ada@example.com"); c.Updated != 1 || fmt.Sprint(ada[scim.AttributesSchema]) != "map[costCentre:CC-42 teams:[Platform]]" || !strings.Contains(fmt.Sprint(ada["schemas"]), scim.AttributesSchema) {
 		t.Fatalf("custom attributes: %+v %v", c, ada)
 	}
+	if _, err := st.CreateAppRole(ctx, slack.ID, store.AppRole{Key: "workspace_admin", Name: "Workspace admin", UserIDs: []string{people["ada"].ID}}); err != nil {
+		t.Fatal(err)
+	}
+	if c, ada = sync(), remote.user("ada@example.com"); c.Updated != 1 || fmt.Sprint(ada["roles"]) != "[map[display:Workspace admin value:workspace_admin]]" {
+		t.Fatalf("application roles: %+v %v", c, ada)
+	}
 
 	if err := st.RemoveGroupMember(ctx, group.ID, people["bob"].ID); err != nil {
 		t.Fatal(err)

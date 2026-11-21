@@ -15,7 +15,7 @@ const OmitClaim = "none"
 
 var AttributeTypes = []string{"string", "number", "boolean", "date", "list"}
 
-var ClaimSources = []string{"user.id", "user.email", "user.emailVerified", "user.name", "user.givenName", "user.familyName", "user.title", "user.department", "user.location", "user.groups"}
+var ClaimSources = []string{"user.id", "user.email", "user.emailVerified", "user.name", "user.givenName", "user.familyName", "user.title", "user.department", "user.location", "user.groups", "user.roles"}
 
 type Attribute struct {
 	ID          string    `json:"id"`
@@ -87,7 +87,7 @@ func (s *Store) ApplicationsMapping(ctx context.Context, source string) ([]strin
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
-func (u User) ClaimValue(source string, groups []string) any {
+func (u User) ClaimValue(source string, groups, roles []string) any {
 	given, family, _ := strings.Cut(strings.TrimSpace(u.Name), " ")
 	var v any
 	switch source {
@@ -111,6 +111,8 @@ func (u User) ClaimValue(source string, groups []string) any {
 		v = u.Location
 	case "user.groups":
 		v = groups
+	case "user.roles":
+		v = roles
 	default:
 		if name, ok := strings.CutPrefix(source, "attribute."); ok {
 			v = u.Attributes[name]

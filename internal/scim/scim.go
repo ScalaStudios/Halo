@@ -44,6 +44,11 @@ type Photo struct {
 	Primary bool   `json:"primary"`
 }
 
+type Role struct {
+	Value   string `json:"value"`
+	Display string `json:"display"`
+}
+
 type Manager struct {
 	Value       string `json:"value"`
 	Ref         string `json:"$ref,omitempty"`
@@ -72,6 +77,7 @@ type User struct {
 	Title       string      `json:"title,omitempty"`
 	Emails      []Email     `json:"emails"`
 	Photos      []Photo     `json:"photos,omitempty"`
+	Roles       []Role      `json:"roles,omitempty"`
 	Active      bool        `json:"active"`
 	Enterprise  *Enterprise `json:"urn:ietf:params:scim:schemas:extension:enterprise:2.0:User,omitempty"`
 	Meta        *Meta       `json:"meta,omitempty"`

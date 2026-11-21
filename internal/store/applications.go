@@ -257,7 +257,7 @@ func (s *Store) decorateApps(ctx context.Context, apps []Application, withStats 
 		index[a.ID] = i
 		apps[i].GroupIDs = []string{}
 		apps[i].Credentials = []Credential{}
-		apps[i].Claims = claimsFor(a)
+		apps[i].Roles = []AppRole{}
 	}
 
 	rows, err := s.db.Query(ctx, `select app_id, group_id from app_groups where app_id = any($1)`, ids)
@@ -288,6 +288,27 @@ func (s *Store) decorateApps(ctx context.Context, apps []Application, withStats 
 		apps[index[appID]].Credentials = append(apps[index[appID]].Credentials, c)
 	}
 	rows.Close()
+
+	rows, err = s.db.Query(ctx, `select r.app_id, r.id, r.key, r.name, r.description,
+			array(select g.group_id from app_role_groups g where g.role_id = r.id order by g.group_id),
+			array(select u.user_id from app_role_users u where u.role_id = r.id order by u.user_id)
+		from app_roles r where r.app_id = any($1) order by lower(r.name), r.key`, ids)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var appID string
+		var r AppRole
+		if err := rows.Scan(&appID, &r.ID, &r.Key, &r.Name, &r.Description, &r.GroupIDs, &r.UserIDs); err != nil {
+			rows.Close()
+			return err
+		}
+		apps[index[appID]].Roles = append(apps[index[appID]].Roles, r)
+	}
+	rows.Close()
+	for i := range apps {
+		apps[i].Claims = claimsFor(apps[i])
+	}
 
 	if !withStats {
 		return nil
@@ -338,7 +359,7 @@ func (s *Store) decorateApps(ctx context.Context, apps []Application, withStats 
 
 func claimsFor(a Application) []Claim {
 	if a.Protocol == "saml" {
-		return MapClaims(SAMLClaims(DefaultSAMLSettings()), a.ClaimMappings)
+		return a.Mapped(SAMLClaims(DefaultSAMLSettings()))
 	}
 	if a.Protocol == "bookmark" {
 		return []Claim{}
@@ -356,5 +377,5 @@ func claimsFor(a Application) []Claim {
 	if slices.Contains(a.Scopes, "groups") {
 		claims = append(claims, Claim{Name: "groups", Source: "user.groups (every group the user belongs to)"})
 	}
-	return MapClaims(claims, a.ClaimMappings)
+	return a.Mapped(claims)
 }

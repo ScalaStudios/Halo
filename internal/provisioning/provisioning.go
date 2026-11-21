@@ -301,6 +301,10 @@ func (h *handlers) sync(ctx context.Context, c store.AppProvisioning, users []st
 	if err != nil {
 		return err
 	}
+	app, err := h.st.GetApplication(ctx, c.AppID)
+	if err != nil {
+		return err
+	}
 	var result run
 	desired, emails := map[string]bool{}, map[string]string{}
 	aborted := false
@@ -314,6 +318,9 @@ func (h *handlers) sync(ctx context.Context, c store.AppProvisioning, users []st
 		resource.ExternalID = u.ID
 		if u.AvatarURL != nil {
 			resource.Photos = []scim.Photo{{Value: h.issuer + *u.AvatarURL, Type: "photo", Primary: true}}
+		}
+		for _, role := range app.RolesOf(u) {
+			resource.Roles = append(resource.Roles, scim.Role{Value: role.Key, Display: role.Name})
 		}
 		if len(u.Attributes) > 0 {
 			resource.Schemas = append(resource.Schemas, scim.AttributesSchema)

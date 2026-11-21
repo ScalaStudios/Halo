@@ -73,7 +73,7 @@ func TestDiscoveryAdvertisesOnlyServedFeatures(t *testing.T) {
 		t.Errorf("ID token signing algorithms: %v", got)
 	}
 	claims := list("claims_supported")
-	if slices.Contains(claims, "phone_number") || slices.Contains(claims, "locale") || !slices.Contains(claims, "groups") || !slices.Contains(claims, "email_verified") {
+	if slices.Contains(claims, "phone_number") || slices.Contains(claims, "locale") || !slices.Contains(claims, "groups") || !slices.Contains(claims, "roles") || !slices.Contains(claims, "email_verified") {
 		t.Errorf("claims: %v", claims)
 	}
 	for _, field := range []string{"introspection_endpoint_auth_signing_alg_values_supported", "revocation_endpoint_auth_signing_alg_values_supported", "check_session_iframe", "registration_endpoint"} {

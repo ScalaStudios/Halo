@@ -540,7 +540,7 @@ func (f *flow) attributes(ctx context.Context) ([]saml.Attribute, error) {
 		}
 	}
 	given, family, _ := strings.Cut(strings.TrimSpace(f.user.Name), " ")
-	names := f.settings.Attributes
+	names, roles := f.settings.Attributes, f.app.RoleKeys(f.user)
 	type attribute struct {
 		name   string
 		values []string
@@ -552,12 +552,15 @@ func (f *flow) attributes(ctx context.Context) ([]saml.Attribute, error) {
 		{names.FamilyName, []string{strings.TrimSpace(family)}},
 		{names.Groups, groups},
 	}
+	if !slices.ContainsFunc(attributes, func(a attribute) bool { return a.name == "roles" }) {
+		attributes = append(attributes, attribute{"roles", roles})
+	}
 	if f.user.AvatarURL != nil && f.cfg.PublicURL != nil {
 		attributes = append(attributes, attribute{"picture", []string{f.cfg.Issuer() + *f.user.AvatarURL}})
 	}
 	for _, m := range f.app.ClaimMappings {
 		attributes = slices.DeleteFunc(attributes, func(a attribute) bool { return a.name == m.Name })
-		attributes = append(attributes, attribute{m.Name, claimStrings(f.user.ClaimValue(m.Source, groups))})
+		attributes = append(attributes, attribute{m.Name, claimStrings(f.user.ClaimValue(m.Source, groups, roles))})
 	}
 	var out []saml.Attribute
 	for _, a := range attributes {
