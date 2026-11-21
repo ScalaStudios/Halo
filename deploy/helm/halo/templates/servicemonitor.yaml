@@ -1,0 +1,23 @@
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+{{- $ctx := dict "root" . "component" "server" -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "halo.fullname" . }}-server
+  labels:
+    {{- include "halo.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "halo.selectorLabels" $ctx | nindent 6 }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+      {{- with .Values.metrics.serviceMonitor.tokenKey }}
+      authorization:
+        credentials:
+          name: {{ $.Values.existingSecret }}
+          key: {{ . }}
+      {{- end }}
+{{- end }}

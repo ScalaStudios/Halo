@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"halo/internal/httpx"
+	"halo/internal/metrics"
 	"halo/internal/scim"
 	"halo/internal/store"
 )
@@ -259,6 +260,20 @@ func (r *run) fail(who string, err error) bool {
 	return transport
 }
 
+func (r *run) count() {
+	result := "success"
+	if r.failed > 0 {
+		result = "failure"
+	}
+	metrics.SCIMRuns.Inc(result)
+	metrics.SCIMRecords.Add(float64(r.created), "user", "created")
+	metrics.SCIMRecords.Add(float64(r.updated), "user", "updated")
+	metrics.SCIMRecords.Add(float64(r.deactivated), "user", "deactivated")
+	metrics.SCIMRecords.Add(float64(r.groupsCreated), "group", "created")
+	metrics.SCIMRecords.Add(float64(r.groupsUpdated), "group", "updated")
+	metrics.SCIMRecords.Add(float64(r.groupsDeleted), "group", "deleted")
+}
+
 func (r *run) message() string {
 	if r.failed > 1 {
 		return fmt.Sprintf("%s (and %d more)", r.first, r.failed-1)
@@ -279,6 +294,7 @@ func (h *handlers) sync(ctx context.Context, c store.AppProvisioning, users []st
 	defer h.mu.Unlock()
 	remote, err := h.remote(c)
 	if err != nil {
+		metrics.SCIMRuns.Inc("failure")
 		return h.st.RecordProvisioningRun(ctx, c.AppID, 0, 0, 0, 0, 0, 0, err.Error())
 	}
 	known, err := h.st.ListProvisionedUsers(ctx, c.AppID)
@@ -339,6 +355,7 @@ func (h *handlers) sync(ctx context.Context, c store.AppProvisioning, users []st
 			return err
 		}
 	}
+	result.count()
 	return h.st.RecordProvisioningRun(ctx, c.AppID, result.created, result.updated, result.deactivated, result.groupsCreated, result.groupsUpdated, result.groupsDeleted, result.message())
 }
 

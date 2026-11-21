@@ -20,6 +20,7 @@ import (
 	"github.com/zitadel/oidc/v3/pkg/op"
 
 	"halo/internal/httpx"
+	"halo/internal/metrics"
 	"halo/internal/store"
 )
 
@@ -143,6 +144,9 @@ func (h *workloads) exchange(r *http.Request) (string, []string, error) {
 		return tx.RecordAudit(ctx, store.AuditEvent{ActorID: &account.ID, Action: "federated_credential.exchange", TargetType: "service_account", TargetID: account.ID, TargetLabel: account.Name, IP: httpx.ClientIP(r),
 			Summary: "Signed in with federated credential “" + credential.Name + "” as " + claims.Subject + " from " + claims.Issuer + " and got a token with scope " + strings.Join(credential.Scopes, " and ") + " for 1 hour"})
 	})
+	if err == nil {
+		metrics.TokensIssued.Inc("workload_identity")
+	}
 	return token, credential.Scopes, err
 }
 

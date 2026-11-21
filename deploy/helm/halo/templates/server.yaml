@@ -40,6 +40,10 @@ spec:
             - name: HALO_TRUSTED_PROXIES
               value: {{ . | quote }}
             {{- end }}
+            {{- if .Values.metrics.enabled }}
+            - name: HALO_METRICS_LISTEN
+              value: {{ printf ":%v" .Values.metrics.port | quote }}
+            {{- end }}
             {{- range $name, $value := .Values.server.env }}
             - name: {{ $name }}
               value: {{ $value | quote }}
@@ -50,6 +54,10 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+            {{- end }}
           startupProbe:
             httpGet:
               path: /healthz
@@ -95,3 +103,8 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+    {{- if .Values.metrics.enabled }}
+    - name: metrics
+      port: {{ .Values.metrics.port }}
+      targetPort: metrics
+    {{- end }}

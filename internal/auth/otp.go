@@ -14,6 +14,7 @@ import (
 	"github.com/pquerna/otp/totp"
 
 	"halo/internal/httpx"
+	"halo/internal/metrics"
 	"halo/internal/secret"
 	"halo/internal/store"
 )
@@ -99,6 +100,7 @@ func (h *handler) lockout(r *http.Request, a attempt, settings store.Settings, g
 		return err
 	}
 	if failures >= settings.LockoutThreshold {
+		metrics.Lockouts.Inc("account")
 		return h.reject(r, a, "Too many failed attempts.", tooManyAttempts(guesses, settings))
 	}
 	return nil

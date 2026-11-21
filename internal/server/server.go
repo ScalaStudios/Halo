@@ -15,6 +15,7 @@ import (
 	"halo/internal/httpx"
 	"halo/internal/jobs"
 	"halo/internal/mail"
+	"halo/internal/metrics"
 	"halo/internal/oidc"
 	"halo/internal/policy"
 	"halo/internal/provisioning"
@@ -75,6 +76,7 @@ var ownMethodRoutes = []string{
 
 type App struct {
 	Handler http.Handler
+	Metrics http.Handler
 	Jobs    *jobs.Scheduler
 }
 
@@ -129,5 +131,22 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 		}
 		w.Write([]byte("ok"))
 	})
-	return &App{Handler: httpx.Logging(root), Jobs: scheduler}, nil
+	app := &App{Handler: httpx.Logging(root), Jobs: scheduler}
+	if cfg.MetricsListen != "" || cfg.MetricsToken != "" {
+		exporter := metrics.Handler(cfg.MetricsToken, func() []metrics.Gauge {
+			pool := st.PoolStat()
+			return []metrics.Gauge{
+				{Name: "halo_db_pool_acquired_connections", Help: "Database connections in use.", Value: float64(pool.AcquiredConns())},
+				{Name: "halo_db_pool_idle_connections", Help: "Idle database connections.", Value: float64(pool.IdleConns())},
+				{Name: "halo_db_pool_total_connections", Help: "Open database connections.", Value: float64(pool.TotalConns())},
+				{Name: "halo_db_pool_max_connections", Help: "Largest number of database connections the pool opens.", Value: float64(pool.MaxConns())},
+			}
+		})
+		if cfg.MetricsListen != "" {
+			app.Metrics = exporter
+		} else {
+			root.Handle("GET /metrics", exporter)
+		}
+	}
+	return app, nil
 }

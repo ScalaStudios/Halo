@@ -21,6 +21,7 @@ import (
 	"halo/internal/access"
 	"halo/internal/config"
 	"halo/internal/httpx"
+	"halo/internal/metrics"
 	halooidc "halo/internal/oidc"
 	"halo/internal/secret"
 	"halo/internal/store"
@@ -410,7 +411,11 @@ func TestAPIResources(t *testing.T) {
 		return func(r *http.Request) { r.SetBasicAuth(id, secret) }
 	}
 
+	issuedBefore := metrics.TokensIssued.Value("client_credentials")
 	cc := h.send(http.MethodPost, "/oauth2/token", url.Values{"grant_type": {"client_credentials"}, "scope": {"billing:read billing:write jobs:run"}}, basic(worker.ClientID, workerSecret))
+	if got := metrics.TokensIssued.Value("client_credentials"); got != issuedBefore+1 {
+		t.Fatalf("client credentials token counter went from %v to %v", issuedBefore, got)
+	}
 	claims := verify(cc.body["access_token"].(string))
 	if cc.status != http.StatusOK || !slices.Equal(claims.Audience, []string{"https://billing.example.com"}) || claims.Claims["scope"] != "billing:read jobs:run" || claims.ClientID != worker.ClientID {
 		t.Fatalf("client credentials for a granted scope: %d %v %+v", cc.status, cc.body, claims)

@@ -112,11 +112,18 @@ func serve(ctx context.Context) error {
 		}
 		go app.Jobs.Run(ctx)
 		srv := &http.Server{Addr: cfg.Listen, Handler: app.Handler, ReadHeaderTimeout: 10 * time.Second}
-		errs := make(chan error, 1)
+		metricsSrv := &http.Server{Addr: cfg.MetricsListen, Handler: app.Metrics, ReadHeaderTimeout: 10 * time.Second}
+		errs := make(chan error, 2)
 		go func() {
 			slog.Info("halo listening", "addr", cfg.Listen, "issuer", cfg.Issuer())
 			errs <- srv.ListenAndServe()
 		}()
+		if app.Metrics != nil {
+			go func() {
+				slog.Info("metrics listening", "addr", cfg.MetricsListen)
+				errs <- metricsSrv.ListenAndServe()
+			}()
+		}
 		select {
 		case err := <-errs:
 			return err
@@ -124,6 +131,9 @@ func serve(ctx context.Context) error {
 			shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			if err := srv.Shutdown(shutdown); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				return err
+			}
+			if err := metricsSrv.Shutdown(shutdown); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				return err
 			}
 			return nil

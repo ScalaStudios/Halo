@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"halo/internal/metrics"
 	"halo/internal/secret"
 	"halo/internal/store"
 )
@@ -171,6 +173,7 @@ const (
 	sessionKey
 	deviceKey
 	apiKeyKey
+	routeKey
 )
 
 const (
@@ -299,6 +302,7 @@ func (a *Auth) Throttle(w http.ResponseWriter, r *http.Request, scope string) *E
 	if n <= limit {
 		return nil
 	}
+	metrics.RateLimited.Inc(scope)
 	w.Header().Set("Retry-After", strconv.Itoa(wait))
 	return Fail(http.StatusTooManyRequests, "ERR_RATE_LIMITED", fmt.Sprintf("This %s sent more than %d requests this minute. Wait for the next minute, then try again.", who, limit))
 }
@@ -337,6 +341,9 @@ func RequireRecentSignIn(r *http.Request, st *store.Store) error {
 func (a *Auth) RecentSignIn(mux *http.ServeMux, sensitive, ownMethods []string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, pattern := mux.Handler(r)
+		if route, ok := r.Context().Value(routeKey).(*string); ok {
+			*route = pattern
+		}
 		u, _ := CurrentUser(r)
 		if slices.Contains(sensitive, pattern) || slices.Contains(ownMethods, pattern) && u.CanReauthenticate() {
 			if err := RequireRecentSignIn(r, a.Store); err != nil {
@@ -431,6 +438,8 @@ func Logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		route := new(string)
+		r = r.WithContext(context.WithValue(r.Context(), routeKey, route))
 		defer func() {
 			if v := recover(); v != nil {
 				slog.ErrorContext(r.Context(), "panic", "path", r.URL.Path, "panic", v)
@@ -438,7 +447,11 @@ func Logging(next http.Handler) http.Handler {
 					Handle(func(http.ResponseWriter, *http.Request) error { return errors.New("panic") })(rec, r)
 				}
 			}
-			slog.InfoContext(r.Context(), "http", "method", r.Method, "path", r.URL.Path, "status", rec.status, "duration", time.Since(started).Round(time.Millisecond))
+			elapsed := time.Since(started)
+			slog.InfoContext(r.Context(), "http", "method", r.Method, "path", r.URL.Path, "status", rec.status, "duration", elapsed.Round(time.Millisecond))
+			pattern := cmp.Or(*route, r.Pattern, "unmatched")
+			metrics.HTTPRequests.Inc(pattern, strconv.Itoa(rec.status))
+			metrics.HTTPDuration.Observe(elapsed.Seconds(), pattern)
 		}()
 		next.ServeHTTP(rec, r)
 	})

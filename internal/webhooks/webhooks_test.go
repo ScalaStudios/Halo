@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"halo/internal/httpx"
+	"halo/internal/metrics"
 	"halo/internal/store"
 	"halo/internal/testdb"
 )
@@ -168,6 +169,7 @@ func TestDeliverySignatureAndBackoff(t *testing.T) {
 		}
 	}
 
+	pendingBefore, deliveredBefore := metrics.WebhookDeliveries.Value("pending"), metrics.WebhookDeliveries.Value("delivered")
 	now := time.Now().Add(settle + time.Second)
 	if err := h.run(ctx, now); err != nil {
 		t.Fatal(err)
@@ -203,6 +205,9 @@ func TestDeliverySignatureAndBackoff(t *testing.T) {
 	}
 	if len(rc.bodies) != 3 || rc.bodies[0] != rc.bodies[2] {
 		t.Fatalf("receiver saw %d bodies", len(rc.bodies))
+	}
+	if pending, delivered := metrics.WebhookDeliveries.Value("pending")-pendingBefore, metrics.WebhookDeliveries.Value("delivered")-deliveredBefore; pending != 2 || delivered != 1 {
+		t.Fatalf("delivery counters: %v pending, %v delivered", pending, delivered)
 	}
 	var event struct {
 		ID   string         `json:"id"`

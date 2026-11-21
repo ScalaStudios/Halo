@@ -196,6 +196,45 @@ Self-hosted Halo runs on your own infrastructure and needs no external service. 
 - **Email is optional.** Without an SMTP server, administrators pass invite and reset links on themselves. With one, Halo emails them, and people can sign in with magic links.
 - **Kubernetes.** A Helm chart in [`deploy/helm/halo`](deploy/helm/halo) deploys the server and the web interface, with an optional PostgreSQL, and reads `HALO_SECRET_KEY` and the database URL from an existing Secret. [Its README](deploy/helm/halo/README.md) covers installation and upgrades.
 
+### Metrics
+
+The server can expose Prometheus metrics at `/metrics`. They are off until you set one of these:
+
+- `HALO_METRICS_LISTEN`, such as `:9090`, serves `/metrics` on that address only. Keep the port off the internet.
+- `HALO_METRICS_TOKEN` requires `Authorization: Bearer <token>`. On its own it serves `/metrics` on `HALO_LISTEN`; with `HALO_METRICS_LISTEN` it protects that address too. Generate one with `openssl rand -hex 32`.
+
+Labels never hold people, email addresses, IP addresses or client IDs, and HTTP routes are the route pattern, such as `GET /api/v1/users/{id}`, not the requested path.
+
+| Series | Labels |
+| --- | --- |
+| `halo_sign_in_events_total` | `method`, `result` (`success`, `failure`, `interrupted`, `ended`), `risk` |
+| `halo_lockouts_total` | `scope`: `account`, or `address` for too many failed passwords from one IP address |
+| `halo_tokens_issued_total` | `grant`: `authorization_code`, `refresh_token`, `device_code`, `client_credentials`, `token_exchange`, `workload_identity` |
+| `halo_refresh_tokens_refused_total` | |
+| `halo_scim_outbound_runs_total` | `result`: `success`, `failure` |
+| `halo_scim_outbound_records_total` | `resource`: `user`, `group`; `action`: `created`, `updated`, `deactivated`, `deleted` |
+| `halo_webhook_deliveries_total` | `outcome`: `delivered`, `pending` (retried later), `failed` (out of retries) |
+| `halo_rate_limited_requests_total` | `scope`: `api`, `scim`, `bulk` |
+| `halo_http_requests_total`, `halo_http_request_duration_seconds` | `route`, plus `status` on the counter |
+| `halo_db_pool_acquired_connections`, `_idle_`, `_total_`, `_max_connections` | |
+| `go_goroutines`, `go_memstats_heap_alloc_bytes`, `go_memstats_sys_bytes`, `go_gc_cycles_completed` | |
+
+Example alert rules:
+
+```yaml
+groups:
+  - name: halo
+    rules:
+      - alert: HaloFailedSignInSpike
+        expr: sum(increase(halo_sign_in_events_total{result="failure"}[10m])) > 50
+      - alert: HaloSCIMFailing
+        expr: sum(increase(halo_scim_outbound_runs_total{result="failure"}[1h])) > 0 unless sum(increase(halo_scim_outbound_runs_total{result="success"}[1h])) > 0
+      - alert: HaloWebhookGaveUp
+        expr: sum(increase(halo_webhook_deliveries_total{outcome="failed"}[15m])) > 0
+      - alert: HaloLockouts
+        expr: sum(increase(halo_lockouts_total[15m])) > 10
+```
+
 ## Halo Cloud
 
 A hosted version of Halo is planned for teams that would rather not run it themselves. Follow [halo.scala.gg](https://halo.scala.gg) for news. Self-hosting is meant to stay complete, with no paid tier for core features and no dependency on proprietary infrastructure.
@@ -211,7 +250,6 @@ Known limitations today:
 
 - One organization per installation.
 - Run a single Halo server; see [Self-hosting](#self-hosting).
-- No metrics endpoint; the server logs requests and errors as structured text.
 - Halo has not been through OpenID Connect conformance testing or an independent security audit.
 
 [CHANGELOG.md](CHANGELOG.md) records what has shipped.

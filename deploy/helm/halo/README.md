@@ -50,6 +50,17 @@ helm install halo deploy/helm/halo -n halo \
 
 A managed PostgreSQL is the better choice for production.
 
+## Metrics
+
+Set `metrics.enabled=true` to serve Prometheus metrics on port 9090 of the `halo-server` Service. To require a token, add `HALO_METRICS_TOKEN` to the Halo Secret, which loads it into the server, and point the ServiceMonitor at the same key:
+
+```sh
+helm upgrade halo deploy/helm/halo -n halo --reuse-values \
+  --set metrics.enabled=true \
+  --set metrics.serviceMonitor.enabled=true \
+  --set metrics.serviceMonitor.tokenKey=HALO_METRICS_TOKEN
+```
+
 ## Upgrades
 
 Change the image tags, or upgrade to a newer chart, then run `helm upgrade`. The server applies database migrations when it starts and reports ready only afterwards. It runs as a single replica that is stopped before the new one starts, because background jobs run in every server process. Back up the database and `HALO_SECRET_KEY` first.
@@ -69,6 +80,11 @@ Change the image tags, or upgrade to a newer chart, then run `helm upgrade`. The
 | `web.replicaCount` | `1` | Web interface replicas. |
 | `web.image.*` | `ghcr.io/scalastudios/halo-web`, chart `appVersion` | Web image. |
 | `web.resources`, `web.podSecurityContext`, `web.securityContext`, `web.nodeSelector`, `web.tolerations`, `web.affinity` | | Web pod settings. |
+| `metrics.enabled` | `false` | Serve Prometheus metrics on their own container and Service port, `HALO_METRICS_LISTEN`. The ingress never routes to it. |
+| `metrics.port` | `9090` | Metrics port. |
+| `metrics.serviceMonitor.enabled` | `false` | Create a Prometheus Operator ServiceMonitor. |
+| `metrics.serviceMonitor.interval` | `30s` | Scrape interval. |
+| `metrics.serviceMonitor.tokenKey` | | Key in `existingSecret` holding `HALO_METRICS_TOKEN`, usually `HALO_METRICS_TOKEN`. The ServiceMonitor sends it as a bearer token. |
 | `ingress.enabled` | `false` | Create an Ingress for the `publicUrl` host that routes to the web interface. |
 | `ingress.className` | | Ingress class. |
 | `ingress.annotations` | `{}` | For example a cert-manager issuer. |
