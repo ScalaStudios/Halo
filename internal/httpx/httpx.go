@@ -46,6 +46,7 @@ var (
 	ErrImpersonating   = Fail(http.StatusForbidden, "ERR_IMPERSONATING", "You are impersonating someone, so you can only look. End the impersonation to make changes or open applications as yourself.")
 	ErrReauthRequired  = Fail(http.StatusUnauthorized, "ERR_REAUTH_REQUIRED", "Confirm it's you to make this change.")
 	ErrNoReauthMethod  = Fail(http.StatusForbidden, "ERR_REAUTH_UNAVAILABLE", "This change needs you to confirm it's you with a passkey, security key or authenticator app. Add one on your account's Security page, then try again.")
+	ErrNoRoute         = Fail(http.StatusNotFound, "ERR_NO_ROUTE", "This API route does not exist. Check the path and method.")
 )
 
 func NotFound(what string) *Error {

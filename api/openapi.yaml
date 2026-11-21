@@ -5771,7 +5771,7 @@ paths:
       tags: [Settings]
       operationId: updateSettings
       summary: Change organization settings
-      description: 'Roles: security administrator. Only a global administrator can change `organizationName`, `contactEmail`, `signInMessage`, `theme`, `customCss`, `consoleBranding`, `approvalActions`, `emergencyAccessIds` and `impersonationGroupIds`. Send only the fields to change. Token lifetimes apply to applications created afterwards.'
+      description: 'Roles: security administrator. Only a global administrator can change `organizationName`, `contactEmail`, `signInMessage`, `theme`, `customCss`, `consoleBranding`, `approvalActions`, `emergencyAccessIds`, `impersonationGroupIds` and `featuresOff`. Send only the fields to change. Token lifetimes apply to applications created afterwards.'
       requestBody:
         required: true
         content:
@@ -5783,7 +5783,28 @@ paths:
         '400': {$ref: '#/components/responses/BadJSON'}
         '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
+        '409':
+          description: '`ERR_FEATURE_IN_USE`: a feature in `featuresOff` is still in use, and the message says how. Send `confirmFeatures` to turn it off anyway.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /features:
+    get:
+      tags: [Settings]
+      operationId: listFeatures
+      summary: List the features that can be turned off
+      description: 'Roles: any administrator. Turn features off with `featuresOff` in `PATCH /settings`. While a feature is off, its routes answer `404`, with `ERR_NO_ROUTE` under `/api/v1`, its background jobs do not run, and its settings are kept for when it is turned back on.'
+      responses:
+        '200':
+          description: The features, in the order the console shows them.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Feature'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /domains:
     get:
       tags: [Settings]
@@ -7699,7 +7720,7 @@ components:
             filters: {type: object, description: People matching each filter., additionalProperties: {type: integer}}
     Organization:
       type: object
-      required: [name, issuer, contactEmail, signInMessage, logoUrl, theme, customCss, consoleBranding]
+      required: [name, issuer, contactEmail, signInMessage, logoUrl, theme, customCss, consoleBranding, featuresOff]
       properties:
         name: {type: string, examples: [Fernway Systems]}
         issuer: {type: string, format: uri, examples: [https://auth.example.com]}
@@ -7709,6 +7730,7 @@ components:
         theme: {$ref: '#/components/schemas/Theme'}
         customCss: {type: string, description: 'Empty while `HALO_DISABLE_CUSTOM_CSS=1` is set.'}
         consoleBranding: {type: boolean}
+        featuresOff: {type: array, items: {$ref: '#/components/schemas/FeatureId'}, description: Features that are turned off. The console and account portal hide their pages.}
     Theme:
       type: object
       description: Colours for the sign-in, setup and account pages. An empty string keeps Halo's colour.
@@ -8296,7 +8318,7 @@ components:
       required: [id, action, summary, targetType, targetId, targetLabel, requester, createdAt, expiresAt, status, decidedBy, decidedAt, outcome, canDecide]
       properties:
         id: {type: string, examples: [apr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
-        action: {type: string, enum: [global-admin, policy-disable, password-sign-in, identity-providers, impersonation, user-deletion, approval-settings, configuration-import]}
+        action: {type: string, enum: [global-admin, policy-disable, password-sign-in, identity-providers, impersonation, user-deletion, approval-settings, configuration-import, features]}
         summary: {type: string, examples: [Set roles to Global administrator]}
         targetType: {type: string, enum: [user, service_account, policy, method, identity_provider, settings]}
         targetId: {type: string, description: Empty for a new identity provider and for settings.}
@@ -8964,6 +8986,20 @@ components:
         auditLogDays: {type: integer, minimum: 0, maximum: 3650, default: 0, description: 'Days to keep audit log entries, between 30 and 3,650. 0 keeps them forever. Once a day Halo deletes older entries in batches and records the count as `log.prune` in the audit log. Only a global administrator can change it.'}
         exportSchedule: {type: string, enum: ['off', daily, weekly], default: 'off', description: 'How often Halo saves the `GET /export` document to the S3-compatible bucket, as `exports/halo-export-<time>.json`, and records `organization.export` in the audit log. Turning it on needs `HALO_S3_ENDPOINT` and the related variables. Only a global administrator can change it.'}
         exportKeep: {type: integer, minimum: 1, maximum: 365, default: 7, description: 'Scheduled exports to keep in the bucket. Older ones are deleted after each new one is saved. Only a global administrator can change it.'}
+        featuresOff: {type: array, items: {$ref: '#/components/schemas/FeatureId'}, default: [], description: 'Features that are turned off. Turning one off that is in use answers `409` with `ERR_FEATURE_IN_USE` unless `confirmFeatures` is set. Needs approval from a second global administrator while any approvals are required. Only a global administrator can change it.'}
+        confirmFeatures: {type: boolean, writeOnly: true, description: Turn off the features in `featuresOff` even though they are in use.}
+    FeatureId:
+      type: string
+      enum: [saml, scim, provisioning, ssh, governance, webhooks, forward-auth, log-streaming]
+    Feature:
+      type: object
+      required: [id, name, description, enabled, usage]
+      properties:
+        id: {$ref: '#/components/schemas/FeatureId'}
+        name: {type: string, examples: [SAML identity provider]}
+        description: {type: string}
+        enabled: {type: boolean}
+        usage: {type: array, items: {type: string}, description: What stops working when the feature is turned off. Empty when nothing uses it., examples: [[1 application signs in with SAML]]}
     SecurityEmail:
       type: object
       required: [kind, label, 'on', canTurnOff]

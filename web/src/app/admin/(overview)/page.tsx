@@ -32,6 +32,7 @@ export const metadata = { title: { absolute: "Halo administration" } };
 export default async function OverviewPage() {
   const [org, me] = await Promise.all([apiGet<OrganizationProfile>("/organization"), apiGet<User>("/me")]);
   if (limitedOnly(me)) redirect("/admin/users");
+  const governance = !org.featuresOff.includes("governance");
   return (
     <div className="flex flex-col gap-8">
       <PageHeader title="Overview" description={`What needs attention in ${org.name} right now.`} />
@@ -51,13 +52,13 @@ export default async function OverviewPage() {
       <Shortcuts />
 
       <Suspense fallback={<PostureSkeleton />}>
-        <Posture />
+        <Posture governance={governance} />
       </Suspense>
 
       <div className="grid grid-cols-1 gap-8 xl:grid-cols-12">
         <div className="flex flex-col gap-8 xl:col-span-8">
           <Suspense fallback={<AttentionSkeleton />}>
-            <Attention />
+            <Attention governance={governance} />
           </Suspense>
           <Suspense fallback={<RecentSignInsSkeleton />}>
             <RecentSignIns />
@@ -65,9 +66,11 @@ export default async function OverviewPage() {
         </div>
 
         <div className="flex flex-col gap-8 xl:col-span-4">
-          <Suspense fallback={<WaitingOnYouSkeleton />}>
-            <WaitingOnYou />
-          </Suspense>
+          {governance ? (
+            <Suspense fallback={<WaitingOnYouSkeleton />}>
+              <WaitingOnYou />
+            </Suspense>
+          ) : null}
           <Suspense fallback={<InsightsSkeleton />}>
             <Insights />
           </Suspense>

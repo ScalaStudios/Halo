@@ -14,6 +14,7 @@ type job struct {
 }
 
 type Scheduler struct {
+	Skip func(ctx context.Context, name string) bool
 	mu   sync.Mutex
 	jobs []job
 }
@@ -36,8 +37,10 @@ func (s *Scheduler) Run(ctx context.Context) {
 			ticker := time.NewTicker(j.interval)
 			defer ticker.Stop()
 			for {
-				if err := j.run(ctx); err != nil && ctx.Err() == nil {
-					slog.ErrorContext(ctx, "background job failed", "job", j.name, "error", err)
+				if s.Skip == nil || !s.Skip(ctx, j.name) {
+					if err := j.run(ctx); err != nil && ctx.Err() == nil {
+						slog.ErrorContext(ctx, "background job failed", "job", j.name, "error", err)
+					}
 				}
 				select {
 				case <-ctx.Done():

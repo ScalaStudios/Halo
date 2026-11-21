@@ -8,6 +8,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { NavigationProgress } from "@/components/ui/navigation-progress";
 import { api } from "@/lib/api/client";
+import type { FeatureId } from "@/lib/settings-types";
 import { CommandPalette } from "./command-palette";
 import { findItem, nav } from "./nav";
 import { Sidebar } from "./sidebar";
@@ -17,11 +18,13 @@ export function ConsoleShell({
   user,
   orgName,
   limited,
+  featuresOff,
   children,
 }: {
   user: { name: string; email: string; avatarUrl: string | null };
   orgName: string;
   limited: boolean;
+  featuresOff: FeatureId[];
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -50,7 +53,7 @@ export function ConsoleShell({
   return (
     <div className="flex min-h-dvh">
       <aside className="sticky top-0 hidden h-dvh w-66 shrink-0 border-r border-border bg-canvas lg:block">
-        <Sidebar orgName={orgName} limited={limited} onSearch={() => setPaletteOpen(true)} />
+        <Sidebar orgName={orgName} limited={limited} featuresOff={featuresOff} onSearch={() => setPaletteOpen(true)} />
       </aside>
 
       <D.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
@@ -63,6 +66,7 @@ export function ConsoleShell({
             <Sidebar
               orgName={orgName}
               limited={limited}
+              featuresOff={featuresOff}
               onSearch={() => {
                 setDrawerOpen(false);
                 setPaletteOpen(true);
@@ -125,7 +129,7 @@ export function ConsoleShell({
         </main>
       </div>
 
-      <CommandPalette open={paletteOpen} limited={limited} onOpenChange={setPaletteOpen} />
+      <CommandPalette open={paletteOpen} limited={limited} featuresOff={featuresOff} onOpenChange={setPaletteOpen} />
       {navigating || pending === "sign-out" ? <NavigationProgress /> : null}
     </div>
   );

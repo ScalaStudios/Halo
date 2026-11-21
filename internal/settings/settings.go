@@ -21,6 +21,7 @@ import (
 	spec "halo/api"
 	"halo/internal/approval"
 	"halo/internal/config"
+	"halo/internal/features"
 	"halo/internal/httpx"
 	halomail "halo/internal/mail"
 	"halo/internal/store"
@@ -84,6 +85,7 @@ var fields = []struct {
 	{"riskResponses", "automatic risk responses", false},
 	{"exportSchedule", "scheduled exports", true},
 	{"exportKeep", "number of scheduled exports kept", true},
+	{"featuresOff", "features turned off", true},
 }
 
 type handler struct {
@@ -102,6 +104,7 @@ type Org struct {
 	Theme           store.Theme `json:"theme"`
 	CustomCSS       string      `json:"customCss"`
 	ConsoleBranding bool        `json:"consoleBranding"`
+	FeaturesOff     []string    `json:"featuresOff"`
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
@@ -156,7 +159,7 @@ func (h *handler) organization(ctx context.Context) (Org, error) {
 	if err != nil {
 		return Org{}, err
 	}
-	org := Org{Name: s.OrganizationName, Issuer: h.cfg.Issuer(), ContactEmail: s.ContactEmail, SignInMessage: s.SignInMessage, Theme: s.Theme, ConsoleBranding: s.ConsoleBranding}
+	org := Org{Name: s.OrganizationName, Issuer: h.cfg.Issuer(), ContactEmail: s.ContactEmail, SignInMessage: s.SignInMessage, Theme: s.Theme, ConsoleBranding: s.ConsoleBranding, FeaturesOff: s.FeaturesOff}
 	if org.Name == "" {
 		org.Name = h.cfg.Organization
 	}
@@ -209,11 +212,13 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	next.SignUpGroupIDs = slices.Clone(before.SignUpGroupIDs)
 	next.SecurityEmailsOff = slices.Clone(before.SecurityEmailsOff)
 	next.RiskResponses = slices.Clone(before.RiskResponses)
+	next.FeaturesOff = slices.Clone(before.FeaturesOff)
 	var rules []store.AuthenticatorRule
 	in := struct {
 		store.Settings
 		BotProtectionSecret string                     `json:"botProtectionSecret"`
 		AuthenticatorRules  *[]store.AuthenticatorRule `json:"authenticatorRules"`
+		ConfirmFeatures     bool                       `json:"confirmFeatures"`
 	}{Settings: next, AuthenticatorRules: &rules}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -273,8 +278,22 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	if next.RiskResponses == nil {
 		next.RiskResponses = []store.RiskResponse{}
 	}
+	next.FeaturesOff = slices.Compact(slices.Sorted(slices.Values(next.FeaturesOff)))
+	if next.FeaturesOff == nil {
+		next.FeaturesOff = []string{}
+	}
 	if err := validate(next); err != nil {
 		return err
+	}
+	turnedOff := slices.DeleteFunc(slices.Clone(next.FeaturesOff), func(id string) bool { return slices.Contains(before.FeaturesOff, id) })
+	if len(turnedOff) > 0 && !in.ConfirmFeatures {
+		inUse, err := features.InUse(ctx, h.st, turnedOff)
+		if err != nil {
+			return err
+		}
+		if inUse != "" {
+			return httpx.Fail(http.StatusConflict, "ERR_FEATURE_IN_USE", inUse+". It stops working while the feature is off. To turn it off anyway, confirm under Settings, Features in the console, or send \"confirmFeatures\": true.")
+		}
 	}
 	if next.ExportSchedule != before.ExportSchedule && next.ExportSchedule != "off" && !h.cfg.S3.Configured() {
 		return httpx.Invalid("Scheduled exports are saved to the S3-compatible bucket. Set HALO_S3_ENDPOINT, HALO_S3_BUCKET, HALO_S3_ACCESS_KEY_ID and HALO_S3_SECRET_ACCESS_KEY first.")
@@ -380,6 +399,15 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 			return err
 		}
 		change.Action = "approval-settings"
+	} else if !slices.Equal(before.FeaturesOff, next.FeaturesOff) {
+		names := []string{}
+		for _, id := range next.FeaturesOff {
+			names = append(names, features.Name(id))
+		}
+		change.Action, change.TargetLabel, change.Summary = "features", "Features", "Turn every feature on"
+		if len(names) > 0 {
+			change.Summary = "Features off after this change: " + strings.Join(names, ", ")
+		}
 	}
 	if held, err := h.gate.Hold(w, r, actor, change); held || err != nil {
 		return err
@@ -513,6 +541,8 @@ func validate(s store.Settings) error {
 		return httpx.Invalid(`Set scheduled exports to "off", "daily" or "weekly".`)
 	case !between(s.ExportKeep, 1, 365):
 		return httpx.Invalid("Keep between 1 and 365 scheduled exports.")
+	case slices.ContainsFunc(s.FeaturesOff, func(id string) bool { return !features.Known(id) }):
+		return httpx.Invalid("One of the features to turn off does not exist. Choose features from GET /api/v1/features.")
 	}
 	for i, r := range s.RiskResponses {
 		switch {

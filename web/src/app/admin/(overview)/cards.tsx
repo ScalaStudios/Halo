@@ -18,7 +18,7 @@ import { formatRelative, pluralize } from "@/lib/format";
 import { RESULT, signInApp, signInUser } from "@/lib/labels";
 import type { AccessRequest, AccessReview } from "@/lib/governance-types";
 import type { Device, PolicyWithActivity, RiskEvent } from "@/lib/policy-types";
-import type { OrganizationProfile, SignUp } from "@/lib/settings-types";
+import type { Feature, OrganizationProfile, SignUp } from "@/lib/settings-types";
 import type { Application, Group, Overview, User } from "@/lib/types";
 
 function names(list: string[]) {
@@ -57,7 +57,15 @@ export function Shortcuts() {
 }
 
 export async function OrganizationCard({ org }: { org: OrganizationProfile }) {
-  const [me, users, groups, devices, applications] = await Promise.all([apiGet<User>("/me"), apiGet<User[]>("/users"), apiGet<Group[]>("/groups"), apiGet<Device[]>("/devices"), apiGet<Application[]>("/applications")]);
+  const [me, users, groups, devices, applications, features] = await Promise.all([
+    apiGet<User>("/me"),
+    apiGet<User[]>("/users"),
+    apiGet<Group[]>("/groups"),
+    apiGet<Device[]>("/devices"),
+    apiGet<Application[]>("/applications"),
+    apiGet<Feature[]>("/features"),
+  ]);
+  const off = features.filter((f) => !f.enabled).map((f) => f.name);
   const directory: { value: number; label: string; action: string; href: string; icon: LucideIcon }[] = [
     { value: users.length, label: "Users", action: "View users", href: "/admin/users", icon: UserRound },
     { value: groups.length, label: "Groups", action: "View groups", href: "/admin/groups", icon: UsersRound },
@@ -73,6 +81,13 @@ export async function OrganizationCard({ org }: { org: OrganizationProfile }) {
         <span className="shrink-0 font-semibold text-fg">Issuer</span>
         <span className="min-w-0 truncate font-mono text-code-sm text-fg-2">{org.issuer}</span>
         <CopyButton value={org.issuer} label="Copy" className="ml-auto" />
+      </div>
+      <div className="flex min-w-0 items-center gap-2 px-6 pt-2 text-body-sm">
+        <span className="shrink-0 font-semibold text-fg">Features</span>
+        <span className="min-w-0 truncate text-fg-2">{off.length ? `${features.length - off.length} of ${features.length} on. Off: ${off.join(", ")}` : `All ${features.length} on`}</span>
+        <Link href="/admin/settings/features" className={buttonClasses("quiet", "sm", "ml-auto shrink-0")}>
+          Manage
+        </Link>
       </div>
       <ul className="mx-6 mt-4 mb-6 grid grid-cols-2 gap-x-4 gap-y-6 border-t border-border pt-6">
         {directory.map((item) => {
@@ -109,6 +124,10 @@ export function OrganizationCardSkeleton() {
       <div className="flex min-w-0 items-center gap-2 px-6 pt-4 text-body-sm">
         <span className="shrink-0 font-semibold text-fg">Issuer</span>
         <SkeletonText chars={24} />
+      </div>
+      <div className="flex min-w-0 items-center gap-2 px-6 pt-2 text-body-sm">
+        <span className="shrink-0 font-semibold text-fg">Features</span>
+        <SkeletonText chars={12} />
       </div>
       <ul aria-hidden="true" className="mx-6 mt-4 mb-6 grid grid-cols-2 gap-x-4 gap-y-6 border-t border-border pt-6">
         {[0, 1, 2, 3].map((i) => (
@@ -263,20 +282,28 @@ export function RiskCardSkeleton() {
   );
 }
 
-export async function Posture() {
-  const [overview, pending, reviews] = await Promise.all([apiGet<Overview>("/overview"), apiGet<AccessRequest[]>("/access-requests?status=pending"), apiGet<AccessReview[]>("/access-reviews")]);
+export async function Posture({ governance }: { governance: boolean }) {
+  const [overview, pending, reviews] = await Promise.all([
+    apiGet<Overview>("/overview"),
+    governance ? apiGet<AccessRequest[]>("/access-requests?status=pending") : [],
+    governance ? apiGet<AccessReview[]>("/access-reviews") : [],
+  ]);
   const { weakAdmins, expiringCredentials: expiring } = overview;
   const overdue = reviews.filter((review) => review.status === "overdue");
   const posture: { value: number; label: string; href: string; icon: LucideIcon }[] = [
     { value: weakAdmins.length, label: "Admins without phishing-resistant authentication", href: "/admin/users?view=weak-admins", icon: ShieldAlert },
     { value: expiring.length, label: "Application secrets expiring within 30 days", href: "/admin/applications?view=expiring", icon: FileKey },
-    { value: pending.length, label: "Pending access requests", href: "/admin/requests", icon: Inbox },
-    { value: overdue.length, label: overdue.length === 1 ? "Overdue access review" : "Overdue access reviews", href: "/admin/access-reviews", icon: ClipboardCheck },
+    ...(governance
+      ? [
+          { value: pending.length, label: "Pending access requests", href: "/admin/requests", icon: Inbox },
+          { value: overdue.length, label: overdue.length === 1 ? "Overdue access review" : "Overdue access reviews", href: "/admin/access-reviews", icon: ClipboardCheck },
+        ]
+      : []),
   ];
   return (
     <Card className="overflow-hidden">
       <h2 className="sr-only">Security posture</h2>
-      <ul className="grid grid-cols-2 gap-px bg-border xl:grid-cols-4">
+      <ul className={cn("grid grid-cols-2 gap-px bg-border", governance && "xl:grid-cols-4")}>
         {posture.map((item) => {
           const Icon = item.icon;
           const clear = item.value === 0;
@@ -318,11 +345,11 @@ export function PostureSkeleton() {
   );
 }
 
-export async function Attention() {
+export async function Attention({ governance }: { governance: boolean }) {
   const [overview, users, reviews, risks, signUps] = await Promise.all([
     apiGet<Overview>("/overview"),
     apiGet<User[]>("/users"),
-    apiGet<AccessReview[]>("/access-reviews"),
+    governance ? apiGet<AccessReview[]>("/access-reviews") : [],
     apiGet<RiskEvent[]>("/risk-events"),
     apiGet<SignUp[]>("/sign-ups"),
   ]);

@@ -75,6 +75,8 @@ type Settings struct {
 	ExportSchedule string `json:"exportSchedule"`
 	ExportKeep     int    `json:"exportKeep"`
 
+	FeaturesOff []string `json:"featuresOff"`
+
 	EmailTemplates map[string]EmailTemplate `json:"emailTemplates,omitempty"`
 }
 
@@ -129,6 +131,7 @@ var DefaultSettings = Settings{
 	RiskResponses:        []RiskResponse{},
 	ExportSchedule:       "off",
 	ExportKeep:           7,
+	FeaturesOff:          []string{},
 }
 
 const settingsTTL = 30 * time.Second

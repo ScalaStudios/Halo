@@ -50,7 +50,7 @@ func New(d httpx.Deps) *Gate {
 }
 
 func required(s store.Settings, action string) bool {
-	return slices.Contains(s.ApprovalActions, action) || ((action == "approval-settings" || action == "configuration-import") && len(s.ApprovalActions) > 0)
+	return slices.Contains(s.ApprovalActions, action) || ((action == "approval-settings" || action == "configuration-import" || action == "features") && len(s.ApprovalActions) > 0)
 }
 
 func Approved(ctx context.Context) context.Context {
