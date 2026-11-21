@@ -40,7 +40,8 @@ func TestRotateSecretKey(t *testing.T) {
 	ruleID, _, err := st.CreateNotificationRule(ctx, store.NewNotificationRule{Name: "Admins", Destination: "slack", URL: "https://hooks.example.com/rule", Host: "hooks.example.com", Events: []string{"role.update"}, Threshold: 1, WindowMinutes: 10, QuietMinutes: 15})
 	must(err)
 	must(st.SaveApplicationHook(ctx, store.ApplicationHook{AppID: app.ID, Host: "checks.example.com", URLSealed: st.Sealer.Seal([]byte("https://checks.example.com/hook")), SecretSealed: st.Sealer.Seal([]byte("hook-secret")), Claims: []string{}}))
-	must(st.CreateSSHAuthority(ctx, []byte("ssh-seed"), "ssh-ed25519 AAAA"))
+	must(st.CreateSSHAuthority(ctx, false, []byte("ssh-seed"), "ssh-ed25519 AAAA"))
+	must(st.CreateSSHAuthority(ctx, true, []byte("host-seed"), "ssh-ed25519 BBBB"))
 	must(st.ReplaceRecoveryCodes(ctx, u.ID, [][]byte{st.RecoveryCodeHash("abcd")}))
 	approvalID, err := st.CreateApprovalRequest(ctx, store.ApprovalRequest{Action: "global-admin", Summary: "Set roles", TargetType: "user", TargetLabel: "Ada", Method: "PUT", Path: "/api/v1/users/x/roles", Body: []byte("approval-body"), State: "null", Requester: store.NamedRef{ID: u.ID}, ExpiresAt: time.Now().Add(time.Hour)})
 	must(err)
@@ -87,7 +88,9 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	hook, err := rotated.GetApplicationHook(ctx, app.ID)
 	must(err)
-	ssh, err := rotated.GetSSHAuthority(ctx)
+	ssh, err := rotated.GetSSHAuthority(ctx, false)
+	must(err)
+	hostCA, err := rotated.GetSSHAuthority(ctx, true)
 	must(err)
 	pending, err := rotated.GetApprovalRequest(ctx, approvalID)
 	must(err)
@@ -111,8 +114,8 @@ func TestRotateSecretKey(t *testing.T) {
 	if plain, err := rotated.Sealer.Open(rule.URLSealed); err != nil || string(plain) != "https://hooks.example.com/rule" {
 		t.Fatalf("notification rule URL: %q %v", plain, err)
 	}
-	if string(keys[0].PrivateKey) != "oidc-key" || mail[0].Text != "mail body" || string(saml.PrivateKey) != "saml-key" || string(ssh.Seed) != "ssh-seed" || string(pending.Body) != "approval-body" || bot != "bot-secret" {
-		t.Fatalf("rotated values: %q %q %q %q %q %q", keys[0].PrivateKey, mail[0].Text, saml.PrivateKey, ssh.Seed, pending.Body, bot)
+	if string(keys[0].PrivateKey) != "oidc-key" || mail[0].Text != "mail body" || string(saml.PrivateKey) != "saml-key" || string(ssh.Seed) != "ssh-seed" || string(hostCA.Seed) != "host-seed" || string(pending.Body) != "approval-body" || bot != "bot-secret" {
+		t.Fatalf("rotated values: %q %q %q %q %q %q %q", keys[0].PrivateKey, mail[0].Text, saml.PrivateKey, ssh.Seed, hostCA.Seed, pending.Body, bot)
 	}
 	if _, err := st.RotateSecretKey(ctx, next); err == nil {
 		t.Fatal("rotating again with the old key must fail without changing anything")

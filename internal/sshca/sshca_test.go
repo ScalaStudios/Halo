@@ -6,13 +6,18 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -152,4 +157,171 @@ func TestCertificates(t *testing.T) {
 	expect(call("GET", "/api/v1/ssh/certificates", ops.ID, nil), 403)
 	expect(call("DELETE", "/api/v1/ssh/principal-mappings/"+mapping.ID, security.ID, nil), 204)
 	expect(call("DELETE", "/api/v1/ssh/principal-mappings/"+mapping.ID, security.ID, nil), 404)
+
+	type registration struct {
+		Host  store.SSHHost `json:"host"`
+		Token string        `json:"token"`
+	}
+	register := func(hostnames ...string) registration {
+		t.Helper()
+		rec := call("POST", "/api/v1/ssh/hosts", security.ID, map[string]any{"hostnames": hostnames})
+		expect(rec, 201)
+		var out registration
+		must(json.Unmarshal(rec.Body.Bytes(), &out))
+		return out
+	}
+	hostCert := func(rec *httptest.ResponseRecorder) *ssh.Certificate {
+		t.Helper()
+		expect(rec, 201)
+		var out struct {
+			Certificate string `json:"certificate"`
+		}
+		must(json.Unmarshal(rec.Body.Bytes(), &out))
+		parsed, _, _, _, err := ssh.ParseAuthorizedKey([]byte(out.Certificate))
+		must(err)
+		return parsed.(*ssh.Certificate)
+	}
+	newSigner := func() ssh.Signer {
+		t.Helper()
+		_, priv, err := ed25519.GenerateKey(rand.Reader)
+		must(err)
+		signer, err := ssh.NewSignerFromKey(priv)
+		must(err)
+		return signer
+	}
+	pubLine := func(signer ssh.Signer) string { return string(ssh.MarshalAuthorizedKey(signer.PublicKey())) }
+	renew := func(signer ssh.Signer, key string, at time.Time) *httptest.ResponseRecorder {
+		t.Helper()
+		sig, err := signer.Sign(rand.Reader, sshca.RenewalMessage(at.Unix()))
+		must(err)
+		return call("POST", "/api/v1/ssh/hosts/renew", "", map[string]any{"publicKey": key, "timestamp": at.Unix(), "signature": base64.StdEncoding.EncodeToString(ssh.Marshal(sig))})
+	}
+
+	expect(call("POST", "/api/v1/ssh/hosts", auditor.ID, map[string]any{"hostnames": []string{"web1.example.com"}}), 403)
+	expect(call("POST", "/api/v1/ssh/hosts", security.ID, map[string]any{"hostnames": []string{"*.example.com"}}), 422)
+	expect(call("POST", "/api/v1/ssh/hosts", security.ID, map[string]any{"hostnames": []string{"web1.example.com:22"}}), 422)
+	web := register("Web1.example.com", "10.0.0.5", "web1.example.com")
+	if !slices.Equal(web.Host.Hostnames, []string{"web1.example.com", "10.0.0.5"}) || web.Token == "" || web.Host.EnrollmentExpiresAt == nil || web.Host.PublicKey != nil {
+		t.Fatalf("registered host: %+v", web)
+	}
+
+	rec = call("GET", "/api/v1/ssh/host-authority", auditor.ID, nil)
+	expect(rec, 200)
+	var hostAuthority struct {
+		PublicKey           string `json:"publicKey"`
+		CertificateLifetime int    `json:"certificateLifetime"`
+		KnownHosts          string `json:"knownHosts"`
+	}
+	must(json.Unmarshal(rec.Body.Bytes(), &hostAuthority))
+	hostCAKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(hostAuthority.PublicKey))
+	must(err)
+	if bytes.Equal(hostCAKey.Marshal(), caKey.Marshal()) || hostAuthority.CertificateLifetime != 30*86400 || hostAuthority.KnownHosts != "" {
+		t.Fatalf("host authority: %+v", hostAuthority)
+	}
+	hostChecker := ssh.CertChecker{IsHostAuthority: func(auth ssh.PublicKey, _ string) bool { return bytes.Equal(auth.Marshal(), hostCAKey.Marshal()) }}
+	userCAChecker := ssh.CertChecker{IsHostAuthority: func(auth ssh.PublicKey, _ string) bool { return bytes.Equal(auth.Marshal(), caKey.Marshal()) }}
+
+	webKey := newSigner()
+	expect(call("POST", "/api/v1/ssh/hosts/enroll", "", map[string]string{"token": "not-a-token", "publicKey": pubLine(webKey)}), 401)
+	expect(call("POST", "/api/v1/ssh/hosts/enroll", "", map[string]string{"token": web.Token, "publicKey": "not a key"}), 422)
+	enrolled := hostCert(call("POST", "/api/v1/ssh/hosts/enroll", "", map[string]string{"token": web.Token, "publicKey": pubLine(webKey)}))
+	expect(call("POST", "/api/v1/ssh/hosts/enroll", "", map[string]string{"token": web.Token, "publicKey": pubLine(webKey)}), 401)
+	must(hostChecker.CheckHostKey("web1.example.com:22", nil, enrolled))
+	must(hostChecker.CheckHostKey("10.0.0.5:2222", nil, enrolled))
+	if hostChecker.CheckHostKey("db.example.com:22", nil, enrolled) == nil {
+		t.Fatal("a host certificate must not be valid for a hostname that was not registered")
+	}
+	if userCAChecker.CheckHostKey("web1.example.com:22", nil, enrolled) == nil {
+		t.Fatal("host certificates must be signed by the host authority, not the user authority")
+	}
+	valid := time.Until(time.Unix(int64(enrolled.ValidBefore), 0))
+	if enrolled.CertType != ssh.HostCert || !bytes.Equal(enrolled.Key.Marshal(), webKey.PublicKey().Marshal()) || len(enrolled.Permissions.Extensions) != 0 ||
+		enrolled.KeyId != fmt.Sprintf("halo:%s:%d", web.Host.ID, enrolled.Serial) || valid < 30*24*time.Hour-time.Minute || valid > 30*24*time.Hour {
+		t.Fatalf("host certificate: %+v (valid for %s)", enrolled, valid)
+	}
+
+	stranger := newSigner()
+	expect(renew(webKey, pubLine(webKey), time.Now().Add(-10*time.Minute)), 401)
+	expect(renew(stranger, pubLine(webKey), time.Now()), 401)
+	expect(renew(stranger, pubLine(stranger), time.Now()), 403)
+	expect(call("PUT", "/api/v1/ssh/host-authority", security.ID, map[string]int{"certificateLifetime": 3600}), 422)
+	expect(call("PUT", "/api/v1/ssh/host-authority", auditor.ID, map[string]int{"certificateLifetime": 7 * 86400}), 403)
+	expect(call("PUT", "/api/v1/ssh/host-authority", security.ID, map[string]int{"certificateLifetime": 7 * 86400}), 200)
+	renewed := hostCert(renew(webKey, pubLine(webKey), time.Now()))
+	must(hostChecker.CheckHostKey("web1.example.com:22", nil, renewed))
+	if renewed.Serial == enrolled.Serial || !slices.Equal(renewed.ValidPrincipals, enrolled.ValidPrincipals) || time.Until(time.Unix(int64(renewed.ValidBefore), 0)) > 7*24*time.Hour {
+		t.Fatalf("renewed certificate: %+v", renewed)
+	}
+
+	db := register("db.example.com")
+	dbKey := newSigner()
+	expect(call("POST", "/api/v1/ssh/hosts/"+db.Host.ID+"/certificate", auditor.ID, map[string]string{"publicKey": pubLine(dbKey)}), 403)
+	expect(call("POST", "/api/v1/ssh/hosts/"+db.Host.ID+"/certificate", security.ID, map[string]string{"publicKey": pubLine(webKey)}), 409)
+	expect(call("POST", "/api/v1/ssh/hosts/missing/certificate", security.ID, map[string]string{"publicKey": pubLine(dbKey)}), 404)
+	signed := hostCert(call("POST", "/api/v1/ssh/hosts/"+db.Host.ID+"/certificate", security.ID, map[string]string{"publicKey": pubLine(dbKey)}))
+	must(hostChecker.CheckHostKey("db.example.com:22", nil, signed))
+	expect(call("POST", "/api/v1/ssh/hosts/"+db.Host.ID+"/enrollment-token", security.ID, nil), 200)
+
+	domain, err := st.AddDomain(ctx, "example.com")
+	must(err)
+	_, err = st.VerifyDomain(ctx, domain.ID)
+	must(err)
+	line := "@cert-authority example.com,*.example.com " + hostAuthority.PublicKey
+	rec = call("GET", "/api/v1/ssh/known_hosts", "", nil)
+	expect(rec, 200)
+	if strings.TrimSpace(rec.Body.String()) != line {
+		t.Fatalf("known_hosts: %q", rec.Body.String())
+	}
+	rec = call("POST", "/api/v1/me/ssh/certificates", ops.ID, map[string]string{"publicKey": authorized})
+	expect(rec, 201)
+	var withHosts struct {
+		KnownHosts string `json:"knownHosts"`
+	}
+	must(json.Unmarshal(rec.Body.Bytes(), &withHosts))
+	if withHosts.KnownHosts != line {
+		t.Fatalf("user certificate must carry the known_hosts line: %q", withHosts.KnownHosts)
+	}
+
+	expect(call("POST", "/api/v1/ssh/hosts/"+web.Host.ID+"/revoke", auditor.ID, nil), 403)
+	expect(call("POST", "/api/v1/ssh/hosts/"+web.Host.ID+"/revoke", security.ID, nil), 200)
+	expect(call("POST", "/api/v1/ssh/hosts/"+web.Host.ID+"/revoke", security.ID, nil), 404)
+	expect(call("POST", "/api/v1/ssh/hosts/"+web.Host.ID+"/enrollment-token", security.ID, nil), 404)
+	expect(renew(webKey, pubLine(webKey), time.Now()), 403)
+	again := register("web1.example.com")
+	expect(call("POST", "/api/v1/ssh/hosts/enroll", "", map[string]string{"token": again.Token, "publicKey": pubLine(webKey)}), 409)
+
+	rec = call("GET", "/api/v1/ssh/hosts", auditor.ID, nil)
+	expect(rec, 200)
+	var hosts []store.SSHHost
+	must(json.Unmarshal(rec.Body.Bytes(), &hosts))
+	if len(hosts) != 3 || hosts[2].ID != web.Host.ID || hosts[2].RevokedAt == nil || hosts[1].ID != db.Host.ID || hosts[1].Fingerprint != ssh.FingerprintSHA256(dbKey.PublicKey()) || *hosts[1].Serial != signed.Serial {
+		t.Fatalf("hosts: %+v", hosts)
+	}
+	events, err := st.ListAudit(ctx, 50)
+	must(err)
+	if !slices.ContainsFunc(events, func(e store.AuditEvent) bool {
+		return e.Action == "ssh.host.certificate.issue" && e.ActorID == nil && e.TargetID == web.Host.ID && strings.Contains(e.Summary, "at renewal")
+	}) {
+		t.Fatal("a renewal must be in the audit log")
+	}
+
+	rec = call("GET", "/api/v1/ssh/revoked-hosts.krl", "", nil)
+	expect(rec, 200)
+	krl := rec.Body.Bytes()
+	if !bytes.HasPrefix(krl, []byte("SSHKRL\n\x00")) || !bytes.Contains(krl, webKey.PublicKey().Marshal()) || bytes.Contains(krl, dbKey.PublicKey().Marshal()) {
+		t.Fatalf("revoked hosts: %x", krl)
+	}
+	keygen, err := exec.LookPath("ssh-keygen")
+	if err != nil {
+		t.Skip("ssh-keygen is not installed, so the revocation list was not checked with OpenSSH")
+	}
+	dir := t.TempDir()
+	must(os.WriteFile(filepath.Join(dir, "hosts.krl"), krl, 0o600))
+	for name, cert := range map[string]*ssh.Certificate{"revoked": renewed, "valid": signed} {
+		must(os.WriteFile(filepath.Join(dir, name), ssh.MarshalAuthorizedKey(cert), 0o600))
+		out, err := exec.Command(keygen, "-Q", "-f", filepath.Join(dir, "hosts.krl"), filepath.Join(dir, name)).CombinedOutput()
+		if revoked := strings.Contains(string(out), "REVOKED"); revoked != (name == "revoked") || (err == nil) != (name == "valid") {
+			t.Fatalf("ssh-keygen -Q for the %s certificate: %v %s", name, err, out)
+		}
+	}
 }

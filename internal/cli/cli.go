@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -20,6 +22,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"halo/internal/oidc"
+	"halo/internal/sshca"
 )
 
 const scopes = "openid profile email groups offline_access"
@@ -66,6 +69,8 @@ func Run(ctx context.Context, command string, args []string, out io.Writer) erro
 		return whoami(ctx, out)
 	case "ssh-cert":
 		return sshCert(ctx, args, out)
+	case "ssh-host":
+		return sshHost(ctx, args, out)
 	}
 	return fmt.Errorf("unknown command %q", command)
 }
@@ -166,9 +171,9 @@ func login(ctx context.Context, args []string, out io.Writer) error {
 			*server = c.Server
 		}
 	}
-	base := strings.TrimRight(*server, "/")
-	if u, err := url.Parse(base); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		return errors.New("pass the address of your Halo server, for example: halo login --server https://auth.example.com")
+	base, err := serverURL(*server, "halo login")
+	if err != nil {
+		return err
 	}
 	var device struct {
 		DeviceCode string `json:"device_code"`
@@ -216,6 +221,14 @@ func login(ctx context.Context, args []string, out io.Writer) error {
 	}
 }
 
+func serverURL(raw, command string) (string, error) {
+	base := strings.TrimRight(raw, "/")
+	if u, err := url.Parse(base); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return "", fmt.Errorf("pass the address of your Halo server, for example: %s --server https://auth.example.com", command)
+	}
+	return base, nil
+}
+
 func fresh(ctx context.Context) (credentials, error) {
 	c, err := load()
 	if err != nil || time.Now().Add(30*time.Second).Before(c.ExpiresAt) {
@@ -259,7 +272,9 @@ func authorized(ctx context.Context, c credentials, method, path string, body an
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.AccessToken)
+	if c.AccessToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.AccessToken)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -316,12 +331,7 @@ func sshCert(ctx context.Context, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	var issued struct {
-		Certificate string    `json:"certificate"`
-		Serial      uint64    `json:"serial"`
-		Principals  []string  `json:"principals"`
-		ValidBefore time.Time `json:"validBefore"`
-	}
+	var issued certificate
 	if err := authorized(ctx, c, http.MethodPost, "/api/v1/me/ssh/certificates", map[string]string{"publicKey": string(raw)}, &issued); err != nil {
 		return err
 	}
@@ -329,6 +339,104 @@ func sshCert(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(out, "Wrote certificate %d to %s.\nLog in as %s until %s.\n", issued.Serial, *outPath, strings.Join(issued.Principals, ", "), issued.ValidBefore.Local().Format("2 January 15:04 MST"))
+	if issued.KnownHosts == "" {
+		return nil
+	}
+	path := filepath.Join(home, ".ssh", "known_hosts")
+	changed, err := trustHosts(path, issued.KnownHosts)
+	if changed {
+		fmt.Fprintf(out, "Added Halo's host certificate authority to %s, so ssh trusts hosts Halo signed for %s.\n", path, strings.Fields(issued.KnownHosts)[1])
+	}
+	return err
+}
+
+type certificate struct {
+	Certificate string    `json:"certificate"`
+	Serial      uint64    `json:"serial"`
+	Principals  []string  `json:"principals"`
+	ValidBefore time.Time `json:"validBefore"`
+	KnownHosts  string    `json:"knownHosts"`
+}
+
+func trustHosts(path, line string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return false, err
+	}
+	ca := strings.Fields(line)
+	if len(ca) != 4 || ca[0] != "@cert-authority" {
+		return false, fmt.Errorf("halo sent a known_hosts line this version of the CLI does not understand: %q", line)
+	}
+	kept := []string{}
+	for _, l := range strings.Split(string(data), "\n") {
+		if f := strings.Fields(l); len(f) < 4 || f[0] != "@cert-authority" || f[3] != ca[3] {
+			kept = append(kept, l)
+		}
+	}
+	next := strings.TrimRight(strings.Join(kept, "\n"), "\n")
+	if next != "" {
+		next += "\n"
+	}
+	next += line + "\n"
+	if next == string(data) {
+		return false, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(path, []byte(next), 0o644)
+}
+
+func sshHost(ctx context.Context, args []string, out io.Writer) error {
+	if len(args) == 0 || args[0] != "enroll" && args[0] != "renew" {
+		return errors.New("run halo ssh-host enroll --server URL --token T on a new host, or halo ssh-host renew --server URL to renew its certificate")
+	}
+	flags := flag.NewFlagSet("ssh-host "+args[0], flag.ContinueOnError)
+	server := flags.String("server", "", "address of your Halo server, for example https://auth.example.com")
+	token := flags.String("token", "", "enrollment token from the Infrastructure page of the Halo console (enroll only)")
+	keyPath := flags.String("key", "/etc/ssh/ssh_host_ed25519_key", "private host key to certify; the certificate is written next to it, ending in -cert.pub")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	base, err := serverURL(*server, "halo ssh-host "+args[0])
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(*keyPath)
+	if err != nil {
+		return err
+	}
+	signer, err := ssh.ParsePrivateKey(raw)
+	if err != nil {
+		return fmt.Errorf("%s is not an unencrypted OpenSSH private key. Pass the host key itself, for example --key /etc/ssh/ssh_host_ed25519_key", *keyPath)
+	}
+	publicKey := string(ssh.MarshalAuthorizedKey(signer.PublicKey()))
+	var issued certificate
+	if args[0] == "enroll" {
+		if *token == "" {
+			return errors.New("pass the enrollment token from the Halo console with --token")
+		}
+		err = authorized(ctx, credentials{Server: base}, http.MethodPost, "/api/v1/ssh/hosts/enroll", map[string]string{"token": *token, "publicKey": publicKey}, &issued)
+	} else {
+		now := time.Now().Unix()
+		sig, signErr := signer.Sign(rand.Reader, sshca.RenewalMessage(now))
+		if signErr != nil {
+			return signErr
+		}
+		body := map[string]any{"publicKey": publicKey, "timestamp": now, "signature": base64.StdEncoding.EncodeToString(ssh.Marshal(sig))}
+		err = authorized(ctx, credentials{Server: base}, http.MethodPost, "/api/v1/ssh/hosts/renew", body, &issued)
+	}
+	if err != nil {
+		return err
+	}
+	certPath := *keyPath + "-cert.pub"
+	if err := os.WriteFile(certPath, []byte(issued.Certificate+"\n"), 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Wrote host certificate %d to %s for %s, valid until %s.\n", issued.Serial, certPath, strings.Join(issued.Principals, ", "), issued.ValidBefore.Local().Format("2 January 2006 15:04 MST"))
+	if args[0] == "enroll" {
+		fmt.Fprintf(out, "Add HostCertificate %s to /etc/ssh/sshd_config if it is not there yet, then reload sshd.\n", certPath)
+	}
 	return nil
 }
 

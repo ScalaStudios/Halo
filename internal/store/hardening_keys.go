@@ -103,6 +103,7 @@ var sealedColumns = []struct{ table, key, column string }{
 	{"application_hooks", "app_id", "url_sealed"},
 	{"application_hooks", "app_id", "secret_sealed"},
 	{"ssh_authority", "id", "private_key_sealed"},
+	{"ssh_host_authority", "id", "private_key_sealed"},
 	{"approval_requests", "id", "body_sealed"},
 	{"bot_protection", "singleton", "secret_sealed"},
 	{"log_export", "singleton", "headers_sealed"},
