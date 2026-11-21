@@ -79,6 +79,20 @@ func (s *Store) Tx(ctx context.Context, fn func(*Store) error) error {
 	})
 }
 
+func (s *Store) Savepoint(ctx context.Context, fn func(*Store) error) error {
+	var begin interface {
+		Begin(context.Context) (pgx.Tx, error)
+	} = s.pool
+	if tx, ok := s.db.(pgx.Tx); ok {
+		begin = tx
+	} else if tx, ok := ctx.Value(txKey{}).(pgx.Tx); ok {
+		begin = tx
+	}
+	return pgx.BeginFunc(ctx, begin, func(tx pgx.Tx) error {
+		return fn(&Store{pool: s.pool, db: tx, Sealer: s.Sealer, codeKey: s.codeKey})
+	})
+}
+
 func (s *Store) Bind(ctx context.Context) context.Context {
 	if tx, ok := s.db.(pgx.Tx); ok {
 		return context.WithValue(ctx, txKey{}, tx)

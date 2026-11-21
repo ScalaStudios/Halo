@@ -239,7 +239,7 @@ func (h *handlers) createPolicy(w http.ResponseWriter, r *http.Request, actor st
 			return err
 		}
 		if restricts(created) {
-			if err := h.refuseLockout(r, tx, actor); err != nil {
+			if err := RefuseLockout(r, tx, actor); err != nil {
 				return err
 			}
 		}
@@ -305,7 +305,7 @@ func (h *handlers) updatePolicy(w http.ResponseWriter, r *http.Request, actor st
 			return found(err, "This policy")
 		}
 		if restricts(updated) {
-			if err := h.refuseLockout(r, tx, actor); err != nil {
+			if err := RefuseLockout(r, tx, actor); err != nil {
 				return err
 			}
 		}
@@ -346,7 +346,7 @@ func restricts(p store.AccessPolicy) bool {
 	return enforced(p) && (p.Effect == access.Block || p.Effect == access.RequirePhishingResistant || p.Effect == access.RequireContext)
 }
 
-func (h *handlers) refuseLockout(r *http.Request, tx *store.Store, actor store.User) error {
+func RefuseLockout(r *http.Request, tx *store.Store, actor store.User) error {
 	ctx := r.Context()
 	trust, method := "unknown", ""
 	var compliance *store.DeviceCompliance
@@ -401,7 +401,7 @@ func (h *handlers) reorderPolicies(w http.ResponseWriter, r *http.Request, actor
 		if err := tx.ReorderAccessPolicies(r.Context(), in.IDs); err != nil {
 			return err
 		}
-		if err := h.refuseLockout(r, tx, actor); err != nil {
+		if err := RefuseLockout(r, tx, actor); err != nil {
 			return err
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "policy.reorder", Summary: "Changed the order policies are listed and evaluated in", TargetType: "policy", TargetLabel: "Policy order"})

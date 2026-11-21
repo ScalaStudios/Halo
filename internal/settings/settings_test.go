@@ -29,18 +29,17 @@ type env struct {
 	h     http.Handler
 }
 
-func setup(t *testing.T) *env {
+func setup(t *testing.T, register ...func(*http.ServeMux, httpx.Deps) error) *env {
 	t.Helper()
 	st := testdb.New(t)
 	public, _ := url.Parse("http://localhost:3200")
 	authn := &httpx.Auth{Store: st, Public: public, Dev: true}
 	d := httpx.Deps{Config: config.Config{Organization: "Fernway Systems", PublicURL: public, Dev: true}, Store: st, Auth: authn}
 	mux := http.NewServeMux()
-	if err := auth.Register(mux, d); err != nil {
-		t.Fatal(err)
-	}
-	if err := Register(mux, d); err != nil {
-		t.Fatal(err)
+	for _, fn := range append([]func(*http.ServeMux, httpx.Deps) error{auth.Register, Register}, register...) {
+		if err := fn(mux, d); err != nil {
+			t.Fatal(err)
+		}
 	}
 	mux.Handle("GET /api/v1/organization", Organization(d))
 	return &env{t: t, st: st, authn: authn, h: authn.Resolve(authn.SameOrigin(mux))}

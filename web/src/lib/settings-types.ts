@@ -48,6 +48,8 @@ export type Settings = {
   securityEmailsOff: string[];
   lockoutEmailAdmins: boolean;
   riskResponses: RiskResponse[];
+  exportSchedule: "off" | "daily" | "weekly";
+  exportKeep: number;
 };
 
 export type RiskResponse = { signal: "" | RiskEventType; level: "medium" | "high"; action: "revoke-sessions" | "require-passkey" | "suspend" | "notify" };
@@ -75,7 +77,7 @@ export type ApprovalStatus = "pending" | "approved" | "rejected" | "failed" | "e
 
 export type ApprovalRequest = {
   id: string;
-  action: ApprovalAction | "approval-settings";
+  action: ApprovalAction | "approval-settings" | "configuration-import";
   summary: string;
   targetType: string;
   targetId: string;
@@ -96,7 +98,19 @@ export type SettingsResponse = {
   issuer: string;
   customCssDisabled: boolean;
   botProtectionSecretSet: boolean;
+  bucketConfigured: boolean;
 };
+
+export type ImportChange = {
+  section: string;
+  action: "create" | "change" | "remove";
+  id: string;
+  label: string;
+  fields?: string[];
+  error?: { code: string; message: string };
+};
+
+export type ImportReport = { applied: boolean; changes: ImportChange[]; secrets: ImportChange[]; skipped: string[] };
 
 export type OrganizationProfile = {
   name: string;

@@ -10,6 +10,7 @@ import { CopyField } from "@/components/ui/copy-field";
 import { CheckList, FieldError } from "@/components/policy/policy-form";
 import { joinList } from "@/components/policy/shared";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
+import { pluralize } from "@/lib/format";
 import type { Domain, EmailTemplate, Settings } from "@/lib/settings-types";
 import type { Group } from "@/lib/types";
 import { ReadOnlyNote, useSaveSettings } from "./shared";
@@ -630,6 +631,90 @@ export function LogRetentionForm({ settings, canEdit }: { settings: Settings; ca
             </div>
           ) : (
             <ReadOnlyNote>Only a global administrator can change log retention.</ReadOnlyNote>
+          )}
+        </form>
+      </CardBody>
+    </Card>
+  );
+}
+
+const SCHEDULES: Record<Settings["exportSchedule"], { label: string; hint: string }> = {
+  off: { label: "Off", hint: "Halo saves no exports on its own. Download one above whenever you need it." },
+  daily: { label: "Every day", hint: "Halo saves the export once a day and records it in the audit log." },
+  weekly: { label: "Every week", hint: "Halo saves the export once a week and records it in the audit log." },
+};
+
+export function ScheduledExportForm({ settings, bucketConfigured, canEdit }: { settings: Settings; bucketConfigured: boolean; canEdit: boolean }) {
+  const { saving, failure, save } = useSaveSettings();
+  const [schedule, setSchedule] = useState(settings.exportSchedule);
+  const [keep, setKeep] = useState(String(settings.exportKeep));
+  const [attempted, setAttempted] = useState(false);
+  const count = Number(keep);
+  const invalid = keep.trim() === "" || !Number.isInteger(count) || count < 1 || count > 365;
+  const dirty = schedule !== settings.exportSchedule || count !== settings.exportKeep;
+  const editable = canEdit && (bucketConfigured || settings.exportSchedule !== "off");
+
+  function submit() {
+    setAttempted(true);
+    if (invalid) return;
+    void save({ exportSchedule: schedule, exportKeep: count }, schedule === "off" ? "Scheduled exports turned off" : "Scheduled exports saved", `Halo keeps the last ${pluralize(count, "export")} in the bucket.`);
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Scheduled exports" description="Save the same JSON export to your S3-compatible bucket on a schedule, as exports/halo-export-<time>.json, so a recent copy is there to import." />
+      <CardBody>
+        <form
+          noValidate
+          className="flex max-w-xl flex-col gap-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+        >
+          <Field label="Schedule" hint={SCHEDULES[schedule].hint}>
+            {(props) => (
+              <Select {...props} disabled={!editable} value={schedule} onChange={(event) => setSchedule(event.target.value as Settings["exportSchedule"])}>
+                {(Object.keys(SCHEDULES) as Settings["exportSchedule"][]).map((value) => (
+                  <option key={value} value={value} disabled={value !== "off" && !bucketConfigured}>
+                    {SCHEDULES[value].label}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label="Exports to keep" hint="Between 1 and 365. After each new export, Halo deletes the oldest ones." error={attempted && invalid ? "Enter a whole number between 1 and 365." : undefined}>
+            {(props) => (
+              <div className="w-32">
+                <Input
+                  {...props}
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={365}
+                  step={1}
+                  disabled={!editable}
+                  className="tnum"
+                  value={keep}
+                  onChange={(event) => setKeep(event.target.value)}
+                />
+              </div>
+            )}
+          </Field>
+          {bucketConfigured ? null : (
+            <ReadOnlyNote>Set HALO_S3_ENDPOINT, HALO_S3_BUCKET, HALO_S3_ACCESS_KEY_ID and HALO_S3_SECRET_ACCESS_KEY to save scheduled exports to a bucket.</ReadOnlyNote>
+          )}
+          {canEdit ? (
+            editable ? (
+              <div className="flex flex-wrap items-center gap-4">
+                <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>
+                  Save scheduled exports
+                </Button>
+                <ActionError message={failure} />
+              </div>
+            ) : null
+          ) : (
+            <ReadOnlyNote>Only a global administrator can change scheduled exports.</ReadOnlyNote>
           )}
         </form>
       </CardBody>

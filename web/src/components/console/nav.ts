@@ -133,7 +133,7 @@ export const nav: NavGroup[] = [
       { label: "Branding", href: `${BASE}/settings/branding`, icon: Palette, summary: "Your logo and a message on the sign-in, setup and sign-out pages." },
       { label: "Email templates", href: `${BASE}/settings/email`, icon: Mail, summary: "The subject and text of invitations, resets, sign-in emails and access notices." },
       { label: "Security defaults", href: `${BASE}/settings/security`, icon: SlidersHorizontal, summary: "Session lifetimes, lockout thresholds and token defaults." },
-      { label: "Data export", href: `${BASE}/settings/export`, icon: Download, summary: "Download every user, group, application, policy and setting as JSON." },
+      { label: "Export and import", href: `${BASE}/settings/export`, icon: Download, summary: "Download every user, group, application, policy and setting as JSON, import configuration, and schedule exports." },
     ],
   },
 ];

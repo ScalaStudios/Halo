@@ -5799,6 +5799,43 @@ paths:
                   auditEvents: {type: array, items: {type: object}}
         '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /import:
+    post:
+      tags: [Settings]
+      operationId: importConfiguration
+      summary: Import configuration from a JSON export
+      description: 'Roles: global administrator, signed in recently. Reads a document from `GET /export` and brings settings, attributes, groups with their owners and members, terms of use, applications, policies and access packages in line with it. Each object is matched by id, then by name, and created, changed or, with `remove`, deleted through the same API routes and checks as a change in the console, in one transaction: if any object is refused, nothing changes. Objects that are the same are left alone, so importing an export of the same installation changes nothing. Role assignments are never changed: an import that would grant a role is refused. Neither is an import that would stop every global administrator, including you, from signing in. Secrets are not in exports, so existing applications keep theirs and new OpenID Connect and OAuth applications get a new client ID and secret, listed in `secrets`. People, application roles, terms acceptances, access reviews and the audit log are not imported. Send `dryRun` first to see every change and error without writing anything. With any change under `approvalActions` turned on, the import needs approval from another global administrator. Writes the audit event of each change and one `organization.import`. Up to 16 MiB.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [configuration]
+              properties:
+                configuration: {type: object, description: 'The document from `GET /export`. Sections that are left out are not touched.'}
+                remove: {type: boolean, default: false, description: Delete objects in the sections of the file that the file does not have, and members of the file's assigned groups who are not in it.}
+                dryRun: {type: boolean, default: false, description: Check every change and return the report without writing anything.}
+      responses:
+        '200':
+          description: The report. After a dry run, or when nothing differs, nothing has changed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImportReport'}
+        '202': {$ref: '#/components/responses/ApprovalPending'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '413':
+          description: '`ERR_TOO_LARGE`: the request is larger than 16 MiB. Leave out the sections that are not imported.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422':
+          description: 'Some objects were refused, so nothing was imported. Each refused object has an `error` in `changes`. A file that is not a Halo export gets the usual `ERR_INVALID` error instead.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImportReport'}
   /signing-keys:
     get:
       tags: [Settings]
@@ -7068,13 +7105,14 @@ components:
         application/json:
           schema:
             type: object
-            required: [settings, defaultOrganizationName, issuer, customCssDisabled, botProtectionSecretSet]
+            required: [settings, defaultOrganizationName, issuer, customCssDisabled, botProtectionSecretSet, bucketConfigured]
             properties:
               settings: {$ref: '#/components/schemas/Settings'}
               defaultOrganizationName: {type: string}
               issuer: {type: string, format: uri}
               customCssDisabled: {type: boolean, description: '`HALO_DISABLE_CUSTOM_CSS=1` is set, so no page uses `customCss`.'}
               botProtectionSecretSet: {type: boolean, description: A secret key for `botProtection` is stored.}
+              bucketConfigured: {type: boolean, description: '`HALO_S3_ENDPOINT` and the related variables are set, so `exportSchedule` can be turned on.'}
     ApiResourceResponse:
       description: The API resource.
       content:
@@ -7122,6 +7160,31 @@ components:
       properties:
         code: {type: string, examples: [ERR_FORBIDDEN]}
         message: {type: string}
+    ImportReport:
+      type: object
+      required: [applied, changes, secrets, skipped]
+      properties:
+        applied: {type: boolean, description: The changes were saved.}
+        changes:
+          type: array
+          description: 'Every object that differs, in the order Halo applies them. Objects that are the same are left out.'
+          items: {$ref: '#/components/schemas/ImportChange'}
+        secrets:
+          type: array
+          description: New applications whose client ID and secret differ from the exported ones. Update them in each application's configuration, and create a client secret on the application's page.
+          items: {$ref: '#/components/schemas/ImportChange'}
+        skipped: {type: array, items: {type: string, enum: [users, applicationRoles, termsAcceptances, accessReviews, auditEvents]}, description: Sections of the file that are not imported.}
+        error: {$ref: '#/components/schemas/ItemError'}
+    ImportChange:
+      type: object
+      required: [section, action, id, label]
+      properties:
+        section: {type: string, enum: [settings, attributes, groups, memberships, roles, eligibleRoles, terms, applications, policies, accessPackages]}
+        action: {type: string, enum: [create, change, remove]}
+        id: {type: string, description: 'The id in the file, or the id here for objects to remove. Memberships are `<groupId>/<userId>`.'}
+        label: {type: string}
+        fields: {type: array, items: {type: string}, description: 'The fields that change, or for secrets the values that are new.'}
+        error: {$ref: '#/components/schemas/ItemError'}
     ImportPerson:
       type: object
       required: [email, name]
@@ -7802,7 +7865,7 @@ components:
       required: [id, action, summary, targetType, targetId, targetLabel, requester, createdAt, expiresAt, status, decidedBy, decidedAt, outcome, canDecide]
       properties:
         id: {type: string, examples: [apr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
-        action: {type: string, enum: [global-admin, policy-disable, password-sign-in, identity-providers, impersonation, user-deletion, approval-settings]}
+        action: {type: string, enum: [global-admin, policy-disable, password-sign-in, identity-providers, impersonation, user-deletion, approval-settings, configuration-import]}
         summary: {type: string, examples: [Set roles to Global administrator]}
         targetType: {type: string, enum: [user, service_account, policy, method, identity_provider, settings]}
         targetId: {type: string, description: Empty for a new identity provider and for settings.}
@@ -8384,6 +8447,8 @@ components:
         botProtectionSecret: {type: string, maxLength: 200, writeOnly: true, description: The secret key from the provider. Stored encrypted and never returned; `botProtectionSecretSet` in the response says whether one is stored. Omit it or send an empty string to keep the stored one.}
         signInLogDays: {type: integer, minimum: 0, maximum: 3650, default: 0, description: 'Days to keep sign-in log entries, between 7 and 3,650. 0 keeps them forever. Once a day Halo deletes older entries in batches and records the count as `log.prune` in the audit log. Only a global administrator can change it.'}
         auditLogDays: {type: integer, minimum: 0, maximum: 3650, default: 0, description: 'Days to keep audit log entries, between 30 and 3,650. 0 keeps them forever. Once a day Halo deletes older entries in batches and records the count as `log.prune` in the audit log. Only a global administrator can change it.'}
+        exportSchedule: {type: string, enum: ['off', daily, weekly], default: 'off', description: 'How often Halo saves the `GET /export` document to the S3-compatible bucket, as `exports/halo-export-<time>.json`, and records `organization.export` in the audit log. Turning it on needs `HALO_S3_ENDPOINT` and the related variables. Only a global administrator can change it.'}
+        exportKeep: {type: integer, minimum: 1, maximum: 365, default: 7, description: 'Scheduled exports to keep in the bucket. Older ones are deleted after each new one is saved. Only a global administrator can change it.'}
     SecurityEmail:
       type: object
       required: [kind, label, 'on', canTurnOff]

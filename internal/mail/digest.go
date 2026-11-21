@@ -129,7 +129,7 @@ func WeeklyDigest(to, name, organization string, d store.Digest, fresh []posture
 }
 
 func SendWeeklyDigest(ctx context.Context, m Mailer, cfg config.Config, st *store.Store) error {
-	claimed, err := st.ClaimWeeklyDigest(ctx)
+	claimed, err := st.Claim(ctx, "weeklyDigestSentAt", 7*24*time.Hour)
 	if err != nil || !claimed {
 		return err
 	}
