@@ -222,6 +222,27 @@ func TestPrivateKeyJWT(t *testing.T) {
 	if r, _ := h.do(http.MethodPost, "/oauth2/par", asserted(authorization(id, true), signer.sign(id, issuer, nil))); r.status != http.StatusUnauthorized {
 		t.Fatalf("assertion signed with a key no longer published: %d %v", r.status, r.body)
 	}
+	short, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	weak := assertionSigner{t, short, jose.RS256, "weak"}
+	served.Store(keySet(t, rotated, weak))
+	if r, _ := h.do(http.MethodPost, "/oauth2/par", asserted(authorization(id, true), weak.sign(id, issuer, nil))); r.status != http.StatusUnauthorized {
+		t.Fatalf("assertion signed with a 1024-bit RSA key from jwks_uri: %d %v", r.status, r.body)
+	}
+
+	back := h.app
+	back.TokenEndpointAuthMethod, back.JWKS, back.JWKSURI = halooidc.ClientSecretBasic, rotated.jwks(), ""
+	if err := h.st.UpdateApplication(ctx, back); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := h.do(http.MethodPost, "/oauth2/par", asserted(authorization(id, true), rotated.sign(id, issuer, nil))); r.status != http.StatusUnauthorized || r.body["error"] != "invalid_client" {
+		t.Fatalf("assertion after switching back to the client secret, with the keys still registered: %d %v", r.status, r.body)
+	}
+	if r, _ := h.do(http.MethodPost, "/oauth2/par", authorization(id, true), basicAuth(id, h.secret)); r.status != http.StatusCreated {
+		t.Fatalf("client secret after switching back: %d %v", r.status, r.body)
+	}
 
 	svc, err := h.st.CreateApplication(ctx, store.NewApplication{Name: "Billing worker", Protocol: "oauth", Type: "service", Scopes: []string{"openid"}})
 	if err != nil {
@@ -289,7 +310,7 @@ func TestFAPI2Profile(t *testing.T) {
 	}
 
 	dpop := newDPoPSigner(t)
-	pushed, _ := h.do(http.MethodPost, "/oauth2/par", asserted(authorization(id, true), signer.sign(id, issuer, nil)), header("DPoP", dpop.proof(http.MethodPost, issuer+"/oauth2/par", "", nil)))
+	pushed, _ := h.do(http.MethodPost, "/oauth2/par", asserted(authorization(id, true), signer.sign(id, issuer, nil)))
 	if pushed.status != http.StatusCreated {
 		t.Fatalf("pushed request under the FAPI 2.0 profile: %d %v", pushed.status, pushed.body)
 	}
@@ -303,7 +324,7 @@ func TestFAPI2Profile(t *testing.T) {
 	if a.ID != requestID || time.Until(a.ExpiresAt) > time.Minute {
 		t.Fatalf("authorization code lives until %s, want at most a minute", a.ExpiresAt)
 	}
-	if r, _ := h.do(http.MethodPost, "/oauth2/token", asserted(codeGrant(code), signer.sign(id, issuer, nil))); r.status != http.StatusBadRequest || r.body["error"] != "invalid_dpop_proof" && r.body["error"] != "invalid_grant" {
+	if r, _ := h.do(http.MethodPost, "/oauth2/token", asserted(codeGrant(code), signer.sign(id, issuer, nil))); r.status != http.StatusBadRequest || r.body["error"] != "invalid_dpop_proof" {
 		t.Fatalf("code exchange without DPoP under the FAPI 2.0 profile: %d %v", r.status, r.body)
 	}
 	tokens, _ := h.do(http.MethodPost, "/oauth2/token", asserted(codeGrant(code), signer.sign(id, issuer, nil)), header("DPoP", dpop.proof(http.MethodPost, issuer+"/oauth2/token", "", nil)))

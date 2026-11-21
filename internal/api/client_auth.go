@@ -20,18 +20,18 @@ type clientAuthChange struct {
 }
 
 func clientKeys(method string, jwks json.RawMessage, jwksURI string) error {
-	if method != oidc.PrivateKeyJWT {
-		return nil
-	}
-	if len(jwks) > 0 == (jwksURI != "") {
-		return httpx.Invalid("Register the application's public keys either as a JWKS or as a JWKS URL, not both and not neither.")
+	if len(jwks) > 0 {
+		if _, err := oidc.ClientKeys(jwks); err != nil {
+			return httpx.Invalid("The JWKS is not usable: " + err.Error() + ".")
+		}
 	}
 	if jwksURI != "" {
-		_, err := webhooks.PublicURL(jwksURI, "JWKS", "Halo only fetches public keys from")
-		return err
+		if _, err := webhooks.PublicURL(jwksURI, "JWKS", "Halo only fetches public keys from"); err != nil {
+			return err
+		}
 	}
-	if _, err := oidc.ClientKeys(jwks); err != nil {
-		return httpx.Invalid("The JWKS is not usable: " + err.Error() + ".")
+	if method == oidc.PrivateKeyJWT && len(jwks) > 0 == (jwksURI != "") {
+		return httpx.Invalid("Register the application's public keys either as a JWKS or as a JWKS URL, not both and not neither.")
 	}
 	return nil
 }

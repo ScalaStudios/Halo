@@ -42,16 +42,18 @@ func TestApplicationClientAuthentication(t *testing.T) {
 	keys := testKeys(t, false)
 
 	for name, body := range map[string]map[string]any{
-		"private_key_jwt without keys": {"tokenEndpointAuthMethod": "private_key_jwt"},
-		"unknown method":               {"tokenEndpointAuthMethod": "tls_client_auth", "jwks": json.RawMessage(keys)},
-		"private key in the JWKS":      {"tokenEndpointAuthMethod": "private_key_jwt", "jwks": json.RawMessage(testKeys(t, true))},
-		"symmetric key in the JWKS":    {"tokenEndpointAuthMethod": "private_key_jwt", "jwks": map[string]any{"keys": []any{map[string]any{"kty": "oct", "k": "c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0"}}}},
-		"empty JWKS":                   {"tokenEndpointAuthMethod": "private_key_jwt", "jwks": map[string]any{"keys": []any{}}},
-		"JWKS and JWKS URL":            {"tokenEndpointAuthMethod": "private_key_jwt", "jwks": json.RawMessage(keys), "jwksUri": "https://bank.example.com/jwks.json"},
-		"plain http JWKS URL":          {"tokenEndpointAuthMethod": "private_key_jwt", "jwksUri": "http://bank.example.com/jwks.json"},
-		"private JWKS URL":             {"tokenEndpointAuthMethod": "private_key_jwt", "jwksUri": "https://10.0.0.8/jwks.json"},
-		"profile with a client secret": {"fapi2Profile": true},
-		"profile without keys":         {"fapi2Profile": true, "tokenEndpointAuthMethod": "private_key_jwt"},
+		"private_key_jwt without keys":  {"tokenEndpointAuthMethod": "private_key_jwt"},
+		"unknown method":                {"tokenEndpointAuthMethod": "tls_client_auth", "jwks": json.RawMessage(keys)},
+		"private key in the JWKS":       {"tokenEndpointAuthMethod": "private_key_jwt", "jwks": json.RawMessage(testKeys(t, true))},
+		"symmetric key in the JWKS":     {"tokenEndpointAuthMethod": "private_key_jwt", "jwks": map[string]any{"keys": []any{map[string]any{"kty": "oct", "k": "c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0"}}}},
+		"empty JWKS":                    {"tokenEndpointAuthMethod": "private_key_jwt", "jwks": map[string]any{"keys": []any{}}},
+		"JWKS and JWKS URL":             {"tokenEndpointAuthMethod": "private_key_jwt", "jwks": json.RawMessage(keys), "jwksUri": "https://bank.example.com/jwks.json"},
+		"plain http JWKS URL":           {"tokenEndpointAuthMethod": "private_key_jwt", "jwksUri": "http://bank.example.com/jwks.json"},
+		"private JWKS URL":              {"tokenEndpointAuthMethod": "private_key_jwt", "jwksUri": "https://10.0.0.8/jwks.json"},
+		"profile with a client secret":  {"fapi2Profile": true},
+		"JWKS that is not a key set":    {"jwks": 5},
+		"private key while on a secret": {"jwks": json.RawMessage(testKeys(t, true))},
+		"profile without keys":          {"fapi2Profile": true, "tokenEndpointAuthMethod": "private_key_jwt"},
 	} {
 		expect(t, call(t, h, admin, "PATCH", path, body), 422)
 		if got, _ := st.GetApplication(ctx, app.ID); got.TokenEndpointAuthMethod != "client_secret_basic" || got.FAPI2Profile {
