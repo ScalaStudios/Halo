@@ -22,18 +22,19 @@ var (
 )
 
 type providerInput struct {
-	Kind           string   `json:"kind"`
-	Name           string   `json:"name"`
-	Issuer         string   `json:"issuer"`
-	ClientID       string   `json:"clientId"`
-	ClientSecret   string   `json:"clientSecret"`
-	Scopes         []string `json:"scopes"`
-	Enabled        bool     `json:"enabled"`
-	ShowOnSignIn   bool     `json:"showOnSignIn"`
-	RouteByDomain  bool     `json:"routeByDomain"`
-	AllowedDomains []string `json:"allowedDomains"`
-	JIT            bool     `json:"jit"`
-	JITGroupIDs    []string `json:"jitGroupIds"`
+	Kind           string        `json:"kind"`
+	Name           string        `json:"name"`
+	Issuer         string        `json:"issuer"`
+	ClientID       string        `json:"clientId"`
+	ClientSecret   string        `json:"clientSecret"`
+	Scopes         []string      `json:"scopes"`
+	Enabled        bool          `json:"enabled"`
+	ShowOnSignIn   bool          `json:"showOnSignIn"`
+	RouteByDomain  bool          `json:"routeByDomain"`
+	AllowedDomains []string      `json:"allowedDomains"`
+	JIT            bool          `json:"jit"`
+	JITGroupIDs    []string      `json:"jitGroupIds"`
+	Mapping        store.Mapping `json:"mapping"`
 }
 
 func (h *handler) listProviders(w http.ResponseWriter, r *http.Request) error {
@@ -173,6 +174,8 @@ func providerFields(old, p store.IdentityProvider, secret bool) string {
 		{"allowed email domains", !slices.Equal(old.AllowedDomains, p.AllowedDomains)},
 		{"account creation on first sign-in", old.JIT != p.JIT},
 		{"groups for new accounts", !slices.Equal(old.JITGroupIDs, p.JITGroupIDs)},
+		{"profile mapping", !slices.Equal(old.Mapping.Profile, p.Mapping.Profile)},
+		{"group mapping", old.Mapping.GroupClaim != p.Mapping.GroupClaim || !slices.Equal(old.Mapping.Groups, p.Mapping.Groups)},
 	} {
 		if f.diff {
 			changed = append(changed, f.label)
@@ -283,22 +286,28 @@ func (h *handler) validProvider(r *http.Request, in providerInput, existing stor
 			}
 		}
 	}
-	p.JITGroupIDs = []string{}
-	if len(in.JITGroupIDs) > 0 {
-		groups, err := h.st.ListGroupsRaw(r.Context())
-		if err != nil {
+	groups := []store.Group{}
+	if len(in.JITGroupIDs) > 0 || len(in.Mapping.Groups) > 0 {
+		var err error
+		if groups, err = h.st.ListGroupsRaw(r.Context()); err != nil {
 			return p, err
 		}
-		for _, groupID := range in.JITGroupIDs {
-			if !slices.ContainsFunc(groups, func(g store.Group) bool { return g.ID == groupID && g.Kind == "assigned" }) {
-				return p, httpx.Invalid("New people can only be added to assigned groups that exist. Refresh the page and pick the groups again.")
-			}
-			if !slices.Contains(p.JITGroupIDs, groupID) {
-				p.JITGroupIDs = append(p.JITGroupIDs, groupID)
-			}
+	}
+	assigned := func(groupID string) bool {
+		return slices.ContainsFunc(groups, func(g store.Group) bool { return g.ID == groupID && g.Kind == "assigned" })
+	}
+	p.JITGroupIDs = []string{}
+	for _, groupID := range in.JITGroupIDs {
+		if !assigned(groupID) {
+			return p, httpx.Invalid("New people can only be added to assigned groups that exist. Refresh the page and pick the groups again.")
+		}
+		if !slices.Contains(p.JITGroupIDs, groupID) {
+			p.JITGroupIDs = append(p.JITGroupIDs, groupID)
 		}
 	}
-	return p, nil
+	var err error
+	p.Mapping, err = validMapping(p.Kind, in.Mapping, assigned)
+	return p, err
 }
 
 func (h *handler) myIdentities(w http.ResponseWriter, r *http.Request) error {

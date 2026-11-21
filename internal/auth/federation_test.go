@@ -465,3 +465,178 @@ func TestHomeRealmDiscovery(t *testing.T) {
 		t.Fatalf("audit: %+v %v", audit, err)
 	}
 }
+
+func TestFederatedMapping(t *testing.T) {
+	e := newFederationEnv(t)
+	ctx := context.Background()
+	fake := newFakeProvider(t)
+	p := e.provider(store.IdentityProvider{Kind: "oidc", Name: "Acme SSO", Issuer: fake.srv.URL})
+	ada, err := e.st.CreateUser(ctx, store.NewUser{Email: "ada@example.com", Name: "Ada Lovelace", Title: "Intern", Department: "Sales", Location: "Lisbon", Status: "active"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng, ops, manual := e.group("Engineering"), e.group("Operations", ada), e.group("Book club", ada)
+	rule := `user.department == "Engineering"`
+	dynamic, err := e.st.CreateGroup(ctx, store.NewGroup{Name: "Engineers", Kind: "dynamic", Rule: &rule})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	admin, err := e.st.CreateUser(ctx, store.NewUser{Email: "sec@example.com", Name: "Sec", Status: "active", Roles: []string{"security_admin"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, token, err := e.st.CreateSession(ctx, store.NewSession{UserID: admin.ID, Method: "passkey"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := client()
+	base, _ := url.Parse(e.srv.URL)
+	c.Jar.SetCookies(base, []*http.Cookie{{Name: httpx.SessionCookie, Value: token}})
+	mapping := map[string]any{
+		"profile":    []map[string]string{{"claim": "name", "field": "name"}, {"claim": "jobTitle", "field": "title"}, {"claim": "department", "field": "department"}},
+		"groupClaim": "groups",
+		"groups":     []map[string]string{{"value": "eng-id", "groupId": eng.ID}, {"value": "ops-id", "groupId": ops.ID}, {"value": "ops-legacy", "groupId": ops.ID}},
+	}
+	body := map[string]any{"kind": "oidc", "name": "Acme SSO", "issuer": fake.srv.URL, "clientId": "halo", "scopes": []string{"openid", "email"}, "enabled": true, "showOnSignIn": true, "allowedDomains": []string{"example.com"}, "jit": true, "jitGroupIds": []string{ops.ID}, "mapping": mapping}
+	for _, bad := range []map[string]any{
+		{"profile": []map[string]string{{"claim": "roles", "field": "roles"}}},
+		{"profile": []map[string]string{{"claim": "mail", "field": "email"}}},
+		{"profile": []map[string]string{{"claim": "dept", "field": "department"}, {"claim": "department", "field": "department"}}},
+		{"groupClaim": "groups", "groups": []map[string]string{{"value": "eng-id", "groupId": dynamic.ID}}},
+		{"groups": []map[string]string{{"value": "eng-id", "groupId": eng.ID}}},
+	} {
+		body["mapping"] = bad
+		e.expect(c, "PUT", "/api/v1/identity-providers/"+p.ID, body, http.StatusUnprocessableEntity, "ERR_INVALID")
+	}
+	e.expect(c, "POST", "/api/v1/identity-providers", map[string]any{"kind": "github", "name": "GitHub", "clientId": "halo", "clientSecret": "s", "mapping": mapping}, http.StatusUnprocessableEntity, "ERR_INVALID")
+	body["mapping"] = mapping
+	var saved store.IdentityProvider
+	if status := e.do(c, "PUT", "/api/v1/identity-providers/"+p.ID, body, &saved); status != http.StatusOK || len(saved.Mapping.Profile) != 3 || len(saved.Mapping.Groups) != 3 {
+		t.Fatalf("save mapping: %d %+v", status, saved.Mapping)
+	}
+	if audit, _ := e.st.ListAudit(ctx, 1); audit[0].Summary != "Changed the identity provider's account creation on first sign-in, groups for new accounts, profile mapping, group mapping" {
+		t.Fatalf("provider audit: %+v", audit[0])
+	}
+	if uses, _ := e.st.GroupUses(ctx, eng.ID); len(uses) != 1 || uses[0].Kind != "identity provider" {
+		t.Fatalf("mapped group in use: %+v", uses)
+	}
+
+	audit := func() []store.AuditEvent {
+		t.Helper()
+		events, err := e.st.ListAudit(ctx, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mapped := []store.AuditEvent{}
+		for _, ev := range events {
+			if strings.HasSuffix(ev.Summary, " from Acme SSO at sign-in") {
+				mapped = append(mapped, ev)
+			}
+		}
+		return mapped
+	}
+	user := func(id string) store.User {
+		t.Helper()
+		u, err := e.st.GetUser(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return u
+	}
+	signIn := func(claims map[string]any, query, want string) {
+		t.Helper()
+		fake.claims = map[string]any{"sub": "acme-1", "email": "ada@example.com", "email_verified": true}
+		for k, v := range claims {
+			fake.claims[k] = v
+		}
+		if location := e.federate(client(), p.ID, query); location != want {
+			t.Fatalf("sign-in with %v: %s", claims, location)
+		}
+	}
+
+	signIn(map[string]any{"name": "Ada King", "jobTitle": "Engineer", "department": "", "groups": []string{"eng-id", "unmapped"}, "roles": []string{"global_admin"}}, "", "/account")
+	got := user(ada.ID)
+	if got.Name != "Ada King" || got.Title != "Engineer" || got.Department != "" || got.Location != "Lisbon" {
+		t.Fatalf("profile updated: %+v", got)
+	}
+	if !slices.Contains(got.GroupIDs, eng.ID) || slices.Contains(got.GroupIDs, ops.ID) || !slices.Contains(got.GroupIDs, manual.ID) {
+		t.Fatalf("groups follow the provider for mapped groups only: %v", got.GroupIDs)
+	}
+	if len(got.RoleKeys) != 0 || len(got.EligibleRoles) != 0 {
+		t.Fatalf("mapping never grants roles: %v %v", got.RoleKeys, got.EligibleRoles)
+	}
+	events := audit()
+	if len(events) != 3 {
+		t.Fatalf("one audit event per change: %+v", events)
+	}
+	for _, ev := range events {
+		if ev.ActorID != nil || len(ev.Changes) == 0 {
+			t.Fatalf("audit event: %+v", ev)
+		}
+		switch ev.Action {
+		case "user.update":
+			fields := []string{}
+			for _, change := range ev.Changes {
+				fields = append(fields, change.Field)
+			}
+			if ev.TargetID != ada.ID || !slices.Equal(fields, []string{"department", "name", "title"}) || string(ev.Changes[0].Before) != `"Sales"` || string(ev.Changes[0].After) != `""` {
+				t.Fatalf("profile audit: %+v", ev)
+			}
+		case "group.member.add":
+			if ev.TargetID != eng.ID || string(ev.Changes[0].After) != "true" {
+				t.Fatalf("add audit: %+v", ev)
+			}
+		case "group.member.remove":
+			if ev.TargetID != ops.ID || string(ev.Changes[0].After) != "false" {
+				t.Fatalf("remove audit: %+v", ev)
+			}
+		default:
+			t.Fatalf("unexpected audit: %+v", ev)
+		}
+	}
+
+	signIn(map[string]any{"name": "Ada King", "jobTitle": "Engineer", "department": "", "groups": []string{"eng-id"}}, "", "/account")
+	if len(audit()) != 3 {
+		t.Fatalf("an unchanged sign-in writes nothing: %+v", audit())
+	}
+
+	signIn(map[string]any{"name": "", "groups": "ops-legacy"}, "", "/account")
+	got = user(ada.ID)
+	if got.Name != "Ada King" || got.Title != "Engineer" || slices.Contains(got.GroupIDs, eng.ID) || !slices.Contains(got.GroupIDs, ops.ID) {
+		t.Fatalf("missing claims and a blank name leave the profile alone: %+v", got)
+	}
+
+	signIn(map[string]any{"groups": []any{"eng-id", map[string]any{"id": "ops-id"}}}, "", "/account")
+	signIn(map[string]any{}, "", "/account")
+	if got = user(ada.ID); !slices.Contains(got.GroupIDs, ops.ID) || slices.Contains(got.GroupIDs, eng.ID) || !slices.Contains(got.GroupIDs, manual.ID) {
+		t.Fatalf("a missing or malformed groups claim changes no groups: %v", got.GroupIDs)
+	}
+
+	app, err := e.st.CreateApplication(ctx, store.NewApplication{Name: "Grafana", Protocol: "oidc", Type: "web", RedirectURIs: []string{"https://grafana.example.com/cb"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.SetApplicationGroups(ctx, app.ID, []string{ops.ID}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"arq_drop", "arq_join"} {
+		if _, err := e.st.CreateAuthRequest(ctx, store.AuthRequest{ID: id, ClientID: app.ClientID, RedirectURI: app.RedirectURIs[0], Scopes: []string{"openid"}, ResponseType: "code"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	signIn(map[string]any{"groups": []string{}}, "authRequest=arq_drop", "/sign-in?authRequest=arq_drop&error=ERR_NOT_ASSIGNED")
+	if got = user(ada.ID); slices.Contains(got.GroupIDs, ops.ID) || !slices.Contains(got.GroupIDs, manual.ID) {
+		t.Fatalf("an empty groups claim removes mapped groups only: %v", got.GroupIDs)
+	}
+	signIn(map[string]any{"groups": []string{"ops-id"}}, "authRequest=arq_join", "/oauth2/authorize/callback?id=arq_join")
+
+	fake.claims = map[string]any{"sub": "acme-2", "email": "grace@example.com", "email_verified": true, "name": "Grace Hopper", "jobTitle": "Admiral", "groups": []string{"eng-id"}}
+	if location := e.federate(client(), p.ID, ""); location != "/account" {
+		t.Fatalf("jit: %s", location)
+	}
+	grace, err := e.st.GetUserByEmail(ctx, "grace@example.com")
+	if err != nil || grace.Title != "Admiral" || !slices.Equal(grace.GroupIDs, []string{eng.ID}) {
+		t.Fatalf("new account mapped on first sign-in: %+v %v", grace, err)
+	}
+}
