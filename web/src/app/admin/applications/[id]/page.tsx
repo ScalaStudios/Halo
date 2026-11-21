@@ -6,6 +6,7 @@ import { ClaimMappingsForm } from "@/components/applications/claim-mappings";
 import { CredentialList } from "@/components/applications/credentials";
 import { AuthenticationForm, BackchannelLogoutForm, ScopesForm, SignInFrequencyForm } from "@/components/applications/edit-application";
 import { HookForm } from "@/components/applications/hook-form";
+import { RolesTable } from "@/components/applications/roles";
 import { SamlAttributesForm, SamlConnectionFields, SamlSettingsForm } from "@/components/applications/saml";
 import { APP_STATUS, PROTOCOL_LABEL, SetupGuideCard, statusKey, TYPE_LABEL } from "@/components/applications/shared";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
@@ -53,6 +54,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const bookmark = app.protocol === "bookmark";
   const service = app.type === "service";
   const hookable = !saml && !bookmark && !service && app.clientId !== "halo-cli";
+  const roleable = !bookmark && !service && app.clientId !== "halo-cli";
   const owner = users.find((u) => u.id === app.owner);
   const appGroups = groups.filter((g) => app.groupIds.includes(g.id));
   const assigned = new Set(users.filter((u) => u.appIds.includes(app.id)).map((u) => u.id));
@@ -69,6 +71,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         { id: "permissions", label: "Permissions", count: app.scopes.length },
         { id: "claims", label: saml ? "Attributes" : "Claims", count: app.claims.length },
         { id: "users", label: "Users & groups", count: appGroups.length },
+        ...(roleable ? [{ id: "roles", label: "Roles", count: app.roles.length }] : []),
         { id: "credentials", label: "Credentials", count: app.credentials.length },
         { id: "sessions", label: "Sessions", count: appSessions.length },
         { id: "logs", label: "Logs", count: appSignIns.length },
@@ -275,6 +278,21 @@ export default async function ApplicationPage({ params, searchParams }: { params
                 }
               />
             )}
+          </div>
+        ) : null}
+        {tab === "roles" && roleable ? (
+          <div className="flex flex-col gap-6">
+            <SectionTitle
+              title="Roles"
+              description={`Halo sends the keys of the roles a person holds to ${app.name} ${saml ? "in the roles attribute of every assertion" : "in the roles claim of ID tokens, userinfo and access tokens"}. Rename it with a mapping on the ${saml ? "Attributes" : "Claims"} tab.`}
+            />
+            <RolesTable
+              appId={app.id}
+              appName={app.name}
+              roles={app.roles}
+              groups={groups}
+              people={users.filter((u) => u.status !== "deprovisioned").map(({ id, name, email }) => ({ id, name, email }))}
+            />
           </div>
         ) : null}
         {tab === "credentials" ? (

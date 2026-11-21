@@ -11,7 +11,7 @@ import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/compo
 import { SectionTitle } from "@/components/ui/section-title";
 import { api } from "@/lib/api/client";
 
-type LauncherApp = { id: string; name: string; homepage: string; launchUrl: string; host: string; logoUrl: string | null; favourite: boolean };
+type LauncherApp = { id: string; name: string; homepage: string; launchUrl: string; host: string; logoUrl: string | null; favourite: boolean; roles: string[] };
 type Section = { id: string; title: string | null; apps: LauncherApp[] };
 
 export function AppLauncher({ apps, collections }: { apps: LauncherApp[]; collections: { id: string; name: string; applicationIds: string[] }[] }) {
@@ -91,6 +91,12 @@ export function AppLauncher({ apps, collections }: { apps: LauncherApp[]; collec
                           ) : null}
                         </span>
                         <span className="truncate text-caption text-fg-3">{app.host}</span>
+                        {app.roles.length ? (
+                          <span className="truncate text-caption text-fg-2">
+                            <span className="sr-only">Your roles: </span>
+                            {app.roles.join(", ")}
+                          </span>
+                        ) : null}
                       </span>
                       <ArrowUpRight aria-hidden="true" size={16} strokeWidth={1.75} className="shrink-0 text-fg-3 transition-colors duration-fast ease-brand group-hover:text-fg" />
                       <span className="sr-only">(opens in a new tab)</span>
