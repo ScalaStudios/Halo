@@ -2,6 +2,7 @@ package sshca
 
 import (
 	"context"
+	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
@@ -80,15 +81,30 @@ func (h *handlers) ca(ctx context.Context, host bool) (store.SSHAuthority, error
 	if !errors.Is(err, store.ErrNotFound) {
 		return a, err
 	}
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	var seed []byte
+	var ref string
+	var public crypto.PublicKey
+	if h.st.Keys.External() {
+		if ref, err = h.st.Keys.CreateKey(ctx, "EdDSA"); err != nil {
+			return a, err
+		}
+		signer, err := h.st.Keys.Signer(ctx, ref)
+		if err != nil {
+			return a, err
+		}
+		public = signer.Public()
+	} else {
+		pub, priv, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			return a, err
+		}
+		seed, public = priv.Seed(), pub
+	}
+	key, err := ssh.NewPublicKey(public)
 	if err != nil {
 		return a, err
 	}
-	key, err := ssh.NewPublicKey(pub)
-	if err != nil {
-		return a, err
-	}
-	if err := h.st.CreateSSHAuthority(ctx, host, priv.Seed(), authorizedKey(key)); err != nil {
+	if err := h.st.CreateSSHAuthority(ctx, host, seed, authorizedKey(key), ref); err != nil {
 		return a, err
 	}
 	return h.st.GetSSHAuthority(ctx, host)
@@ -432,7 +448,7 @@ func (h *handlers) issue(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		cert = &ssh.Certificate{Key: key, Serial: serial, CertType: ssh.UserCert, KeyId: fmt.Sprintf("halo:%s:%d", u.ID, serial), ValidPrincipals: principals, Permissions: ssh.Permissions{Extensions: extensions}}
-		if err := sign(cert, authority); err != nil {
+		if err := h.sign(ctx, cert, authority); err != nil {
 			return err
 		}
 		c := store.SSHCertificate{Serial: serial, KeyID: cert.KeyId, UserID: &u.ID, Principals: principals, Fingerprint: ssh.FingerprintSHA256(key), KeyType: key.Type(), IP: httpx.ClientIP(r),
@@ -453,8 +469,17 @@ func (h *handlers) issue(w http.ResponseWriter, r *http.Request) error {
 	return httpx.JSON(w, http.StatusCreated, body)
 }
 
-func sign(cert *ssh.Certificate, authority store.SSHAuthority) error {
-	signer, err := ssh.NewSignerFromKey(ed25519.NewKeyFromSeed(authority.Seed))
+func (h *handlers) sign(ctx context.Context, cert *ssh.Certificate, authority store.SSHAuthority) error {
+	var key crypto.Signer
+	var err error
+	if authority.ExternalKey != "" {
+		if key, err = h.st.Keys.Signer(ctx, authority.ExternalKey); err != nil {
+			return err
+		}
+	} else {
+		key = ed25519.NewKeyFromSeed(authority.Seed)
+	}
+	signer, err := ssh.NewSignerFromSigner(key)
 	if err != nil {
 		return err
 	}
@@ -629,7 +654,7 @@ func (h *handlers) certifyHost(w http.ResponseWriter, r *http.Request, actor *st
 			return err
 		}
 		cert = &ssh.Certificate{Key: key, Serial: serial, CertType: ssh.HostCert, KeyId: fmt.Sprintf("halo:%s:%d", host.ID, serial), ValidPrincipals: host.Hostnames}
-		if err := sign(cert, authority); err != nil {
+		if err := h.sign(ctx, cert, authority); err != nil {
 			return err
 		}
 		if err := tx.CertifySSHHost(ctx, host.ID, authorizedKey(key), ssh.FingerprintSHA256(key), key.Type(), serial, time.Unix(int64(cert.ValidBefore), 0)); errors.Is(err, store.ErrConflict) {

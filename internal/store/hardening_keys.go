@@ -15,23 +15,24 @@ import (
 const SigningKeyOverlap = 7 * 24 * time.Hour
 
 type SigningKeyInfo struct {
-	ID        string     `json:"kid"`
-	Algorithm string     `json:"algorithm"`
-	Active    bool       `json:"active"`
-	CreatedAt time.Time  `json:"createdAt"`
-	RetiresAt *time.Time `json:"retiresAt"`
-	RetiredAt *time.Time `json:"retiredAt"`
+	ID          string     `json:"kid"`
+	Algorithm   string     `json:"algorithm"`
+	Active      bool       `json:"active"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	RetiresAt   *time.Time `json:"retiresAt"`
+	RetiredAt   *time.Time `json:"retiredAt"`
+	ExternalKey *string    `json:"externalKey"`
 }
 
 func (s *Store) ListSigningKeyInfo(ctx context.Context) ([]SigningKeyInfo, error) {
-	rows, err := s.db.Query(ctx, `select id, algorithm, created_at, retired_at, lag(created_at) over (partition by algorithm order by created_at desc) from signing_keys order by created_at desc`)
+	rows, err := s.db.Query(ctx, `select id, algorithm, created_at, retired_at, lag(created_at) over (partition by algorithm order by created_at desc), external_key from signing_keys order by created_at desc`)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (SigningKeyInfo, error) {
 		var k SigningKeyInfo
 		var superseded *time.Time
-		err := row.Scan(&k.ID, &k.Algorithm, &k.CreatedAt, &k.RetiredAt, &superseded)
+		err := row.Scan(&k.ID, &k.Algorithm, &k.CreatedAt, &k.RetiredAt, &superseded, &k.ExternalKey)
 		k.Active = superseded == nil && k.RetiredAt == nil
 		if superseded != nil && k.RetiredAt == nil {
 			retires := superseded.Add(SigningKeyOverlap)
@@ -52,23 +53,24 @@ type SAMLKeyInfo struct {
 	Certificate []byte
 	CreatedAt   time.Time
 	RetiredAt   *time.Time
+	ExternalKey *string
 }
 
 func (s *Store) ListSAMLKeys(ctx context.Context) ([]SAMLKeyInfo, error) {
-	rows, err := s.db.Query(ctx, `select id, certificate, created_at, retired_at from saml_keys order by retired_at is not null, created_at desc`)
+	rows, err := s.db.Query(ctx, `select id, certificate, created_at, retired_at, external_key from saml_keys order by retired_at is not null, created_at desc`)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[SAMLKeyInfo])
 }
 
-func (s *Store) RotateSAMLKey(ctx context.Context, privateKey, certificate []byte) (string, error) {
+func (s *Store) RotateSAMLKey(ctx context.Context, privateKey, certificate []byte, externalKey string) (string, error) {
 	keyID := id.New("key")
 	return keyID, s.Tx(ctx, func(tx *Store) error {
 		if _, err := tx.db.Exec(ctx, `update saml_keys set retired_at = now() where retired_at is null`); err != nil {
 			return err
 		}
-		_, err := tx.db.Exec(ctx, `insert into saml_keys (id, private_key_sealed, certificate) values ($1, $2, $3)`, keyID, tx.Sealer.Seal(privateKey), certificate)
+		_, err := tx.db.Exec(ctx, `insert into saml_keys (id, private_key_sealed, external_key, certificate) values ($1, $2, nullif($3, ''), $4)`, keyID, tx.sealKey(privateKey, externalKey), externalKey, certificate)
 		return err
 	})
 }
@@ -80,6 +82,45 @@ func (s *Store) DeleteSAMLKey(ctx context.Context, keyID string) error {
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) sealKey(privateKey []byte, externalKey string) []byte {
+	if externalKey != "" {
+		return nil
+	}
+	return s.Sealer.Seal(privateKey)
+}
+
+func (s *Store) openKey(sealed []byte) ([]byte, error) {
+	if sealed == nil {
+		return nil, nil
+	}
+	return s.Sealer.Open(sealed)
+}
+
+func (s *Store) CheckExternalKeys(ctx context.Context) error {
+	if s.Keys.External() {
+		if err := s.Keys.Ping(ctx); err != nil {
+			return err
+		}
+	}
+	rows, err := s.db.Query(ctx, `select external_key from signing_keys where retired_at is null and external_key is not null
+		union all select external_key from saml_keys where retired_at is null and external_key is not null
+		union all select external_key from ssh_authority where external_key is not null
+		union all select external_key from ssh_host_authority where external_key is not null`)
+	if err != nil {
+		return err
+	}
+	refs, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	for _, ref := range refs {
+		if _, err := s.Keys.Signer(ctx, ref); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -159,7 +159,7 @@ func TestLoginWhoamiCertificateLogout(t *testing.T) {
 	hostCAKey, err := ssh.NewPublicKey(hostCAPub)
 	must(err)
 	hostCALine := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(hostCAKey)))
-	must(st.CreateSSHAuthority(ctx, true, hostCAPriv.Seed(), hostCALine))
+	must(st.CreateSSHAuthority(ctx, true, hostCAPriv.Seed(), hostCALine, ""))
 	domain, err := st.AddDomain(ctx, "example.com")
 	must(err)
 	_, err = st.VerifyDomain(ctx, domain.ID)

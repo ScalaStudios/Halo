@@ -14,6 +14,7 @@ const sshHostTokenLifetime = time.Hour
 
 type SSHAuthority struct {
 	Seed                []byte
+	ExternalKey         string
 	PublicKey           string
 	CertificateLifetime int
 	CreatedAt           time.Time
@@ -29,16 +30,16 @@ func authorityTable(host bool) string {
 func (s *Store) GetSSHAuthority(ctx context.Context, host bool) (SSHAuthority, error) {
 	var a SSHAuthority
 	var sealed []byte
-	err := s.db.QueryRow(ctx, `select private_key_sealed, public_key, certificate_lifetime, created_at from `+authorityTable(host)).Scan(&sealed, &a.PublicKey, &a.CertificateLifetime, &a.CreatedAt)
+	err := s.db.QueryRow(ctx, `select private_key_sealed, coalesce(external_key, ''), public_key, certificate_lifetime, created_at from `+authorityTable(host)).Scan(&sealed, &a.ExternalKey, &a.PublicKey, &a.CertificateLifetime, &a.CreatedAt)
 	if err != nil {
 		return a, notFound(err)
 	}
-	a.Seed, err = s.Sealer.Open(sealed)
+	a.Seed, err = s.openKey(sealed)
 	return a, err
 }
 
-func (s *Store) CreateSSHAuthority(ctx context.Context, host bool, seed []byte, publicKey string) error {
-	_, err := s.db.Exec(ctx, `insert into `+authorityTable(host)+` (private_key_sealed, public_key) values ($1, $2) on conflict (id) do nothing`, s.Sealer.Seal(seed), publicKey)
+func (s *Store) CreateSSHAuthority(ctx context.Context, host bool, seed []byte, publicKey, externalKey string) error {
+	_, err := s.db.Exec(ctx, `insert into `+authorityTable(host)+` (private_key_sealed, external_key, public_key) values ($1, nullif($2, ''), $3) on conflict (id) do nothing`, s.sealKey(seed, externalKey), externalKey, publicKey)
 	return err
 }
 

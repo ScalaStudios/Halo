@@ -99,22 +99,23 @@ func (s *Store) protocolApplication(ctx context.Context, appID, protocol string)
 type SAMLKey struct {
 	ID          string
 	PrivateKey  []byte
+	ExternalKey string
 	Certificate []byte
 }
 
 func (s *Store) ActiveSAMLKey(ctx context.Context) (SAMLKey, error) {
 	var k SAMLKey
 	var sealed []byte
-	if err := s.db.QueryRow(ctx, `select id, private_key_sealed, certificate from saml_keys where retired_at is null`).Scan(&k.ID, &sealed, &k.Certificate); err != nil {
+	if err := s.db.QueryRow(ctx, `select id, private_key_sealed, coalesce(external_key, ''), certificate from saml_keys where retired_at is null`).Scan(&k.ID, &sealed, &k.ExternalKey, &k.Certificate); err != nil {
 		return SAMLKey{}, notFound(err)
 	}
 	var err error
-	k.PrivateKey, err = s.Sealer.Open(sealed)
+	k.PrivateKey, err = s.openKey(sealed)
 	return k, err
 }
 
-func (s *Store) CreateSAMLKey(ctx context.Context, privateKey, certificate []byte) error {
-	_, err := s.db.Exec(ctx, `insert into saml_keys (id, private_key_sealed, certificate) values ($1, $2, $3) on conflict do nothing`, id.New("key"), s.Sealer.Seal(privateKey), certificate)
+func (s *Store) CreateSAMLKey(ctx context.Context, privateKey, certificate []byte, externalKey string) error {
+	_, err := s.db.Exec(ctx, `insert into saml_keys (id, private_key_sealed, external_key, certificate) values ($1, $2, nullif($3, ''), $4) on conflict do nothing`, id.New("key"), s.sealKey(privateKey, externalKey), externalKey, certificate)
 	return err
 }
 

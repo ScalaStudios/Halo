@@ -12,12 +12,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"halo/internal/cli"
 	"halo/internal/config"
 	"halo/internal/db"
+	"halo/internal/kms"
 	"halo/internal/secret"
 	"halo/internal/server"
 	"halo/internal/store"
@@ -91,6 +93,12 @@ func withStore(ctx context.Context, fn func(context.Context, config.Config, *sto
 	if err != nil {
 		return err
 	}
+	keys := kms.FromConfig(cfg.Vault)
+	if cfg.WrappedKey != "" {
+		if cfg.SecretKey, err = keys.SecretKey(ctx, cfg.WrappedKey); err != nil {
+			return err
+		}
+	}
 	pool, err := db.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err
@@ -107,11 +115,15 @@ func withStore(ctx context.Context, fn func(context.Context, config.Config, *sto
 	if err != nil {
 		return err
 	}
+	st.Keys = keys
 	return fn(ctx, cfg, st)
 }
 
 func serve(ctx context.Context) error {
 	return withStore(ctx, func(ctx context.Context, cfg config.Config, st *store.Store) error {
+		if err := st.CheckExternalKeys(ctx); err != nil {
+			return fmt.Errorf("Halo needs its keys in Vault Transit to start: %w", err)
+		}
 		app, err := server.New(cfg, st)
 		if err != nil {
 			return err
@@ -236,18 +248,41 @@ func seedDemo(ctx context.Context) error {
 	})
 }
 
-func rotateSecretKey(ctx context.Context) error {
-	next, err := base64.StdEncoding.DecodeString(os.Getenv("HALO_NEW_SECRET_KEY"))
-	if err != nil || len(next) != 32 {
-		return errors.New("set HALO_NEW_SECRET_KEY to the new key: 32 random bytes, base64 encoded. Generate one with: openssl rand -base64 32")
+func newSecretKey(ctx context.Context, cfg config.Config, keys *kms.Keys) ([]byte, error) {
+	value := os.Getenv("HALO_NEW_SECRET_KEY")
+	if cfg.WrappedKey == "" {
+		next, err := base64.StdEncoding.DecodeString(value)
+		if err != nil || len(next) != 32 {
+			return nil, errors.New("set HALO_NEW_SECRET_KEY to the new key: 32 random bytes, base64 encoded. Generate one with: openssl rand -base64 32")
+		}
+		return next, nil
 	}
-	sealer, err := secret.NewSealer(next)
+	if !strings.HasPrefix(value, "vault:v") {
+		return nil, errors.New("set HALO_NEW_SECRET_KEY to a new key wrapped by Vault Transit. Wrap one with: " + cfg.Vault.WrapCommand())
+	}
+	next, err := keys.SecretKey(ctx, value)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("HALO_NEW_SECRET_KEY: %w", err)
 	}
+	return next, nil
+}
+
+func rotateSecretKey(ctx context.Context) error {
 	return withStore(ctx, func(ctx context.Context, cfg config.Config, st *store.Store) error {
+		next, err := newSecretKey(ctx, cfg, st.Keys)
+		if err != nil {
+			return err
+		}
 		if bytes.Equal(next, cfg.SecretKey) {
-			return errors.New("HALO_NEW_SECRET_KEY is the same as HALO_SECRET_KEY. Generate a new key with: openssl rand -base64 32")
+			generate := "openssl rand -base64 32"
+			if cfg.WrappedKey != "" {
+				generate = cfg.Vault.WrapCommand()
+			}
+			return errors.New("HALO_NEW_SECRET_KEY is the same key as HALO_SECRET_KEY. Generate a new key with: " + generate)
+		}
+		sealer, err := secret.NewSealer(next)
+		if err != nil {
+			return err
 		}
 		rotation, err := st.RotateSecretKey(ctx, sealer)
 		if err != nil {

@@ -30,6 +30,8 @@ var (
 	HTTPRequests      = NewCounter("halo_http_requests_total", "HTTP requests by route pattern and status code.", "route", "status")
 	RADIUSRequests    = NewCounter("halo_radius_requests_total", "RADIUS requests by outcome: accept, reject, challenge, accounting, or dropped without a reply for an unknown client, a missing or wrong Message-Authenticator, a malformed packet, the rate limit or a server error.", "outcome")
 	HTTPDuration      = NewHistogram("halo_http_request_duration_seconds", "HTTP request duration by route pattern.", []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}, "route")
+	KMSDuration       = NewHistogram("halo_kms_request_duration_seconds", "Requests to the external key provider by operation.", []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}, "operation")
+	KMSErrors         = NewCounter("halo_kms_errors_total", "Failed requests to the external key provider by operation, such as an unreachable Vault or a refused token.", "operation")
 )
 
 var (

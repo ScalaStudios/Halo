@@ -3,6 +3,7 @@ package saml
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -215,7 +216,7 @@ func endpoint(cfg config.Config, name string) *url.URL {
 	return cfg.PublicURL.JoinPath("saml", name)
 }
 
-func signingKey(ctx context.Context, st *store.Store, host string) (*rsa.PrivateKey, *x509.Certificate, error) {
+func signingKey(ctx context.Context, st *store.Store, host string) (crypto.Signer, *x509.Certificate, error) {
 	k, err := st.ActiveSAMLKey(ctx)
 	if errors.Is(err, store.ErrNotFound) {
 		if err := createKey(ctx, st, host); err != nil {
@@ -226,21 +227,45 @@ func signingKey(ctx context.Context, st *store.Store, host string) (*rsa.Private
 	if err != nil {
 		return nil, nil, err
 	}
+	cert, err := x509.ParseCertificate(k.Certificate)
+	if err != nil {
+		return nil, nil, err
+	}
+	if k.ExternalKey != "" {
+		key, err := st.Keys.Signer(ctx, k.ExternalKey)
+		return key, cert, err
+	}
 	parsed, err := x509.ParsePKCS8PrivateKey(k.PrivateKey)
 	key, ok := parsed.(*rsa.PrivateKey)
 	if err != nil || !ok {
 		return nil, nil, fmt.Errorf("SAML key %s is not a readable RSA key: %v", k.ID, err)
 	}
-	cert, err := x509.ParseCertificate(k.Certificate)
-	return key, cert, err
+	return key, cert, nil
 }
 
 func createKey(ctx context.Context, st *store.Store, host string) error {
-	der, cert, err := NewKey(host)
+	k, err := GenerateKey(ctx, st, host)
 	if err != nil {
 		return err
 	}
-	return st.CreateSAMLKey(ctx, der, cert)
+	return st.CreateSAMLKey(ctx, k.PrivateKey, k.Certificate, k.ExternalKey)
+}
+
+func GenerateKey(ctx context.Context, st *store.Store, host string) (store.SAMLKey, error) {
+	if !st.Keys.External() {
+		der, cert, err := NewKey(host)
+		return store.SAMLKey{PrivateKey: der, Certificate: cert}, err
+	}
+	ref, err := st.Keys.CreateKey(ctx, "RS256")
+	if err != nil {
+		return store.SAMLKey{}, err
+	}
+	signer, err := st.Keys.Signer(ctx, ref)
+	if err != nil {
+		return store.SAMLKey{}, err
+	}
+	cert, err := certificate(host, signer)
+	return store.SAMLKey{ExternalKey: ref, Certificate: cert}, err
 }
 
 func NewKey(host string) ([]byte, []byte, error) {
@@ -248,9 +273,7 @@ func NewKey(host string) ([]byte, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	now := time.Now()
-	subject := &x509.Certificate{Subject: pkix.Name{CommonName: host}, NotBefore: now, NotAfter: now.AddDate(10, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, BasicConstraintsValid: true}
-	cert, err := x509.CreateCertificate(rand.Reader, subject, subject, &key.PublicKey, key)
+	cert, err := certificate(host, key)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -258,12 +281,27 @@ func NewKey(host string) ([]byte, []byte, error) {
 	return der, cert, err
 }
 
+func certificate(host string, key crypto.Signer) ([]byte, error) {
+	now := time.Now()
+	subject := &x509.Certificate{Subject: pkix.Name{CommonName: host}, NotBefore: now, NotAfter: now.AddDate(10, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, BasicConstraintsValid: true}
+	return x509.CreateCertificate(rand.Reader, subject, subject, key.Public(), key)
+}
+
+func external(key crypto.Signer) bool {
+	_, local := key.(*rsa.PrivateKey)
+	return !local
+}
+
 func (h *handler) provider(ctx context.Context) (*saml.IdentityProvider, error) {
 	key, cert, err := signingKey(ctx, h.st, h.cfg.Hostname())
 	if err != nil {
 		return nil, err
 	}
-	return &saml.IdentityProvider{Key: key, Certificate: cert, MetadataURL: *endpoint(h.cfg, "metadata"), SSOURL: *endpoint(h.cfg, "sso"), ServiceProviderProvider: h, SignatureMethod: rsaSHA256}, nil
+	idp := &saml.IdentityProvider{Key: key, Certificate: cert, MetadataURL: *endpoint(h.cfg, "metadata"), SSOURL: *endpoint(h.cfg, "sso"), ServiceProviderProvider: h, SignatureMethod: rsaSHA256}
+	if external(key) {
+		idp.Signer = key
+	}
+	return idp, nil
 }
 
 func (h *handler) GetServiceProvider(r *http.Request, entityID string) (*saml.EntityDescriptor, error) {

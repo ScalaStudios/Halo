@@ -34,7 +34,7 @@ func TestSigningKeyEndpoints(t *testing.T) {
 	_, global := person(t, st, "gia@example.com", "global_admin")
 	_, security := person(t, st, "sec@example.com", "security_admin")
 	_, auditor := person(t, st, "aud@example.com", "auditor")
-	first, err := st.CreateSigningKey(ctx, "RS256", []byte("unused"))
+	first, err := st.CreateSigningKey(ctx, "RS256", []byte("unused"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestSigningKeyEndpoints(t *testing.T) {
 		t.Fatalf("rotation audit: %+v", audit[0])
 	}
 
-	ec, err := st.CreateSigningKey(ctx, "ES256", []byte("unused"))
+	ec, err := st.CreateSigningKey(ctx, "ES256", []byte("unused"), "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -26,6 +26,8 @@ type Config struct {
 	RADIUSListen   string
 	MetricsToken   string
 	SecretKey      []byte
+	Vault          Vault
+	WrappedKey     string
 	Dev            bool
 	NoCustomCSS    bool
 }
@@ -61,6 +63,19 @@ func (s S3) Client() (*minio.Client, error) {
 		Region:       s.Region,
 		BucketLookup: minio.BucketLookupPath,
 	})
+}
+
+type Vault struct {
+	Address     string
+	Token       string
+	Namespace   string
+	Mount       string
+	WrappingKey string
+	Signing     bool
+}
+
+func (v Vault) WrapCommand() string {
+	return "vault write -field=ciphertext " + v.Mount + "/encrypt/" + v.WrappingKey + ` plaintext="$(openssl rand -base64 32)"`
 }
 
 type LogExport struct {
@@ -169,11 +184,38 @@ func Load() (Config, error) {
 
 	cfg.CertHeader = strings.TrimSpace(os.Getenv("HALO_CLIENT_CERT_HEADER"))
 
-	key, err := base64.StdEncoding.DecodeString(os.Getenv("HALO_SECRET_KEY"))
-	if err != nil || len(key) != 32 {
-		problems = append(problems, "HALO_SECRET_KEY must be 32 random bytes, base64 encoded. Generate one with: openssl rand -base64 32")
+	cfg.Vault = Vault{
+		Address:     strings.TrimRight(os.Getenv("HALO_VAULT_ADDR"), "/"),
+		Token:       os.Getenv("HALO_VAULT_TOKEN"),
+		Namespace:   os.Getenv("HALO_VAULT_NAMESPACE"),
+		Mount:       strings.Trim(os.Getenv("HALO_VAULT_TRANSIT_MOUNT"), "/"),
+		WrappingKey: os.Getenv("HALO_VAULT_WRAPPING_KEY"),
+		Signing:     os.Getenv("HALO_VAULT_SIGNING") == "1",
 	}
-	cfg.SecretKey = key
+	if cfg.Vault.Mount == "" {
+		cfg.Vault.Mount = "transit"
+	}
+	if cfg.Vault.Address != "" {
+		u, err := url.Parse(cfg.Vault.Address)
+		if err != nil || u.Host == "" || u.Path != "" || u.Scheme != "https" && (u.Scheme != "http" || !cfg.Dev && !loopback(u.Hostname())) {
+			problems = append(problems, "HALO_VAULT_ADDR must be the https address of Vault, such as https://vault.example.com:8200. Plain http is accepted only to a Vault Agent on the loopback address, such as http://127.0.0.1:8100, or with HALO_DEV=1")
+		}
+	} else if cfg.Vault.WrappingKey != "" || cfg.Vault.Signing {
+		problems = append(problems, "HALO_VAULT_ADDR is required when HALO_VAULT_WRAPPING_KEY or HALO_VAULT_SIGNING is set")
+	}
+
+	if cfg.Vault.WrappingKey != "" {
+		cfg.WrappedKey = os.Getenv("HALO_SECRET_KEY")
+		if !strings.HasPrefix(cfg.WrappedKey, "vault:v") {
+			problems = append(problems, "HALO_SECRET_KEY must hold the key wrapped by Vault Transit, starting with vault:v, because HALO_VAULT_WRAPPING_KEY is set. Wrap a key with: "+cfg.Vault.WrapCommand())
+		}
+	} else {
+		key, err := base64.StdEncoding.DecodeString(os.Getenv("HALO_SECRET_KEY"))
+		if err != nil || len(key) != 32 {
+			problems = append(problems, "HALO_SECRET_KEY must be 32 random bytes, base64 encoded. Generate one with: openssl rand -base64 32")
+		}
+		cfg.SecretKey = key
+	}
 
 	if cfg.PublicURL != nil && cfg.PublicURL.Scheme != "https" && !cfg.Dev {
 		problems = append(problems, "HALO_PUBLIC_URL must use https outside development. Set HALO_DEV=1 for local http")
@@ -183,6 +225,11 @@ func Load() (Config, error) {
 		return cfg, fmt.Errorf("configuration is incomplete:\n  %s", strings.Join(problems, "\n  "))
 	}
 	return cfg, nil
+}
+
+func loopback(host string) bool {
+	ip := net.ParseIP(host)
+	return host == "localhost" || ip != nil && ip.IsLoopback()
 }
 
 func (c Config) Issuer() string {
