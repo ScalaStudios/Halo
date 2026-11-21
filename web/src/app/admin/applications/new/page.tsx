@@ -3,12 +3,12 @@ import { ArrowLeft } from "lucide-react";
 import { NewApplicationFlow } from "@/components/applications/new-application-flow";
 import { PageHeader } from "@/components/ui/page-header";
 import { apiGet } from "@/lib/api/server";
-import type { Organization } from "@/lib/types";
+import type { OrganizationProfile } from "@/lib/settings-types";
 
 export const metadata = { title: "Add application" };
 
 export default async function NewApplicationPage() {
-  const org = await apiGet<Organization>("/organization");
+  const org = await apiGet<OrganizationProfile>("/organization");
   return (
     <div className="flex max-w-3xl flex-col gap-8">
       <div className="flex flex-col gap-6">
@@ -18,7 +18,7 @@ export default async function NewApplicationPage() {
         </Link>
         <PageHeader title="Add application" description="Register an application so people can sign in to it with Halo, or add a bookmark to their account portal. You get its connection details and setup guide on the last step." />
       </div>
-      <NewApplicationFlow issuer={org.issuer} />
+      <NewApplicationFlow issuer={org.issuer} featuresOff={org.featuresOff} />
     </div>
   );
 }

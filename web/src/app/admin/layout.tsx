@@ -18,7 +18,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   return (
     <>
       {org.consoleBranding ? <BrandStyle org={org} /> : null}
-      <ConsoleShell user={{ name: me.name, email: me.email, avatarUrl: me.avatarUrl }} orgName={org.name} limited={limitedOnly(me)}>
+      <ConsoleShell user={{ name: me.name, email: me.email, avatarUrl: me.avatarUrl }} orgName={org.name} limited={limitedOnly(me)} featuresOff={org.featuresOff}>
         {children}
       </ConsoleShell>
     </>

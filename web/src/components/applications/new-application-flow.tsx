@@ -110,7 +110,7 @@ export function originError(value: string): string | undefined {
   return url.pathname !== "/" || url.search ? "Use only the scheme and host, like https://files.example.com. Halo protects every path on it." : undefined;
 }
 
-export function NewApplicationFlow({ issuer }: { issuer: string }) {
+export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; featuresOff: string[] }) {
   const [step, setStep] = useState(0);
   const [protocol, setProtocol] = useState<Protocol>("oidc");
   const [platform, setPlatform] = useState<Platform>("web");
@@ -338,7 +338,7 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
       <form onSubmit={submit} noValidate>
         <div key={current} className="flex animate-enter flex-col gap-8 p-6">
           {current === "Protocol" ? (
-            <Choices legend="Choose a protocol" name="protocol" options={PROTOCOLS} value={protocol} onChange={pickProtocol} />
+            <Choices legend="Choose a protocol" name="protocol" options={PROTOCOLS.filter((p) => !featuresOff.includes(p.value))} value={protocol} onChange={pickProtocol} />
           ) : null}
           {current === "Platform" ? (
             <>

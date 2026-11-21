@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FileCheck, History, KeyRound, LayoutGrid, LogOut, MonitorSmartphone, ShieldCheck, UserRound, UserRoundCog, UsersRound, VenetianMask } from "lucide-react";
+import { FileCheck, History, KeyRound, LayoutGrid, LogOut, MonitorSmartphone, ShieldCheck, UserRound, UserRoundCog, UsersRound, VenetianMask, type LucideIcon } from "lucide-react";
 import { useState, useTransition, type ReactNode } from "react";
 import { HaloLogo } from "@/components/halo-mark";
 import { Avatar } from "@/components/ui/avatar";
@@ -16,20 +16,30 @@ import { describeFailure } from "@/components/auth/passkey";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
+import type { FeatureId } from "@/lib/settings-types";
 import type { User } from "@/lib/types";
 
-const nav = [
+const pages: { label: string; href: string; icon: LucideIcon; feature?: FeatureId }[] = [
   { label: "Account", href: "/account", icon: UserRound },
   { label: "Security", href: "/account/security", icon: ShieldCheck },
   { label: "Sessions", href: "/account/sessions", icon: MonitorSmartphone },
   { label: "Applications", href: "/account/applications", icon: LayoutGrid },
   { label: "Groups", href: "/account/groups", icon: UsersRound },
-  { label: "Access", href: "/account/access", icon: KeyRound },
+  { label: "Access", href: "/account/access", icon: KeyRound, feature: "governance" },
   { label: "Terms", href: "/account/terms", icon: FileCheck },
   { label: "Activity", href: "/account/activity", icon: History },
 ];
 
-export function AccountShell({ user, children }: { user: Pick<User, "name" | "email" | "roles" | "avatarUrl" | "impersonation">; children: ReactNode }) {
+export function AccountShell({
+  user,
+  featuresOff,
+  children,
+}: {
+  user: Pick<User, "name" | "email" | "roles" | "avatarUrl" | "impersonation">;
+  featuresOff: FeatureId[];
+  children: ReactNode;
+}) {
+  const nav = pages.filter((item) => !item.feature || !featuresOff.includes(item.feature));
   const pathname = usePathname();
   const router = useRouter();
   const toast = useToast();

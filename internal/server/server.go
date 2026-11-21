@@ -12,6 +12,7 @@ import (
 	"halo/internal/avatars"
 	"halo/internal/compliance"
 	"halo/internal/config"
+	"halo/internal/features"
 	"halo/internal/forwardauth"
 	"halo/internal/governance"
 	"halo/internal/httpx"
@@ -101,7 +102,7 @@ type App struct {
 
 func New(cfg config.Config, st *store.Store) (*App, error) {
 	authn := &httpx.Auth{Store: st, Public: cfg.PublicURL, Dev: cfg.Dev, Keys: apikeys.Resolver(st), AccessTokens: oidc.AccessTokenResolver(st)}
-	scheduler := &jobs.Scheduler{}
+	scheduler := &jobs.Scheduler{Skip: features.SkipJob(st)}
 	httpx.TrustProxies(cfg.TrustedProxies)
 	deps := httpx.Deps{Config: cfg, Store: st, Auth: authn, Policy: policy.NewEngine(st), Mailer: mail.New(cfg, st), Jobs: scheduler}
 	scheduler.Every("purge expired records", time.Hour, func(ctx context.Context) error { return st.Purge(ctx) })
@@ -110,14 +111,14 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 	})
 
 	apiMux := http.NewServeMux()
-	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, governance.Register, policy.Register, compliance.Register, apikeys.Register, provisioning.Register, ldapsync.Register, settings.Register, webhooks.Register, logexport.Register, oidc.Register, sshca.Register, avatars.Register, approval.Register} {
+	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, governance.Register, policy.Register, compliance.Register, apikeys.Register, provisioning.Register, ldapsync.Register, settings.Register, webhooks.Register, logexport.Register, oidc.Register, sshca.Register, avatars.Register, approval.Register, features.Register} {
 		if err := register(apiMux, deps); err != nil {
 			return nil, err
 		}
 	}
 	apiMux.Handle("GET /api/v1/organization", settings.Organization(deps))
 	apiMux.Handle("/api/", httpx.Handle(func(http.ResponseWriter, *http.Request) error {
-		return httpx.Fail(http.StatusNotFound, "ERR_NO_ROUTE", "This API route does not exist. Check the path and method.")
+		return httpx.ErrNoRoute
 	}))
 
 	provider, err := oidc.New(deps)
@@ -152,7 +153,7 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 		}
 		w.Write([]byte("ok"))
 	})
-	app := &App{Handler: httpx.Logging(root), Jobs: scheduler}
+	app := &App{Handler: httpx.Logging(features.Gate(st, root)), Jobs: scheduler}
 	if cfg.MetricsListen != "" || cfg.MetricsToken != "" {
 		exporter := metrics.Handler(cfg.MetricsToken, func() []metrics.Gauge {
 			pool := st.PoolStat()

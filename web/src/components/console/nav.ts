@@ -30,6 +30,7 @@ import {
   SlidersHorizontal,
   Stamp,
   Tags,
+  ToggleRight,
   UserRoundCog,
   Users,
   UsersRound,
@@ -38,8 +39,9 @@ import {
   Workflow,
   type LucideIcon,
 } from "lucide-react";
+import type { FeatureId } from "@/lib/settings-types";
 
-export type NavItem = { label: string; href: string; icon: LucideIcon; summary: string };
+export type NavItem = { label: string; href: string; icon: LucideIcon; summary: string; features?: FeatureId[] };
 export type NavGroup = { id: string; label: string | null; items: NavItem[] };
 
 export const BASE = "/admin";
@@ -70,7 +72,7 @@ export const nav: NavGroup[] = [
       { label: "Applications", href: `${BASE}/applications`, icon: AppWindow, summary: "Everything people sign in to: OpenID Connect, SAML and OAuth clients." },
       { label: "Collections", href: `${BASE}/collections`, icon: Layers, summary: "Named sections of the account portal, like Engineering or HR, shown to the groups you choose." },
       { label: "API resources", href: `${BASE}/api-resources`, icon: FileKey, summary: "APIs you protect with Halo, their scopes and audiences." },
-      { label: "Provisioning", href: `${BASE}/provisioning`, icon: RefreshCw, summary: "SCIM and directory sync in both directions: HR systems in, applications out." },
+      { label: "Provisioning", href: `${BASE}/provisioning`, icon: RefreshCw, summary: "SCIM and directory sync in both directions: HR systems in, applications out.", features: ["scim", "provisioning"] },
     ],
   },
   {
@@ -79,7 +81,7 @@ export const nav: NavGroup[] = [
     items: [
       { label: "Roles", href: `${BASE}/roles`, icon: UserRoundCog, summary: "Administrative roles in Halo and what each one may change." },
       { label: "Policies", href: `${BASE}/policies`, icon: Shield, summary: "Conditional access: who, which application, under which device, network and risk conditions." },
-      { label: "Infrastructure access", href: `${BASE}/infrastructure`, icon: Server, summary: "Short-lived SSH certificates, database credentials and Kubernetes access." },
+      { label: "Infrastructure access", href: `${BASE}/infrastructure`, icon: Server, summary: "Short-lived SSH certificates, database credentials and Kubernetes access.", features: ["ssh"] },
       { label: "Approvals", href: `${BASE}/approvals`, icon: Stamp, summary: "High-impact changes waiting for a second global administrator, and which changes need one." },
     ],
   },
@@ -87,10 +89,10 @@ export const nav: NavGroup[] = [
     id: "governance",
     label: "Governance",
     items: [
-      { label: "Access packages", href: `${BASE}/access-packages`, icon: Package, summary: "Bundles of groups and app roles that people can request, with approvers and expiry." },
-      { label: "Requests", href: `${BASE}/requests`, icon: Inbox, summary: "Access requests waiting on you or your team." },
-      { label: "Access reviews", href: `${BASE}/access-reviews`, icon: ClipboardCheck, summary: "Periodic certification of who still needs what." },
-      { label: "Lifecycle", href: `${BASE}/lifecycle`, icon: Workflow, summary: "Joiner, mover and leaver workflows driven by your HR source, plus date and inactivity rules." },
+      { label: "Access packages", href: `${BASE}/access-packages`, icon: Package, summary: "Bundles of groups and app roles that people can request, with approvers and expiry.", features: ["governance"] },
+      { label: "Requests", href: `${BASE}/requests`, icon: Inbox, summary: "Access requests waiting on you or your team.", features: ["governance"] },
+      { label: "Access reviews", href: `${BASE}/access-reviews`, icon: ClipboardCheck, summary: "Periodic certification of who still needs what.", features: ["governance"] },
+      { label: "Lifecycle", href: `${BASE}/lifecycle`, icon: Workflow, summary: "Joiner, mover and leaver workflows driven by your HR source, plus date and inactivity rules.", features: ["governance"] },
     ],
   },
   {
@@ -110,8 +112,8 @@ export const nav: NavGroup[] = [
       { label: "Audit log", href: `${BASE}/audit`, icon: ScrollText, summary: "Every administrative change, who made it and from where." },
       { label: "Risk events", href: `${BASE}/risk`, icon: ShieldAlert, summary: "Impossible travel, anonymizing networks and credential attacks." },
       { label: "Reports", href: `${BASE}/reports`, icon: ChartColumn, summary: "Sign-in method adoption, inactive people and application usage, with CSV export." },
-      { label: "Log streaming", href: `${BASE}/log-streaming`, icon: Waypoints, summary: "Every sign-in and audit event sent to syslog or an OpenTelemetry collector." },
-      { label: "Notification rules", href: `${BASE}/notification-rules`, icon: BellRing, summary: "Slack, Discord and webhook messages for the security events you choose." },
+      { label: "Log streaming", href: `${BASE}/log-streaming`, icon: Waypoints, summary: "Every sign-in and audit event sent to syslog or an OpenTelemetry collector.", features: ["log-streaming"] },
+      { label: "Notification rules", href: `${BASE}/notification-rules`, icon: BellRing, summary: "Slack, Discord and webhook messages for the security events you choose.", features: ["webhooks"] },
     ],
   },
   {
@@ -119,7 +121,7 @@ export const nav: NavGroup[] = [
     label: "Developers",
     items: [
       { label: "API keys", href: `${BASE}/api-keys`, icon: KeyRound, summary: "Keys for the Halo management API and the Halo CLI." },
-      { label: "Webhooks", href: `${BASE}/webhooks`, icon: Webhook, summary: "Signed event delivery for sign-ins, provisioning and admin changes." },
+      { label: "Webhooks", href: `${BASE}/webhooks`, icon: Webhook, summary: "Signed event delivery for sign-ins, provisioning and admin changes.", features: ["webhooks"] },
       { label: "SDKs and reference", href: `${BASE}/developers`, icon: BookOpen, summary: "Protocol endpoints, the OpenAPI document and client libraries." },
     ],
   },
@@ -128,6 +130,7 @@ export const nav: NavGroup[] = [
     label: "Settings",
     items: [
       { label: "Organization", href: `${BASE}/settings/organization`, icon: Building2, summary: "Name, contacts, the issuer URL and log retention." },
+      { label: "Features", href: `${BASE}/settings/features`, icon: ToggleRight, summary: "Turn off the parts of Halo your organization doesn't use, with their routes, background jobs and pages." },
       { label: "User attributes", href: `${BASE}/settings/attributes`, icon: Tags, summary: "Custom fields on people, such as an employee number, for claims and outbound SCIM." },
       { label: "Domains", href: `${BASE}/settings/domains`, icon: Globe, summary: "Verified email domains and the custom sign-in domain." },
       { label: "Branding", href: `${BASE}/settings/branding`, icon: Palette, summary: "Your logo and a message on the sign-in, setup and sign-out pages." },
@@ -138,8 +141,14 @@ export const nav: NavGroup[] = [
   },
 ];
 
-export function navFor(limited: boolean) {
-  return limited ? nav.map((group) => ({ ...group, items: group.items.filter((item) => item.href === `${BASE}/users`) })).filter((group) => group.items.length) : nav;
+export function shown(item: Pick<NavItem, "features">, featuresOff: FeatureId[]) {
+  return !item.features?.every((feature) => featuresOff.includes(feature));
+}
+
+export function navFor(limited: boolean, featuresOff: FeatureId[]) {
+  return nav
+    .map((group) => ({ ...group, items: group.items.filter((item) => shown(item, featuresOff) && (!limited || item.href === `${BASE}/users`)) }))
+    .filter((group) => group.items.length);
 }
 
 export const allItems = nav.flatMap((group) => group.items.map((item) => ({ ...item, group: group.label })));

@@ -8,18 +8,19 @@ import { Avatar } from "@/components/ui/avatar";
 import { useListbox } from "@/components/ui/listbox";
 import { NavigationProgress } from "@/components/ui/navigation-progress";
 import { api } from "@/lib/api/client";
+import type { FeatureId } from "@/lib/settings-types";
 import type { Application, User } from "@/lib/types";
-import { BASE, allItems } from "./nav";
+import { BASE, allItems, shown, type NavItem } from "./nav";
 
-type Entry = { id: string; group: string; label: string; detail?: string; search: string; href: string; icon?: LucideIcon; person?: boolean };
+type Entry = { id: string; group: string; label: string; detail?: string; search: string; href: string; icon?: LucideIcon; person?: boolean; features?: NavItem["features"] };
 
 const fixed: Entry[] = [
   { id: "add-application", group: "Actions", label: "Add application", search: "Add application register oidc saml", href: `${BASE}/applications/new`, icon: Plus },
   { id: "invite-user", group: "Actions", label: "Invite user", search: "Invite user add person", href: `${BASE}/users?invite=1`, icon: UserPlus },
-  ...allItems.map((item) => ({ id: item.href, group: "Go to", label: item.label, detail: item.group ?? undefined, search: `${item.group ?? ""} ${item.label}`, href: item.href, icon: item.icon })),
+  ...allItems.map((item) => ({ id: item.href, group: "Go to", label: item.label, detail: item.group ?? undefined, search: `${item.group ?? ""} ${item.label}`, href: item.href, icon: item.icon, features: item.features })),
 ];
 
-export function CommandPalette({ open, limited, onOpenChange }: { open: boolean; limited: boolean; onOpenChange: (open: boolean) => void }) {
+export function CommandPalette({ open, limited, featuresOff, onOpenChange }: { open: boolean; limited: boolean; featuresOff: FeatureId[]; onOpenChange: (open: boolean) => void }) {
   const router = useRouter();
   const [results, setResults] = useState<{ users: User[]; applications: Application[] } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -27,7 +28,7 @@ export function CommandPalette({ open, limited, onOpenChange }: { open: boolean;
   const [navigating, startNavigation] = useTransition();
   const list = useRef<HTMLDivElement>(null);
   const entries: Entry[] = [
-    ...(limited ? fixed.filter((entry) => entry.href.startsWith(`${BASE}/users`)) : fixed),
+    ...fixed.filter((entry) => shown(entry, featuresOff) && (!limited || entry.href.startsWith(`${BASE}/users`))),
     ...(results?.users ?? []).map((user) => ({
       id: user.id,
       group: "Users",

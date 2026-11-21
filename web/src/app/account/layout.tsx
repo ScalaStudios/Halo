@@ -15,7 +15,9 @@ export default async function AccountLayout({ children }: { children: ReactNode 
   return (
     <>
       <BrandStyle org={org} />
-      <AccountShell user={{ name: user.name, email: user.email, roles: user.roles, avatarUrl: user.avatarUrl, impersonation: user.impersonation }}>{children}</AccountShell>
+      <AccountShell user={{ name: user.name, email: user.email, roles: user.roles, avatarUrl: user.avatarUrl, impersonation: user.impersonation }} featuresOff={org.featuresOff}>
+        {children}
+      </AccountShell>
     </>
   );
 }

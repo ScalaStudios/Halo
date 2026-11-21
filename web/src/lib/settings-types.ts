@@ -50,7 +50,12 @@ export type Settings = {
   riskResponses: RiskResponse[];
   exportSchedule: "off" | "daily" | "weekly";
   exportKeep: number;
+  featuresOff: FeatureId[];
 };
+
+export type FeatureId = "saml" | "scim" | "provisioning" | "ssh" | "governance" | "webhooks" | "forward-auth" | "log-streaming";
+
+export type Feature = { id: FeatureId; name: string; description: string; enabled: boolean; usage: string[] };
 
 export type RiskResponse = { signal: "" | RiskEventType; level: "medium" | "high"; action: "revoke-sessions" | "require-passkey" | "suspend" | "notify" };
 
@@ -77,7 +82,7 @@ export type ApprovalStatus = "pending" | "approved" | "rejected" | "failed" | "e
 
 export type ApprovalRequest = {
   id: string;
-  action: ApprovalAction | "approval-settings" | "configuration-import";
+  action: ApprovalAction | "approval-settings" | "configuration-import" | "features";
   summary: string;
   targetType: string;
   targetId: string;
@@ -121,6 +126,7 @@ export type OrganizationProfile = {
   theme: Theme;
   customCss: string;
   consoleBranding: boolean;
+  featuresOff: FeatureId[];
 };
 
 export type Domain = {
