@@ -340,3 +340,73 @@ func TestSAMLIdentityProviderSignIn(t *testing.T) {
 		t.Fatalf("created on first sign-in: %s %+v", location, grace)
 	}
 }
+
+func TestSAMLSignInMapsAttributes(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	idp := newSAMLIdP(t)
+	metadata, err := xml.Marshal(idp.Metadata())
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := func(name string) store.Group {
+		t.Helper()
+		g, err := e.st.CreateGroup(ctx, store.NewGroup{Name: name, Kind: "assigned"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return g
+	}
+	staff, alumni, club := group("Staff"), group("Alumni"), group("Book club")
+	ada, _, _ := e.person("ada@example.com", "passkey", false)
+	for _, g := range []string{alumni.ID, club.ID} {
+		if err := e.st.AddGroupMember(ctx, g, ada.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, security, _ := e.person("sec@example.com", "passkey", false, "security_admin")
+	scoped := []string{}
+	for _, role := range []string{"user_admin", "helpdesk_admin"} {
+		u, token, _ := e.person(strings.ReplaceAll(role, "_", "-")+"@example.com", "passkey", false)
+		if err := e.st.SetUserRoles(ctx, u.ID, []string{role}, map[string][]string{role: {staff.ID}}); err != nil {
+			t.Fatal(err)
+		}
+		scoped = append(scoped, token)
+	}
+
+	body := map[string]any{"kind": "saml", "name": "University", "metadataXml": string(metadata), "emailAttribute": "mail", "enabled": true, "allowedDomains": []string{"example.com"},
+		"mapping": map[string]any{
+			"profile":    []map[string]string{{"claim": "department", "field": "department"}},
+			"groupClaim": "eduPersonAffiliation",
+			"groups":     []map[string]string{{"value": "staff", "groupId": staff.ID}, {"value": "alum", "groupId": alumni.ID}},
+		}}
+	for _, token := range scoped {
+		e.expect(token, "POST", "/api/v1/identity-providers", body, http.StatusForbidden, "")
+	}
+	var p store.IdentityProvider
+	if err := json.Unmarshal(e.expect(security, "POST", "/api/v1/identity-providers", body, http.StatusCreated, "").Body.Bytes(), &p); err != nil ||
+		p.Kind != "saml" || len(p.Mapping.Profile) != 1 || p.Mapping.GroupClaim != "eduPersonAffiliation" || len(p.Mapping.Groups) != 2 {
+		t.Fatalf("created with mapping: %+v %v", p.Mapping, err)
+	}
+	for _, token := range scoped {
+		e.expect(token, "PUT", "/api/v1/identity-providers/"+p.ID, body, http.StatusForbidden, "")
+	}
+
+	var sp saml.EntityDescriptor
+	if err := xml.Unmarshal(e.expect("", "GET", "/saml/sp/"+p.ID+"/metadata", nil, http.StatusOK, "").Body.Bytes(), &sp); err != nil {
+		t.Fatal(err)
+	}
+	idp.ServiceProviderProvider = spDescriptor{&sp}
+	f := e.samlStart(idp, p.ID, saml.Session{ID: "s1", NameID: "ada-1", NameIDFormat: string(saml.PersistentNameIDFormat), UserEmail: "ada@example.com", Groups: []string{"staff", "student"},
+		CustomAttributes: []saml.Attribute{{Name: "department", NameFormat: "urn:oasis:names:tc:SAML:2.0:attrname-format:basic", Values: []saml.AttributeValue{{Type: "xs:string", Value: "Physics"}}}}})
+	if location, _ := e.samlPost(p.ID, f, f.response(t, f.assertion(t, true))); location != "/account" {
+		t.Fatalf("sign-in: %s", location)
+	}
+	got, err := e.st.GetUser(ctx, ada.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Department != "Physics" || !slices.Contains(got.GroupIDs, staff.ID) || slices.Contains(got.GroupIDs, alumni.ID) || !slices.Contains(got.GroupIDs, club.ID) {
+		t.Fatalf("mapped from attributes: %q %v", got.Department, got.GroupIDs)
+	}
+}

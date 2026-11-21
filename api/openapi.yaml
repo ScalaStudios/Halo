@@ -7648,7 +7648,7 @@ components:
     ProviderMapping:
       type: object
       required: [profile, groupClaim, groups]
-      description: 'Applied on every sign-in through the provider, including the first. A claim the provider leaves out changes nothing. A claim that is present but empty clears the field or removes the person from every mapped group, except that the name is never cleared. Mapping never changes email, roles, or groups that are not mapped here. Each change is written to the audit log with Halo as the actor and the provider named in the summary. GitHub sends no claims, so its mapping must be empty.'
+      description: 'Applied on every sign-in through the provider, including the first. A claim the provider leaves out changes nothing. A claim that is present but empty clears the field or removes the person from every mapped group, except that the name is never cleared. Mapping never changes email, roles, or groups that are not mapped here. Each change is written to the audit log with Halo as the actor and the provider named in the summary. GitHub sends no claims, so its mapping must be empty. For SAML, claims are the assertion''s attributes, by name or friendly name, and an attribute with several values is a list.'
       properties:
         profile:
           type: array
