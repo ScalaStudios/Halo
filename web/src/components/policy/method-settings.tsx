@@ -31,6 +31,7 @@ const DESCRIPTION: Record<MethodKind, string> = {
   federated: "Sign-in through Google, Microsoft Entra, GitHub or another OpenID Connect provider. Only as strong as that provider's sign-in.",
   "access-pass": "A time-limited pass an administrator gives someone to set up a new passkey. It never signs anyone in by itself.",
   certificate: "A certificate from your organization's certificate authority, such as on a smart card. Your reverse proxy asks the browser for it and passes it to Halo.",
+  kerberos: "The Kerberos ticket a Windows computer joined to your Active Directory domain already holds, so people sign in without typing anything. Only as strong as their Windows sign-in.",
 };
 
 const HAVE: Record<MethodKind, string> = {
@@ -43,6 +44,7 @@ const HAVE: Record<MethodKind, string> = {
   federated: "a linked identity provider account",
   "access-pass": "a temporary access pass",
   certificate: "",
+  kerberos: "",
 };
 
 function people(n: number) {
@@ -51,6 +53,7 @@ function people(n: number) {
 
 function usage(m: MethodSetting) {
   if (m.method === "certificate") return "Matches each certificate to a person through the trusted certificate authorities below.";
+  if (m.method === "kerberos") return "Matches each ticket to a person through the realms under Windows sign-in below.";
   if (m.method === "magic-link") return `${people(m.users)} ${m.users === 1 ? "has" : "have"} no passkey, security key or authenticator app.`;
   return `${people(m.users)} ${m.users === 1 ? "has" : "have"} ${HAVE[m.method]}.`;
 }

@@ -29,7 +29,7 @@ Halo works in the same space as hosted services such as Microsoft Entra ID, Okta
 
 | Area | What Halo includes |
 | --- | --- |
-| **Sign-in** | Passkeys and security keys (WebAuthn), authenticator apps (TOTP), single-use recovery codes, and magic links or one-time codes by email. Sign-in through Google, Microsoft Entra ID, GitHub or any OpenID Connect provider, with account linking and accounts created on first sign-in. |
+| **Sign-in** | Passkeys and security keys (WebAuthn), authenticator apps (TOTP), single-use recovery codes, and magic links or one-time codes by email. Sign-in through Google, Microsoft Entra ID, GitHub or any OpenID Connect provider, with account linking and accounts created on first sign-in, and Windows sign-in with the Kerberos ticket of a computer joined to Active Directory. |
 | **Single sign-on** | An OpenID Connect provider and OAuth 2.0 authorization server for web, single-page, native and machine-to-machine applications. A SAML 2.0 identity provider with service provider metadata import and IdP-initiated sign-in. Forward auth for Traefik, nginx and Caddy in front of applications that support neither, and a read-only LDAP directory for applications that only speak LDAP. |
 | **Directory** | People with profiles and managers, assigned groups with owners and self-service joining, rule-based groups such as `user.department == "Engineering"`, service accounts, devices, and six administrative roles. |
 | **Provisioning** | A SCIM 2.0 server, tested with the request formats of Okta and Microsoft Entra ID, so either of them or an HR system can provision people into Halo; LDAP directory sync that reads people and groups from Active Directory or OpenLDAP on a schedule and suspends people who leave; and outbound SCIM that creates, updates and deactivates accounts in your applications and keeps the groups you choose in step. |
@@ -37,7 +37,7 @@ Halo works in the same space as hosted services such as Microsoft Entra ID, Okta
 | **Governance** | Access packages that people request, with approvers, justifications and time limits; access reviews that can remove access automatically when they complete; administrator roles that eligible people activate for a few hours with a reason; guest accounts with a sponsor and an end date; and joiner, mover and leaver rules, plus rules that run on a date such as a contract end date or after a number of days without signing in. |
 | **Infrastructure access** | An SSH certificate authority that issues short-lived certificates to people in mapped groups, through `halo login` and `halo ssh-cert`, and a host certificate authority that signs registered servers' host keys with `halo ssh-host`, so people connect without the first-connection prompt; Linux accounts and sudo rules from Halo groups on your servers through `halo-hostd`; and a RADIUS server that signs people in to VPNs and network devices with their Halo password. |
 | **Monitoring** | A sign-in log, an audit log of every administrative change, risk events for risky networks, repeated failures, new devices and new networks, signed webhooks for audit and sign-in events, and streaming of both to syslog or OpenTelemetry. |
-| **Administration** | An admin console whose home page shows the directory, which features are on, your roles, open risk events and shortcuts, a self-service account portal with profile pictures, organization branding, sign-in methods you can switch off, optional areas you can switch off with their routes and background jobs (SAML, SCIM in either direction, SSH certificates, governance, webhooks, forward auth, RADIUS, the LDAP server and log streaming), email over SMTP with retries, JSON export with scheduled exports to an S3-compatible bucket, import of configuration from an export with a dry run, and rotation of client secrets, signing keys and `HALO_SECRET_KEY`. |
+| **Administration** | An admin console whose home page shows the directory, which features are on, your roles, open risk events and shortcuts, a self-service account portal with profile pictures, organization branding, sign-in methods you can switch off, optional areas you can switch off with their routes and background jobs (SAML, SCIM in either direction, SSH certificates, governance, webhooks, forward auth, RADIUS, the LDAP server, Kerberos sign-in and log streaming), email over SMTP with retries, JSON export with scheduled exports to an S3-compatible bucket, import of configuration from an export with a dry run, and rotation of client secrets, signing keys and `HALO_SECRET_KEY`. |
 | **Developers** | A REST API described by an OpenAPI 3.1 document, API keys for service accounts, API resources with their own scopes and JWT access tokens, and setup guides with ready-made configuration for common applications. |
 
 ## Supported standards
@@ -59,6 +59,7 @@ Halo works in the same space as hosted services such as Microsoft Entra ID, Okta
 | WebAuthn and FIDO2 | Implemented | Passkeys and security keys as discoverable credentials, for sign-in without a username |
 | TOTP (RFC 6238) | Implemented | Six-digit codes from authenticator apps |
 | RADIUS (RFC 2865 and RFC 2866) | Partial | PAP sign-in, Access-Challenge for authenticator codes, Message-Authenticator (RFC 3579) required on every Access-Request and sent first in every reply, and accounting stops in the sign-in log. No EAP, CHAP or RADIUS over TLS |
+| SPNEGO (RFC 4559) and Kerberos V5 (RFC 4120) | Partial | Windows sign-in on the sign-in page: Kerberos tickets for Halo's service principal, checked with a keytab, with a replay cache shared by every Halo server and 5 minutes of clock skew. No NTLM, mutual authentication, delegation or PAC |
 | LDAP (RFC 4511 and RFC 4513) | Partial | A client that syncs people and groups from a directory over LDAPS or StartTLS with the simple paged results control (RFC 2696), and a read-only server for applications that only speak LDAP: simple binds over LDAPS or StartTLS, search with and, or, not, equality, substring and presence filters and paged results, and no writes or SASL |
 
 "Implemented" means the feature works in the current release. Halo has not been through OpenID Foundation conformance testing or any other certification.
@@ -300,13 +301,39 @@ Run two or more Halo servers behind a load balancer when sign-in must keep worki
 
 - **Same database, same configuration.** Point every instance at one PostgreSQL database and give each the same `HALO_PUBLIC_URL`, `HALO_SECRET_KEY` and Vault settings. Connect directly or through a pooler in session mode: Halo holds PostgreSQL advisory locks and `LISTEN` on dedicated connections, which transaction pooling breaks. Each instance opens two connections for this beside its pool, and a third while it pushes changes over outbound SCIM.
 - **Background jobs run in one instance at a time.** The instance that holds an advisory lock runs email delivery, outbound SCIM, lifecycle rules, access expiry, webhook and log deliveries and the other jobs; the others check every 2 seconds. When it stops, another takes over within about 2 seconds, and within about 30 seconds when its host or network disappears.
-- **Shared state.** Sessions, sign-in ceremonies, authorization codes and tokens, rate limits, signing keys, and the replay checks for authenticator codes, DPoP proofs, SAML assertions and RADIUS retransmissions are rows in the database. A settings change reaches every instance at once through `LISTEN`/`NOTIFY`; if that connection drops, an instance reads settings again at least every 30 seconds.
+- **Shared state.** Sessions, sign-in ceremonies, authorization codes and tokens, rate limits, signing keys, and the replay checks for authenticator codes, DPoP proofs, SAML assertions, Kerberos authenticators and RADIUS retransmissions are rows in the database. A settings change reaches every instance at once through `LISTEN`/`NOTIFY`; if that connection drops, an instance reads settings again at least every 30 seconds.
 - **Migrations.** An instance applies migrations under an advisory lock before it listens, so instances that start together wait for each other instead of migrating twice.
 - **Health checks.** `/healthz` answers `ok` while the process runs and reaches the database. `/readyz` answers `ok` once migrations are applied, the background workers have started and the instance listens for settings changes, and `503` while it starts or stops. Point the load balancer's health check at `/readyz`.
 - **Upgrades.** Back up the database and `HALO_SECRET_KEY`, then restart the instances one at a time, and wait until `/readyz` answers `ok` on each before the next. On `SIGTERM` an instance reports `503` on `/readyz`, stops accepting connections, finishes the requests in progress for up to 10 seconds, and releases the jobs lock.
 - **RADIUS and LDAP.** Every instance can serve RADIUS and LDAP. RADIUS clients are recognized by their source address, so the load balancer must keep it.
 
 With Kubernetes, set `server.replicaCount` in the [Helm chart](deploy/helm/halo/README.md).
+
+### Windows sign-in with Kerberos
+
+People on Windows computers joined to an Active Directory domain can sign in without typing anything: the browser sends Halo the Kerberos ticket Windows already holds (SPNEGO, RFC 4559). It is off until you set it up under **Methods**.
+
+1. Create a service account used only by Halo, such as `svc-halo`, with **This account supports Kerberos AES 256 bit encryption** on, and register Halo's service principal on it. The host name is the one in `HALO_PUBLIC_URL`:
+
+   ```powershell
+   setspn -S HTTP/auth.example.com CORP\svc-halo
+   ```
+
+2. Export its keytab. `ktpass` sets a new password on the account, and asks for it:
+
+   ```powershell
+   ktpass /princ HTTP/auth.example.com@CORP.EXAMPLE.COM /mapuser CORP\svc-halo /crypto AES256-SHA1 /ptype KRB5_NT_PRINCIPAL /pass * /out halo.keytab
+   ```
+
+3. Under **Methods**, in **Windows sign-in**, enter `HTTP/auth.example.com@CORP.EXAMPLE.COM`, map each realm to the email domain of its people, such as `CORP.EXAMPLE.COM` to `example.com`, upload `halo.keytab` and save. Then turn on **Windows sign-in** in the list of methods above it.
+4. Let browsers send tickets to Halo. For Edge and Chrome on Windows, add `https://auth.example.com` to the Local intranet zone with the Group Policy **Site to Zone Assignment List**, or set the `AuthServerAllowlist` policy to `auth.example.com`. For Firefox, set `network.negotiate-auth.trusted-uris` to `https://auth.example.com`.
+
+- Halo keeps only the AES and RC4 keys for the service principal from the keytab, encrypted with `HALO_SECRET_KEY`, and never shows them again. Upload a new keytab whenever the service account's password changes, because its key version changes with it.
+- A ticket for `ada@CORP.EXAMPLE.COM` signs in the person whose email address is `ada@example.com`, using the domain mapped to the realm. The principal is the account's `sAMAccountName`, so this works when email addresses use the same name. Halo links the principal to that person on their first successful sign-in and goes by the link afterwards. It never matches by display name, and refuses tickets from realms you didn't map and from machine or service principals.
+- Halo checks the ticket's lifetime and the authenticator's time with 5 minutes of clock skew, refuses an authenticator it already accepted on any Halo server, because the replay cache is in PostgreSQL, refuses NTLM, and refuses tickets for any other service principal. Give Halo's service principal its own account: every service principal on an account shares the account's key.
+- The sign-in page shows **Sign in with Windows** while the method is on. It only tries it without a click from the trusted network zones you choose under **Try automatically from**, which is empty by default, so browsers elsewhere never see the Negotiate challenge. Only choose zones where every computer is joined to the domain, because a browser that can't send a ticket may ask for a Windows user name and password instead.
+- The account status, group assignment, access policies, sign-in risk and lockout apply like any other sign-in, and every ticket Halo receives is in the sign-in log, with the reason when it fails. Access policies can target the method `kerberos`, and each application can turn Windows sign-in off on its Authentication tab, which also blocks single sign-on to it from a session that started with Windows sign-in.
+- The reverse proxy in front of Halo must pass the `Authorization` request header and the `WWW-Authenticate` response header through unchanged, and accept request headers of up to 64 KB: tickets for people in many groups are large. The web interface image starts Node with `--max-http-header-size=131072` for this; start it the same way if you run it yourself. Kerberos sign-in can be turned off under Settings, Features.
 
 ### Metrics
 

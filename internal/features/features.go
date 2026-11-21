@@ -129,6 +129,18 @@ var All = []Feature{
 		},
 	},
 	{
+		ID: "kerberos", Name: "Kerberos sign-in",
+		Description: "Sign-in without a password from Windows computers joined to your Active Directory domain, with the Kerberos ticket the browser sends. While it is off, the sign-in page doesn't offer it and its routes answer 404.",
+		Paths:       []string{"/api/v1/auth/kerberos", "/api/v1/kerberos"},
+		usage: func(ctx context.Context, st *store.Store) ([]string, error) {
+			k, err := st.KerberosSource(ctx)
+			if errors.Is(err, store.ErrNotFound) {
+				return nil, nil
+			}
+			return tally(k.Realms, err, func(store.KerberosRealm) bool { return true }, "realm maps principals to people", "realms map principals to people")
+		},
+	},
+	{
 		ID: "log-streaming", Name: "Log streaming",
 		Description: "Every sign-in and audit event sent to syslog or an OpenTelemetry collector.",
 		Paths:       []string{"/api/v1/log-export"},

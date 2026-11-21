@@ -706,6 +706,8 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		RequirePAR  *bool `json:"requirePar"`
 		RequirePKCE *bool `json:"requirePkce"`
 		RequireDPoP *bool `json:"requireDpop"`
+
+		KerberosSignIn *bool `json:"kerberosSignIn"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -734,6 +736,9 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	}
 	if app.Protocol == "ldap" && (in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil || in.MaxAuthAge != nil || in.RequiresConsent != nil || in.ClaimMappings != nil || logout) {
 		return httpx.Invalid(app.Name + " reads people and groups over LDAP, so it has no redirect URIs, scopes, claims, token lifetimes, sign-in frequency or back-channel logout.")
+	}
+	if in.KerberosSignIn != nil && (app.Type == "service" || slices.Contains([]string{"bookmark", "radius", "ldap"}, app.Protocol)) {
+		return httpx.Invalid(app.Name + " doesn't send people to Halo's sign-in page, so Windows sign-in can't be turned on or off for it.")
 	}
 	if app.Type == "service" && in.ClaimMappings != nil {
 		return httpx.Invalid(app.Name + " is a service application. Nobody signs in to it, so it has no ID tokens or user claims to map.")
@@ -835,7 +840,7 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		label string
 		value *bool
 		field *bool
-	}{{"pushed authorization requirement", in.RequirePAR, &next.RequirePAR}, {"PKCE requirement", in.RequirePKCE, &next.RequirePKCE}, {"DPoP requirement", in.RequireDPoP, &next.RequireDPoP}} {
+	}{{"pushed authorization requirement", in.RequirePAR, &next.RequirePAR}, {"PKCE requirement", in.RequirePKCE, &next.RequirePKCE}, {"DPoP requirement", in.RequireDPoP, &next.RequireDPoP}, {"Windows sign-in", in.KerberosSignIn, &next.KerberosSignIn}} {
 		if f.value != nil && *f.value != *f.field {
 			*f.field = *f.value
 			changed = append(changed, f.label)
