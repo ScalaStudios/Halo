@@ -49,13 +49,13 @@ func (s *Store) AdvanceTOTP(ctx context.Context, secretID string, step int64) (b
 
 func (s *Store) RecentFailures(ctx context.Context, userID, email string, methods []string, since time.Time) (int, error) {
 	var n int
-	err := s.db.QueryRow(ctx, `select count(*) from sign_in_events where result = 'failure' and challenge not in ('failed', 'unavailable') and method = any($3) and time > $4
+	err := s.db.QueryRow(ctx, `select count(*) from sign_in_events where result = 'failure' and challenge not in ('failed', 'unavailable') and hook <> 'failed_closed' and method = any($3) and time > $4
 		and (user_id = $1 or (user_id is null and lower(email) = lower($2)))`, userID, email, methods, since).Scan(&n)
 	return n, err
 }
 
 func (s *Store) RecentFailuresFromIP(ctx context.Context, ip string, methods []string, since time.Time) (int, error) {
 	var n int
-	err := s.db.QueryRow(ctx, `select count(*) from sign_in_events where ip = $1 and result = 'failure' and challenge <> 'unavailable' and method = any($2) and time > $3`, ip, methods, since).Scan(&n)
+	err := s.db.QueryRow(ctx, `select count(*) from sign_in_events where ip = $1 and result = 'failure' and challenge <> 'unavailable' and hook <> 'failed_closed' and method = any($2) and time > $3`, ip, methods, since).Scan(&n)
 	return n, err
 }

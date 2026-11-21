@@ -24,8 +24,8 @@ func (s *Store) RecordSignIn(ctx context.Context, e SignInEvent) error {
 	if e.Risk == "" {
 		e.Risk = "none"
 	}
-	_, err := s.db.Exec(ctx, `insert into sign_in_events (id, time, user_id, email, app_id, result, method, ip, location, device, risk, reason, challenge, impersonator_id) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-		e.ID, e.Time, e.UserID, e.Email, e.AppID, e.Result, e.Method, e.IP, e.Location, e.Device, e.Risk, e.Reason, e.Challenge, e.ImpersonatorID)
+	_, err := s.db.Exec(ctx, `insert into sign_in_events (id, time, user_id, email, app_id, result, method, ip, location, device, risk, reason, challenge, impersonator_id, hook) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		e.ID, e.Time, e.UserID, e.Email, e.AppID, e.Result, e.Method, e.IP, e.Location, e.Device, e.Risk, e.Reason, e.Challenge, e.ImpersonatorID, e.Hook)
 	if err == nil {
 		metrics.SignIns.Inc(e.Method, e.Result, e.Risk)
 	}
@@ -42,7 +42,7 @@ func (s *Store) ListSignIns(ctx context.Context, f SignInFilter) ([]SignInEvent,
 	if f.Limit <= 0 || f.Limit > 1000 {
 		f.Limit = 500
 	}
-	rows, err := s.db.Query(ctx, `select id, time, user_id, email, app_id, result, method, ip, location, device, risk, reason, challenge, impersonator_id from sign_in_events
+	rows, err := s.db.Query(ctx, `select id, time, user_id, email, app_id, result, method, ip, location, device, risk, reason, challenge, impersonator_id, hook from sign_in_events
 		where ($1 = '' or user_id = $1) and ($2 = '' or app_id = $2) order by time desc limit $3`, f.UserID, f.AppID, f.Limit)
 	if err != nil {
 		return nil, err
@@ -51,7 +51,7 @@ func (s *Store) ListSignIns(ctx context.Context, f SignInFilter) ([]SignInEvent,
 	events := []SignInEvent{}
 	for rows.Next() {
 		var e SignInEvent
-		if err := rows.Scan(&e.ID, &e.Time, &e.UserID, &e.Email, &e.AppID, &e.Result, &e.Method, &e.IP, &e.Location, &e.Device, &e.Risk, &e.Reason, &e.Challenge, &e.ImpersonatorID); err != nil {
+		if err := rows.Scan(&e.ID, &e.Time, &e.UserID, &e.Email, &e.AppID, &e.Result, &e.Method, &e.IP, &e.Location, &e.Device, &e.Risk, &e.Reason, &e.Challenge, &e.ImpersonatorID, &e.Hook); err != nil {
 			return nil, err
 		}
 		events = append(events, e)

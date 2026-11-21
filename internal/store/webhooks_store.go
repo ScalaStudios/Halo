@@ -137,7 +137,7 @@ func (s *Store) PollWebhookEvents(ctx context.Context, before time.Time, limit i
 		{"audit", `select id, action, time, jsonb_build_object('id', id, 'time', time, 'actorId', actor_id, 'action', action, 'summary', summary,
 			'targetType', target_type, 'targetId', target_id, 'target', target_label, 'ip', ip, 'changes', changes) from audit_events`},
 		{"sign_in", `select id, 'sign_in.' || result, time, jsonb_build_object('id', id, 'time', time, 'userId', user_id, 'email', email, 'appId', app_id,
-			'result', result, 'method', method, 'ip', ip, 'location', location, 'device', device, 'risk', risk, 'reason', reason, 'challenge', challenge, 'impersonatorId', impersonator_id) from sign_in_events`},
+			'result', result, 'method', method, 'ip', ip, 'location', location, 'device', device, 'risk', risk, 'reason', reason, 'challenge', challenge, 'impersonatorId', impersonator_id, 'hook', hook) from sign_in_events`},
 	} {
 		var cursorTime time.Time
 		var cursorID string
@@ -295,4 +295,37 @@ func (s *Store) QueueNotification(ctx context.Context, ruleID string, e WebhookE
 	_, err := s.db.Exec(ctx, `insert into webhook_deliveries (id, rule_id, event_id, event_type, body, next_attempt_at) values ($1, $2, $3, $4, $5, $6) on conflict (rule_id, event_id) do nothing`,
 		deliveryID, ruleID, e.ID, e.Type, string(body), next)
 	return deliveryID, err
+}
+
+type ApplicationHook struct {
+	AppID        string   `json:"appId"`
+	Host         string   `json:"host"`
+	Claims       []string `json:"claims"`
+	FailOpen     bool     `json:"failOpen"`
+	URLSealed    []byte   `json:"-"`
+	SecretSealed []byte   `json:"-"`
+}
+
+func (s *Store) GetApplicationHook(ctx context.Context, appID string) (ApplicationHook, error) {
+	rows, err := s.db.Query(ctx, `select app_id, host, claims, fail_open, url_sealed, secret_sealed from application_hooks where app_id = $1`, appID)
+	if err != nil {
+		return ApplicationHook{}, err
+	}
+	h, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[ApplicationHook])
+	return h, notFound(err)
+}
+
+func (s *Store) SaveApplicationHook(ctx context.Context, h ApplicationHook) error {
+	_, err := s.db.Exec(ctx, `insert into application_hooks (app_id, host, url_sealed, secret_sealed, claims, fail_open) values ($1, $2, $3, $4, $5, $6)
+		on conflict (app_id) do update set host = $2, url_sealed = $3, secret_sealed = $4, claims = $5, fail_open = $6, updated_at = now()`,
+		h.AppID, h.Host, h.URLSealed, h.SecretSealed, h.Claims, h.FailOpen)
+	return err
+}
+
+func (s *Store) DeleteApplicationHook(ctx context.Context, appID string) error {
+	tag, err := s.db.Exec(ctx, `delete from application_hooks where app_id = $1`, appID)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
 }

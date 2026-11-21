@@ -293,7 +293,7 @@ func (s *Store) decorateApps(ctx context.Context, apps []Application, withStats 
 		return nil
 	}
 
-	rows, err = s.db.Query(ctx, `select app_id, count(*), count(*) filter (where result <> 'success') from sign_in_events where app_id = any($1) and time > now() - interval '7 days' group by app_id`, ids)
+	rows, err = s.db.Query(ctx, `select app_id, count(*), count(*) filter (where result <> 'success') from sign_in_events where app_id = any($1) and method <> 'token' and time > now() - interval '7 days' group by app_id`, ids)
 	if err != nil {
 		return err
 	}

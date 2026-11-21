@@ -16,6 +16,7 @@ import (
 	"halo/internal/metrics"
 	"halo/internal/secret"
 	"halo/internal/store"
+	"halo/internal/webhooks"
 )
 
 type refreshRequest struct {
@@ -57,9 +58,10 @@ func (s *storage) grant(ctx context.Context, req op.TokenRequest) (store.OIDCTok
 	if err != nil {
 		return t, app, err
 	}
+	var person store.User
 	if user {
 		subject := req.GetSubject()
-		if _, err := s.activeUser(ctx, subject, app); err != nil {
+		if person, err = s.activeUser(ctx, subject, app); err != nil {
 			return t, app, err
 		}
 		t.UserID = &subject
@@ -79,18 +81,54 @@ func (s *storage) grant(ctx context.Context, req op.TokenRequest) (store.OIDCTok
 	if t.SubjectID != nil && subject.ExpiresAt.Before(t.ExpiresAt) {
 		t.ExpiresAt = subject.ExpiresAt
 	}
+	if _, refreshing := req.(*refreshRequest); refreshing && t.AuthTime != nil && app.ReauthRequired(*t.AuthTime) {
+		return t, app, oidc.ErrInvalidGrant().WithDescription("The person signed in longer ago than the application's sign-in frequency allows. Send them to sign in again.")
+	}
+	if t.UserID != nil {
+		if err := s.hook(ctx, app, t, person); err != nil {
+			return t, app, err
+		}
+	}
 	switch req.(type) {
 	case *op.DeviceAuthorizationState:
 		t.SessionID, err = s.deviceSession(ctx, app)
 	case *refreshRequest:
-		if t.AuthTime != nil && app.ReauthRequired(*t.AuthTime) {
-			return t, app, oidc.ErrInvalidGrant().WithDescription("The person signed in longer ago than the application's sign-in frequency allows. Send them to sign in again.")
-		}
 		if t.SessionID != nil {
 			err = s.st.TouchClientSession(ctx, *t.SessionID, time.Now().Add(seconds(app.TokenPolicy.RefreshTokenTTL)))
 		}
 	}
 	return t, app, err
+}
+
+func (s *storage) hook(ctx context.Context, app store.Application, t store.OIDCToken, person store.User) error {
+	if person.ID == "" {
+		var err error
+		if person, err = s.st.GetUser(ctx, *t.UserID); err != nil {
+			return err
+		}
+	}
+	event := store.SignInEvent{Result: "success", Method: "token", UserID: &person.ID, Email: person.Email, AppID: &app.ID}
+	if r, ok := ctx.Value(requestKey{}).(*http.Request); ok {
+		event.IP, event.Device = httpx.ClientIP(r), r.PostForm.Get("grant_type")
+	}
+	verdict, err := webhooks.RunHook(ctx, s.st, app, webhooks.HookCall{Stage: webhooks.HookToken, User: person, Scopes: t.Scopes, GrantType: event.Device})
+	if err != nil || verdict.Decision == "" {
+		return err
+	}
+	event.Hook, event.Reason = verdict.Decision, verdict.Log
+	if verdict.Denied() {
+		event.Result = "failure"
+	}
+	if err := s.st.RecordSignIn(ctx, event); err != nil {
+		return err
+	}
+	if verdict.Denied() {
+		return oidc.ErrAccessDenied().WithDescription("%s", verdict.Reason)
+	}
+	if a, ok := ctx.Value(algorithmsKey{}).(*algorithms); ok {
+		a.claims = verdict.Claims
+	}
+	return nil
 }
 
 func (s *storage) deviceSession(ctx context.Context, app store.Application) (*string, error) {

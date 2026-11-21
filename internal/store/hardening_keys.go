@@ -100,6 +100,8 @@ var sealedColumns = []struct{ table, key, column string }{
 	{"notification_rules", "id", "url_sealed"},
 	{"notification_rules", "id", "secret_sealed"},
 	{"compliance_sources", "id", "secret_sealed"},
+	{"application_hooks", "app_id", "url_sealed"},
+	{"application_hooks", "app_id", "secret_sealed"},
 	{"ssh_authority", "id", "private_key_sealed"},
 	{"approval_requests", "id", "body_sealed"},
 	{"bot_protection", "singleton", "secret_sealed"},

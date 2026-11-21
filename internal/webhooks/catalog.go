@@ -35,6 +35,8 @@ var catalog = []eventType{
 	{"application.disable", "Sign-in to an application was turned off"},
 	{"application.enable", "Sign-in to an application was turned on"},
 	{"application.groups.update", "The groups assigned to an application changed"},
+	{"application.hook.delete", "An application's sign-in hook was removed"},
+	{"application.hook.update", "An application's sign-in hook was added or changed"},
 	{"application.logo.remove", "An application's logo was removed"},
 	{"application.logo.update", "A new logo was uploaded for an application"},
 	{"application.register", "A client registered itself through dynamic client registration"},

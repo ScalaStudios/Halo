@@ -39,6 +39,7 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	ruleID, _, err := st.CreateNotificationRule(ctx, store.NewNotificationRule{Name: "Admins", Destination: "slack", URL: "https://hooks.example.com/rule", Host: "hooks.example.com", Events: []string{"role.update"}, Threshold: 1, WindowMinutes: 10, QuietMinutes: 15})
 	must(err)
+	must(st.SaveApplicationHook(ctx, store.ApplicationHook{AppID: app.ID, Host: "checks.example.com", URLSealed: st.Sealer.Seal([]byte("https://checks.example.com/hook")), SecretSealed: st.Sealer.Seal([]byte("hook-secret")), Claims: []string{}}))
 	must(st.CreateSSHAuthority(ctx, []byte("ssh-seed"), "ssh-ed25519 AAAA"))
 	must(st.ReplaceRecoveryCodes(ctx, u.ID, [][]byte{st.RecoveryCodeHash("abcd")}))
 	approvalID, err := st.CreateApprovalRequest(ctx, store.ApprovalRequest{Action: "global-admin", Summary: "Set roles", TargetType: "user", TargetLabel: "Ada", Method: "PUT", Path: "/api/v1/users/x/roles", Body: []byte("approval-body"), State: "null", Requester: store.NamedRef{ID: u.ID}, ExpiresAt: time.Now().Add(time.Hour)})
@@ -54,6 +55,7 @@ func TestRotateSecretKey(t *testing.T) {
 	rotation, err := st.RotateSecretKey(ctx, next)
 	must(err)
 	if len(rotation.Resealed) != 14 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
+	if len(rotation.Resealed) != 15 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
 		t.Fatalf("resealed: %+v", rotation.Resealed)
 	}
 	if !slices.Equal(rotation.RecoveryCodeUsers, []string{"ada@example.com"}) {
@@ -81,6 +83,8 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	rule, err := rotated.GetNotificationRule(ctx, ruleID)
 	must(err)
+	hook, err := rotated.GetApplicationHook(ctx, app.ID)
+	must(err)
 	ssh, err := rotated.GetSSHAuthority(ctx)
 	must(err)
 	pending, err := rotated.GetApprovalRequest(ctx, approvalID)
@@ -90,6 +94,8 @@ func TestRotateSecretKey(t *testing.T) {
 	source, err := rotated.GetComplianceSource(ctx, sourceID)
 	must(err)
 	for want, sealed := range map[string][]byte{"totp-seed": totp[0].Sealed, "scim-token": provisioning.TokenSealed, "client-secret": provider.SecretSealed, "intune-secret": source.Sealed} {
+	for want, sealed := range map[string][]byte{"totp-seed": totp[0].Sealed, "scim-token": provisioning.TokenSealed, "client-secret": provider.SecretSealed,
+		"https://checks.example.com/hook": hook.URLSealed, "hook-secret": hook.SecretSealed} {
 		if plain, err := rotated.Sealer.Open(sealed); err != nil || string(plain) != want {
 			t.Fatalf("open %s with the new key: %q %v", want, plain, err)
 		}

@@ -20,6 +20,7 @@ import (
 	"halo/internal/mail"
 	"halo/internal/secret"
 	"halo/internal/store"
+	"halo/internal/webhooks"
 )
 
 var (
@@ -161,11 +162,12 @@ type attempt struct {
 	eventID      string
 	risk         string
 	challenge    string
+	hook         webhooks.Verdict
 }
 
 func (a attempt) event(r *http.Request, result, reason string) store.SignInEvent {
 	_, os, browser := store.ParseUserAgent(r.UserAgent())
-	e := store.SignInEvent{ID: a.eventID, Result: result, Method: a.method, Email: a.email, IP: httpx.ClientIP(r), Device: browser + " · " + os, Risk: a.risk, Reason: reason, Challenge: a.challenge}
+	e := store.SignInEvent{ID: a.eventID, Result: result, Method: a.method, Email: a.email, IP: httpx.ClientIP(r), Device: browser + " · " + os, Risk: a.risk, Reason: cmp.Or(reason, a.hook.Log), Challenge: a.challenge, Hook: a.hook.Decision}
 	if a.user != nil {
 		e.UserID, e.Email = &a.user.ID, a.user.Email
 	}
@@ -251,6 +253,21 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 	case access.RequirePhishingResistant:
 		if a.method != "passkey" && a.method != "security-key" && a.method != "access-pass" {
 			return h.reject(r, a, policyReason(decision), errStrongerAuth)
+		}
+	}
+	if a.app != nil && len(decision.Terms) == 0 {
+		req, err := h.st.GetAuthRequest(ctx, a.request)
+		if errors.Is(err, store.ErrNotFound) {
+			return errRequestExpired
+		}
+		if err != nil {
+			return err
+		}
+		if a.hook, err = webhooks.RunHook(ctx, h.st, *a.app, webhooks.HookCall{Stage: webhooks.HookSignIn, User: u, Scopes: req.Scopes}); err != nil {
+			return err
+		}
+		if a.hook.Denied() {
+			return h.reject(r, a, a.hook.Log, httpx.Fail(http.StatusForbidden, "ERR_BLOCKED_BY_HOOK", a.hook.Reason))
 		}
 	}
 	if a.method == "access-pass" {

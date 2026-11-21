@@ -13,12 +13,14 @@ import { Dialog } from "@/components/ui/dialog";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { cn } from "@/lib/cn";
 import { formatDateTime } from "@/lib/format";
-import { METHOD, RESULT, RISK, signInApp, signInUser } from "@/lib/labels";
+import { RESULT, RISK, SIGN_IN_METHOD, signInApp, signInUser } from "@/lib/labels";
 import type { SignInEvent } from "@/lib/types";
 
 type Row = SignInEvent & { user: string; app: string };
 
 const CHALLENGE = { passed: "Passed", failed: "Failed", unavailable: "Provider unreachable" };
+
+const HOOK = { allowed: "Allowed", denied: "Denied", failed_open: "Failed, allowed because it fails open", failed_closed: "Failed, blocked because it fails closed" };
 
 const GUIDANCE: Record<string, { why: string; next: string }> = {
   "The bot check failed.": {
@@ -142,7 +144,7 @@ const columns: ColumnDef<Row, any>[] = [
     meta: { label: "Method" },
     cell: ({ row }) => (
       <span className="inline-flex items-center gap-2 whitespace-nowrap">
-        {METHOD[row.original.method].label}
+        {SIGN_IN_METHOD[row.original.method].label}
         {row.original.impersonatorId ? <Badge tone="warning">Impersonation</Badge> : null}
       </span>
     ),
@@ -247,7 +249,7 @@ export function SignInsTable({
           { column: "result", label: "Result", options: Object.entries(RESULT).map(([value, r]) => ({ value, label: r.label })) },
           { column: "risk", label: "Risk", options: Object.entries(RISK).map(([value, r]) => ({ value, label: r.label })) },
           { column: "application", label: "Application", options: apps.map((app) => ({ value: app, label: app })) },
-          { column: "method", label: "Method", options: methods.map((m) => ({ value: m, label: METHOD[m].label })) },
+          { column: "method", label: "Method", options: methods.map((m) => ({ value: m, label: SIGN_IN_METHOD[m].label })) },
         ]}
         onRowOpen={(e) => open(e.id)}
         toolbarEnd={(rows) => (
@@ -282,7 +284,7 @@ function SignInDetail({ event }: { event: Row }) {
         <div className="flex items-center gap-3 rounded-md border border-success/20 bg-success-container p-4">
           <CircleCheck aria-hidden="true" size={20} strokeWidth={1.75} className="shrink-0 text-success" />
           <p className="text-body-sm text-fg">
-            <span className="font-semibold">Signed in</span> with {METHOD[event.method].label.toLowerCase()}.{event.impersonatorId ? ` ${event.reason}` : null}
+            <span className="font-semibold">Signed in</span> with {SIGN_IN_METHOD[event.method].label.toLowerCase()}.{event.impersonatorId ? ` ${event.reason}` : null}
           </p>
         </div>
       ) : (
@@ -323,7 +325,7 @@ function SignInDetail({ event }: { event: Row }) {
             ),
           },
           { label: "Application", value: event.app },
-          { label: "Method", value: METHOD[event.method].label },
+          { label: "Method", value: SIGN_IN_METHOD[event.method].label },
           {
             label: "Risk",
             value: event.risk === "none" ? "None detected" : <Badge tone={RISK[event.risk].tone}>{RISK[event.risk].label}</Badge>,
@@ -340,6 +342,7 @@ function SignInDetail({ event }: { event: Row }) {
           { label: "Location", value: event.location },
           { label: "Device", value: event.device },
           ...(event.challenge ? [{ label: "Bot check", value: CHALLENGE[event.challenge] }] : []),
+          ...(event.hook ? [{ label: "Hook", value: HOOK[event.hook] }] : []),
           {
             label: "Event ID",
             value: (

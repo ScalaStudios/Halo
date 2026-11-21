@@ -160,6 +160,7 @@ type SignInEvent struct {
 	Risk      string    `json:"risk"`
 	Reason    string    `json:"reason,omitempty"`
 	Challenge string    `json:"challenge,omitempty"`
+	Hook      string    `json:"hook,omitempty"`
 
 	ImpersonatorID *string `json:"impersonatorId,omitempty"`
 }

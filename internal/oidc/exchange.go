@@ -94,7 +94,9 @@ func (s *storage) GetPrivateClaimsFromTokenExchangeRequest(ctx context.Context, 
 	if prior, ok := req.GetExchangeSubjectTokenClaims()["act"]; ok {
 		act["act"] = prior
 	}
-	return map[string]any{"scope": strings.Join(req.GetScopes(), " "), "act": act}, nil
+	claims := hookClaims(ctx)
+	claims["scope"], claims["act"] = strings.Join(req.GetScopes(), " "), act
+	return claims, nil
 }
 
 func (s *storage) SetUserinfoFromTokenExchangeRequest(context.Context, *oidc.UserInfo, op.TokenExchangeRequest) error {
