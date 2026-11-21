@@ -723,6 +723,9 @@ func (h *handlers) updateUser(w http.ResponseWriter, r *http.Request, actor stor
 	if err := guardAdmin(actor, target); err != nil {
 		return err
 	}
+	if target.Directory != nil {
+		return conflict(target.Name + " is synced from the LDAP directory " + target.Directory.Name + ". Change their profile in the directory, and the next sync updates Halo.")
+	}
 	var in struct {
 		Email      *string `json:"email"`
 		Name       *string `json:"name"`

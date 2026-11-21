@@ -61,3 +61,66 @@ export type AppProvisioning = {
   groupsDeleted: number;
   updatedAt: string;
 };
+
+export type LDAPSecurity = "ldaps" | "starttls" | "none";
+
+export type LDAPMapping = {
+  id: string;
+  email: string;
+  name: string;
+  title: string;
+  department: string;
+  location: string;
+  manager: string;
+  groupName: string;
+  member: string;
+  attributes: Record<string, string>;
+};
+
+export type LDAPDirectory = {
+  id: string;
+  name: string;
+  url: string;
+  security: LDAPSecurity;
+  caCertificate: string;
+  bindDn: string;
+  userBaseDn: string;
+  userFilter: string;
+  groupBaseDn: string;
+  groupFilter: string;
+  mapping: LDAPMapping;
+  enabled: boolean;
+  intervalMinutes: number;
+  syncedAt: string | null;
+  syncError: string;
+  createdAt: string;
+  updatedAt: string;
+  people: number;
+  groups: number;
+};
+
+export type LDAPCounts = {
+  created: number;
+  updated: number;
+  suspended: number;
+  restored: number;
+  groupsCreated: number;
+  groupsRenamed: number;
+  membersAdded: number;
+  membersRemoved: number;
+};
+
+export type LDAPSync = {
+  id: string;
+  startedAt: string;
+  finishedAt: string;
+  result: "succeeded" | "failed";
+  error: string;
+  counts: LDAPCounts;
+  skipped: string[];
+};
+
+export type LDAPSyncReport = LDAPSync & {
+  dryRun: boolean;
+  changes: { action: string; target: string; detail: string }[];
+};

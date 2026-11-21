@@ -72,6 +72,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
   const global = me.roles.includes("Global administrator");
   const access = user.roles.length + user.eligibleRoles.length > 0 && !global ? null : global || me.roles.includes("User administrator") ? "all" : me.roles.includes("Helpdesk administrator") ? "org" : null;
   const edit: ProfileEdit | undefined = access ? { user, directory, access, attributes } : undefined;
+  const profile = user.directory ? undefined : edit;
   const impersonate =
     (global || me.roles.includes("Helpdesk administrator")) &&
     user.id !== me.id &&
@@ -119,7 +120,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
               <ProfileHeading user={user} />
             </div>
           )}
-          <UserActions id={user.id} name={user.name} suspended={user.status === "suspended"} edit={edit} impersonate={impersonate} />
+          <UserActions id={user.id} name={user.name} suspended={user.status === "suspended"} edit={profile} impersonate={impersonate} />
         </header>
         <ImpersonationNotices impersonations={impersonations} meId={me.id} />
         <dl className="grid grid-cols-2 gap-x-8 gap-y-4 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 xl:grid-cols-6">
@@ -251,7 +252,11 @@ export default async function UserPage({ params, searchParams }: { params: Promi
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         {user.guest ? <GuestCard user={user} /> : null}
         <Card className="xl:col-span-7">
-          <CardHeader title="Profile" actions={edit ? <EditProfileButton {...edit} /> : undefined} />
+          <CardHeader
+            title="Profile"
+            description={user.directory ? `Synced from the LDAP directory ${user.directory.name}. Change it there, and the next sync updates Halo.` : undefined}
+            actions={profile ? <EditProfileButton {...profile} /> : undefined}
+          />
           <CardBody>
             <DescriptionList
               columns={2}

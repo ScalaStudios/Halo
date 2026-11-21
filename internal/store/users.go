@@ -65,7 +65,8 @@ func (u User) CanReauthenticate() bool {
 }
 
 const userColumns = `id, email, name, title, department, location, status, manager_id, source, created_at, last_sign_in_at, kind, email_verified, avatar_updated_at, guest, expires_at, attributes,
-	(select json_build_object('id', s.id, 'name', s.name, 'email', s.email) from users s where s.id = users.sponsor_id)`
+	(select json_build_object('id', s.id, 'name', s.name, 'email', s.email) from users s where s.id = users.sponsor_id),
+	(select json_build_object('id', d.id, 'name', d.name) from ldap_people p join ldap_directories d on d.id = p.directory_id where p.user_id = users.id)`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -74,7 +75,7 @@ type rowScanner interface {
 func scanUser(row rowScanner) (User, error) {
 	var u User
 	var avatar *time.Time
-	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Title, &u.Department, &u.Location, &u.Status, &u.ManagerID, &u.Source, &u.CreatedAt, &u.LastSignInAt, &u.Kind, &u.EmailVerified, &avatar, &u.Guest, &u.ExpiresAt, &u.Attributes, &u.Sponsor)
+	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Title, &u.Department, &u.Location, &u.Status, &u.ManagerID, &u.Source, &u.CreatedAt, &u.LastSignInAt, &u.Kind, &u.EmailVerified, &avatar, &u.Guest, &u.ExpiresAt, &u.Attributes, &u.Sponsor, &u.Directory)
 	if u.Expired() && (u.Status == "active" || u.Status == "invited") {
 		u.Status = "suspended"
 	}
