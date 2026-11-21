@@ -3,25 +3,28 @@ import Link from "next/link";
 import { ChevronRight, FileDown, Fingerprint, LayoutGrid, MonitorSmartphone, ShieldCheck } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { AvatarEditor } from "@/components/account/avatar-editor";
+import { MyAttributesButton } from "@/components/account/my-attributes";
 import { ExportButton } from "@/components/settings/export-button";
 import { buttonClasses } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DescriptionList } from "@/components/ui/description-list";
 import { apiGet } from "@/lib/api/server";
-import { formatDateTime, pluralize } from "@/lib/format";
+import { formatAttribute, formatDateTime, pluralize } from "@/lib/format";
 import { STRENGTH } from "@/lib/labels";
-import type { Organization, Session, User } from "@/lib/types";
+import type { Attribute, Organization, Session, User } from "@/lib/types";
 
 export const metadata: Metadata = { title: { absolute: "Halo account" } };
 
 export default async function AccountPage() {
-  const [user, org, sessions, apps] = await Promise.all([
+  const [user, org, sessions, apps, attributes] = await Promise.all([
     apiGet<User>("/me"),
     apiGet<Organization>("/organization"),
     apiGet<Session[]>("/me/sessions"),
     apiGet<unknown[]>("/me/applications"),
+    apiGet<Attribute[]>("/attributes"),
   ]);
+  const editable = attributes.filter((a) => a.selfService);
   const count = (kind: string) => user.methods.filter((m) => m.kind === kind).length;
   const strong = count("passkey") + count("security-key");
   const resistant = user.strength === "phishing-resistant";
@@ -67,6 +70,9 @@ export default async function AccountPage() {
               { label: "Title", value: user.title || "Not set" },
               { label: "Department", value: user.department || "Not set" },
               { label: "Location", value: user.location || "Not set" },
+              ...attributes
+                .filter((a) => a.selfService || user.attributes[a.name] !== undefined)
+                .map((a) => ({ label: a.label, value: user.attributes[a.name] === undefined ? "Not set" : formatAttribute(a, user.attributes[a.name]) })),
               ...(user.guest && user.expiresAt
                 ? [
                     { label: "Sponsor", value: user.sponsor?.name ?? "None" },
@@ -75,6 +81,7 @@ export default async function AccountPage() {
                 : []),
             ]}
           />
+          {editable.length > 0 ? <MyAttributesButton attributes={editable} values={user.attributes} /> : null}
           {user.guest ? (
             <p className="text-body-sm text-fg-2">
               You&apos;re a guest at {org.name}. Your access ends on its own; {user.sponsor ? `ask ${user.sponsor.name} to extend it` : "ask the person who invited you to extend it"} if you still need it.

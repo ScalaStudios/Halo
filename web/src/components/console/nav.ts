@@ -29,6 +29,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Stamp,
+  Tags,
   UserRoundCog,
   Users,
   UsersRound,
@@ -125,6 +126,7 @@ export const nav: NavGroup[] = [
     label: "Settings",
     items: [
       { label: "Organization", href: `${BASE}/settings/organization`, icon: Building2, summary: "Name, contacts, the issuer URL and log retention." },
+      { label: "User attributes", href: `${BASE}/settings/attributes`, icon: Tags, summary: "Custom fields on people, such as an employee number, for claims and outbound SCIM." },
       { label: "Domains", href: `${BASE}/settings/domains`, icon: Globe, summary: "Verified email domains and the custom sign-in domain." },
       { label: "Branding", href: `${BASE}/settings/branding`, icon: Palette, summary: "Your logo and a message on the sign-in, setup and sign-out pages." },
       { label: "Email templates", href: `${BASE}/settings/email`, icon: Mail, summary: "The subject and text of invitations, resets, sign-in emails and access notices." },

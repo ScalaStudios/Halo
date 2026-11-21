@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft, MonitorSmartphone, ScrollText, UsersRound } from "lucide-react";
 import { AvatarEditor } from "@/components/account/avatar-editor";
 import { AppActions, DangerZone } from "@/components/applications/app-actions";
+import { ClaimMappingsForm } from "@/components/applications/claim-mappings";
 import { CredentialList } from "@/components/applications/credentials";
 import { AuthenticationForm, ScopesForm, SignInFrequencyForm } from "@/components/applications/edit-application";
 import { HookForm } from "@/components/applications/hook-form";
@@ -24,6 +25,7 @@ import type { ApiResource } from "@/lib/infra-types";
 import type { SamlApplication } from "@/lib/saml-types";
 import { endpoints, setupGuide } from "@/lib/setup-guides";
 import type { Application, ApplicationHook, Group, Organization, Session, SignInEvent, User } from "@/lib/types";
+import type { Application, Attribute, Group, Organization, Session, SignInEvent, User } from "@/lib/types";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -34,6 +36,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const { id } = await params;
   const { tab = "overview" } = await searchParams;
   const [app, groups, users, sessions, appSignIns, org, resources, hook] = await Promise.all([
+  const [app, groups, users, sessions, appSignIns, org, resources, attributes] = await Promise.all([
     apiGet<SamlApplication>(`/applications/${encodeURIComponent(id)}`),
     apiGet<Group[]>("/groups"),
     apiGet<User[]>("/users"),
@@ -42,6 +45,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
     apiGet<Organization>("/organization"),
     tab === "authentication" ? apiGet<ApiResource[]>("/api-resources") : [],
     tab === "authentication" ? apiGet<ApplicationHook | null>(`/applications/${encodeURIComponent(id)}/hook`) : null,
+    tab === "claims" ? apiGet<Attribute[]>("/attributes") : [],
   ]);
 
   const saml = app.protocol === "saml";
@@ -203,6 +207,19 @@ export default async function ApplicationPage({ params, searchParams }: { params
                 </span>,
               ])}
             />
+          </div>
+        ) : null}
+        {tab === "claims" && !service ? (
+          <div className="mt-12 flex flex-col gap-6">
+            <SectionTitle
+              title={saml ? "Attribute mappings" : "Claim mappings"}
+              description={
+                saml
+                  ? `Send a profile field, group names or a custom attribute to ${app.name} under the name it expects. A mapping replaces the attribute above with the same name, and Not sent leaves it out.`
+                  : `Add a profile field, group names or a custom attribute to ID tokens and userinfo for ${app.name}. A mapping replaces the claim above with the same name, and Not sent leaves it out. Halo's protocol claims, such as sub and iss, can't be mapped.`
+              }
+            />
+            <ClaimMappingsForm key={JSON.stringify(app.claimMappings)} appId={app.id} appName={app.name} saml={saml} mappings={app.claimMappings} attributes={attributes} />
           </div>
         ) : null}
         {tab === "users" ? (

@@ -1,3 +1,5 @@
+import type { Attribute, AttributeValue } from "./types";
+
 const MONTHS = [
   "January",
   "February",
@@ -15,6 +17,13 @@ const MONTHS = [
 
 export function now(): Date {
   return new Date();
+}
+
+export function formatAttribute(attribute: Attribute, value: AttributeValue | undefined) {
+  if (value === undefined) return "—";
+  if (attribute.type === "boolean") return value ? "Yes" : "No";
+  if (attribute.type === "date") return formatDate(String(value));
+  return Array.isArray(value) ? value.join(", ") : String(value);
 }
 
 export function formatDate(iso: string): string {
