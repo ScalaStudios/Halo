@@ -168,7 +168,11 @@ type attempt struct {
 
 func (a attempt) event(r *http.Request, result, reason string) store.SignInEvent {
 	_, os, browser := store.ParseUserAgent(r.UserAgent())
-	e := store.SignInEvent{ID: a.eventID, Result: result, Method: a.method, Email: a.email, IP: httpx.ClientIP(r), Device: browser + " · " + os, Risk: a.risk, Reason: cmp.Or(reason, a.hook.Log), Challenge: a.challenge, Hook: a.hook.Decision}
+	return a.eventFrom(httpx.ClientIP(r), browser+" · "+os, result, reason)
+}
+
+func (a attempt) eventFrom(ip, device, result, reason string) store.SignInEvent {
+	e := store.SignInEvent{ID: a.eventID, Result: result, Method: a.method, Email: a.email, IP: ip, Device: device, Risk: a.risk, Reason: cmp.Or(reason, a.hook.Log), Challenge: a.challenge, Hook: a.hook.Decision}
 	if a.user != nil {
 		e.UserID, e.Email = &a.user.ID, a.user.Email
 	}
@@ -179,13 +183,20 @@ func (a attempt) event(r *http.Request, result, reason string) store.SignInEvent
 }
 
 func (h *handler) reject(r *http.Request, a attempt, reason string, e *httpx.Error) error {
-	if err := h.st.RecordSignIn(r.Context(), a.event(r, "failure", reason)); err != nil {
+	if err := h.fail(r.Context(), a, a.event(r, "failure", reason)); err != nil {
+		return err
+	}
+	return e
+}
+
+func (h *handler) fail(ctx context.Context, a attempt, e store.SignInEvent) error {
+	if err := h.st.RecordSignIn(ctx, e); err != nil {
 		return err
 	}
 	if a.user != nil && slices.Contains(guessedMethods, a.method) {
-		go h.notifyLocked(context.WithoutCancel(r.Context()), *a.user)
+		go h.notifyLocked(context.WithoutCancel(ctx), *a.user)
 	}
-	return e
+	return nil
 }
 
 func (h *handler) notifyLocked(ctx context.Context, u store.User) {

@@ -43,7 +43,7 @@ tags:
   - name: Groups
     description: Assigned and rule-based groups and their members.
   - name: Applications
-    description: OpenID Connect, OAuth, SAML and forward-auth applications, bookmarks, their secrets and group assignments, and the collections that group them in the account portal.
+    description: OpenID Connect, OAuth, SAML, forward-auth and RADIUS applications, bookmarks, their secrets and group assignments, and the collections that group them in the account portal.
   - name: Authorization
     description: 'Relationship-based permissions for applications, in the style of Zanzibar. An application administrator gives a web or service application a model of types and relations. The application then writes tuples such as `document:readme#viewer@user:usr_…` and asks whether a person has a relation on an object. Groups expand to their members, relations combine other relations, application roles and relations of a parent object, and suspended or deprovisioned people are always denied. Tuples can name only the people and groups assigned to the application, the same ones who can sign in to it, and a person or group that is later unassigned is ignored until assigned again, so an application never learns about anyone outside it. Routes under `/authz` authenticate as the application with HTTP Basic, its client ID and a client secret, and only ever see that application''s tuples. Tuples that name a person or group are deleted with them. Model changes are in the audit log; tuple writes are not.'
   - name: Forward auth
@@ -3637,7 +3637,7 @@ paths:
       tags: [Applications]
       operationId: createApplication
       summary: Register an application
-      description: 'Roles: application administrator. OpenID Connect web applications and services get a client secret, returned once. SAML applications take their settings in `saml` and are always `web`. Forward-auth applications take their protected addresses in `redirectUris`, open the first one from the account portal unless `homepage` is set, have no secret and are always `web`. Bookmarks only open their `homepage` from the account portal, have no sign-in protocol and are always `web`.'
+      description: 'Roles: application administrator. OpenID Connect web applications and services get a client secret, returned once. SAML applications take their settings in `saml` and are always `web`. Forward-auth applications take their protected addresses in `redirectUris`, open the first one from the account portal unless `homepage` is set, have no secret and are always `web`. RADIUS clients take the IP addresses or CIDR ranges they send from in `redirectUris`, get a shared secret returned once in `clientSecret` and are always `web`. Bookmarks only open their `homepage` from the account portal, have no sign-in protocol and are always `web`.'
       requestBody:
         required: true
         content:
@@ -3648,12 +3648,12 @@ paths:
               properties:
                 name: {type: string, maxLength: 200}
                 description: {type: string, maxLength: 2000}
-                protocol: {type: string, enum: [oidc, oauth, saml, forward-auth, bookmark]}
+                protocol: {type: string, enum: [oidc, oauth, saml, forward-auth, radius, bookmark]}
                 type: {type: string, enum: [web, spa, native, service]}
                 homepage: {type: string, format: uri, description: 'Required for bookmarks: the http or https address the bookmark opens.'}
                 redirectUris:
                   type: array
-                  description: Required for OpenID Connect applications other than services, and for forward-auth applications, where they are the protected addresses with only a scheme and host. https only, except http://localhost and http://127.0.0.1.
+                  description: Required for OpenID Connect applications other than services, for forward-auth applications, where they are the protected addresses with only a scheme and host, and for RADIUS clients, where they are the IP addresses or CIDR ranges the client sends from. URIs are https only, except http://localhost and http://127.0.0.1.
                   items: {type: string, format: uri}
                 postLogoutUris:
                   type: array
@@ -3668,7 +3668,7 @@ paths:
                 saml: {$ref: '#/components/schemas/SAMLInput'}
       responses:
         '201':
-          description: The application and, for web applications and services, the client secret.
+          description: The application and, for web applications and services, the client secret, or for RADIUS clients the shared secret.
           content:
             application/json:
               schema:
@@ -3689,7 +3689,7 @@ paths:
       tags: [Applications]
       operationId: getApplication
       summary: Get one application
-      description: 'Roles: any administrator. SAML applications include a `saml` object.'
+      description: 'Roles: any administrator. SAML applications include a `saml` object, and RADIUS clients `radiusPort`.'
       responses:
         '200': {$ref: '#/components/responses/ApplicationResponse'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -3699,7 +3699,7 @@ paths:
       tags: [Applications]
       operationId: updateApplication
       summary: Change an application
-      description: 'Roles: application administrator. Send only the fields to change. SAML applications accept only name, description, homepage, maxAuthAge, owner, groupIds and claimMappings. OpenID Connect applications must keep the `openid` scope.'
+      description: 'Roles: application administrator. Send only the fields to change. SAML applications accept only name, description, homepage, maxAuthAge, owner, groupIds and claimMappings, and RADIUS clients only name, description, homepage, redirectUris, maxAuthAge, owner and groupIds. OpenID Connect applications must keep the `openid` scope.'
       requestBody:
         required: true
         content:
@@ -3778,7 +3778,7 @@ paths:
       tags: [Applications]
       operationId: rotateClientSecret
       summary: Create a new client secret
-      description: 'Roles: application administrator. Every older secret stops working 24 hours later. The body is optional.'
+      description: 'Roles: application administrator. For RADIUS clients this creates a shared secret. Every older secret stops working 24 hours later. The body is optional.'
       requestBody:
         content:
           application/json:
@@ -8742,14 +8742,14 @@ components:
         id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
         description: {type: string}
-        protocol: {type: string, enum: [oidc, oauth, saml, forward-auth, bookmark]}
+        protocol: {type: string, enum: [oidc, oauth, saml, forward-auth, radius, bookmark]}
         type: {type: string, enum: [web, spa, native, service]}
         status: {type: string, enum: [active, disabled]}
         clientId: {type: string, description: 'The client ID, such as `hl_…`, or the entity ID for SAML applications.'}
         homepage: {type: string}
         redirectUris:
           type: array
-          description: For SAML applications, the ACS URLs. For forward-auth applications, the protected addresses.
+          description: For SAML applications, the ACS URLs. For forward-auth applications, the protected addresses. For RADIUS clients, the IP addresses and CIDR ranges Halo answers RADIUS requests from.
           items: {type: string}
         postLogoutUris:
           type: array
@@ -8781,7 +8781,8 @@ components:
         signIns7d: {type: integer}
         failureRate7d: {type: number, description: Percentage of failed sign-ins in the past 7 days.}
         tokenPolicy: {$ref: '#/components/schemas/TokenPolicy'}
-        maxAuthAge: {type: integer, description: 'Sign-in frequency in seconds, 0 when off. A person who signed in to Halo longer ago signs in again before the application gets a code, assertion or device approval, `prompt=none` returns `login_required`, and refresh tokens are refused with `invalid_grant`. A shorter `max_age` in the request still applies. Access tokens already issued last until they expire.'}
+        maxAuthAge: {type: integer, description: 'Sign-in frequency in seconds, 0 when off. A person who signed in to Halo longer ago signs in again before the application gets a code, assertion or device approval, `prompt=none` returns `login_required`, and refresh tokens are refused with `invalid_grant`. A shorter `max_age` in the request still applies. Access tokens already issued last until they expire. RADIUS clients get it as Session-Timeout, or the organization''s session lifetime when it is 0.'}
+        radiusPort: {type: integer, description: 'RADIUS clients only: the UDP port of Halo''s RADIUS server for authentication and accounting, from `HALO_RADIUS_LISTEN`, or 0 when the server is off.'}
         setupGuide: {type: string}
         logoUrl: {type: [string, 'null'], description: Path of the logo, or null., examples: ['/api/v1/applications/app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9/logo?v=1790000000']}
         registeredDynamically: {type: boolean, description: The client registered itself at `/oauth2/register` and can change or delete its registration with its registration access token.}
@@ -9853,7 +9854,7 @@ components:
         confirmFeatures: {type: boolean, writeOnly: true, description: Turn off the features in `featuresOff` even though they are in use.}
     FeatureId:
       type: string
-      enum: [saml, scim, provisioning, ssh, governance, webhooks, forward-auth, log-streaming]
+      enum: [saml, scim, provisioning, ssh, governance, webhooks, forward-auth, radius, log-streaming]
     Feature:
       type: object
       required: [id, name, description, enabled, usage]

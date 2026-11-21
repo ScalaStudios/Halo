@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -118,7 +119,23 @@ func serve(ctx context.Context) error {
 		go app.Jobs.Run(ctx)
 		srv := &http.Server{Addr: cfg.Listen, Handler: app.Handler, ReadHeaderTimeout: 10 * time.Second}
 		metricsSrv := &http.Server{Addr: cfg.MetricsListen, Handler: app.Metrics, ReadHeaderTimeout: 10 * time.Second}
-		errs := make(chan error, 2)
+		errs := make(chan error, 3)
+		if cfg.RADIUSListen != "" {
+			addr, err := net.ResolveUDPAddr("udp", cfg.RADIUSListen)
+			if err != nil {
+				return err
+			}
+			conn, err := net.ListenUDP("udp", addr)
+			if err != nil {
+				return err
+			}
+			go func() {
+				slog.Info("radius listening", "addr", cfg.RADIUSListen)
+				if err := app.RADIUS.Serve(ctx, conn); err != nil {
+					errs <- err
+				}
+			}()
+		}
 		go func() {
 			slog.Info("halo listening", "addr", cfg.Listen, "issuer", cfg.Issuer())
 			errs <- srv.ListenAndServe()

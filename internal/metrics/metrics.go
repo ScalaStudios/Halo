@@ -28,6 +28,7 @@ var (
 	LogExport         = NewCounter("halo_log_export_events_total", "Sign-in and audit events for the log exporter by outcome: sent, failed and retried later, rejected by the collector, or dropped from a full queue.", "outcome")
 	RateLimited       = NewCounter("halo_rate_limited_requests_total", "Requests refused by the API rate limit, by scope.", "scope")
 	HTTPRequests      = NewCounter("halo_http_requests_total", "HTTP requests by route pattern and status code.", "route", "status")
+	RADIUSRequests    = NewCounter("halo_radius_requests_total", "RADIUS requests by outcome: accept, reject, challenge, accounting, or dropped without a reply for an unknown client, a missing or wrong Message-Authenticator, a malformed packet, the rate limit or a server error.", "outcome")
 	HTTPDuration      = NewHistogram("halo_http_request_duration_seconds", "HTTP request duration by route pattern.", []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}, "route")
 )
 
@@ -51,8 +52,11 @@ func init() {
 	for _, v := range []string{"account", "address"} {
 		Lockouts.Add(0, v)
 	}
-	for _, v := range []string{"api", "scim", "bulk"} {
+	for _, v := range []string{"api", "scim", "bulk", "radius"} {
 		RateLimited.Add(0, v)
+	}
+	for _, v := range []string{"accept", "reject", "challenge", "accounting", "dropped"} {
+		RADIUSRequests.Add(0, v)
 	}
 }
 

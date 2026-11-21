@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { Tone } from "@/components/ui/badge";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
+import { CopyField } from "@/components/ui/copy-field";
 import { cn } from "@/lib/cn";
 import { daysUntil, formatDate, pluralize } from "@/lib/format";
 import type { SetupGuide } from "@/lib/setup-guides";
@@ -18,7 +19,7 @@ export function statusKey(app: Pick<Application, "status" | "awaitingApproval">)
   return app.awaitingApproval ? "awaiting" : app.status;
 }
 
-export const PROTOCOL_LABEL = { oidc: "OpenID Connect", saml: "SAML 2.0", oauth: "OAuth 2.0", "forward-auth": "Forward auth", bookmark: "Bookmark" } as const;
+export const PROTOCOL_LABEL = { oidc: "OpenID Connect", saml: "SAML 2.0", oauth: "OAuth 2.0", "forward-auth": "Forward auth", radius: "RADIUS", bookmark: "Bookmark" } as const;
 export const TYPE_LABEL = { web: "Web", spa: "Single-page", native: "Native / CLI", service: "Service" } as const;
 
 export const TYPE_ICON: Record<AppType, LucideIcon> = { web: AppWindow, spa: PanelsTopLeft, native: Terminal, service: ServerCog };
@@ -50,6 +51,16 @@ export function SecretWarning({ children }: { children: ReactNode }) {
       <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-warning" />
       <p className="text-body-sm text-fg-2">{children}</p>
     </div>
+  );
+}
+
+export function RadiusServerFields({ issuer, port }: { issuer: string; port?: number }) {
+  if (!port) return <SecretWarning>Halo&apos;s RADIUS server is off. Set HALO_RADIUS_LISTEN, for example to :1812, and restart Halo.</SecretWarning>;
+  return (
+    <>
+      <CopyField label="Server" value={new URL(issuer).hostname} hint="The address of the Halo server itself. RADIUS runs over UDP, so HTTP proxies and ingresses don't carry it." />
+      <CopyField label="Port" value={String(port)} hint="For authentication and accounting." />
+    </>
   );
 }
 

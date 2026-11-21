@@ -16,7 +16,7 @@ import { api } from "@/lib/api/client";
 import { formatDuration } from "@/lib/format";
 import type { ApiResource } from "@/lib/infra-types";
 import { SIGNING_ALGORITHMS, type Application, type SigningAlgorithm, type User } from "@/lib/types";
-import { originError, uriError } from "./new-application-flow";
+import { clientAddressError, originError, uriError } from "./new-application-flow";
 
 const SCOPES: Record<string, string> = {
   openid: "Signs the person in and issues an ID token.",
@@ -350,6 +350,8 @@ export function SignInFrequencyForm({ app }: { app: Pick<Application, "id" | "na
             ? `People who signed in to Halo longer ago than this sign in again before ${app.name} gets an assertion. Other applications keep single sign-on.`
             : app.protocol === "forward-auth"
               ? `People who signed in to Halo longer ago than this sign in again before the proxy lets them into ${app.name}. Other applications keep single sign-on.`
+            : app.protocol === "radius"
+              ? `Halo sends this to ${app.name} as Session-Timeout with every accepted sign-in, so the connection ends after this long and people sign in again.`
             : `People who signed in to Halo longer ago than this sign in again before ${app.name} gets a token, and its refresh tokens stop working. Other applications keep single sign-on.`
         }
       />
@@ -504,7 +506,8 @@ export function SenderConstraintForm({ app }: { app: Pick<Application, "id" | "n
   );
 }
 
-export function ProtectedAddressesForm({ app }: { app: Pick<Application, "id" | "name" | "redirectUris"> }) {
+export function ProtectedAddressesForm({ app }: { app: Pick<Application, "id" | "name" | "protocol" | "redirectUris"> }) {
+  const radius = app.protocol === "radius";
   const [addresses, setAddresses] = useState(app.redirectUris);
   const [errors, setErrors] = useState<(string | undefined)[]>([]);
   const [error, setError] = useState<string>();
@@ -513,22 +516,34 @@ export function ProtectedAddressesForm({ app }: { app: Pick<Application, "id" | 
   function submit(event: FormEvent) {
     event.preventDefault();
     const clean = addresses.map((a) => a.trim()).filter(Boolean);
-    const next = addresses.map((a) => (a.trim() ? originError(a) : undefined));
-    const empty = clean.length === 0 ? "Add at least one protected address." : undefined;
+    const next = addresses.map((a) => (a.trim() ? (radius ? clientAddressError(a) : originError(a)) : undefined));
+    const empty = clean.length === 0 ? `Add at least one ${radius ? "client" : "protected"} address.` : undefined;
     setErrors(next);
     setError(empty);
     if (empty || next.some(Boolean)) return;
     void run(
       "addresses",
       () => api(`/applications/${app.id}`, { method: "PATCH", body: { redirectUris: clean } }),
-      () => toast({ title: "Protected addresses saved", description: `Update the proxy configuration of ${app.name} if you added a host. Recorded in the audit log.` }),
+      () =>
+        toast(
+          radius
+            ? { title: "Client addresses saved", description: `Halo answers ${app.name} from these addresses within 10 seconds. Recorded in the audit log.` }
+            : { title: "Protected addresses saved", description: `Update the proxy configuration of ${app.name} if you added a host. Recorded in the audit log.` },
+        ),
       "inline",
     );
   }
 
   return (
     <Card>
-      <CardHeader title="Protected addresses" description={`Halo answers checks for ${app.name} only from these hosts, and only sends people back to them after sign-in.`} />
+      <CardHeader
+        title={radius ? "Client addresses" : "Protected addresses"}
+        description={
+          radius
+            ? `Halo answers RADIUS requests for ${app.name} only from these IP addresses and CIDR ranges, and ignores every other sender.`
+            : `Halo answers checks for ${app.name} only from these hosts, and only sends people back to them after sign-in.`
+        }
+      />
       <form onSubmit={submit} noValidate>
         <CardBody>
           <UriList
@@ -537,8 +552,8 @@ export function ProtectedAddressesForm({ app }: { app: Pick<Application, "id" | 
             onChange={setAddresses}
             errors={errors}
             error={error}
-            placeholder="https://files.example.com"
-            empty="No protected addresses."
+            placeholder={radius ? "10.0.0.0/24" : "https://files.example.com"}
+            empty={radius ? "No client addresses." : "No protected addresses."}
             add="Add address"
           />
         </CardBody>

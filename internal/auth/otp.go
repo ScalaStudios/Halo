@@ -92,19 +92,23 @@ func (h *handler) codeSignIn(w http.ResponseWriter, r *http.Request, method stri
 }
 
 func (h *handler) lockout(r *http.Request, a attempt, settings store.Settings, guesses string) error {
+	if locked, err := h.lockedOut(r.Context(), a, settings); err != nil || !locked {
+		return err
+	}
+	return h.reject(r, a, lockedOutReason, tooManyAttempts(guesses, settings))
+}
+
+func (h *handler) lockedOut(ctx context.Context, a attempt, settings store.Settings) (bool, error) {
 	userID := ""
 	if a.user != nil {
 		userID = a.user.ID
 	}
-	failures, err := h.st.RecentFailures(r.Context(), userID, a.email, guessedMethods, lockoutStart(settings))
-	if err != nil {
-		return err
+	failures, err := h.st.RecentFailures(ctx, userID, a.email, guessedMethods, lockoutStart(settings))
+	if err != nil || failures < settings.LockoutThreshold {
+		return false, err
 	}
-	if failures >= settings.LockoutThreshold {
-		metrics.Lockouts.Inc("account")
-		return h.reject(r, a, "Too many failed attempts.", tooManyAttempts(guesses, settings))
-	}
-	return nil
+	metrics.Lockouts.Inc("account")
+	return true, nil
 }
 
 func lockoutStart(settings store.Settings) time.Time {

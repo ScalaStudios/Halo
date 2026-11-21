@@ -82,6 +82,9 @@ Change the image tags, or upgrade to a newer chart, then run `helm upgrade`. The
 | `web.replicaCount` | `1` | Web interface replicas. |
 | `web.image.*` | `ghcr.io/scalastudios/halo-web`, chart `appVersion` | Web image. |
 | `web.resources`, `web.podSecurityContext`, `web.securityContext`, `web.nodeSelector`, `web.tolerations`, `web.affinity` | | Web pod settings. |
+| `radius.enabled` | `false` | Run Halo's RADIUS server, `HALO_RADIUS_LISTEN`, on its own UDP container port and a separate `<release>-radius` Service. |
+| `radius.port` | `1812` | RADIUS port. The Service also forwards the next port, 1813 by default, to it for accounting. |
+| `radius.serviceType` | `LoadBalancer` | Type of the RADIUS Service. `LoadBalancer` and `NodePort` get `externalTrafficPolicy: Local`, because Halo recognizes RADIUS clients by their source address. |
 | `metrics.enabled` | `false` | Serve Prometheus metrics on their own container and Service port, `HALO_METRICS_LISTEN`. The ingress never routes to it. |
 | `metrics.port` | `9090` | Metrics port. |
 | `metrics.serviceMonitor.enabled` | `false` | Create a Prometheus Operator ServiceMonitor. |

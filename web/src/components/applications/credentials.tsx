@@ -20,12 +20,15 @@ export function RotateSecretDialog({
   onOpenChange,
   appId,
   appName,
+  label = "Client secret",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   appId: string;
   appName: string;
+  label?: string;
 }) {
+  const kind = label.toLowerCase();
   const { pending, run, errorFor, clearError } = useMutation();
   const [rotated, setRotated] = useState<{ secret: string; graceEnds: string } | null>(null);
 
@@ -49,11 +52,11 @@ export function RotateSecretDialog({
       open={open}
       onOpenChange={(next) => (next ? onOpenChange(true) : close())}
       error={errorFor("rotate")}
-      title={rotated ? "New client secret" : "Rotate client secret?"}
+      title={rotated ? `New ${kind}` : `Rotate ${kind}?`}
       description={
         rotated
           ? `Update ${appName} with this secret. The previous secrets keep working for 24 hours, until ${rotated.graceEnds}.`
-          : `Halo creates a new client secret for ${appName}. The current secrets keep working for 24 hours, so you can deploy the new one without downtime.`
+          : `Halo creates a new ${kind} for ${appName}. The current secrets keep working for 24 hours, so you can deploy the new one without downtime.`
       }
       footer={
         rotated ? (
@@ -74,7 +77,7 @@ export function RotateSecretDialog({
     >
       {rotated ? (
         <div className="flex animate-enter flex-col gap-4">
-          <CopyField label="Client secret" value={rotated.secret} secret />
+          <CopyField label={label} value={rotated.secret} secret />
           <SecretWarning>This is the only time Halo shows this secret. Store it in your secret manager before closing this dialog.</SecretWarning>
         </div>
       ) : null}
@@ -82,7 +85,7 @@ export function RotateSecretDialog({
   );
 }
 
-export function CredentialList({ appId, appName, credentials, empty }: { appId: string; appName: string; credentials: Credential[]; empty: string }) {
+export function CredentialList({ appId, appName, credentials, empty, label = "Client secret" }: { appId: string; appName: string; credentials: Credential[]; empty: string; label?: string }) {
   const [rotating, setRotating] = useState(false);
   const { run, toast } = useMutation();
 
@@ -105,7 +108,7 @@ export function CredentialList({ appId, appName, credentials, empty }: { appId: 
           <span key="n" className="flex flex-col">
             <span className="font-medium text-fg">{credential.label}</span>
             <span className="text-caption text-fg-3">
-              {credential.kind === "secret" ? "Client secret" : "Signing certificate"} · <span className="font-mono text-code-sm">{credential.hint}</span>
+              {credential.kind === "secret" ? label : "Signing certificate"} · <span className="font-mono text-code-sm">{credential.hint}</span>
             </span>
           </span>,
           <span key="c" className="tnum whitespace-nowrap">
@@ -128,7 +131,7 @@ export function CredentialList({ appId, appName, credentials, empty }: { appId: 
           </span>,
         ])}
       />
-      <RotateSecretDialog open={rotating} onOpenChange={setRotating} appId={appId} appName={appName} />
+      <RotateSecretDialog open={rotating} onOpenChange={setRotating} appId={appId} appName={appName} label={label} />
     </>
   );
 }

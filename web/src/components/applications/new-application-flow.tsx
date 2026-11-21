@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bookmark, Check, FileKey, KeyRound, ServerCog, ShieldCheck, type LucideIcon } from "lucide-react";
+import { Bookmark, Check, FileKey, KeyRound, Network, ServerCog, ShieldCheck, type LucideIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { ActionError } from "@/components/ui/action-error";
@@ -14,9 +14,9 @@ import { cn } from "@/lib/cn";
 import { NAME_ID_FORMATS, type NameIdFormat, type SamlApplication } from "@/lib/saml-types";
 import { endpoints, setupGuide } from "@/lib/setup-guides";
 import { SamlConnectionFields } from "./saml";
-import { SecretWarning, SetupGuideCard, TYPE_ICON } from "./shared";
+import { RadiusServerFields, SecretWarning, SetupGuideCard, TYPE_ICON } from "./shared";
 
-type Protocol = "oidc" | "saml" | "oauth" | "forward-auth" | "bookmark";
+type Protocol = "oidc" | "saml" | "oauth" | "forward-auth" | "radius" | "bookmark";
 type Source = "values" | "metadata";
 type Platform = "web" | "spa" | "native";
 type Template = { value: string; label: string; uri: string; entityId?: string; guide: string; platform?: Platform; hint?: string; more?: string[]; scopes?: string[] };
@@ -31,6 +31,12 @@ const PROTOCOLS: Option<Protocol>[] = [
     label: "Forward auth",
     description: "Sign-in in front of applications without OpenID Connect or SAML. Traefik, nginx or Caddy asks Halo before every request.",
     icon: ShieldCheck,
+  },
+  {
+    value: "radius",
+    label: "RADIUS",
+    description: "Password sign-in for VPNs and network devices that ask a RADIUS server, limited to the groups you assign.",
+    icon: Network,
   },
   { value: "bookmark", label: "Bookmark", description: "A link in the account portal, like an intranet page, status page or helpdesk. Nobody signs in through Halo.", icon: Bookmark },
 ];
@@ -110,6 +116,12 @@ export function originError(value: string): string | undefined {
   return url.pathname !== "/" || url.search ? "Use only the scheme and host, like https://files.example.com. Halo protects every path on it." : undefined;
 }
 
+export function clientAddressError(value: string): string | undefined {
+  const raw = value.trim();
+  if (!raw) return "Enter the address the RADIUS client sends from, like 10.0.0.5 or 10.0.0.0/24.";
+  return /^[0-9a-f.:]+(\/\d{1,3})?$/i.test(raw) ? undefined : "Enter an IP address or CIDR range, like 10.0.0.5 or 10.0.0.0/24. Halo recognizes RADIUS clients by the address they send from.";
+}
+
 export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; featuresOff: string[] }) {
   const [step, setStep] = useState(0);
   const [protocol, setProtocol] = useState<Protocol>("oidc");
@@ -172,6 +184,10 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
     }
     if (protocol === "forward-auth") {
       submitForwardAuth();
+      return;
+    }
+    if (protocol === "radius") {
+      submitRadius();
       return;
     }
     const next = {
@@ -239,6 +255,18 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
     );
   }
 
+  function submitRadius() {
+    const next = { name: name.trim() ? undefined : "Enter a name. It appears in the sign-in log.", address: clientAddressError(address) };
+    setErrors(next);
+    if (next.name || next.address) return;
+    void run(
+      "create",
+      () => api<{ application: SamlApplication; clientSecret: string | null }>("/applications", { body: { name: name.trim(), protocol, redirectUris: [address.trim()] } }),
+      setCreated,
+      "inline",
+    );
+  }
+
   function submitSaml() {
     const values = source === "values";
     const next = {
@@ -268,6 +296,7 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
   if (created) {
     const { application, clientSecret } = created;
     const appName = application.name;
+    const radius = application.protocol === "radius";
     const guide = setupGuide(application, issuer);
     return (
       <div className="flex animate-enter flex-col gap-6">
@@ -277,7 +306,9 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
             description={
               application.saml
                 ? `Give ${appName} these values so it trusts Halo, or point it at the metadata URL.`
-                : clientSecret
+                : radius
+                  ? `Enter these values in the RADIUS settings of ${appName}. Use PAP, and send a Message-Authenticator with every request: Halo ignores requests without one.`
+                  : clientSecret
                   ? `Add these values to ${appName} to finish connecting it to Halo.`
                   : `Add these values to ${appName}. It is a public client, so it has no secret and must sign in with PKCE.`
             }
@@ -288,6 +319,11 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
                 <SamlConnectionFields idp={application.saml.idp} />
                 <CopyField label="SP entity ID" value={application.clientId} />
               </>
+            ) : radius ? (
+              <>
+                <RadiusServerFields issuer={issuer} port={application.radiusPort} />
+                {clientSecret ? <CopyField label="Shared secret" value={clientSecret} secret /> : null}
+              </>
             ) : (
               <>
                 <CopyField label="Issuer" value={urls.issuer} />
@@ -297,17 +333,21 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
               </>
             )}
             {application.redirectUris.map((redirect) => (
-              <CopyField key={redirect} label={application.saml ? "ACS URL" : "Redirect URI"} value={redirect} />
+              <CopyField key={redirect} label={application.saml ? "ACS URL" : radius ? "Client address" : "Redirect URI"} value={redirect} />
             ))}
             {clientSecret ? (
-              <SecretWarning>This is the only time Halo shows the client secret. Store it in your secret manager now. If you lose it, rotate it from the Credentials tab.</SecretWarning>
+              <SecretWarning>
+                This is the only time Halo shows the {radius ? "shared" : "client"} secret. Store it in your secret manager now. If you lose it, rotate it from the Credentials tab.
+              </SecretWarning>
             ) : null}
           </CardBody>
         </Card>
         <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="secondary" aria-expanded={guideOpen} onClick={() => setGuideOpen(!guideOpen)}>
-            {guideOpen ? "Hide setup guide" : "View setup guide"}
-          </Button>
+          {radius ? null : (
+            <Button variant="secondary" aria-expanded={guideOpen} onClick={() => setGuideOpen(!guideOpen)}>
+              {guideOpen ? "Hide setup guide" : "View setup guide"}
+            </Button>
+          )}
           <Link href={`/admin/applications/${application.id}`} className={buttonClasses("primary")}>
             Open application
           </Link>
@@ -424,6 +464,21 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
                 hint="Where people open the application. Halo only sends people back to its protected addresses. Add more on the Authentication tab."
               >
                 {(props) => <Input {...props} type="url" mono value={address} onChange={(e) => setAddress(e.target.value)} placeholder="https://files.example.com" />}
+              </Field>
+            </div>
+          ) : null}
+          {current === "Details" && protocol === "radius" ? (
+            <div className="flex flex-col gap-6">
+              <h2 className="text-h4 text-fg">RADIUS client details</h2>
+              <Field label="Name" error={errors.name}>
+                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Office VPN" />}
+              </Field>
+              <Field
+                label="Client address"
+                error={errors.address}
+                hint="The IP address or CIDR range the VPN or device sends RADIUS requests from. Add more on the Authentication tab."
+              >
+                {(props) => <Input {...props} mono value={address} onChange={(e) => setAddress(e.target.value)} placeholder="10.0.0.5" />}
               </Field>
             </div>
           ) : null}

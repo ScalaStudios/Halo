@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"slices"
@@ -35,6 +36,55 @@ func (h *handler) passwordAllowed(r *http.Request, u store.User) (bool, store.Se
 	return enabled && settings.PasswordAllowed(u), settings, err
 }
 
+const (
+	lockedOutReason      = "Too many failed attempts."
+	sprayedReason        = "Too many failed passwords from this IP address."
+	noSecondFactorReason = "The password was correct, but the account has no authenticator app for the second factor."
+)
+
+func (h *handler) sprayed(ctx context.Context, ip string, settings store.Settings) (bool, error) {
+	failures, err := h.st.RecentFailuresFromIP(ctx, ip, []string{"password"}, lockoutStart(settings))
+	if err != nil || failures < addressLockoutFactor*settings.LockoutThreshold {
+		return false, err
+	}
+	metrics.Lockouts.Inc("address")
+	return true, nil
+}
+
+func (h *handler) checkPassword(ctx context.Context, a attempt, password string, settings store.Settings) (store.Password, string, error) {
+	if enabled, err := h.st.MethodEnabled(ctx, "password"); err != nil || !enabled {
+		return store.Password{}, "Sign-in with passwords is turned off for this organization.", err
+	}
+	var u store.User
+	if a.user != nil {
+		u = *a.user
+	}
+	stored, err := h.st.GetPassword(ctx, u.ID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return stored, "", err
+	}
+	hash := stored.Hash
+	if hash == "" {
+		hash = dummyPassword()
+	}
+	matched := secret.PasswordMatches(hash, password)
+	switch {
+	case a.user == nil:
+		return stored, "No account uses this email address.", nil
+	case stored.Hash == "":
+		return stored, "The account has no password.", nil
+	case !matched:
+		return stored, "The password did not match.", nil
+	case !settings.PasswordAllowed(u):
+		return stored, "Sign-in with passwords is limited to groups this account is not in.", nil
+	}
+	return stored, "", nil
+}
+
+func hasTOTP(u store.User) bool {
+	return slices.ContainsFunc(u.Methods, func(m store.Method) bool { return m.Kind == "totp" })
+}
+
 func (h *handler) passwordSignIn(w http.ResponseWriter, r *http.Request) error {
 	var in struct {
 		Email       string `json:"email"`
@@ -66,44 +116,23 @@ func (h *handler) passwordSignIn(w http.ResponseWriter, r *http.Request) error {
 	if err := h.lockout(r, a, settings, "passwords"); err != nil {
 		return err
 	}
-	sprayed, err := h.st.RecentFailuresFromIP(ctx, httpx.ClientIP(r), []string{"password"}, lockoutStart(settings))
-	if err != nil {
+	if sprayed, err := h.sprayed(ctx, httpx.ClientIP(r), settings); err != nil {
 		return err
-	}
-	if sprayed >= addressLockoutFactor*settings.LockoutThreshold {
-		metrics.Lockouts.Inc("address")
-		return h.reject(r, a, "Too many failed passwords from this IP address.", tooManyAttempts("passwords", settings))
+	} else if sprayed {
+		return h.reject(r, a, sprayedReason, tooManyAttempts("passwords", settings))
 	}
 	if err := h.challenge(r, &a, in.Challenge, settings, false); err != nil {
 		return err
 	}
-	if enabled, err := h.st.MethodEnabled(ctx, "password"); err != nil {
-		return err
-	} else if !enabled {
-		return h.reject(r, a, "Sign-in with passwords is turned off for this organization.", errPasswordMismatch)
-	}
-	stored, err := h.st.GetPassword(ctx, u.ID)
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
+	stored, reason, err := h.checkPassword(ctx, a, in.Password, settings)
+	if err != nil {
 		return err
 	}
-	hash := stored.Hash
-	if hash == "" {
-		hash = dummyPassword()
+	if reason != "" {
+		return h.reject(r, a, reason, errPasswordMismatch)
 	}
-	matched := secret.PasswordMatches(hash, in.Password)
-	switch {
-	case a.user == nil:
-		return h.reject(r, a, "No account uses this email address.", errPasswordMismatch)
-	case stored.Hash == "":
-		return h.reject(r, a, "The account has no password.", errPasswordMismatch)
-	case !matched:
-		return h.reject(r, a, "The password did not match.", errPasswordMismatch)
-	case !settings.PasswordAllowed(u):
-		return h.reject(r, a, "Sign-in with passwords is limited to groups this account is not in.", errPasswordMismatch)
-	}
-	totp := slices.ContainsFunc(u.Methods, func(m store.Method) bool { return m.Kind == "totp" })
-	if settings.PasswordSecondFactor && !totp {
-		return h.reject(r, a, "The password was correct, but the account has no authenticator app for the second factor.", errNoSecondFactor)
+	if settings.PasswordSecondFactor && !hasTOTP(u) {
+		return h.reject(r, a, noSecondFactorReason, errNoSecondFactor)
 	}
 	replacement := ""
 	if stored.MustChange {

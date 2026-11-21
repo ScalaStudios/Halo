@@ -56,6 +56,10 @@ func TestRotateSecretKey(t *testing.T) {
 	must(st.SaveSignalReceiver(ctx, receiver.ID, "iss_sub"))
 	_, err = st.CreateSignalStream(ctx, store.SignalStream{AppID: receiver.ID, DeliveryMethod: store.PushDelivery, EndpointURL: "https://receiver.example.com/events", AuthorizationSealed: st.Sealer.Seal([]byte("Bearer receiver"))})
 	must(err)
+	vpn, err := st.CreateApplication(ctx, store.NewApplication{Name: "VPN", Protocol: "radius", Type: "web", RedirectURIs: []string{"10.0.0.0/24"}})
+	must(err)
+	_, shared, err := st.AddSharedSecret(ctx, vpn.ID, "Initial", time.Hour)
+	must(err)
 
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
@@ -107,6 +111,9 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	directory, err := rotated.GetLDAPDirectory(ctx, directoryID)
 	must(err)
+	if clients, err := rotated.RADIUSClients(ctx); err != nil || len(clients) != 1 || string(clients[0].Secrets[0].Value) != shared {
+		t.Fatalf("RADIUS shared secret with the new key: %+v %v", clients, err)
+	}
 	for want, sealed := range map[string][]byte{"totp-seed": totp[0].Sealed, "Authorization=Bearer otel": export.HeadersSealed, "scim-token": provisioning.TokenSealed, "client-secret": provider.SecretSealed, "intune-secret": source.Sealed, "bind-password": directory.Sealed,
 		"https://checks.example.com/hook": hook.URLSealed, "hook-secret": hook.SecretSealed} {
 		if plain, err := rotated.Sealer.Open(sealed); err != nil || string(plain) != want {

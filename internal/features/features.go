@@ -113,6 +113,14 @@ var All = []Feature{
 		},
 	},
 	{
+		ID: "radius", Name: "RADIUS server",
+		Description: "Sign-in for VPN gateways, firewalls and network devices with a Halo password over RADIUS. While it is off, the RADIUS listener answers nothing.",
+		usage: func(ctx context.Context, st *store.Store) ([]string, error) {
+			apps, err := st.ListApplications(ctx)
+			return tally(apps, err, func(a store.Application) bool { return a.Protocol == "radius" }, "RADIUS client is registered", "RADIUS clients are registered")
+		},
+	},
+	{
 		ID: "log-streaming", Name: "Log streaming",
 		Description: "Every sign-in and audit event sent to syslog or an OpenTelemetry collector.",
 		Paths:       []string{"/api/v1/log-export"},
@@ -158,7 +166,7 @@ func Name(id string) string {
 	return id
 }
 
-func off(ctx context.Context, st *store.Store, id string) (bool, error) {
+func Off(ctx context.Context, st *store.Store, id string) (bool, error) {
 	s, err := st.Settings(ctx)
 	return slices.Contains(s.FeaturesOff, id), err
 }
@@ -174,7 +182,7 @@ func Gate(st *store.Store, next http.Handler) http.Handler {
 	return httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
 		h, _ := routes.Handler(r)
 		if id, ok := h.(owner); ok {
-			gone, err := off(r.Context(), st, string(id))
+			gone, err := Off(r.Context(), st, string(id))
 			if err != nil {
 				return err
 			}
@@ -203,7 +211,7 @@ func SkipJob(st *store.Store) func(context.Context, string) bool {
 		if !ok {
 			return false
 		}
-		gone, err := off(ctx, st, id)
+		gone, err := Off(ctx, st, id)
 		return gone || err != nil
 	}
 }

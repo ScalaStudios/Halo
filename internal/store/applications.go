@@ -239,7 +239,7 @@ func (s *Store) VerifyClientSecret(ctx context.Context, clientID, value string) 
 	now := time.Now()
 	for _, c := range app.Credentials {
 		if c.Kind == "secret" && c.ExpiresAt.After(now) && secret.Equal(c.SecretHash, hash) {
-			_, _ = s.db.Exec(ctx, `update app_credentials set last_used_at = now() where id = $1`, c.ID)
+			_ = s.TouchCredential(ctx, c.ID)
 			return app, nil
 		}
 	}
@@ -314,7 +314,7 @@ func (s *Store) decorateApps(ctx context.Context, apps []Application, withStats 
 		return nil
 	}
 
-	rows, err = s.db.Query(ctx, `select app_id, count(*), count(*) filter (where result <> 'success') from sign_in_events where app_id = any($1) and method <> 'token' and time > now() - interval '7 days' group by app_id`, ids)
+	rows, err = s.db.Query(ctx, `select app_id, count(*) filter (where result <> 'ended'), count(*) filter (where result not in ('success', 'ended')) from sign_in_events where app_id = any($1) and method <> 'token' and time > now() - interval '7 days' group by app_id`, ids)
 	if err != nil {
 		return err
 	}
@@ -361,7 +361,7 @@ func claimsFor(a Application) []Claim {
 	if a.Protocol == "saml" {
 		return a.Mapped(SAMLClaims(DefaultSAMLSettings()))
 	}
-	if a.Protocol == "bookmark" {
+	if a.Protocol == "bookmark" || a.Protocol == "radius" {
 		return []Claim{}
 	}
 	if a.Protocol == "forward-auth" {

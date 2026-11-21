@@ -23,6 +23,7 @@ type Config struct {
 	PublicURL      *url.URL
 	Listen         string
 	MetricsListen  string
+	RADIUSListen   string
 	MetricsToken   string
 	SecretKey      []byte
 	Dev            bool
@@ -102,6 +103,8 @@ func Load() (Config, error) {
 	if cfg.MetricsListen != "" && cfg.MetricsListen == cfg.Listen {
 		problems = append(problems, "HALO_METRICS_LISTEN must differ from HALO_LISTEN, for example :9090, so metrics stay off the public port")
 	}
+
+	cfg.RADIUSListen = os.Getenv("HALO_RADIUS_LISTEN")
 
 	cfg.Dev = os.Getenv("HALO_DEV") == "1"
 	cfg.NoCustomCSS = os.Getenv("HALO_DISABLE_CUSTOM_CSS") == "1"
