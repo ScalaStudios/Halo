@@ -1,6 +1,7 @@
 import { FileBadge } from "lucide-react";
 import { SecretWarning, SetupGuideCard } from "@/components/applications/shared";
 import { LifetimeSetting, MappingsSection } from "@/components/infra/ssh";
+import { HostGroupsSection, PosixSettingsCard } from "@/components/infra/host-login";
 import { HostsSection } from "@/components/infra/ssh-hosts";
 import { Badge, Tag } from "@/components/ui/badge";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -12,13 +13,13 @@ import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { apiGet } from "@/lib/api/server";
 import { formatDate, formatDateTime, formatDuration, now, pluralize } from "@/lib/format";
-import type { PrincipalMapping, SshAuthority, SshCertificate, SshHost, SshHostAuthority } from "@/lib/infra-types";
+import type { HostGroup, PosixSettings, PrincipalMapping, SshAuthority, SshCertificate, SshHost, SshHostAuthority } from "@/lib/infra-types";
 import type { Group, Organization } from "@/lib/types";
 
 export const metadata = { title: "Infrastructure access" };
 
 export default async function InfrastructurePage() {
-  const [authority, mappings, certificates, groups, org, hostAuthority, hosts] = await Promise.all([
+  const [authority, mappings, certificates, groups, org, hostAuthority, hosts, hostGroups, posix] = await Promise.all([
     apiGet<SshAuthority>("/ssh/authority"),
     apiGet<PrincipalMapping[]>("/ssh/principal-mappings"),
     apiGet<SshCertificate[]>("/ssh/certificates"),
@@ -26,6 +27,8 @@ export default async function InfrastructurePage() {
     apiGet<Organization>("/organization"),
     apiGet<SshHostAuthority>("/ssh/host-authority"),
     apiGet<SshHost[]>("/ssh/hosts"),
+    apiGet<HostGroup[]>("/ssh/host-groups"),
+    apiGet<PosixSettings>("/ssh/posix"),
   ]);
   const current = now();
   const valid = certificates.filter((c) => new Date(c.validBefore) > current).length;
@@ -161,7 +164,30 @@ export default async function InfrastructurePage() {
         }}
       />
 
-      <HostsSection hosts={hosts} issuer={org.issuer} />
+      <HostsSection hosts={hosts} hostGroups={hostGroups} issuer={org.issuer} />
+
+      <HostGroupsSection hostGroups={hostGroups} groups={groups} />
+
+      <SetupGuideCard
+        guide={{
+          title: "Log in with Linux accounts from Halo",
+          description:
+            "Run these commands as root on each enrolled Debian or Ubuntu host, with halo-hostd from CGO_ENABLED=0 go build ./cmd/halo-hostd. People in the host group's rules then log in as themselves with their halo ssh-cert certificate, and lose access at the next refresh after you suspend them.",
+          file: "Host login setup",
+          code: [
+            "apt install libnss-extrausers",
+            "install -m 0755 halo-hostd /usr/local/bin/halo-hostd",
+            `sed 's#https://auth.example.com#${org.issuer}#' deploy/halo-hostd.service > /etc/systemd/system/halo-hostd.service`,
+            "sed -i '/^\\(passwd\\|group\\):/ s/$/ extrausers/' /etc/nsswitch.conf",
+            `curl -fsS ${org.issuer}/api/v1/ssh/ca.pub > /etc/ssh/halo_ca.pub`,
+            'printf "TrustedUserCAKeys /etc/ssh/halo_ca.pub\\nAuthorizedPrincipalsCommand /usr/local/bin/halo-hostd principals %u\\nAuthorizedPrincipalsCommandUser nobody\\n" >> /etc/ssh/sshd_config',
+            "echo 'session required pam_mkhomedir.so skel=/etc/skel umask=0077' >> /etc/pam.d/sshd",
+            "systemctl enable --now halo-hostd && systemctl reload ssh",
+          ].join("\n"),
+        }}
+      />
+
+      <PosixSettingsCard key={JSON.stringify(posix)} settings={posix} />
     </div>
   );
 }

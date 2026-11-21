@@ -199,7 +199,7 @@ func (s *Store) CreateServiceAccount(ctx context.Context, in NewServiceAccount) 
 			return err
 		}
 		accountID = u.ID
-		if _, err := tx.db.Exec(ctx, `update users set kind = 'service' where id = $1`, u.ID); err != nil {
+		if _, err := tx.db.Exec(ctx, `with p as (update posix_ids set user_id = null, name = null, login_shell = null, home_directory = null where user_id = $1) update users set kind = 'service' where id = $1`, u.ID); err != nil {
 			return err
 		}
 		_, err = tx.db.Exec(ctx, `insert into service_accounts (user_id, description, owner_id, created_by) values ($1, $2, $3, $4)`, u.ID, in.Description, in.OwnerID, in.CreatedBy)

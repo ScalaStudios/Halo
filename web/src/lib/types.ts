@@ -42,8 +42,11 @@ export type User = {
   expiresAt: string | null;
   directory: NamedRef | null;
   attributes: Record<string, AttributeValue>;
+  posix: PosixAccount | null;
   impersonation?: Impersonation;
 };
+
+export type PosixAccount = { username: string; uidNumber: number; gidNumber: number; loginShell: string; homeDirectory: string };
 
 export type AttributeType = "string" | "number" | "boolean" | "date" | "list";
 export type AttributeValue = string | number | boolean | string[];
@@ -92,6 +95,7 @@ export type Group = {
   memberCount: number;
   source: string;
   createdAt: string;
+  posix: { name: string; gidNumber: number } | null;
 };
 
 export type OwnedGroup = Group & { requestCount: number };

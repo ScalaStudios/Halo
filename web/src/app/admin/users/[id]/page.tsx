@@ -17,6 +17,7 @@ import { EditRolesButton, PasskeyWarning } from "@/components/directory/edit-rol
 import { limitedOnly, roleNames } from "@/components/settings/roles";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
 import { GuestAccessButton } from "@/components/directory/guest-access";
+import { LinuxAccountCard } from "@/components/directory/linux-account";
 import { PROTOCOL_LABEL } from "@/components/applications/shared";
 import { MethodList } from "@/components/identity/method-list";
 import { SignInRows } from "@/components/monitoring/sign-in-rows";
@@ -415,6 +416,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
             )}
           </CardBody>
         </Card>
+        <LinuxAccountCard user={user} editable={access === "all"} />
       </div>
     );
   }

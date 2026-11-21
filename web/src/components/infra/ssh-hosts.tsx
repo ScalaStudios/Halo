@@ -10,12 +10,12 @@ import { Card } from "@/components/ui/card";
 import { CopyField } from "@/components/ui/copy-field";
 import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Field, Input, Textarea } from "@/components/ui/input";
+import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
 import { formatDateTime, now } from "@/lib/format";
-import type { SshHost } from "@/lib/infra-types";
+import type { HostGroup, SshHost } from "@/lib/infra-types";
 
 type Enrollment = { host: SshHost; token: string };
 type Issued = { certificate: string; serial: number; validBefore: string };
@@ -24,12 +24,22 @@ function hostLabel(host: SshHost) {
   return host.hostnames[0] ?? "this host";
 }
 
-export function HostsSection({ hosts, issuer }: { hosts: SshHost[]; issuer: string }) {
+export function HostsSection({ hosts, hostGroups, issuer }: { hosts: SshHost[]; hostGroups: HostGroup[]; issuer: string }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [enrolling, setEnrolling] = useState<SshHost | "new" | null>(null);
   const [signing, setSigning] = useState<SshHost | null>(null);
   const [revoking, setRevoking] = useState<SshHost | null>(null);
   const current = now();
+
+  function move(host: SshHost, hostGroupId: string) {
+    const group = hostGroups.find((g) => g.id === hostGroupId);
+    void run(`move-${host.id}`, () => api(`/ssh/hosts/${host.id}/host-group`, { method: "PUT", body: { hostGroupId: hostGroupId || null } }), () =>
+      toast({
+        title: group ? `${hostLabel(host)} moved to ${group.name}` : `${hostLabel(host)} is in no host group`,
+        description: group ? "halo-hostd applies its rules at the next refresh. Recorded in the audit log." : "halo-hostd lets nobody in from the next refresh. Recorded in the audit log.",
+      }),
+    );
+  }
 
   function revoke() {
     const host = revoking;
@@ -55,7 +65,7 @@ export function HostsSection({ hosts, issuer }: { hosts: SshHost[]; issuer: stri
       {hosts.length ? (
         <SimpleTable
           caption="Hosts"
-          head={["Hostnames", "Host key", "Certificate", "Actions"]}
+          head={["Hostnames", "Host key", "Certificate", "Host group", "Actions"]}
           rows={hosts.map((host) => [
             <span key="hostnames" className="flex flex-wrap gap-1">
               {host.hostnames.map((name) => (
@@ -99,6 +109,28 @@ export function HostsSection({ hosts, issuer }: { hosts: SshHost[]; issuer: stri
                 </span>
               ) : null}
             </span>,
+            host.revokedAt ? (
+              <span key="group" className="text-fg-3">
+                —
+              </span>
+            ) : (
+              <span key="group" className="block w-48">
+                <Select
+                  size="sm"
+                  aria-label={`Host group of ${hostLabel(host)}`}
+                  value={host.hostGroupId ?? ""}
+                  disabled={pending === `move-${host.id}`}
+                  onChange={(event) => move(host, event.target.value)}
+                >
+                  <option value="">No host group</option>
+                  {hostGroups.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </Select>
+              </span>
+            ),
             host.revokedAt ? (
               <span key="actions" />
             ) : (

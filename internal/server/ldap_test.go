@@ -171,10 +171,12 @@ func TestLDAPApplicationSeesOnlyAssignedPeople(t *testing.T) {
 		t.Fatalf("the directory must hold the assigned people and groups only: %v %q", err, dns(all))
 	}
 	for _, e := range all.Entries {
-		if e.DN == ada && (e.GetAttributeValue("mail") != "ada@example.com" || e.GetAttributeValue("cn") != "ada" || !slices.Equal(e.GetAttributeValues("memberOf"), []string{staffDN}) || e.GetAttributeValue("userPassword") != "") {
+		if e.DN == ada && (e.GetAttributeValue("mail") != "ada@example.com" || e.GetAttributeValue("cn") != "ada" || !slices.Equal(e.GetAttributeValues("memberOf"), []string{staffDN}) || e.GetAttributeValue("userPassword") != "" ||
+			!slices.Equal(e.GetAttributeValues("uid"), []string{"ada@example.com", "ada"}) || e.GetAttributeValue("homeDirectory") != "/home/ada" || e.GetAttributeValue("loginShell") != "/bin/bash" || e.GetAttributeValue("uidNumber") != e.GetAttributeValue("gidNumber") || e.GetAttributeValue("uidNumber") == "") {
 			t.Fatalf("person entry: %+v", e.Attributes)
 		}
-		if e.DN == staffDN && (!slices.Equal(e.GetAttributeValues("member"), []string{ada, carol}) || !slices.Contains(e.GetAttributeValues("objectClass"), "groupOfNames")) {
+		if e.DN == staffDN && (!slices.Equal(e.GetAttributeValues("member"), []string{ada, carol}) || !slices.Contains(e.GetAttributeValues("objectClass"), "groupOfNames") ||
+			!slices.Contains(e.GetAttributeValues("objectClass"), "posixGroup") || !slices.Equal(e.GetAttributeValues("memberUid"), []string{"ada", "carol"}) || e.GetAttributeValue("gidNumber") == "") {
 			t.Fatalf("group entry: %+v", e.Attributes)
 		}
 	}
@@ -185,6 +187,7 @@ func TestLDAPApplicationSeesOnlyAssignedPeople(t *testing.T) {
 		"(&(objectClass=inetOrgPerson)(memberOf=" + ldap.EscapeFilter(staffDN) + "))": {ada, carol},
 		"(&(objectClass=person)(!(uid=ada*)))":                                        {carol},
 		"(mail=*@EXAMPLE.com)":                                                        {ada, carol},
+		"(&(objectClass=posixAccount)(uid=carol))":                                    {carol},
 		"(&(uid=*)(unknownAttribute=1))":                                              {},
 		"(!(unknownAttribute=1))":                                                     {},
 	} {

@@ -11,10 +11,12 @@ import (
 	"halo/internal/rule"
 )
 
+const posixGroupSQL = `(select json_build_object('name', p.name, 'gidNumber', p.number) from posix_ids p where p.group_id = g.id)`
+
 const assignedCountSQL = `(select count(*) from group_members m join users u on u.id = m.user_id where m.group_id = g.id and u.status <> 'deprovisioned')`
 
 func (s *Store) ListGroupsRaw(ctx context.Context) ([]Group, error) {
-	return s.queryGroups(ctx, `select g.id, g.name, g.description, g.kind, g.rule, g.join_policy, g.source, g.created_at, `+assignedCountSQL+` from groups g order by g.created_at`)
+	return s.queryGroups(ctx, `select g.id, g.name, g.description, g.kind, g.rule, g.join_policy, g.source, g.created_at, `+posixGroupSQL+`, `+assignedCountSQL+` from groups g order by g.created_at`)
 }
 
 func (s *Store) ListGroups(ctx context.Context) ([]Group, error) {
@@ -22,7 +24,7 @@ func (s *Store) ListGroups(ctx context.Context) ([]Group, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.queryGroups(ctx, dynamic+`select g.id, g.name, g.description, g.kind, g.rule, g.join_policy, g.source, g.created_at,
+	return s.queryGroups(ctx, dynamic+`select g.id, g.name, g.description, g.kind, g.rule, g.join_policy, g.source, g.created_at, `+posixGroupSQL+`,
 		case when g.kind = 'dynamic' then (select count(*) from dynamic d join users u on u.id = d.user_id where d.id = g.id and u.status <> 'deprovisioned' and u.kind = 'person')
 		else `+assignedCountSQL+` end from groups g order by g.created_at`, args...)
 }
@@ -102,7 +104,7 @@ func (s *Store) queryGroups(ctx context.Context, query string, args ...any) ([]G
 	index := map[string]int{}
 	for rows.Next() {
 		g := Group{Owners: []NamedRef{}}
-		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.Kind, &g.Rule, &g.JoinPolicy, &g.Source, &g.CreatedAt, &g.MemberCount); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.Description, &g.Kind, &g.Rule, &g.JoinPolicy, &g.Source, &g.CreatedAt, &g.POSIX, &g.MemberCount); err != nil {
 			rows.Close()
 			return nil, err
 		}
