@@ -3,6 +3,7 @@ package store
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -181,7 +182,7 @@ func (s *Store) CreateUser(ctx context.Context, in NewUser) (User, error) {
 		in.Source = "Halo"
 	}
 	err := s.Tx(ctx, func(tx *Store) error {
-		_, err := tx.db.Exec(ctx, `insert into users (id, email, name, title, department, location, status, manager_id, source, guest, sponsor_id, expires_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		_, err := tx.db.Exec(ctx, `insert into users (id, email, name, title, department, location, status, manager_id, source, guest, sponsor_id, expires_at, awaiting_activation) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $7 in ('invited', 'suspended'))`,
 			userID, strings.TrimSpace(in.Email), strings.TrimSpace(in.Name), in.Title, in.Department, in.Location, in.Status, in.ManagerID, in.Source, in.Guest, in.SponsorID, in.ExpiresAt)
 		if err != nil {
 			return conflict(err)
@@ -208,23 +209,55 @@ func (s *Store) CreateUser(ctx context.Context, in NewUser) (User, error) {
 }
 
 func (s *Store) SetUserStatus(ctx context.Context, userID, status string) error {
-	var previous string
-	if err := s.db.QueryRow(ctx, `with old as (select status from users where id = $1) update users set status = $2, updated_at = now() where id = $1 returning (select status from old)`, userID, status).Scan(&previous); err != nil {
-		return notFound(err)
-	}
-	disabled := func(status string) bool { return status == "suspended" || status == "deprovisioned" }
-	switch {
-	case disabled(status) && !disabled(previous):
-		return s.signal(ctx, accountDisabled, nil, signalUser, userID)
-	case disabled(previous) && !disabled(status):
-		return s.signal(ctx, accountEnabled, nil, signalUser, userID)
-	}
-	return nil
+	return s.Tx(ctx, func(tx *Store) error {
+		var previous string
+		var awaitingActivation bool
+		if err := tx.db.QueryRow(ctx, `select status, awaiting_activation from users where id = $1 for no key update`, userID).Scan(&previous, &awaitingActivation); err != nil {
+			return notFound(err)
+		}
+		awaitingActivation = awaitingActivation || previous == "invited" || status == "invited"
+		if status == "active" && awaitingActivation {
+			if err := tx.checkInvitationProof(ctx, userID); err != nil {
+				return err
+			}
+			awaitingActivation = false
+		}
+		if _, err := tx.db.Exec(ctx, `update users set status = $2, awaiting_activation = $3, updated_at = now() where id = $1`, userID, status, awaitingActivation); err != nil {
+			return err
+		}
+		disabled := func(status string) bool { return status == "suspended" || status == "deprovisioned" }
+		switch {
+		case disabled(status) && !disabled(previous):
+			return tx.signal(ctx, accountDisabled, nil, signalUser, userID)
+		case disabled(previous) && !disabled(status):
+			return tx.signal(ctx, accountEnabled, nil, signalUser, userID)
+		}
+		return nil
+	})
 }
 
 func (s *Store) TouchSignIn(ctx context.Context, userID string, at time.Time) error {
-	_, err := s.db.Exec(ctx, `update users set last_sign_in_at = $2, status = case when status = 'invited' then 'active' else status end where id = $1`, userID, at)
-	return err
+	tag, err := s.db.Exec(ctx, `update users set last_sign_in_at = $2 where id = $1 and status <> 'invited'`, userID, at)
+	if err != nil || tag.RowsAffected() != 0 {
+		return err
+	}
+	return s.Tx(ctx, func(tx *Store) error {
+		var status string
+		err := tx.db.QueryRow(ctx, `select status from users where id = $1 for no key update`, userID).Scan(&status)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if status == "invited" {
+			if err := tx.SetUserStatus(ctx, userID, "active"); err != nil {
+				return err
+			}
+		}
+		_, err = tx.db.Exec(ctx, `update users set last_sign_in_at = $2 where id = $1`, userID, at)
+		return err
+	})
 }
 
 func (s *Store) SetUserRoles(ctx context.Context, userID string, roles []string, scopes map[string][]string) error {

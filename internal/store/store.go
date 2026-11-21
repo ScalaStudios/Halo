@@ -14,9 +14,10 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("not found")
-	ErrConflict = errors.New("conflict")
-	ErrSlowDown = errors.New("polled faster than the interval")
+	ErrNotFound      = errors.New("not found")
+	ErrConflict      = errors.New("conflict")
+	ErrSlowDown      = errors.New("polled faster than the interval")
+	ErrProofRequired = errors.New("identity check required")
 )
 
 type querier interface {

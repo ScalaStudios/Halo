@@ -484,17 +484,21 @@ func (s *syncer) status(e *ldap.Entry, link store.LDAPPerson, u store.User) erro
 		return nil
 	}
 	link.Suspended = false
-	if err := s.tx.SaveLDAPPerson(s.ctx, s.dir.ID, link); err != nil {
-		return err
-	}
 	if u.Status != "suspended" {
-		return nil
+		return s.tx.SaveLDAPPerson(s.ctx, s.dir.ID, link)
 	}
 	status := "active"
 	if u.LastSignInAt == nil && len(u.Methods) == 0 {
 		status = "invited"
 	}
 	if err := s.tx.SetUserStatus(s.ctx, u.ID, status); err != nil {
+		if errors.Is(err, store.ErrProofRequired) {
+			s.skip("Didn't restore " + u.Name + " because their identity check is still required")
+			return nil
+		}
+		return err
+	}
+	if err := s.tx.SaveLDAPPerson(s.ctx, s.dir.ID, link); err != nil {
 		return err
 	}
 	s.rep.Counts.Restored++

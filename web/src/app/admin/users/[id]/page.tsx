@@ -18,6 +18,7 @@ import { limitedOnly, roleNames } from "@/components/settings/roles";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
 import { GuestAccessButton } from "@/components/directory/guest-access";
 import { LinuxAccountCard } from "@/components/directory/linux-account";
+import { CheckIdentityButton, IdentityChecks } from "@/components/directory/identity-checks";
 import { PROTOCOL_LABEL } from "@/components/applications/shared";
 import { MethodList } from "@/components/identity/method-list";
 import { SignInRows } from "@/components/monitoring/sign-in-rows";
@@ -31,7 +32,7 @@ import { formatAttribute, formatDate, formatDateTime, formatRelative } from "@/l
 import { METHOD, STATUS, STRENGTH } from "@/lib/labels";
 import type { ComplianceSource, Device } from "@/lib/policy-types";
 import type { SettingsResponse } from "@/lib/settings-types";
-import type { Application, Attribute, AuditEvent, Group, Impersonation, PersonRelationship, Session, SignInEvent, User } from "@/lib/types";
+import type { Application, Attribute, AuditEvent, Group, IdentityProof, Impersonation, PersonRelationship, Session, SignInEvent, User } from "@/lib/types";
 
 const strengthIcon = { "phishing-resistant": ShieldCheck, "multi-factor": ShieldAlert, "single-factor": ShieldX } as const;
 const strengthColor = { "phishing-resistant": "text-success", "multi-factor": "text-warning", "single-factor": "text-danger" } as const;
@@ -45,7 +46,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
   const { id } = await params;
   const { tab = "overview" } = await searchParams;
   const path = `/users/${encodeURIComponent(id)}`;
-  const [user, userSessions, userSignIns, groups, applications, audit, userDevices, directory, me, enabled, response, impersonations, sources, attributes, relationships] = await Promise.all([
+  const [user, userSessions, userSignIns, groups, applications, audit, userDevices, directory, me, enabled, response, impersonations, sources, attributes, relationships, proofs] = await Promise.all([
     apiGet<User>(path),
     apiGet<Session[]>(`${path}/sessions`),
     apiGet<SignInEvent[]>(`${path}/sign-ins`),
@@ -61,6 +62,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
     apiGet<ComplianceSource[]>("/compliance-sources", []),
     apiGet<Attribute[]>("/attributes", []),
     tab === "applications" ? apiGet<PersonRelationship[]>(`${path}/relationships`, []) : [],
+    tab === "authentication" ? apiGet<IdentityProof[]>(`${path}/identity-proofs`, []) : [],
   ]);
   const settings = response?.settings;
   const limited = limitedOnly(me);
@@ -81,6 +83,12 @@ export default async function UserPage({ params, searchParams }: { params: Promi
     user.status === "active" &&
     user.roles.length + user.eligibleRoles.length === 0 &&
     Boolean(settings?.impersonationGroupIds.some((g) => user.groupIds.includes(g)));
+  const awaitingCheck =
+    user.status === "invited" &&
+    Boolean(settings?.identityProofingInvites) &&
+    (settings?.identityProofingGroupIds.length === 0 || Boolean(settings?.identityProofingGroupIds.some((g) => user.groupIds.includes(g)))) &&
+    !proofs.some((p) => p.status === "verified");
+  const canCheckIdentity = Boolean(access) && user.id !== me.id && user.status !== "deprovisioned";
   const passwordGroups = settings?.passwordGroupIds.map((id) => groups.find((g) => g.id === id)?.name ?? "a deleted group") ?? [];
   const passwordWarning =
     !settings || !enabled
@@ -170,6 +178,24 @@ export default async function UserPage({ params, searchParams }: { params: Promi
               methods={user.methods}
               userId={user.id}
               empty={user.status === "invited" ? "Invited. No method is enrolled until they open their setup link." : "No sign-in methods enrolled."}
+            />
+            <SectionTitle
+              title="Identity checks"
+              description={
+                awaitingCheck
+                  ? `Your organization activates ${user.name}'s account only after a successful check. Until then their setup link doesn't work.`
+                  : "How this person's identity was confirmed, in person or with a verification provider."
+              }
+              action={canCheckIdentity ? <CheckIdentityButton name={user.name} endpoint={`${path}/identity-proofs`} /> : undefined}
+            />
+            <IdentityChecks
+              proofs={proofs}
+              providerName={settings?.identityProofingName ?? ""}
+              empty={
+                awaitingCheck
+                  ? "Check their identity in person, or ask them to finish the check with the provider from their setup link."
+                  : "Nobody has checked this person's identity in Halo."
+              }
             />
           </div>
         ) : null}

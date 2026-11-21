@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { joinNames } from "@/components/governance/shared";
 import { Avatar } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
@@ -13,8 +14,16 @@ import { api } from "@/lib/api/client";
 import { pluralize } from "@/lib/format";
 import type { SignUp } from "@/lib/settings-types";
 import type { Group } from "@/lib/types";
+import { CheckIdentityButton } from "./identity-checks";
 
-export function SignUpQueue({ signUps, groups, canDecide }: { signUps: SignUp[]; groups: Group[]; canDecide: boolean }) {
+const IDENTITY = {
+  verified: { label: "Identity verified", tone: "success" },
+  pending: { label: "Identity check in progress", tone: "warning" },
+  failed: { label: "Identity not verified", tone: "danger" },
+  "": { label: "Identity not checked", tone: "neutral" },
+} as const;
+
+export function SignUpQueue({ signUps, groups, canDecide, proofingRequired }: { signUps: SignUp[]; groups: Group[]; canDecide: boolean; proofingRequired: boolean }) {
   const [deciding, setDeciding] = useState<{ signUp: SignUp; approve: boolean } | null>(null);
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const joins = groups.length ? ` in ${joinNames(groups)}` : "";
@@ -46,7 +55,7 @@ export function SignUpQueue({ signUps, groups, canDecide }: { signUps: SignUp[];
     <Card>
       <CardHeader
         title="Waiting for approval"
-        description={`${pluralize(signUps.length, "person", "people")} signed up, confirmed their email address and created a passkey. Approving creates an active account${joins}.`}
+        description={`${pluralize(signUps.length, "person", "people")} signed up, confirmed their email address and created a passkey. Approving creates an active account${joins}.${proofingRequired ? " Your organization checks each person's identity before you approve them." : ""}`}
       />
       <CardBody>
         <ul className="flex flex-col">
@@ -58,12 +67,21 @@ export function SignUpQueue({ signUps, groups, canDecide }: { signUps: SignUp[];
                 <p className="text-caption break-all text-fg-3">
                   {signUp.email} · <RelativeTime iso={signUp.verifiedAt} />
                 </p>
+                {proofingRequired || signUp.identityProof ? (
+                  <Badge tone={IDENTITY[signUp.identityProof].tone} className="w-fit">
+                    {IDENTITY[signUp.identityProof].label}
+                  </Badge>
+                ) : null}
                 {canDecide ? (
-                  <div className="mt-2 flex gap-2">
-                    <Button size="sm" variant="secondary" onClick={() => setDeciding({ signUp, approve: true })}>
-                      <Check aria-hidden="true" size={16} strokeWidth={1.75} />
-                      Approve
-                    </Button>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {proofingRequired && signUp.identityProof !== "verified" ? (
+                      <CheckIdentityButton name={signUp.name} endpoint={`/sign-ups/${signUp.id}/identity-proofs`} />
+                    ) : (
+                      <Button size="sm" variant="secondary" onClick={() => setDeciding({ signUp, approve: true })}>
+                        <Check aria-hidden="true" size={16} strokeWidth={1.75} />
+                        Approve
+                      </Button>
+                    )}
                     <Button size="sm" variant="quiet" onClick={() => setDeciding({ signUp, approve: false })}>
                       <X aria-hidden="true" size={16} strokeWidth={1.75} />
                       Reject

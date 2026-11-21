@@ -45,6 +45,12 @@ export type Settings = {
   signUp: "off" | "open" | "approval";
   signUpDomains: string[];
   signUpGroupIds: string[];
+  identityProofingInvites: boolean;
+  identityProofingSignUps: boolean;
+  identityProofingGroupIds: string[];
+  identityProofingProvider: "" | "generic" | "stripe";
+  identityProofingName: string;
+  identityProofingEndpoint: string;
   securityEmailsOff: string[];
   lockoutEmailAdmins: boolean;
   riskResponses: RiskResponse[];
@@ -59,7 +65,7 @@ export type Feature = { id: FeatureId; name: string; description: string; enable
 
 export type RiskResponse = { signal: "" | RiskEventType; level: "medium" | "high"; action: "revoke-sessions" | "require-passkey" | "suspend" | "notify" };
 
-export type SignUp = { id: string; email: string; name: string; createdAt: string; verifiedAt: string };
+export type SignUp = { id: string; email: string; name: string; createdAt: string; verifiedAt: string; identityProof: "" | "pending" | "verified" | "failed" };
 
 export type EmailTemplateText = { subject: string; body: string };
 
@@ -104,6 +110,8 @@ export type SettingsResponse = {
   customCssDisabled: boolean;
   botProtectionSecretSet: boolean;
   bucketConfigured: boolean;
+  identityProofingKeySet: boolean;
+  identityProofingWebhookSecretSet: boolean;
 };
 
 export type ImportChange = {

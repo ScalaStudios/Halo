@@ -666,3 +666,38 @@ func TestUserNameChangeEmailsBothAddresses(t *testing.T) {
 		t.Fatalf("recipients: %v", to)
 	}
 }
+
+func TestSCIMRestoresVerifiedInvitation(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	settings, err := e.st.CurrentSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.IdentityProofingInvites = true
+	if err := e.st.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	u, err := e.st.CreateUser(ctx, store.NewUser{Email: "ada@example.com", Name: "Ada", Status: "suspended"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.SetPassword(ctx, u.ID, "test-password-hash", false); err != nil {
+		t.Fatal(err)
+	}
+	path := "/scim/v2/Users/" + u.ID
+	patch := map[string]any{"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"}, "Operations": []map[string]any{{"op": "replace", "path": "active", "value": true}}}
+	rec, body := e.call("PATCH", path, patch)
+	e.expect(rec, 409)
+	if !strings.Contains(rec.Body.String(), "Confirm this person's identity") {
+		t.Fatalf("SCIM response: %s", rec.Body)
+	}
+	if _, err := e.st.CreateIdentityProof(ctx, store.NewIdentityProof{UserID: u.ID, Method: "in-person", Status: "verified"}); err != nil {
+		t.Fatal(err)
+	}
+	rec, body = e.call("PATCH", path, patch)
+	e.expect(rec, 200)
+	if body["active"] != true {
+		t.Fatalf("restored account: %s", rec.Body)
+	}
+}

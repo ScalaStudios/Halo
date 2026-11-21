@@ -155,7 +155,7 @@ func TestSignUpApproval(t *testing.T) {
 	if err != nil || len(queue) != 1 || queue[0].Name != "Ada Lovelace" || queue[0].VerifiedAt == nil {
 		t.Fatalf("queue: %+v %v", queue, err)
 	}
-	u, err := e.st.ActivateSignUp(ctx, queue[0].ID, nil)
+	u, err := e.st.ActivateSignUp(ctx, queue[0].ID, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}

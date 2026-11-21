@@ -79,6 +79,10 @@ func TestPersonalDataExportAndPermanentDeletion(t *testing.T) {
 	must(t, st.WriteTuples(ctx, app.ID, []store.Tuple{{ObjectType: "invoice", ObjectID: "inv-7", Relation: "approver", SubjectType: "user", SubjectID: erin.ID}}, nil))
 	must(t, st.SetSecurityEmailOptOuts(ctx, erin.ID, []string{"new_sign_in"}))
 	must(t, st.LinkKerberosPrincipal(ctx, "erin@CORP.EXAMPLE.COM", erin.ID))
+	_, err = st.CreateIdentityProof(ctx, store.NewIdentityProof{UserID: erin.ID, Method: "in-person", Status: "verified", Document: "passport", Note: "Met at the Lisbon office", CheckedBy: &ada.ID})
+	must(t, err)
+	_, err = st.CreateIdentityProof(ctx, store.NewIdentityProof{UserID: ada.ID, Method: "in-person", Status: "verified", Document: "national-id", Note: "Compared the photo at the front desk", CheckedBy: &erin.ID})
+	must(t, err)
 	_, err = st.ClaimSecurityEmail(ctx, erin.ID, "email_changed", "erin.erasure@example.com", time.Now(), time.Minute)
 	must(t, err)
 	must(t, st.CreateOIDCTokens(ctx, store.OIDCToken{ID: "tok_erin", Kind: "access", ClientID: app.ClientID, UserID: &erin.ID, Scopes: []string{"openid"}, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}))
@@ -166,7 +170,7 @@ func TestPersonalDataExportAndPermanentDeletion(t *testing.T) {
 
 	before := mentions(t, st, erin.ID, erin.Email, erin.Name)
 	for _, want := range []string{"users.email", "sessions.user_id", "sign_in_events.email", "sign_in_events.impersonator_id", "audit_events.actor_id", "audit_events.summary", "audit_events.changes", "ssh_certificates.key_id", "access_policies.conditions", "consent_grants.user_id",
-		"approval_requests.state", "approval_requests.summary", "authz_tuples.subject_id", "authz_tuples.user_id", "mail_outbox.recipient", "mail_outbox.subject", "sign_ups.email", "rate_limit_windows.subject", "webhook_deliveries.body"} {
+		"approval_requests.state", "approval_requests.summary", "authz_tuples.subject_id", "authz_tuples.user_id", "mail_outbox.recipient", "mail_outbox.subject", "sign_ups.email", "rate_limit_windows.subject", "webhook_deliveries.body", "identity_proofs.user_id", "identity_proofs.checked_by"} {
 		if !slices.Contains(before, want) {
 			t.Fatalf("expected %s to mention Erin before deletion, got %v", want, before)
 		}

@@ -24,6 +24,7 @@ import (
 	"halo/internal/features"
 	"halo/internal/httpx"
 	halomail "halo/internal/mail"
+	"halo/internal/proofing"
 	"halo/internal/store"
 )
 
@@ -80,6 +81,12 @@ var fields = []struct {
 	{"signUp", "sign-up", false},
 	{"signUpDomains", "sign-up domains", false},
 	{"signUpGroupIds", "groups for people who sign up", false},
+	{"identityProofingInvites", "identity checks for invited people", false},
+	{"identityProofingSignUps", "identity checks for people who sign up", false},
+	{"identityProofingGroupIds", "groups that need identity checks", false},
+	{"identityProofingProvider", "identity verification provider", false},
+	{"identityProofingName", "identity verification provider name", false},
+	{"identityProofingEndpoint", "identity verification provider address", false},
 	{"securityEmailsOff", "security emails turned off", false},
 	{"lockoutEmailAdmins", "lockout emails to administrators", false},
 	{"riskResponses", "automatic risk responses", false},
@@ -189,7 +196,13 @@ func (h *handler) respond(w http.ResponseWriter, r *http.Request) error {
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
-	return httpx.JSON(w, http.StatusOK, map[string]any{"settings": s, "defaultOrganizationName": h.cfg.Organization, "issuer": h.cfg.Issuer(), "customCssDisabled": h.cfg.NoCustomCSS, "botProtectionSecretSet": err == nil, "bucketConfigured": h.cfg.S3.Configured()})
+	botSecretSet := err == nil
+	proofingKey, proofingHook, err := h.st.ProofingSecrets(r.Context())
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, map[string]any{"settings": s, "defaultOrganizationName": h.cfg.Organization, "issuer": h.cfg.Issuer(), "customCssDisabled": h.cfg.NoCustomCSS, "botProtectionSecretSet": botSecretSet, "bucketConfigured": h.cfg.S3.Configured(),
+		"identityProofingKeySet": proofingKey != "", "identityProofingWebhookSecretSet": proofingHook != ""})
 }
 
 func (h *handler) get(w http.ResponseWriter, r *http.Request, _ store.User) error {
@@ -210,15 +223,18 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	next.ImpersonationGroups = slices.Clone(before.ImpersonationGroups)
 	next.SignUpDomains = slices.Clone(before.SignUpDomains)
 	next.SignUpGroupIDs = slices.Clone(before.SignUpGroupIDs)
+	next.IdentityProofingGroupIDs = slices.Clone(before.IdentityProofingGroupIDs)
 	next.SecurityEmailsOff = slices.Clone(before.SecurityEmailsOff)
 	next.RiskResponses = slices.Clone(before.RiskResponses)
 	next.FeaturesOff = slices.Clone(before.FeaturesOff)
 	var rules []store.AuthenticatorRule
 	in := struct {
 		store.Settings
-		BotProtectionSecret string                     `json:"botProtectionSecret"`
-		AuthenticatorRules  *[]store.AuthenticatorRule `json:"authenticatorRules"`
-		ConfirmFeatures     bool                       `json:"confirmFeatures"`
+		BotProtectionSecret           string                     `json:"botProtectionSecret"`
+		IdentityProofingAPIKey        string                     `json:"identityProofingApiKey"`
+		IdentityProofingWebhookSecret string                     `json:"identityProofingWebhookSecret"`
+		AuthenticatorRules            *[]store.AuthenticatorRule `json:"authenticatorRules"`
+		ConfirmFeatures               bool                       `json:"confirmFeatures"`
 	}{Settings: next, AuthenticatorRules: &rules}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -238,6 +254,15 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 		}
 	}
 	botSecret := strings.TrimSpace(in.BotProtectionSecret)
+	proofingKey, proofingHook := strings.TrimSpace(in.IdentityProofingAPIKey), strings.TrimSpace(in.IdentityProofingWebhookSecret)
+	next.IdentityProofingName = strings.TrimSpace(next.IdentityProofingName)
+	next.IdentityProofingEndpoint = strings.TrimSpace(next.IdentityProofingEndpoint)
+	if next.IdentityProofingProvider != "generic" {
+		next.IdentityProofingName, next.IdentityProofingEndpoint = "", ""
+	}
+	if next.IdentityProofingGroupIDs == nil {
+		next.IdentityProofingGroupIDs = []string{}
+	}
 	next.BotProtectionSiteKey = strings.TrimSpace(next.BotProtectionSiteKey)
 	next.OrganizationName = strings.TrimSpace(next.OrganizationName)
 	next.ContactEmail = strings.TrimSpace(next.ContactEmail)
@@ -317,6 +342,9 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 			return httpx.Invalid("One of the groups chosen for passwords no longer exists. Refresh the page and choose again.")
 		}
 	}
+	if err := h.checkProofing(ctx, before, next, proofingKey, proofingHook); err != nil {
+		return err
+	}
 	if !slices.Equal(before.ImpersonationGroups, next.ImpersonationGroups) {
 		existing, err := h.st.ExistingIDs(ctx, "groups", next.ImpersonationGroups)
 		if err != nil {
@@ -390,6 +418,12 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	if botSecret != "" {
 		changed = append(changed, "bot protection secret key")
 	}
+	if proofingKey != "" {
+		changed = append(changed, "identity verification API key")
+	}
+	if proofingHook != "" {
+		changed = append(changed, "identity verification webhook secret")
+	}
 	if len(changed) == 0 {
 		return h.respond(w, r)
 	}
@@ -433,9 +467,20 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 				return err
 			}
 		}
+		if proofingKey != "" || proofingHook != "" {
+			if err := tx.SetProofingSecrets(ctx, proofingKey, proofingHook); err != nil {
+				return err
+			}
+		}
 		diff := store.Diff(state, values)
 		if botSecret != "" {
 			diff = append(diff, store.Change{Field: "botProtectionSecretKey", Redacted: true})
+		}
+		if proofingKey != "" {
+			diff = append(diff, store.Change{Field: "identityProofingApiKey", Redacted: true})
+		}
+		if proofingHook != "" {
+			diff = append(diff, store.Change{Field: "identityProofingWebhookSecret", Redacted: true})
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "settings.update", Summary: "Changed the " + strings.Join(changed, ", "), TargetType: "settings", TargetLabel: "Organization settings", Changes: diff})
 	})
@@ -444,6 +489,30 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 		return err
 	}
 	return h.respond(w, r)
+}
+
+func (h *handler) checkProofing(ctx context.Context, before, next store.Settings, key, hook string) error {
+	stripe := next.IdentityProofingProvider == "stripe"
+	switch {
+	case len(key) > 500 || len(hook) > 500:
+		return httpx.Invalid("The identity verification API key and webhook secret must each be 500 characters or fewer. Copy them again from your provider.")
+	case stripe && key != "" && !strings.HasPrefix(key, "sk_") && !strings.HasPrefix(key, "rk_"):
+		return httpx.Invalid("Enter a Stripe secret key or restricted key, which starts with sk_ or rk_.")
+	case stripe && hook != "" && !strings.HasPrefix(hook, "whsec_"):
+		return httpx.Invalid("Enter the signing secret of the Stripe webhook endpoint, which starts with whsec_.")
+	case next.IdentityProofingProvider != "" && next.IdentityProofingProvider != before.IdentityProofingProvider && key == "":
+		return httpx.Invalid("Enter the API key from your identity verification provider to connect it.")
+	}
+	if !slices.Equal(before.IdentityProofingGroupIDs, next.IdentityProofingGroupIDs) {
+		existing, err := h.st.ExistingIDs(ctx, "groups", next.IdentityProofingGroupIDs)
+		if err != nil {
+			return err
+		}
+		if slices.ContainsFunc(next.IdentityProofingGroupIDs, func(id string) bool { return !existing[id] }) {
+			return httpx.Invalid("One of the groups chosen for identity checks no longer exists. Refresh the page and choose again.")
+		}
+	}
+	return nil
 }
 
 func (h *handler) approvalSummary(ctx context.Context, actor store.User, before, next store.Settings) (string, error) {
@@ -535,6 +604,14 @@ func validate(s store.Settings) error {
 		return httpx.Invalid(`Set sign-up to "off", "open" or "approval".`)
 	case len(s.SignUpDomains) > 100:
 		return httpx.Invalid("List at most 100 email domains for sign-up.")
+	case !slices.Contains([]string{"", "generic", "stripe"}, s.IdentityProofingProvider):
+		return httpx.Invalid(`Set the identity verification provider to "generic" or "stripe", or leave it empty to check identities in person only.`)
+	case s.IdentityProofingProvider == "generic" && (s.IdentityProofingName == "" || utf8.RuneCountInString(s.IdentityProofingName) > 60):
+		return httpx.Invalid("Name the identity verification provider in up to 60 characters. People see it on their setup page.")
+	case s.IdentityProofingProvider == "generic" && (len(s.IdentityProofingEndpoint) > 500 || !proofing.SecureURL(s.IdentityProofingEndpoint)):
+		return httpx.Invalid("Enter the provider's sessions address as an https URL, such as https://verify.example.com/sessions.")
+	case len(s.IdentityProofingGroupIDs) > 100:
+		return httpx.Invalid("Choose at most 100 groups that need identity checks.")
 	case len(s.RiskResponses) > 20:
 		return httpx.Invalid("Add at most 20 automatic risk responses.")
 	case !slices.Contains([]string{"off", "daily", "weekly"}, s.ExportSchedule):
