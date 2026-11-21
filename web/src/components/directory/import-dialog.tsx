@@ -90,7 +90,7 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       title={done ? "People imported" : preview ? "Check the import" : "Import users"}
       description={
         done
-          ? `Created ${pluralize(created.length, "person", "people")} from ${file?.name}. Each one is invited and appears in the directory.`
+          ? `Created ${pluralize(created.length, "person", "people")} from ${file?.name}${done.skipped ? ` and skipped ${pluralize(done.skipped, "row")} with a problem` : ""}. Each person created is invited and appears in the directory.`
           : preview
             ? `Nothing is created until you confirm. Rows with a problem are skipped, so fix them in ${file?.name} and choose it again, or import the rest.`
             : "Upload a CSV file to invite many people at once. Halo checks every row and shows you the result before anyone is created."
@@ -131,7 +131,7 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       />
       {done ? (
         <div className="flex animate-enter flex-col gap-4">
-          {held.length ? (
+          {created.length === 0 ? null : held.length ? (
             <SecretWarning>
               Halo didn&apos;t email {held.length === created.length ? "the" : `${held.length} of the`} setup links, so copy each one and send it yourself. Anyone with a link can
               enroll a passkey on that account.
@@ -139,14 +139,16 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           ) : (
             <p className="text-body-sm text-fg-2">Halo emailed each person their setup link.</p>
           )}
-          <SimpleTable
-            caption="People created by the import"
-            head={["Person", "Setup link"]}
-            rows={created.map((row) => [
-              <Person key="person" row={row} />,
-              row.emailed ? <span className="whitespace-nowrap text-fg-3">Emailed</span> : <CopyButton value={row.enrollUrl ?? ""} label="Copy link" className="whitespace-nowrap" />,
-            ])}
-          />
+          {created.length ? (
+            <SimpleTable
+              caption="People created by the import"
+              head={["Person", "Setup link"]}
+              rows={created.map((row) => [
+                <Person key="person" row={row} />,
+                row.emailed ? <span className="whitespace-nowrap text-fg-3">Emailed</span> : <CopyButton value={row.enrollUrl ?? ""} label="Copy link" className="whitespace-nowrap" />,
+              ])}
+            />
+          ) : null}
         </div>
       ) : preview ? (
         <div className="flex animate-enter flex-col gap-6">

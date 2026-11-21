@@ -12,6 +12,7 @@ import (
 	"halo/internal/config"
 	"halo/internal/httpx"
 	"halo/internal/mail/mailtest"
+	"halo/internal/store"
 	"halo/internal/testdb"
 )
 
@@ -20,7 +21,8 @@ type linkResponse struct {
 	Emailed   bool   `json:"emailed"`
 }
 
-func TestInviteAndResetAreEmailed(t *testing.T) {
+func mailed(t *testing.T) (*store.Store, http.Handler, *mailtest.Server) {
+	t.Helper()
 	server := mailtest.Start(t, 0)
 	host, port, _ := net.SplitHostPort(server.Addr)
 	st := testdb.New(t)
@@ -31,7 +33,11 @@ func TestInviteAndResetAreEmailed(t *testing.T) {
 	if err := api.Register(mux, httpx.Deps{Config: cfg, Store: st, Auth: authn}); err != nil {
 		t.Fatal(err)
 	}
-	h := authn.Resolve(authn.SameOrigin(mux))
+	return st, authn.Resolve(authn.SameOrigin(mux)), server
+}
+
+func TestInviteAndResetAreEmailed(t *testing.T) {
+	st, h, server := mailed(t)
 	_, admin := person(t, st, "uma@example.com", "user_admin")
 
 	rec := call(t, h, admin, "POST", "/api/v1/users", map[string]any{"email": "sam@example.com", "name": "Sam Lee"})

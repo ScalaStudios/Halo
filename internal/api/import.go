@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -313,9 +314,9 @@ func checkImportRow(row *importRow, existing map[string]store.User, groups []sto
 }
 
 func (h *handlers) applyImport(r *http.Request, actor store.User, rows []importRow, order []int, send bool) error {
-	invitations := "held the invitations"
+	invitations := "holding the setup links"
 	if send {
-		invitations = "emailed the invitations"
+		invitations = "emailing the setup links"
 	}
 	err := h.st.Tx(r.Context(), func(tx *store.Store) error {
 		for _, i := range order {
@@ -329,14 +330,15 @@ func (h *handlers) applyImport(r *http.Request, actor store.User, rows []importR
 			}
 			row.UserID, row.token, row.EnrollURL, row.ExpiresAt = user.ID, token, h.cfg.Issuer()+store.EnrollPath(token), &expires
 		}
-		return record(r, tx, actor, store.AuditEvent{Action: "user.import", Summary: fmt.Sprintf("Imported %d of %s and %s", len(order), plural(len(rows), "row"), invitations), TargetType: "user", TargetLabel: "People import"})
+		return record(r, tx, actor, store.AuditEvent{Action: "user.import", Summary: fmt.Sprintf("Imported %d of %s, %s", len(order), plural(len(rows), "row"), invitations), TargetType: "user", TargetLabel: "People import"})
 	})
 	if err != nil || !send {
 		return err
 	}
+	detached := r.WithContext(context.WithoutCancel(r.Context()))
 	for _, i := range order {
 		row := &rows[i]
-		if row.Emailed, err = h.emailLink(r, row.token, halomail.Invite(row.Email, row.Name, actor.Name, row.EnrollURL, *row.ExpiresAt)); err != nil {
+		if row.Emailed, err = h.emailLink(detached, row.token, halomail.Invite(row.Email, row.Name, actor.Name, row.EnrollURL, *row.ExpiresAt)); err != nil {
 			return err
 		}
 	}
