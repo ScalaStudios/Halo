@@ -67,7 +67,7 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	rotation, err := st.RotateSecretKey(ctx, next)
 	must(err)
-	if len(rotation.Resealed) != 20 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
+	if len(rotation.Resealed) != 21 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
 		t.Fatalf("resealed: %+v", rotation.Resealed)
 	}
 	if !slices.Equal(rotation.RecoveryCodeUsers, []string{"ada@example.com"}) {
