@@ -985,7 +985,7 @@ paths:
       tags: [Sign-in]
       operationId: startFederatedSignIn
       summary: Redirect to an identity provider
-      description: A browser navigation, not a JSON call. On failure Halo redirects to `/sign-in?error=CODE` with `ERR_PROVIDER_UNAVAILABLE`, `ERR_PROVIDER_UNREACHABLE` or `ERR_AUTH_REQUEST_EXPIRED`.
+      description: A browser navigation, not a JSON call. For a SAML provider Halo sends an AuthnRequest signed with its SAML certificate, with the HTTP-Redirect binding, or with the HTTP-POST binding as a page that submits itself when the provider only offers that. On failure Halo redirects to `/sign-in?error=CODE` with `ERR_PROVIDER_UNAVAILABLE`, `ERR_PROVIDER_UNREACHABLE` or `ERR_AUTH_REQUEST_EXPIRED`.
       security: []
       parameters:
         - name: authRequest
@@ -996,8 +996,13 @@ paths:
           description: A local path to open after signing in, when there is no `authRequest`.
           schema: {type: string, examples: [/account/security]}
       responses:
+        '200':
+          description: A page that posts the SAML AuthnRequest to the provider, for SAML providers that only offer the HTTP-POST binding.
+          content:
+            text/html:
+              schema: {type: string}
         '302':
-          description: Redirect to the provider's authorization endpoint, or to the sign-in page with an error.
+          description: Redirect to the provider's authorization or single sign-on endpoint, or to the sign-in page with an error.
   /auth/federated/callback:
     get:
       tags: [Sign-in]
@@ -1012,6 +1017,74 @@ paths:
       responses:
         '302':
           description: Redirect after the sign-in or its failure.
+  /auth/federated/{id}/acs:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Sign-in]
+      operationId: samlAssertionConsumer
+      summary: Receive a SAML response
+      description: 'The page at `/saml/sp/{id}/acs` posts the identity provider''s response here from Halo''s own origin, so the browser sends the cookie of the sign-in it started. The response must answer the AuthnRequest of that sign-in, come from the provider''s entity ID, carry a valid signature from a signing certificate in its metadata on the response or on the assertion, name Halo''s entity ID for the provider as its audience and the ACS URL as its recipient, and as its destination when the response is signed or names one, be inside its validity window with three minutes of clock skew, and use an assertion ID that was not used before. The email address is the NameID, or the attribute in `emailAttribute`. Success and failure redirect as in `/auth/federated/callback`.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [SAMLResponse, RelayState]
+              properties:
+                SAMLResponse: {type: string, description: The base64-encoded SAML response.}
+                RelayState: {type: string}
+      responses:
+        '302':
+          description: Redirect after the sign-in or its failure.
+        '403': {$ref: '#/components/responses/CrossSite'}
+  /saml/sp/{id}/metadata:
+    servers:
+      - url: /
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Identity providers]
+      operationId: getSAMLServiceProviderMetadata
+      summary: Halo's service provider metadata for a SAML identity provider
+      description: 'Register this URL, or the document, at the identity provider. The entity ID is this URL. It lists the ACS URL with the HTTP-POST binding and the current SAML signing certificate, and says that AuthnRequests are signed and assertions must be. After the SAML certificate is rotated, the identity provider needs the metadata again. Its `validUntil` is 48 hours ahead.'
+      security: []
+      responses:
+        '200':
+          description: The EntityDescriptor.
+          content:
+            application/samlmetadata+xml:
+              schema: {type: string}
+        '404':
+          description: No SAML identity provider has this ID.
+  /saml/sp/{id}/acs:
+    servers:
+      - url: /
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Sign-in]
+      operationId: samlServiceProviderACS
+      summary: The ACS URL for a SAML identity provider
+      description: Takes the cross-site HTTP-POST from the identity provider and answers with a page that posts the same fields to `/api/v1/auth/federated/{id}/acs`, where they are checked.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                SAMLResponse: {type: string}
+                RelayState: {type: string}
+      responses:
+        '200':
+          description: The page that posts the response on.
+          content:
+            text/html:
+              schema: {type: string}
   /device/{code}:
     parameters:
       - {$ref: '#/components/parameters/DeviceCode'}
@@ -6055,15 +6128,20 @@ components:
         application/json:
           schema:
             type: object
-            required: [kind, name, clientId]
+            required: [kind, name]
             properties:
               kind: {$ref: '#/components/schemas/ProviderKind'}
               name: {type: string, maxLength: 100, description: 'Shown on the button, as in "Continue with Google".'}
               issuer:
                 type: string
-                description: 'Ignored for Google. For Microsoft, `https://login.microsoftonline.com/<tenant id>/v2.0`. For GitHub, the GitHub Enterprise address, defaulting to https://github.com. For generic OpenID Connect, the issuer with discovery.'
-              clientId: {type: string}
-              clientSecret: {type: string, description: Required except for generic OpenID Connect providers. Omit on update to keep the saved secret.}
+                description: 'Ignored for Google. For Microsoft, `https://login.microsoftonline.com/<tenant id>/v2.0`. For GitHub, the GitHub Enterprise address, defaulting to https://github.com. For generic OpenID Connect, the issuer with discovery. For SAML, the identity provider''s entity ID when you enter `ssoUrl` and `certificate` instead of metadata; otherwise Halo reads it from the metadata.'
+              clientId: {type: string, description: Required except for SAML.}
+              clientSecret: {type: string, description: Required except for generic OpenID Connect and SAML providers. Omit on update to keep the saved secret.}
+              metadataUrl: {type: string, format: uri, description: 'SAML only. An https:// URL Halo downloads the identity provider''s metadata from when it saves, refusing private, loopback and link-local addresses. When a held change is approved, Halo downloads it again.'}
+              metadataXml: {type: string, description: 'SAML only, used when `metadataUrl` is empty. The identity provider''s EntityDescriptor, with an IDPSSODescriptor, a SingleSignOnService with the HTTP-Redirect or HTTP-POST binding at an https:// address, and a signing certificate that has not expired.'}
+              ssoUrl: {type: string, format: uri, description: 'SAML only, used when `metadataUrl` and `metadataXml` are empty. The single sign-on URL for the HTTP-Redirect binding, sent with `issuer` and `certificate`. Omit all three on update to keep the saved metadata.'}
+              certificate: {type: string, description: 'SAML only, with `ssoUrl`. The identity provider''s signing certificate in PEM.'}
+              emailAttribute: {type: string, description: 'SAML only. The attribute, by name or friendly name, that holds the email address used to find the account. Empty uses the NameID.'}
               scopes:
                 type: array
                 description: Defaults to openid, email and profile; read:user and user:email for GitHub. Halo adds openid for every kind except GitHub.
@@ -6549,7 +6627,7 @@ components:
       enum: [global_admin, security_admin, user_admin, helpdesk_admin, app_admin, auditor]
     ProviderKind:
       type: string
-      enum: [google, microsoft, github, oidc]
+      enum: [google, microsoft, github, oidc, saml]
     SignInProvider:
       type: object
       required: [id, name, kind]
@@ -7540,12 +7618,12 @@ components:
         updatedAt: {type: string, format: date-time}
     IdentityProvider:
       type: object
-      required: [id, kind, name, issuer, clientId, hasSecret, scopes, enabled, showOnSignIn, routeByDomain, allowedDomains, jit, jitGroupIds, mapping, linkedCount, createdAt, updatedAt]
+      required: [id, kind, name, issuer, clientId, hasSecret, scopes, enabled, showOnSignIn, routeByDomain, allowedDomains, jit, jitGroupIds, mapping, metadataXml, emailAttribute, linkedCount, createdAt, updatedAt]
       properties:
         id: {type: string, examples: [idp_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         kind: {$ref: '#/components/schemas/ProviderKind'}
         name: {type: string}
-        issuer: {type: string}
+        issuer: {type: string, description: The issuer, or the entity ID of a SAML identity provider.}
         clientId: {type: string}
         hasSecret: {type: boolean}
         scopes:
@@ -7562,6 +7640,8 @@ components:
           type: array
           items: {type: string}
         mapping: {$ref: '#/components/schemas/ProviderMapping'}
+        metadataXml: {type: string, description: 'The SAML identity provider''s metadata. Empty for other kinds. Halo''s own metadata for the provider is at `/saml/sp/{id}/metadata`.'}
+        emailAttribute: {type: string, description: SAML only. Empty uses the NameID.}
         linkedCount: {type: integer}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}

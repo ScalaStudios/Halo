@@ -1,0 +1,32 @@
+package httpx
+
+import (
+	"errors"
+	"net"
+	"net/http"
+	"net/netip"
+	"syscall"
+	"time"
+)
+
+var (
+	sharedSpace = netip.MustParsePrefix("100.64.0.0/10")
+	errPrivate  = errors.New("the address is private, loopback or link-local, and Halo only calls public addresses here")
+)
+
+func PublicAddress(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	return ip.IsGlobalUnicast() && !ip.IsPrivate() && !sharedSpace.Contains(ip)
+}
+
+func GuardedClient() *http.Client {
+	dialer := &net.Dialer{Timeout: 10 * time.Second, Control: func(_, address string, _ syscall.RawConn) error {
+		host, _, err := net.SplitHostPort(address)
+		if ip, parseErr := netip.ParseAddr(host); err != nil || parseErr != nil || !PublicAddress(ip) {
+			return errPrivate
+		}
+		return nil
+	}}
+	noRedirect := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &http.Client{Timeout: 10 * time.Second, CheckRedirect: noRedirect, Transport: &http.Transport{DialContext: dialer.DialContext, TLSHandshakeTimeout: 10 * time.Second, ForceAttemptHTTP2: true}}
+}

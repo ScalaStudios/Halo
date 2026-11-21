@@ -99,3 +99,14 @@ func (s *Store) TakeFederationState(ctx context.Context, state string) (Federati
 		Scan(&f.ProviderID, &f.CodeVerifier, &f.Nonce, &f.AuthRequest, &f.Next)
 	return f, notFound(err)
 }
+
+func (s *Store) UseSAMLAssertion(ctx context.Context, providerID, assertionID string, expiresAt time.Time) error {
+	tag, err := s.db.Exec(ctx, `insert into saml_assertions (provider_id, id, expires_at) values ($1, $2, $3) on conflict do nothing`, providerID, assertionID, expiresAt)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrConflict
+	}
+	return nil
+}

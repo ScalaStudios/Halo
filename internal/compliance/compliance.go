@@ -20,7 +20,6 @@ import (
 	"halo/internal/httpx"
 	"halo/internal/secret"
 	"halo/internal/store"
-	"halo/internal/webhooks"
 )
 
 var (
@@ -29,7 +28,7 @@ var (
 	kinds        = map[string]string{"intune": "Microsoft Intune", "agent": "device agent"}
 	states       = []string{"compliant", "non-compliant", "unknown"}
 	identifier   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]{0,99}$`)
-	outbound     = webhooks.GuardedClient()
+	outbound     = httpx.GuardedClient()
 	loginURL     = "https://login.microsoftonline.com/"
 	graphURL     = "https://graph.microsoft.com/"
 	errSignature = httpx.Fail(http.StatusUnauthorized, "ERR_SIGNATURE", "The Halo-Signature header is missing, older than 5 minutes or does not match the source's signing secret.")

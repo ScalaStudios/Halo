@@ -6,13 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	"halo/internal/httpx"
@@ -23,26 +21,8 @@ import (
 var (
 	riskLevels   = []string{"none", "low", "medium", "high"}
 	destinations = map[string]string{"webhook": "a webhook", "slack": "Slack", "discord": "Discord"}
-	sharedSpace  = netip.MustParsePrefix("100.64.0.0/10")
-	errPrivate   = errors.New("the address is private, loopback or link-local, and Halo only calls public addresses")
 	slackEscape  = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 )
-
-func public(ip netip.Addr) bool {
-	ip = ip.Unmap()
-	return ip.IsGlobalUnicast() && !ip.IsPrivate() && !sharedSpace.Contains(ip)
-}
-
-func GuardedClient() *http.Client {
-	dialer := &net.Dialer{Timeout: 10 * time.Second, Control: func(_, address string, _ syscall.RawConn) error {
-		host, _, err := net.SplitHostPort(address)
-		if ip, parseErr := netip.ParseAddr(host); err != nil || parseErr != nil || !public(ip) {
-			return errPrivate
-		}
-		return nil
-	}}
-	return &http.Client{Timeout: 10 * time.Second, CheckRedirect: noRedirect, Transport: &http.Transport{DialContext: dialer.DialContext, TLSHandshakeTimeout: 10 * time.Second, ForceAttemptHTTP2: true}}
-}
 
 type ruleInput struct {
 	Name          string   `json:"name"`
@@ -71,7 +51,7 @@ func (in ruleInput) validate(creating bool) (store.NewNotificationRule, error) {
 		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || len(r.URL) > 2048 {
 			return r, httpx.Invalid("Enter the https:// URL of the incoming webhook, under 2,048 characters.")
 		}
-		if ip, err := netip.ParseAddr(u.Hostname()); err == nil && !public(ip) || local(u.Hostname()) {
+		if ip, err := netip.ParseAddr(u.Hostname()); err == nil && !httpx.PublicAddress(ip) || local(u.Hostname()) {
 			return r, httpx.Invalid("Notification rules only send to public addresses. Private, loopback and link-local addresses are refused.")
 		}
 		r.Host = u.Host

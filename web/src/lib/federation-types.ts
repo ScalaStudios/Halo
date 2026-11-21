@@ -1,4 +1,4 @@
-export type ProviderKind = "google" | "microsoft" | "github" | "oidc";
+export type ProviderKind = "google" | "microsoft" | "github" | "oidc" | "saml";
 
 export type ProfileField = "name" | "title" | "department" | "location";
 
@@ -23,6 +23,8 @@ export type IdentityProvider = {
   jit: boolean;
   jitGroupIds: string[];
   mapping: ProviderMapping;
+  metadataXml: string;
+  emailAttribute: string;
   linkedCount: number;
   createdAt: string;
   updatedAt: string;
