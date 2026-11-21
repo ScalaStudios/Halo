@@ -1743,6 +1743,28 @@ paths:
               schema: {$ref: '#/components/schemas/PersonalData'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /me/attributes:
+    patch:
+      tags: [Account]
+      operationId: updateMyAttributes
+      summary: Change your own custom attributes
+      description: 'Only attributes with `selfService` on; any other returns 403 and nothing is saved. Send the attribute names to change; `null`, an empty string or an empty list clears one. Writes a `user.update` audit event with the old and new values.'
+      security: *personal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AttributeValues'}
+      responses:
+        '200':
+          description: Your updated profile.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /me/consents:
     get:
       tags: [Account]
@@ -2283,7 +2305,7 @@ paths:
       tags: [Users]
       operationId: updateUser
       summary: Change a person's profile
-      description: 'Roles: user or helpdesk administrator. Helpdesk administrators can change title, department and location only. Only a global administrator can change a person who holds an administrator role. Send only the fields to change; an empty `managerId` removes the manager. Limited roles apply.'
+      description: 'Roles: user or helpdesk administrator. Helpdesk administrators can change title, department, location and custom attributes only. Only a global administrator can change a person who holds an administrator role. Send only the fields to change; an empty `managerId` removes the manager. Limited roles apply.'
       requestBody:
         required: true
         content:
@@ -2297,6 +2319,7 @@ paths:
                 department: {type: string, maxLength: 200}
                 location: {type: string, maxLength: 200}
                 managerId: {type: string}
+                attributes: {$ref: '#/components/schemas/AttributeValues'}
       responses:
         '200':
           description: The updated person.
@@ -2795,6 +2818,88 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /attributes:
+    get:
+      tags: [Users]
+      operationId: listAttributes
+      summary: List the custom user attributes
+      description: Anyone signed in, so the account portal can show the attributes people may change themselves.
+      responses:
+        '200':
+          description: The attributes, by display name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Attribute'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    post:
+      tags: [Users]
+      operationId: createAttribute
+      summary: Define a custom user attribute
+      description: 'Roles: global administrator. Up to 50 attributes. The name and type can''t be changed later. Writes an `attribute.create` audit event.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, label, type]
+              properties:
+                name: {type: string, pattern: '^[A-Za-z][A-Za-z0-9_]{0,63}$', description: 'Applications receive values under `attribute.<name>` claim sources, and outbound SCIM under this name in the `urn:ietf:params:scim:schemas:extension:halo:2.0:User` extension.', examples: [employeeNumber]}
+                label: {type: string, maxLength: 100, examples: [Employee number]}
+                type: {$ref: '#/components/schemas/AttributeType'}
+                selfService: {type: boolean, default: false}
+      responses:
+        '201':
+          description: The new attribute.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Attribute'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /attributes/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    patch:
+      tags: [Users]
+      operationId: updateAttribute
+      summary: Rename a custom attribute or change who can edit it
+      description: 'Roles: global administrator. Writes an `attribute.update` audit event with the old and new values.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: {type: string, maxLength: 100}
+                selfService: {type: boolean}
+      responses:
+        '200':
+          description: The attribute.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Attribute'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Users]
+      operationId: deleteAttribute
+      summary: Delete a custom attribute and every value of it
+      description: 'Roles: global administrator. Refused with 409 while an application maps it to a claim. Writes an `attribute.delete` audit event.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /groups:
     get:
       tags: [Groups]
@@ -3131,7 +3236,7 @@ paths:
       tags: [Applications]
       operationId: updateApplication
       summary: Change an application
-      description: 'Roles: application administrator. Send only the fields to change. SAML applications accept only name, description, homepage, maxAuthAge, owner and groupIds. OpenID Connect applications must keep the `openid` scope.'
+      description: 'Roles: application administrator. Send only the fields to change. SAML applications accept only name, description, homepage, maxAuthAge, owner, groupIds and claimMappings. OpenID Connect applications must keep the `openid` scope.'
       requestBody:
         required: true
         content:
@@ -3171,6 +3276,11 @@ paths:
                   items: {type: string}
                   description: Replaces the assigned groups. An empty list removes every assignment.
                 requiresConsent: {type: boolean, description: Not for SAML applications or bookmarks.}
+                claimMappings:
+                  type: array
+                  maxItems: 50
+                  description: Replaces the claim mappings. Not for service applications or bookmarks. An empty list removes every mapping.
+                  items: {$ref: '#/components/schemas/ClaimMapping'}
       responses:
         '200': {$ref: '#/components/responses/ApplicationResponse'}
         '400': {$ref: '#/components/responses/BadJSON'}
@@ -6783,6 +6893,39 @@ components:
             - {$ref: '#/components/schemas/NamedRef'}
             - {type: 'null'}
         expiresAt: {type: [string, 'null'], format: date-time, description: 'When a guest''s access ends. From then on `status` is `suspended`, sign-in and sessions stop working, and a background job records the suspension.'}
+        attributes:
+          type: object
+          description: Values of custom attributes, by attribute name. Attributes without a value are left out.
+          additionalProperties: {$ref: '#/components/schemas/AttributeValue'}
+    AttributeType:
+      type: string
+      enum: [string, number, boolean, date, list]
+      description: '`date` values are `YYYY-MM-DD` strings and `list` values are arrays of strings.'
+    AttributeValue:
+      description: 'Text up to 500 characters, a number between -2^53 and 2^53, a boolean, a `YYYY-MM-DD` date, or up to 50 strings for a list.'
+      oneOf:
+        - {type: string}
+        - {type: number}
+        - {type: boolean}
+        - {type: array, items: {type: string}}
+    AttributeValues:
+      type: object
+      description: 'Values by attribute name. Each must match the attribute''s type. `null`, an empty string or an empty list clears the value; attributes you leave out are not changed.'
+      additionalProperties:
+        oneOf:
+          - {$ref: '#/components/schemas/AttributeValue'}
+          - {type: 'null'}
+    Attribute:
+      type: object
+      required: [id, name, label, type, selfService, createdAt, people]
+      properties:
+        id: {type: string, examples: [atr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        name: {type: string, examples: [employeeNumber]}
+        label: {type: string, examples: [Employee number]}
+        type: {$ref: '#/components/schemas/AttributeType'}
+        selfService: {type: boolean, description: People can change their own value in the account portal.}
+        createdAt: {type: string, format: date-time}
+        people: {type: integer, description: How many people have a value.}
     RoleActivation:
       type: object
       required: [id, role, justification, activatedAt, expiresAt]
@@ -6864,9 +7007,18 @@ components:
       properties:
         name: {type: string}
         source: {type: string}
+    ClaimMapping:
+      type: object
+      required: [name, source]
+      properties:
+        name: {type: string, maxLength: 256, description: 'The claim or SAML attribute name, without spaces. OpenID Connect applications can''t map `sub`, `iss`, `aud`, `exp`, `iat`, `nbf`, `jti`, `nonce`, `azp`, `acr`, `amr`, `sid`, `auth_time`, `at_hash`, `c_hash`, `act`, `client_id` or `scope`.', examples: [employee_id]}
+        source:
+          type: string
+          description: '`user.id`, `user.email`, `user.emailVerified`, `user.name`, `user.givenName`, `user.familyName`, `user.title`, `user.department`, `user.location`, `user.groups` (group names), `attribute.<name>` for a custom attribute, or `none` to leave out a claim Halo would otherwise send under this name.'
+          examples: [attribute.employeeNumber]
     Application:
       type: object
-      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent]
+      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent]
       properties:
         id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
@@ -6888,7 +7040,12 @@ components:
           items: {type: string}
         claims:
           type: array
+          description: What the application receives, after claim mappings.
           items: {$ref: '#/components/schemas/Claim'}
+        claimMappings:
+          type: array
+          description: Claims added, renamed or left out for this application, in ID tokens and userinfo, or SAML assertions. A mapping replaces a claim Halo would send under the same name. Empty values are not sent.
+          items: {$ref: '#/components/schemas/ClaimMapping'}
         groupIds:
           type: array
           items: {type: string}

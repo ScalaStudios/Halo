@@ -13,14 +13,15 @@ type ExportSection struct {
 }
 
 var ExportSections = []ExportSection{
-	{"users", "users", `select id, email, name, title, department, location, status, kind, manager_id, source, external_id, created_at, updated_at, last_sign_in_at, guest, sponsor_id, expires_at from users order by created_at, id`},
+	{"users", "users", `select id, email, name, title, department, location, status, kind, manager_id, source, external_id, created_at, updated_at, last_sign_in_at, guest, sponsor_id, expires_at, attributes from users order by created_at, id`},
+	{"attributes", "user_attributes", `select id, name, label, type, self_service, created_at, updated_at from user_attributes order by name`},
 	{"groups", "groups", `select g.id, g.name, g.description, g.kind, g.rule, g.join_policy, g.source, g.external_id, g.created_at,
 		array(select o.user_id from group_owners o where o.group_id = g.id order by o.user_id) as owner_ids from groups g order by g.name`},
 	{"memberships", "group_members", `select group_id, user_id, created_at from group_members order by group_id, user_id`},
 	{"roles", "user_roles", `select user_id, role, scope, created_at from user_roles order by user_id, role`},
 	{"eligibleRoles", "role_eligibilities", `select user_id, role, scope, created_at from role_eligibilities order by user_id, role`},
 	{"applications", "applications", `select a.id, a.name, a.description, a.protocol, a.app_type, a.status, a.client_id, a.homepage, a.redirect_uris, a.post_logout_uris, a.scopes,
-		a.access_token_ttl, a.refresh_token_ttl, a.id_token_ttl, a.refresh_rotation, a.token_exchange, a.max_auth_age, a.setup_guide, a.owner_id, a.created_at, a.updated_at,
+		a.access_token_ttl, a.refresh_token_ttl, a.id_token_ttl, a.refresh_rotation, a.token_exchange, a.max_auth_age, a.setup_guide, a.owner_id, a.claim_mappings, a.created_at, a.updated_at,
 		array(select g.group_id from app_groups g where g.app_id = a.id order by g.group_id) as group_ids,
 		array(select x.resource_id from app_exchange_sources x where x.app_id = a.id order by x.resource_id) as token_exchange_from from applications a order by a.name`},
 	{"policies", "access_policies", `select id, name, description, priority, enabled, mode, effect, terms_id, conditions, created_at, updated_at from access_policies order by priority`},

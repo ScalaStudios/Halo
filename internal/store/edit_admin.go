@@ -9,8 +9,8 @@ import (
 )
 
 func (s *Store) UpdateUserProfile(ctx context.Context, u User) error {
-	tag, err := s.db.Exec(ctx, `update users set email = $2, email_verified = email_verified and lower(email) = lower($2), name = $3, title = $4, department = $5, location = $6, manager_id = $7, updated_at = now() where id = $1`,
-		u.ID, u.Email, u.Name, u.Title, u.Department, u.Location, u.ManagerID)
+	tag, err := s.db.Exec(ctx, `update users set email = $2, email_verified = email_verified and lower(email) = lower($2), name = $3, title = $4, department = $5, location = $6, manager_id = $7, attributes = $8, updated_at = now() where id = $1`,
+		u.ID, u.Email, u.Name, u.Title, u.Department, u.Location, u.ManagerID, u.Attributes)
 	if err != nil {
 		return conflict(err)
 	}
@@ -119,9 +119,9 @@ func (s *Store) DeleteGroup(ctx context.Context, groupID string) error {
 func (s *Store) UpdateApplication(ctx context.Context, a Application) error {
 	return s.Tx(ctx, func(tx *Store) error {
 		tag, err := tx.db.Exec(ctx, `update applications set name = $2, description = $3, homepage = $4, redirect_uris = $5, post_logout_uris = $6, scopes = $7,
-			access_token_ttl = $8, refresh_token_ttl = $9, id_token_ttl = $10, refresh_rotation = $11, owner_id = $12, token_exchange = $13, id_token_alg = $14, max_auth_age = $15, requires_consent = $16, updated_at = now() where id = $1`,
+			access_token_ttl = $8, refresh_token_ttl = $9, id_token_ttl = $10, refresh_rotation = $11, owner_id = $12, token_exchange = $13, id_token_alg = $14, max_auth_age = $15, requires_consent = $16, claim_mappings = $17, updated_at = now() where id = $1`,
 			a.ID, a.Name, a.Description, a.Homepage, a.RedirectURIs, a.PostLogoutURIs, a.Scopes,
-			a.TokenPolicy.AccessTokenTTL, a.TokenPolicy.RefreshTokenTTL, a.TokenPolicy.IDTokenTTL, a.TokenPolicy.Rotation, a.Owner, a.TokenPolicy.Exchange, a.TokenPolicy.IDTokenAlg, a.MaxAuthAge, a.RequiresConsent)
+			a.TokenPolicy.AccessTokenTTL, a.TokenPolicy.RefreshTokenTTL, a.TokenPolicy.IDTokenTTL, a.TokenPolicy.Rotation, a.Owner, a.TokenPolicy.Exchange, a.TokenPolicy.IDTokenAlg, a.MaxAuthAge, a.RequiresConsent, a.ClaimMappings)
 		if err != nil {
 			return err
 		}

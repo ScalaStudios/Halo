@@ -137,6 +137,12 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("PUT /api/v1/applications/{id}/saml", []string{"app_admin"}, h.setApplicationSAML)
 	route("PATCH /api/v1/applications/{id}", []string{"app_admin"}, h.updateApplication)
 
+	signedIn("GET /api/v1/attributes", h.listAttributes)
+	route("POST /api/v1/attributes", nil, h.createAttribute)
+	route("PATCH /api/v1/attributes/{id}", nil, h.updateAttribute)
+	route("DELETE /api/v1/attributes/{id}", nil, h.deleteAttribute)
+	signedIn("PATCH /api/v1/me/attributes", h.updateMyAttributes)
+
 	route("GET /api/v1/collections", readers, h.listCollections)
 	route("POST /api/v1/collections", []string{"app_admin"}, h.createCollection)
 	route("PUT /api/v1/collections/{id}", []string{"app_admin"}, h.updateCollection)

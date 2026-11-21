@@ -2,6 +2,7 @@ package api
 
 import (
 	"cmp"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -725,11 +726,17 @@ func (h *handlers) updateUser(w http.ResponseWriter, r *http.Request, actor stor
 		Department *string `json:"department"`
 		Location   *string `json:"location"`
 		ManagerID  *string `json:"managerId"`
+
+		Attributes map[string]json.RawMessage `json:"attributes"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
 	next, changed := target, []string{}
+	attributes, labels, err := h.setAttributes(r.Context(), target.Attributes, in.Attributes, false)
+	if err != nil {
+		return err
+	}
 	for _, f := range []struct {
 		label string
 		value *string
@@ -753,6 +760,10 @@ func (h *handlers) updateUser(w http.ResponseWriter, r *http.Request, actor stor
 	}
 	if !actor.Manages(target, "user_admin") && slices.ContainsFunc(changed, func(f string) bool { return f == "name" || f == "email" || f == "manager" }) {
 		return httpx.Fail(http.StatusForbidden, "ERR_FORBIDDEN", "Helpdesk administrators can change title, department and location only. Ask a user administrator to change the name, email or manager.")
+	}
+	if len(labels) > 0 {
+		next.Attributes = attributes
+		changed = append(changed, labels...)
 	}
 	if len(changed) == 0 {
 		return httpx.JSON(w, http.StatusOK, target)

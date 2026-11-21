@@ -64,7 +64,7 @@ func (u User) CanReauthenticate() bool {
 	return slices.ContainsFunc(u.Methods, func(m Method) bool { return m.Kind == "passkey" || m.Kind == "security-key" || m.Kind == "totp" })
 }
 
-const userColumns = `id, email, name, title, department, location, status, manager_id, source, created_at, last_sign_in_at, kind, email_verified, avatar_updated_at, guest, expires_at,
+const userColumns = `id, email, name, title, department, location, status, manager_id, source, created_at, last_sign_in_at, kind, email_verified, avatar_updated_at, guest, expires_at, attributes,
 	(select json_build_object('id', s.id, 'name', s.name, 'email', s.email) from users s where s.id = users.sponsor_id)`
 
 type rowScanner interface {
@@ -74,7 +74,7 @@ type rowScanner interface {
 func scanUser(row rowScanner) (User, error) {
 	var u User
 	var avatar *time.Time
-	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Title, &u.Department, &u.Location, &u.Status, &u.ManagerID, &u.Source, &u.CreatedAt, &u.LastSignInAt, &u.Kind, &u.EmailVerified, &avatar, &u.Guest, &u.ExpiresAt, &u.Sponsor)
+	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Title, &u.Department, &u.Location, &u.Status, &u.ManagerID, &u.Source, &u.CreatedAt, &u.LastSignInAt, &u.Kind, &u.EmailVerified, &avatar, &u.Guest, &u.ExpiresAt, &u.Attributes, &u.Sponsor)
 	if u.Expired() && (u.Status == "active" || u.Status == "invited") {
 		u.Status = "suspended"
 	}

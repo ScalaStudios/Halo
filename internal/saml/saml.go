@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -540,17 +541,26 @@ func (f *flow) attributes(ctx context.Context) ([]saml.Attribute, error) {
 	}
 	given, family, _ := strings.Cut(strings.TrimSpace(f.user.Name), " ")
 	names := f.settings.Attributes
-	var out []saml.Attribute
-	for _, a := range []struct {
+	type attribute struct {
 		name   string
 		values []string
-	}{
+	}
+	attributes := []attribute{
 		{names.Email, []string{f.user.Email}},
 		{names.Name, []string{f.user.Name}},
 		{names.GivenName, []string{given}},
 		{names.FamilyName, []string{strings.TrimSpace(family)}},
 		{names.Groups, groups},
-	} {
+	}
+	if f.user.AvatarURL != nil && f.cfg.PublicURL != nil {
+		attributes = append(attributes, attribute{"picture", []string{f.cfg.Issuer() + *f.user.AvatarURL}})
+	}
+	for _, m := range f.app.ClaimMappings {
+		attributes = slices.DeleteFunc(attributes, func(a attribute) bool { return a.name == m.Name })
+		attributes = append(attributes, attribute{m.Name, claimStrings(f.user.ClaimValue(m.Source, groups))})
+	}
+	var out []saml.Attribute
+	for _, a := range attributes {
 		values := slices.DeleteFunc(a.values, func(v string) bool { return v == "" })
 		if a.name == "" || len(values) == 0 {
 			continue
@@ -564,14 +574,29 @@ func (f *flow) attributes(ctx context.Context) ([]saml.Attribute, error) {
 		}
 		out = append(out, attr)
 	}
-	if f.user.AvatarURL != nil && f.cfg.PublicURL != nil {
-		out = append(out, saml.Attribute{
-			Name:       "picture",
-			NameFormat: "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
-			Values:     []saml.AttributeValue{{Type: "xs:string", Value: f.cfg.Issuer() + *f.user.AvatarURL}},
-		})
-	}
 	return out, nil
+}
+
+func claimStrings(v any) []string {
+	switch v := v.(type) {
+	case nil:
+		return nil
+	case string:
+		return []string{v}
+	case bool:
+		return []string{strconv.FormatBool(v)}
+	case float64:
+		return []string{strconv.FormatFloat(v, 'f', -1, 64)}
+	case []string:
+		return v
+	case []any:
+		var out []string
+		for _, item := range v {
+			out = append(out, claimStrings(item)...)
+		}
+		return out
+	}
+	return []string{fmt.Sprint(v)}
 }
 
 func (f *flow) refuse(w http.ResponseWriter, r *http.Request, reason, title, message, detail string) {

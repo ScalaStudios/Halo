@@ -44,6 +44,8 @@ type User struct {
 	Activations    []RoleActivation    `json:"activations"`
 	RoleScopes     map[string][]string `json:"roleScopes"`
 	EligibleScopes map[string][]string `json:"eligibleScopes"`
+
+	Attributes map[string]any `json:"attributes"`
 }
 
 type Group struct {
@@ -113,6 +115,7 @@ type Application struct {
 	MaxAuthAge     int          `json:"maxAuthAge"`
 	SetupGuide     string       `json:"setupGuide"`
 	LogoURL        *string      `json:"logoUrl"`
+	ClaimMappings  []Claim      `json:"claimMappings"`
 
 	RegisteredDynamically bool   `json:"registeredDynamically"`
 	AwaitingApproval      bool   `json:"awaitingApproval"`
