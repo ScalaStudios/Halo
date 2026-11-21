@@ -97,6 +97,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("PUT /api/v1/users/{id}/roles", nil, h.setRoles)
 	route("PUT /api/v1/users/{id}/eligible-roles", nil, h.setEligibleRoles)
 	scoped("PATCH /api/v1/users/{id}", []string{"user_admin", "helpdesk_admin"}, h.updateUser)
+	scoped("PUT /api/v1/users/{id}/posix", []string{"user_admin"}, h.setPOSIX)
 	signedIn("PUT /api/v1/users/{id}/guest", h.updateGuest)
 	signedIn("GET /api/v1/me/guests", h.mySponsoredGuests)
 	route("POST /api/v1/users/{id}/impersonations", []string{"helpdesk_admin"}, h.requestImpersonation)

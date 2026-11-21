@@ -24,7 +24,7 @@ const (
 	undefined
 )
 
-var schema = []string{"objectClass", "ou", "uid", "mail", "cn", "sn", "displayName", "memberOf", "member", "description", "namingContexts", "supportedLDAPVersion", "supportedControl", "supportedExtension"}
+var schema = []string{"objectClass", "ou", "uid", "mail", "cn", "sn", "displayName", "memberOf", "member", "description", "uidNumber", "gidNumber", "homeDirectory", "loginShell", "memberUid", "namingContexts", "supportedLDAPVersion", "supportedControl", "supportedExtension"}
 
 type attribute struct {
 	name   string
@@ -61,7 +61,7 @@ func (c *session) directory(ctx context.Context) ([]entry, error) {
 		{teams, []attribute{{"objectClass", unit}, {"ou", []string{"groups"}}}},
 	}
 	groups = slices.DeleteFunc(groups, func(g store.Group) bool { return !slices.Contains(app.GroupIDs, g.ID) })
-	members := map[string][]string{}
+	members, memberUids := map[string][]string{}, map[string][]string{}
 	for _, u := range users {
 		if u.Status != "active" || !slices.Contains(u.AppIDs, app.ID) {
 			continue
@@ -72,21 +72,30 @@ func (c *session) directory(ctx context.Context) ([]entry, error) {
 			if slices.Contains(u.GroupIDs, g.ID) {
 				memberOf = append(memberOf, child(teams, "cn", g.Name).String())
 				members[g.ID] = append(members[g.ID], dn)
+				if u.POSIX != nil {
+					memberUids[g.ID] = append(memberUids[g.ID], u.POSIX.Username)
+				}
 			}
 		}
 		if c.userID != "" && c.userID != u.ID {
 			continue
 		}
 		name := cmp.Or(u.Name, u.Email)
-		entries = append(entries, entry{child(people, "uid", u.Email), []attribute{
-			{"objectClass", []string{"top", "person", "organizationalPerson", "inetOrgPerson"}},
-			{"uid", []string{u.Email}},
+		classes, uids := []string{"top", "person", "organizationalPerson", "inetOrgPerson"}, []string{u.Email}
+		var posix []attribute
+		if p := u.POSIX; p != nil {
+			classes, uids = append(classes, "posixAccount"), append(uids, p.Username)
+			posix = []attribute{{"uidNumber", []string{strconv.Itoa(p.UIDNumber)}}, {"gidNumber", []string{strconv.Itoa(p.GIDNumber)}}, {"homeDirectory", []string{p.HomeDirectory}}, {"loginShell", []string{p.LoginShell}}}
+		}
+		entries = append(entries, entry{child(people, "uid", u.Email), append([]attribute{
+			{"objectClass", classes},
+			{"uid", uids},
 			{"mail", []string{u.Email}},
 			{"cn", []string{name}},
 			{"sn", []string{name}},
 			{"displayName", []string{name}},
 			{"memberOf", memberOf},
-		}})
+		}, posix...)})
 	}
 	for _, g := range groups {
 		if c.userID != "" {
@@ -96,12 +105,17 @@ func (c *session) directory(ctx context.Context) ([]entry, error) {
 		if g.Description != "" {
 			description = []string{g.Description}
 		}
-		entries = append(entries, entry{child(teams, "cn", g.Name), []attribute{
-			{"objectClass", []string{"top", "groupOfNames"}},
+		classes, posix := []string{"top", "groupOfNames"}, []attribute{}
+		if g.POSIX != nil {
+			classes = append(classes, "posixGroup")
+			posix = []attribute{{"gidNumber", []string{strconv.Itoa(g.POSIX.GIDNumber)}}, {"memberUid", memberUids[g.ID]}}
+		}
+		entries = append(entries, entry{child(teams, "cn", g.Name), append([]attribute{
+			{"objectClass", classes},
 			{"cn", []string{g.Name}},
 			{"description", description},
 			{"member", members[g.ID]},
-		}})
+		}, posix...)})
 	}
 	return entries, nil
 }

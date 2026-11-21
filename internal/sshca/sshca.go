@@ -58,6 +58,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	mux.Handle("GET /api/v1/ssh/revoked-hosts.krl", httpx.Handle(h.revokedHosts))
 	mux.Handle("POST /api/v1/ssh/hosts/enroll", httpx.Handle(h.enrollHost))
 	mux.Handle("POST /api/v1/ssh/hosts/renew", httpx.Handle(h.renewHost))
+	mux.Handle("POST /api/v1/ssh/hosts/directory", httpx.Handle(h.directory))
 	mux.Handle("POST /api/v1/me/ssh/certificates", httpx.Handle(h.issue))
 	route("GET /api/v1/ssh/authority", readers, h.authority)
 	route("PUT /api/v1/ssh/authority", writers, h.setLifetime)
@@ -68,6 +69,13 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("POST /api/v1/ssh/hosts/{id}/enrollment-token", writers, h.hostToken)
 	route("POST /api/v1/ssh/hosts/{id}/certificate", writers, h.signHost)
 	route("POST /api/v1/ssh/hosts/{id}/revoke", writers, h.revokeHost)
+	route("PUT /api/v1/ssh/hosts/{id}/host-group", writers, h.setHostGroup)
+	route("GET /api/v1/ssh/host-groups", readers, h.listHostGroups)
+	route("POST /api/v1/ssh/host-groups", writers, h.createHostGroup)
+	route("PUT /api/v1/ssh/host-groups/{id}", writers, h.updateHostGroup)
+	route("DELETE /api/v1/ssh/host-groups/{id}", writers, h.deleteHostGroup)
+	route("GET /api/v1/ssh/posix", readers, h.posixSettings)
+	route("PUT /api/v1/ssh/posix", writers, h.savePOSIXSettings)
 	route("GET /api/v1/ssh/principal-mappings", readers, h.listMappings)
 	route("POST /api/v1/ssh/principal-mappings", writers, h.createMapping)
 	route("PUT /api/v1/ssh/principal-mappings/{id}", writers, h.updateMapping)
@@ -433,6 +441,11 @@ func (h *handlers) issue(w http.ResponseWriter, r *http.Request) error {
 	principals, err := h.principals(ctx, u)
 	if err != nil {
 		return err
+	}
+	if p, err := h.hostPrincipal(r, u); err != nil {
+		return err
+	} else if p != "" {
+		principals = append(principals, p)
 	}
 	if len(principals) == 0 {
 		return errNoPrincipals

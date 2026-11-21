@@ -149,9 +149,10 @@ type SSHHost struct {
 	EnrollmentExpiresAt *time.Time `json:"enrollmentExpiresAt"`
 	RevokedAt           *time.Time `json:"revokedAt"`
 	CreatedAt           time.Time  `json:"createdAt"`
+	HostGroupID         *string    `json:"hostGroupId"`
 }
 
-const sshHostColumns = `id, hostnames, public_key, fingerprint, key_type, serial, valid_before, enrollment_expires_at, revoked_at, created_at`
+const sshHostColumns = `id, hostnames, public_key, fingerprint, key_type, serial, valid_before, enrollment_expires_at, revoked_at, created_at, host_group_id`
 
 func (s *Store) sshHost(ctx context.Context, query string, args ...any) (SSHHost, error) {
 	rows, err := s.db.Query(ctx, query, args...)

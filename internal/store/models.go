@@ -47,6 +47,8 @@ type User struct {
 	EligibleScopes map[string][]string `json:"eligibleScopes"`
 
 	Attributes map[string]any `json:"attributes"`
+
+	POSIX *POSIXAccount `json:"posix"`
 }
 
 type Group struct {
@@ -60,6 +62,8 @@ type Group struct {
 	MemberCount int        `json:"memberCount"`
 	Source      string     `json:"source"`
 	CreatedAt   time.Time  `json:"createdAt"`
+
+	POSIX *POSIXGroup `json:"posix"`
 }
 
 func (g Group) OwnedBy(userID string) bool {

@@ -265,7 +265,7 @@ func TestSendTestEvent(t *testing.T) {
 }
 
 func TestEveryEmittedEventIsDescribed(t *testing.T) {
-	notEvents := []string{"credentials.json", "emails.value", "event.name", "host.name", "log_export.test", "manager.value", "name.familyname", "name.formatted", "name.givenname", "service.name", "user.roles", "webhook.test"}
+	notEvents := []string{"cache.json", "credentials.json", "emails.value", "event.name", "host.name", "log_export.test", "manager.value", "name.familyname", "name.formatted", "name.givenname", "service.name", "user.roles", "webhook.test"}
 	literal := regexp.MustCompile(`"([a-z_]+(?:\.[a-z_]+)+)"`)
 	err := filepath.WalkDir("..", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

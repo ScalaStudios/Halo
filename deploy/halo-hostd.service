@@ -1,0 +1,41 @@
+[Unit]
+Description=Halo host daemon for Linux accounts and sudo rules
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/halo-hostd run --server https://auth.example.com
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=10s
+StateDirectory=halo-hostd
+StateDirectoryMode=0700
+UMask=0077
+ReadWritePaths=/var/lib/extrausers /etc/sudoers.d
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

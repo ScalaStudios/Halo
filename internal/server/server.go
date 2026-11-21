@@ -90,6 +90,9 @@ var sensitiveRoutes = []string{
 	"POST /api/v1/ssh/hosts",
 	"POST /api/v1/ssh/hosts/{id}/enrollment-token",
 	"POST /api/v1/ssh/hosts/{id}/certificate",
+	"PUT /api/v1/ssh/hosts/{id}/host-group",
+	"POST /api/v1/ssh/host-groups",
+	"PUT /api/v1/ssh/host-groups/{id}",
 	"PUT /api/v1/applications/{id}/shared-signals",
 	"DELETE /api/v1/applications/{id}/shared-signals",
 }

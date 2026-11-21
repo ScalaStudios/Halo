@@ -2314,7 +2314,7 @@ paths:
       tags: [Account, SSH]
       operationId: issueSSHCertificate
       summary: Get an SSH user certificate for a public key
-      description: Signs the key with Halo's SSH certificate authority for every principal mapped to your groups, valid for the configured lifetime. `halo ssh-cert` calls this route and writes `knownHosts` to `~/.ssh/known_hosts`.
+      description: Signs the key with Halo's SSH certificate authority for every principal mapped to your groups, valid for the configured lifetime. When one of your groups is in a host group rule it also names `halo:<uidNumber>`, which `halo-hostd principals` accepts for your Linux account on those hosts. `halo ssh-cert` calls this route and writes `knownHosts` to `~/.ssh/known_hosts`.
       security: *personal
       requestBody:
         required: true
@@ -3156,6 +3156,33 @@ paths:
         '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /users/{id}/posix:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Users]
+      operationId: setUserPOSIX
+      summary: Change a person's Linux account
+      description: 'Roles: user administrator; only a global administrator can change an administrator''s account. The user and group numbers never change. The user name must be unique across people and groups and must not be a system account such as `root`. Limited roles apply. Recorded as `user.posix`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, loginShell, homeDirectory]
+              properties:
+                username: {type: string, pattern: '^[a-z_][a-z0-9_.-]{0,31}$', examples: [ada]}
+                loginShell: {type: string, description: An absolute path of letters, digits and _ . / -., examples: [/bin/bash]}
+                homeDirectory: {type: string, description: An absolute path of letters, digits and _ . / -., examples: [/home/ada]}
+      responses:
+        '200': {$ref: '#/components/responses/UserResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/Invalid'}
   /users/{id}/roles:
     parameters:
@@ -7322,6 +7349,34 @@ paths:
         '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /ssh/hosts/{id}/host-group:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [SSH]
+      operationId: setSSHHostGroup
+      summary: Move a host to a host group
+      description: 'Roles: security administrator. The host group''s rules decide who `halo-hostd` lets log in to the host. A host in no host group lets nobody in. Recorded as `ssh.host.group`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hostGroupId]
+              properties:
+                hostGroupId: {type: [string, 'null'], description: Null takes the host out of its host group.}
+      responses:
+        '200':
+          description: The host.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SSHHost'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /ssh/hosts/{id}/enrollment-token:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -7428,6 +7483,132 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /ssh/hosts/directory:
+    post:
+      tags: [SSH]
+      operationId: getSSHHostDirectory
+      summary: Get the people and groups allowed on a host
+      description: 'The host proves it holds its enrolled key by signing `halo host directory <timestamp>` with it, within 5 minutes of the server''s clock. `halo-hostd` calls this route. Returns the active people in the groups of the host group''s rules, with their sudo commands, and the groups they belong to with only those people as members. A host in no host group gets empty lists.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [publicKey, timestamp, signature]
+              properties:
+                publicKey: {type: string, examples: ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI…']}
+                timestamp: {type: integer, description: Unix seconds.}
+                signature: {type: string, description: The SSH signature in wire format, base64 encoded.}
+      responses:
+        '200':
+          description: The directory for this host.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HostDirectory'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401':
+          description: '`ERR_INVALID_SIGNATURE`: the signature does not verify with the key, or the timestamp is more than 5 minutes off.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403':
+          description: '`ERR_UNKNOWN_HOST`: no host has this key, or the host was revoked.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /ssh/host-groups:
+    get:
+      tags: [SSH]
+      operationId: listHostGroups
+      summary: List host groups
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The host groups by name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/HostGroup'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [SSH]
+      operationId: createHostGroup
+      summary: Create a host group
+      description: 'Roles: security administrator. Recorded as `ssh.host_group.create`.'
+      requestBody: {$ref: '#/components/requestBodies/HostGroupInput'}
+      responses:
+        '201': {$ref: '#/components/responses/HostGroupResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /ssh/host-groups/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [SSH]
+      operationId: updateHostGroup
+      summary: Replace a host group and its rules
+      description: 'Roles: security administrator. Send every rule; rules you leave out are removed. Hosts pick up the change at their next refresh. Recorded as `ssh.host_group.update`.'
+      requestBody: {$ref: '#/components/requestBodies/HostGroupInput'}
+      responses:
+        '200': {$ref: '#/components/responses/HostGroupResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [SSH]
+      operationId: deleteHostGroup
+      summary: Delete a host group
+      description: 'Roles: security administrator. Its hosts are left in no host group, so nobody logs in to them through `halo-hostd`. Recorded as `ssh.host_group.delete`.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /ssh/posix:
+    get:
+      tags: [SSH]
+      operationId: getPOSIXSettings
+      summary: Get the POSIX number ranges
+      description: 'Roles: any administrator.'
+      responses:
+        '200': {$ref: '#/components/responses/POSIXSettingsResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    put:
+      tags: [SSH]
+      operationId: setPOSIXSettings
+      summary: Change the POSIX number ranges and default login shell
+      description: 'Roles: security administrator. Applies to people and groups created from now on; numbers already handed out never change. Both ranges start at 65536 or above and must not overlap. People and groups still waiting for a number, because a range was used up, get one as soon as the range has room. Recorded as `ssh.posix`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [uidMin, uidMax, gidMin, gidMax, loginShell]
+              properties:
+                uidMin: {type: integer, minimum: 65536}
+                uidMax: {type: integer, maximum: 2147483647}
+                gidMin: {type: integer, minimum: 65536}
+                gidMax: {type: integer, maximum: 2147483647}
+                loginShell: {type: string, examples: [/bin/bash]}
+      responses:
+        '200': {$ref: '#/components/responses/POSIXSettingsResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /dev/outbox:
     get:
       tags: [Development]
@@ -7525,6 +7706,20 @@ components:
       description: '`csv` returns the rows as a CSV file instead of JSON.'
       schema: {type: string, enum: [json, csv], default: json}
   requestBodies:
+    HostGroupInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name]
+            properties:
+              name: {type: string, maxLength: 100, examples: [Production]}
+              description: {type: string, maxLength: 500}
+              rules:
+                type: array
+                description: Who may log in to the group's hosts. One rule per group.
+                items: {$ref: '#/components/schemas/HostRule'}
     BulkUserIds:
       required: true
       content:
@@ -8121,6 +8316,16 @@ components:
             required: [revoked]
             properties:
               revoked: {type: integer}
+    HostGroupResponse:
+      description: The host group.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/HostGroup'}
+    POSIXSettingsResponse:
+      description: The POSIX settings.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/POSIXSettings'}
     UserResponse:
       description: The person.
       content:
@@ -8468,6 +8673,7 @@ components:
           type: array
           description: Assigned and rule-based groups.
           items: {type: string}
+        posix: {oneOf: [{$ref: '#/components/schemas/POSIXAccount'}, {type: 'null'}], description: Null for service accounts and while the POSIX range is used up.}
         appIds:
           type: array
           description: Applications the person is assigned to through their groups.
@@ -8546,6 +8752,7 @@ components:
         memberCount: {type: integer}
         source: {type: string}
         createdAt: {type: string, format: date-time}
+        posix: {oneOf: [{$ref: '#/components/schemas/POSIXGroup'}, {type: 'null'}]}
     JoinPolicy:
       type: string
       enum: [closed, request, open]
@@ -10265,6 +10472,82 @@ components:
         enrollmentExpiresAt: {type: [string, 'null'], format: date-time, description: When the unused enrollment token stops working.}
         revokedAt: {type: [string, 'null'], format: date-time}
         createdAt: {type: string, format: date-time}
+        hostGroupId: {type: [string, 'null'], description: The host group whose rules decide who halo-hostd lets log in.}
+    POSIXAccount:
+      type: object
+      required: [username, uidNumber, gidNumber, loginShell, homeDirectory]
+      description: The person's Linux account. Halo allocates the numbers from the POSIX ranges, and they never change. The person's private group has their user name and `gidNumber`, which equals `uidNumber`.
+      properties:
+        username: {type: string, examples: [ada]}
+        uidNumber: {type: integer, examples: [1000001]}
+        gidNumber: {type: integer, examples: [1000001]}
+        loginShell: {type: string, examples: [/bin/bash]}
+        homeDirectory: {type: string, examples: [/home/ada]}
+    POSIXGroup:
+      type: object
+      required: [name, gidNumber]
+      properties:
+        name: {type: string, description: Lowercase name derived from the group's name when it was created., examples: [ops]}
+        gidNumber: {type: integer, examples: [2000001]}
+    POSIXSettings:
+      type: object
+      required: [uidMin, uidMax, gidMin, gidMax, nextUid, nextGid, loginShell]
+      properties:
+        uidMin: {type: integer}
+        uidMax: {type: integer}
+        gidMin: {type: integer}
+        gidMax: {type: integer}
+        nextUid: {type: integer, description: The number the next person gets. Above `uidMax` when the range is used up.}
+        nextGid: {type: integer, description: The number the next group gets. Above `gidMax` when the range is used up.}
+        loginShell: {type: string, description: The login shell new people get.}
+    HostRule:
+      type: object
+      required: [groupId, sudo]
+      properties:
+        groupId: {type: string}
+        sudo:
+          type: array
+          description: 'Empty: members may log in. `ALL`: full sudo as root, without a password. Otherwise the absolute paths, with plain arguments, they may run as root, such as `/usr/bin/systemctl restart nginx`.'
+          items: {type: string}
+    HostGroup:
+      type: object
+      required: [id, name, description, rules, hostCount, createdAt, updatedAt]
+      properties:
+        id: {type: string, examples: [hgr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        name: {type: string}
+        description: {type: string}
+        rules:
+          type: array
+          items: {$ref: '#/components/schemas/HostRule'}
+        hostCount: {type: integer, description: Hosts in the group that are not revoked.}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    HostDirectory:
+      type: object
+      required: [users, groups]
+      properties:
+        users:
+          type: array
+          items:
+            type: object
+            required: [name, uid, gid, gecos, home, shell, sudo]
+            properties:
+              name: {type: string}
+              uid: {type: integer}
+              gid: {type: integer}
+              gecos: {type: string}
+              home: {type: string}
+              shell: {type: string}
+              sudo: {type: array, items: {type: string}}
+        groups:
+          type: array
+          items:
+            type: object
+            required: [name, gid, members]
+            properties:
+              name: {type: string}
+              gid: {type: integer}
+              members: {type: array, items: {type: string}}
     DeviceAuthorization:
       type: object
       required: [userCode, application, logoUrl, clientId, scopes, ip, userAgent, requestedAt, expiresAt]

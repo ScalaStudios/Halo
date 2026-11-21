@@ -15,7 +15,14 @@ export type SshHost = {
   enrollmentExpiresAt: string | null;
   revokedAt: string | null;
   createdAt: string;
+  hostGroupId: string | null;
 };
+
+export type PosixSettings = { uidMin: number; uidMax: number; gidMin: number; gidMax: number; nextUid: number; nextGid: number; loginShell: string };
+
+export type HostRule = { groupId: string; sudo: string[] };
+
+export type HostGroup = { id: string; name: string; description: string; rules: HostRule[]; hostCount: number; createdAt: string; updatedAt: string };
 
 export type PrincipalMapping = { id: string; groupId: string; principals: string[]; createdAt: string; updatedAt: string };
 

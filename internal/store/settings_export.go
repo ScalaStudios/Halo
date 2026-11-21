@@ -42,6 +42,11 @@ var ExportSections = []ExportSection{
 		array(select v.user_id from access_review_reviewers v where v.review_id = r.id order by v.user_id) as reviewer_ids,
 		(select coalesce(json_agg(json_build_object('userId', i.user_id, 'decision', i.decision, 'note', i.note, 'decidedBy', i.decided_by, 'decidedAt', i.decided_at, 'outcome', i.outcome) order by i.user_id), '[]')
 			from access_review_items i where i.review_id = r.id) as items from access_reviews r order by r.created_at`},
+	{"posixSettings", "posix_settings", `select uid_min, uid_max, gid_min, gid_max, login_shell from posix_settings`},
+	{"posixAccounts", "posix_ids", `select user_id, group_id, name, number, login_shell, home_directory, created_at, updated_at from posix_ids where name is not null order by number`},
+	{"hostGroups", "host_groups", `select h.id, h.name, h.description, h.created_at, h.updated_at,
+		(select coalesce(json_agg(json_build_object('groupId', r.group_id, 'sudo', r.sudo) order by r.group_id), '[]') from host_group_rules r where r.host_group_id = h.id) as rules,
+		array(select s.id from ssh_hosts s where s.host_group_id = h.id order by s.id) as host_ids from host_groups h order by lower(h.name)`},
 	{"auditEvents", "audit_events", `select id, time, actor_id, action, summary, target_type, target_id, target_label, ip, changes from audit_events order by time, id`},
 }
 
