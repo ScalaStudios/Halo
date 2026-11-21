@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -93,7 +92,7 @@ func withStore(ctx context.Context, fn func(context.Context, config.Config, *sto
 	if err != nil {
 		return err
 	}
-	keys := kms.FromConfig(cfg.Vault)
+	keys := kms.FromConfig(cfg.KMS)
 	if cfg.WrappedKey != "" {
 		if cfg.SecretKey, err = keys.SecretKey(ctx, cfg.WrappedKey); err != nil {
 			return err
@@ -122,8 +121,9 @@ func withStore(ctx context.Context, fn func(context.Context, config.Config, *sto
 func serve(ctx context.Context) error {
 	return withStore(ctx, func(ctx context.Context, cfg config.Config, st *store.Store) error {
 		if err := st.CheckExternalKeys(ctx); err != nil {
-			return fmt.Errorf("Halo needs its keys in Vault Transit to start: %w", err)
+			return fmt.Errorf("Halo can't start without its external keys: %w", err)
 		}
+		go st.Keys.KeepRenewed(ctx)
 		app, err := server.New(cfg, st)
 		if err != nil {
 			return err
@@ -271,8 +271,8 @@ func newSecretKey(ctx context.Context, cfg config.Config, keys *kms.Keys) ([]byt
 		}
 		return next, nil
 	}
-	if !strings.HasPrefix(value, "vault:v") {
-		return nil, errors.New("set HALO_NEW_SECRET_KEY to a new key wrapped by Vault Transit. Wrap one with: " + cfg.Vault.WrapCommand())
+	if !cfg.KMS.Wrapped(value) {
+		return nil, errors.New("set HALO_NEW_SECRET_KEY to a new key wrapped by " + cfg.KMS.Name() + ". Wrap one with: " + cfg.KMS.WrapCommand())
 	}
 	next, err := keys.SecretKey(ctx, value)
 	if err != nil {
@@ -290,7 +290,7 @@ func rotateSecretKey(ctx context.Context) error {
 		if bytes.Equal(next, cfg.SecretKey) {
 			generate := "openssl rand -base64 32"
 			if cfg.WrappedKey != "" {
-				generate = cfg.Vault.WrapCommand()
+				generate = cfg.KMS.WrapCommand()
 			}
 			return errors.New("HALO_NEW_SECRET_KEY is the same key as HALO_SECRET_KEY. Generate a new key with: " + generate)
 		}

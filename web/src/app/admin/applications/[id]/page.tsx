@@ -6,7 +6,7 @@ import { AuthorizationCheckForm, AuthorizationModelForm } from "@/components/app
 import { ClaimMappingsForm } from "@/components/applications/claim-mappings";
 import { ClientAuthenticationForm } from "@/components/applications/client-authentication";
 import { CredentialList } from "@/components/applications/credentials";
-import { AuthenticationForm, BackchannelLogoutForm, ProtectedAddressesForm, ScopesForm, SenderConstraintForm, SignInFrequencyForm } from "@/components/applications/edit-application";
+import { AuthenticationForm, BackchannelLogoutForm, ProtectedAddressesForm, ScopesForm, SenderConstraintForm, SignInFrequencyForm, WindowsSignInForm } from "@/components/applications/edit-application";
 import { HookForm } from "@/components/applications/hook-form";
 import { RolesTable } from "@/components/applications/roles";
 import { SamlAttributesForm, SamlConnectionFields, SamlSettingsForm } from "@/components/applications/saml";
@@ -28,9 +28,9 @@ import { apiGet } from "@/lib/api/server";
 import { formatDuration, pluralize } from "@/lib/format";
 import type { ApiResource } from "@/lib/infra-types";
 import type { SamlApplication } from "@/lib/saml-types";
-import type { WebhookDelivery } from "@/lib/settings-types";
+import type { OrganizationProfile, WebhookDelivery } from "@/lib/settings-types";
 import { endpoints, proxyGuides, setupGuide } from "@/lib/setup-guides";
-import type { Application, ApplicationHook, Attribute, AuthorizationModel, Group, Organization, Session, SignalReceiver, SignInEvent, User } from "@/lib/types";
+import type { Application, ApplicationHook, Attribute, AuthorizationModel, Group, Session, SignalReceiver, SignInEvent, User } from "@/lib/types";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -46,7 +46,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
     apiGet<User[]>("/users"),
     apiGet<Session[]>("/sessions"),
     apiGet<SignInEvent[]>(`/sign-ins?app=${encodeURIComponent(id)}`),
-    apiGet<Organization>("/organization"),
+    apiGet<OrganizationProfile>("/organization"),
     tab === "authentication" ? apiGet<ApiResource[]>("/api-resources") : [],
     tab === "authentication" ? apiGet<ApplicationHook | null>(`/applications/${encodeURIComponent(id)}/hook`) : null,
     tab === "claims" ? apiGet<Attribute[]>("/attributes") : [],
@@ -65,6 +65,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const roleable = !bookmark && !radius && !ldap && !service && app.clientId !== "halo-cli";
   const modelled = (app.protocol === "oidc" || app.protocol === "oauth") && (app.type === "web" || service) && app.clientId !== "halo-cli";
   const constrainable = (app.protocol === "oidc" || app.protocol === "oauth") && app.clientId !== "halo-cli";
+  const windows = !bookmark && !radius && !ldap && !service && !org.featuresOff.includes("kerberos");
   const owner = users.find((u) => u.id === app.owner);
   const appGroups = groups.filter((g) => app.groupIds.includes(g.id));
   const assigned = new Set(users.filter((u) => u.appIds.includes(app.id)).map((u) => u.id));
@@ -207,6 +208,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
             {modelled ? <ClientAuthenticationForm key={`${app.tokenEndpointAuthMethod}:${app.jwksUri}:${JSON.stringify(app.jwks)}:${app.fapi2Profile}`} app={app} /> : null}
             {constrainable ? <SenderConstraintForm key={`${app.requirePar}:${app.requirePkce}:${app.requireDpop}`} app={app} /> : null}
             {service ? null : <SignInFrequencyForm key={app.maxAuthAge} app={app} />}
+            {windows ? <WindowsSignInForm key={String(app.kerberosSignIn)} app={app} /> : null}
             {hookable ? <HookForm key={JSON.stringify(hook)} appId={app.id} appName={app.name} hook={hook} /> : null}
             {hookable ? <BackchannelLogoutForm key={`${app.backchannelLogoutUri}:${app.backchannelLogoutSessionRequired}`} app={app} /> : null}
             {signals && service ? (

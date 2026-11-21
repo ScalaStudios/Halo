@@ -90,6 +90,7 @@ export const METHOD_PLURAL: Record<MethodKind, string> = {
   federated: "identity providers",
   "access-pass": "temporary access passes",
   certificate: "client certificates",
+  kerberos: "Kerberos tickets",
 };
 
 export const POLICY_METHODS = (Object.keys(METHOD) as MethodKind[]).filter((kind) => kind !== "access-pass");

@@ -63,7 +63,7 @@ helm upgrade halo deploy/helm/halo -n halo --reuse-values \
 
 A running server reads the Secret only when it starts, so after adding or changing `HALO_METRICS_TOKEN` restart it with `kubectl -n halo rollout restart deployment/halo-server`, then check that a scrape without the token gets 401.
 
-## Keys in HashiCorp Vault
+## Keys in an external key manager
 
 To keep `HALO_SECRET_KEY` wrapped by, and the signing keys inside, HashiCorp Vault Transit, put the Vault-encrypted key in the Secret as `HALO_SECRET_KEY`, add `HALO_VAULT_TOKEN` to it, and set the `vault` values:
 
@@ -81,7 +81,22 @@ helm install halo deploy/helm/halo -n halo \
   --set vault.signing=true
 ```
 
-The server doesn't start while Vault is unreachable. The [main README](../../../README.md#keys-in-hashicorp-vault) lists the Vault policy, how to move existing keys and how to keep the token renewed with Vault Proxy.
+AWS KMS, Google Cloud KMS and Azure Key Vault work the same way with the `awsKms`, `gcpKms` and `azureKeyVault` values. Put their credentials, such as `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` or `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET`, in the Secret, or leave them out to use the node's instance role, the metadata server or a managed identity. For example, with AWS KMS:
+
+```sh
+kubectl -n halo create secret generic halo \
+  --from-literal=HALO_SECRET_KEY="$(aws kms encrypt --key-id alias/halo-secret-key --plaintext fileb://<(openssl rand 32) --query CiphertextBlob --output text)" \
+  --from-literal=HALO_DATABASE_URL='postgres://halo:PASSWORD@db.example.internal:5432/halo'
+
+helm install halo deploy/helm/halo -n halo \
+  --set publicUrl=https://auth.example.com \
+  --set existingSecret=halo \
+  --set awsKms.region=eu-central-1 \
+  --set awsKms.wrappingKey=alias/halo-secret-key \
+  --set awsKms.signing=true
+```
+
+Set one key manager. The server doesn't start while it is unreachable. The [main README](../../../README.md#keys-in-an-external-key-manager) lists the permissions each one needs, which algorithms each can sign with and how to move existing keys. The published server image has no PKCS #11 support.
 
 ## LDAP
 
@@ -123,6 +138,19 @@ Change the image tags, or upgrade to a newer chart, then run `helm upgrade`. The
 | `vault.transitMount` | | `HALO_VAULT_TRANSIT_MOUNT`, `transit` when empty. |
 | `vault.wrappingKey` | | `HALO_VAULT_WRAPPING_KEY`. `HALO_SECRET_KEY` in `existingSecret` then holds the key encrypted by Vault. |
 | `vault.signing` | `false` | `HALO_VAULT_SIGNING`: create new signing keys in Vault. |
+| `awsKms.region` | | `HALO_AWS_KMS_REGION`. Put `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `existingSecret`, or leave them out to use the instance role. |
+| `awsKms.endpoint` | | `HALO_AWS_KMS_ENDPOINT`, such as a FIPS or VPC endpoint. |
+| `awsKms.wrappingKey` | | `HALO_AWS_KMS_WRAPPING_KEY`. `HALO_SECRET_KEY` in `existingSecret` then holds the ciphertext from AWS KMS. |
+| `awsKms.signing` | `false` | `HALO_AWS_KMS_SIGNING`: create new signing keys in AWS KMS. |
+| `gcpKms.keyRing` | | `HALO_GCP_KMS_KEY_RING`. Halo uses the metadata server, such as GKE Workload Identity, unless `GOOGLE_APPLICATION_CREDENTIALS` is set. |
+| `gcpKms.endpoint` | | `HALO_GCP_KMS_ENDPOINT`. |
+| `gcpKms.hsm` | `false` | `HALO_GCP_KMS_HSM`: create signing keys at the `HSM` protection level. |
+| `gcpKms.wrappingKey` | | `HALO_GCP_KMS_WRAPPING_KEY`. `HALO_SECRET_KEY` in `existingSecret` then holds the ciphertext from Cloud KMS. |
+| `gcpKms.signing` | `false` | `HALO_GCP_KMS_SIGNING`: create new signing keys in Cloud KMS. |
+| `azureKeyVault.url` | | `HALO_AZURE_KEY_VAULT_URL`. Put `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET` in `existingSecret`, or leave them out to use a managed identity. |
+| `azureKeyVault.hsm` | `false` | `HALO_AZURE_KEY_VAULT_HSM`: create `RSA-HSM` and `EC-HSM` keys. |
+| `azureKeyVault.wrappingKey` | | `HALO_AZURE_KEY_VAULT_WRAPPING_KEY`, an RSA key and its version. `HALO_SECRET_KEY` in `existingSecret` then holds the key encrypted to it. |
+| `azureKeyVault.signing` | `false` | `HALO_AZURE_KEY_VAULT_SIGNING`: create new signing keys in Key Vault. |
 | `metrics.enabled` | `false` | Serve Prometheus metrics on their own container and Service port, `HALO_METRICS_LISTEN`. The ingress never routes to it. |
 | `metrics.port` | `9090` | Metrics port. |
 | `metrics.serviceMonitor.enabled` | `false` | Create a Prometheus Operator ServiceMonitor. |

@@ -75,7 +75,15 @@ func (s *storage) authenticateClient(next http.HandlerFunc) http.HandlerFunc {
 			next(w, r)
 			return
 		}
-		clientID, err := s.verifyAssertion(r)
+		if r.Form.Get("client_assertion_type") != oidc.ClientAssertionTypeJWTAssertion {
+			op.RequestError(w, r, oidc.ErrInvalidClient().WithDescription("Set client_assertion_type to %s.", oidc.ClientAssertionTypeJWTAssertion), nil)
+			return
+		}
+		if r.Header.Get("Authorization") != "" || r.Form.Has("client_secret") {
+			op.RequestError(w, r, oidc.ErrInvalidRequest().WithDescription("Authenticate with one method: send client_assertion without a client secret or an Authorization header."), nil)
+			return
+		}
+		app, err := s.verifyAssertion(r.Context(), r.Form.Get("client_assertion"), r.Form.Get("client_id"), s.issuer, s.issuer+"/oauth2/token", s.issuer+r.URL.Path)
 		var oidcErr *oidc.Error
 		if err != nil && !errors.As(err, &oidcErr) {
 			err = oidc.ErrServerError().WithDescription("Halo could not check client_assertion. Try again; if it keeps failing, check the server log.").WithParent(err)
@@ -84,6 +92,7 @@ func (s *storage) authenticateClient(next http.HandlerFunc) http.HandlerFunc {
 			op.RequestError(w, r, err, nil)
 			return
 		}
+		clientID := app.ClientID
 		for _, form := range []url.Values{r.Form, r.PostForm} {
 			form.Del("client_assertion")
 			form.Del("client_assertion_type")
@@ -94,84 +103,89 @@ func (s *storage) authenticateClient(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func (s *storage) verifyAssertion(r *http.Request) (string, error) {
-	ctx, form := r.Context(), r.Form
+func NewClientAssertionVerifier(d httpx.Deps) func(ctx context.Context, raw, path string) (store.Application, error) {
+	s := &storage{st: d.Store, dev: d.Config.Dev, issuer: d.Config.Issuer()}
+	return func(ctx context.Context, raw, path string) (store.Application, error) {
+		app, err := s.verifyAssertion(ctx, raw, "", s.issuer, s.issuer+path)
+		var invalid *oidc.Error
+		if errors.As(err, &invalid) {
+			return store.Application{}, store.ErrNotFound
+		}
+		return app, err
+	}
+}
+
+func (s *storage) verifyAssertion(ctx context.Context, raw, expectedClientID string, audiences ...string) (store.Application, error) {
 	invalid := func(format string, args ...any) error {
 		return oidc.ErrInvalidClient().WithDescription(format, args...)
 	}
-	if form.Get("client_assertion_type") != oidc.ClientAssertionTypeJWTAssertion {
-		return "", invalid("Set client_assertion_type to %s.", oidc.ClientAssertionTypeJWTAssertion)
-	}
-	if r.Header.Get("Authorization") != "" || form.Has("client_secret") {
-		return "", oidc.ErrInvalidRequest().WithDescription("Authenticate with one method: send client_assertion without a client secret or an Authorization header.")
-	}
-	tok, err := jwt.ParseSigned(form.Get("client_assertion"), assertionAlgorithms)
+	tok, err := jwt.ParseSigned(raw, assertionAlgorithms)
 	var unverified jwt.Claims
 	if err != nil || len(tok.Headers) != 1 || tok.UnsafeClaimsWithoutVerification(&unverified) != nil {
-		return "", invalid("client_assertion must be a JWT signed with RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384, ES512 or EdDSA. Halo refuses none and HMAC algorithms.")
+		return store.Application{}, invalid("client_assertion must be a JWT signed with RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384, ES512 or EdDSA. Halo refuses none and HMAC algorithms.")
 	}
 	clientID := unverified.Issuer
-	if id := form.Get("client_id"); id != "" && id != clientID {
-		return "", invalid("client_id must match the iss claim of client_assertion.")
+	if expectedClientID != "" && expectedClientID != clientID {
+		return store.Application{}, invalid("client_id must match the iss claim of client_assertion.")
 	}
 	app, err := s.app(ctx, clientID)
 	if err != nil {
-		return "", err
+		return store.Application{}, err
 	}
 	if app.TokenEndpointAuthMethod != PrivateKeyJWT || (client{app: app}).public() {
-		return "", invalid("%s authenticates with its client secret, not with client_assertion.", app.Name)
+		return store.Application{}, invalid("%s authenticates with its client secret, not with client_assertion.", app.Name)
 	}
 	header := tok.Headers[0]
 	alg := jose.SignatureAlgorithm(header.Algorithm)
 	if app.FAPI2Profile && !slices.Contains(fapiAlgorithms, alg) {
-		return "", invalid("%s follows the FAPI 2.0 security profile, so client_assertion must be signed with PS256, ES256 or EdDSA.", app.Name)
+		return store.Application{}, invalid("%s follows the FAPI 2.0 security profile, so client_assertion must be signed with PS256, ES256 or EdDSA.", app.Name)
 	}
 	key, err := s.assertionKey(ctx, app, header.KeyID, alg)
 	if err != nil {
-		return "", err
+		return store.Application{}, err
 	}
 	var claims jwt.Claims
 	var audience struct {
 		Value json.RawMessage `json:"aud"`
 	}
 	if err := tok.Claims(key.Key, &claims, &audience); errors.Is(err, jose.ErrCryptoFailure) {
-		return "", invalid("The signature of client_assertion does not match the key %q that %s registered.", key.KeyID, app.Name)
+		return store.Application{}, invalid("The signature of client_assertion does not match the key %q that %s registered.", key.KeyID, app.Name)
 	} else if err != nil {
-		return "", invalid("client_assertion has claims of the wrong type.")
+		return store.Application{}, invalid("client_assertion has claims of the wrong type.")
 	}
 	now := time.Now()
 	switch {
 	case claims.Subject != clientID:
-		return "", invalid("The iss and sub claims of client_assertion must both be the client_id.")
+		return store.Application{}, invalid("The iss and sub claims of client_assertion must both be the client_id.")
 	case claims.ID == "" || len(claims.ID) > 256:
-		return "", invalid("client_assertion needs a jti claim of at most 256 characters, unique for every request.")
+		return store.Application{}, invalid("client_assertion needs a jti claim of at most 256 characters, unique for every request.")
 	case claims.Expiry == nil:
-		return "", invalid("client_assertion needs an exp claim.")
+		return store.Application{}, invalid("client_assertion needs an exp claim.")
 	case claims.Expiry.Time().After(now.Add(assertionLifetime)):
-		return "", invalid("client_assertion must expire within an hour.")
+		return store.Application{}, invalid("client_assertion must expire within an hour.")
 	}
 	switch err := claims.ValidateWithLeeway(jwt.Expected{Time: now}, assertionLeeway); {
 	case errors.Is(err, jwt.ErrExpired):
-		return "", invalid("client_assertion expired at %s.", claims.Expiry.Time().UTC().Format(time.RFC3339))
+		return store.Application{}, invalid("client_assertion expired at %s.", claims.Expiry.Time().UTC().Format(time.RFC3339))
 	case errors.Is(err, jwt.ErrNotValidYet):
-		return "", invalid("client_assertion is not valid before %s.", claims.NotBefore.Time().UTC().Format(time.RFC3339))
+		return store.Application{}, invalid("client_assertion is not valid before %s.", claims.NotBefore.Time().UTC().Format(time.RFC3339))
 	case err != nil:
-		return "", invalid("client_assertion was issued in the future. Check the client's clock.")
+		return store.Application{}, invalid("client_assertion was issued in the future. Check the client's clock.")
 	}
 	var single string
 	if app.FAPI2Profile {
 		if json.Unmarshal(audience.Value, &single) != nil || single != s.issuer {
-			return "", invalid("%s follows the FAPI 2.0 security profile, so the aud claim of client_assertion must be the string %s.", app.Name, s.issuer)
+			return store.Application{}, invalid("%s follows the FAPI 2.0 security profile, so the aud claim of client_assertion must be the string %s.", app.Name, s.issuer)
 		}
-	} else if !slices.ContainsFunc([]string{s.issuer, s.issuer + "/oauth2/token", s.issuer + r.URL.Path}, claims.Audience.Contains) {
-		return "", invalid("The aud claim of client_assertion must be %s or %s/oauth2/token.", s.issuer, s.issuer)
+	} else if !slices.ContainsFunc(audiences, claims.Audience.Contains) {
+		return store.Application{}, invalid("The aud claim of client_assertion does not match an audience for this endpoint.")
 	}
 	if err := s.st.UseClientAssertion(ctx, clientID, claims.ID, claims.Expiry.Time().Add(assertionLeeway)); errors.Is(err, store.ErrConflict) {
-		return "", invalid("client_assertion was already used. Sign a new one with a new jti for every request.")
+		return store.Application{}, invalid("client_assertion was already used. Sign a new one with a new jti for every request.")
 	} else if err != nil {
-		return "", err
+		return store.Application{}, err
 	}
-	return clientID, nil
+	return app, nil
 }
 
 func (s *storage) assertionKey(ctx context.Context, app store.Application, kid string, alg jose.SignatureAlgorithm) (jose.JSONWebKey, error) {

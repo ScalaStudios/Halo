@@ -20,7 +20,7 @@ var (
 	riskLevels    = []string{"none", "low", "medium", "high"}
 	severity      = map[string]int{access.Allow: 0, access.RequireTerms: 1, access.RequireContext: 1, access.RequirePhishingResistant: 2, access.Block: 3}
 	methodUsing   = store.MethodUsing
-	methodPlurals = map[string]string{"passkey": "passkeys", "security-key": "security keys", "totp": "authenticator apps", "magic-link": "magic links", "recovery-codes": "recovery codes", "password": "passwords", "federated": "identity providers", "certificate": "client certificates"}
+	methodPlurals = map[string]string{"passkey": "passkeys", "security-key": "security keys", "totp": "authenticator apps", "magic-link": "magic links", "recovery-codes": "recovery codes", "password": "passwords", "federated": "identity providers", "certificate": "client certificates", "kerberos": "Kerberos tickets"}
 	effectVerbs   = map[string]string{access.Allow: "Allows", access.RequirePhishingResistant: "Requires a passkey or security key for", access.Block: "Blocks"}
 )
 
@@ -50,6 +50,7 @@ type attempt struct {
 	signals    []signal
 	accepted   map[string]int
 	passkey    bool
+	noKerberos bool
 }
 
 type state struct {
@@ -73,7 +74,7 @@ func newAttempt(u store.User, app *store.Application, method, ip string) attempt
 	a := attempt{user: u, appID: haloApp, appName: "Halo", method: method, ip: ip, trust: "unknown", risk: "none"}
 	a.compliance, a.evidence = complianceOf(nil)
 	if app != nil {
-		a.appID, a.appName = app.ID, app.Name
+		a.appID, a.appName, a.noKerberos = app.ID, app.Name, !app.KerberosSignIn
 	}
 	if addr, err := netip.ParseAddr(strings.TrimSpace(ip)); err == nil {
 		a.addr = addr.Unmap()
@@ -224,7 +225,7 @@ func (e *engine) assess(ctx context.Context, a *attempt, zones []store.NetworkZo
 		a.signals = append(a.signals, signal{Type: kind, Level: level, Detail: detail})
 	}
 	for _, z := range zones {
-		if z.Kind == "risky" && inZone(a.addr, z) {
+		if z.Kind == "risky" && z.Contains(a.addr) {
 			add("risky-network", "high", a.ip+" is in the risky network “"+z.Name+"”.")
 		}
 	}
@@ -270,13 +271,6 @@ func network(addr netip.Addr) netip.Prefix {
 	}
 	prefix, _ := addr.Prefix(bits)
 	return prefix
-}
-
-func inZone(addr netip.Addr, z store.NetworkZone) bool {
-	return addr.IsValid() && slices.ContainsFunc(z.CIDRs, func(cidr string) bool {
-		prefix, err := netip.ParsePrefix(cidr)
-		return err == nil && prefix.Contains(addr)
-	})
 }
 
 func phishingResistant(method string) bool {
@@ -334,6 +328,8 @@ func decide(s state, a attempt) ([]result, access.Decision) {
 		return results, access.Decision{Effect: access.Block, Reason: "An administrator blocked this device."}
 	case known && !enabled:
 		return results, access.Decision{Effect: access.Block, Reason: "Sign-in with " + methodPlurals[a.method] + " is turned off for this organization."}
+	case a.method == "kerberos" && a.noKerberos:
+		return results, access.Decision{Effect: access.Block, Reason: "Windows sign-in is turned off for " + a.appName + "."}
 	case a.method == "password" && !s.org.PasswordAllowed(a.user):
 		groups := []string{}
 		for _, g := range s.org.PasswordGroupIDs {
@@ -385,7 +381,7 @@ func (s state) group(groupID string) string {
 
 func (s state) zone(zoneIDs []string, addr netip.Addr) *store.NetworkZone {
 	for i, z := range s.zones {
-		if slices.Contains(zoneIDs, z.ID) && inZone(addr, z) {
+		if slices.Contains(zoneIDs, z.ID) && z.Contains(addr) {
 			return &s.zones[i]
 		}
 	}

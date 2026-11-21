@@ -50,7 +50,7 @@ tags:
 
       **FAPI 2.0 security profile.** `fapi2Profile` makes a web or service application follow the FAPI 2.0 Security Profile: private_key_jwt with `aud` the issuer as a single string and PS256, ES256 or EdDSA signatures (5.3.2.1, 5.4.1), pushed authorization requests, PKCE with S256 and https redirect URIs (5.3.2.2), DPoP-bound tokens (5.3.2.1), ES256 or EdDSA ID tokens (5.4.1), and authorization codes that expire a minute after they are issued (5.3.2.1). Turning it on also turns on `requirePar`, `requirePkce` and `requireDpop` and moves RS256 ID tokens to ES256; while it is on, Halo enforces these even if those fields say otherwise, and refuses a change that loosens them. The authorization code flow is the only one Halo offers, and every authorization response carries `iss` (RFC 9207), in the query, the fragment or the `form_post` form. A code is bound to a DPoP key when the pushed request carries a DPoP proof or the authorization request carries `dpop_jkt`, and the token request must then prove that key.
   - name: Authorization
-    description: 'Relationship-based permissions for applications, in the style of Zanzibar. An application administrator gives a web or service application a model of types and relations. The application then writes tuples such as `document:readme#viewer@user:usr_…` and asks whether a person has a relation on an object. Groups expand to their members, relations combine other relations, application roles and relations of a parent object, and suspended or deprovisioned people are always denied. Tuples can name only the people and groups assigned to the application, the same ones who can sign in to it, and a person or group that is later unassigned is ignored until assigned again, so an application never learns about anyone outside it. Routes under `/authz` authenticate as the application with HTTP Basic, its client ID and a client secret, and only ever see that application''s tuples. Tuples that name a person or group are deleted with them. Model changes are in the audit log; tuple writes are not.'
+    description: 'Relationship-based permissions for applications, in the style of Zanzibar. An application administrator gives a web or service application a model of types and relations. The application then writes tuples such as `document:readme#viewer@user:usr_…` and asks whether a person has a relation on an object. Groups expand to their members, relations combine other relations, application roles and relations of a parent object, and suspended or deprovisioned people are always denied. Tuples can name only the people and groups assigned to the application, the same ones who can sign in to it, and a person or group that is later unassigned is ignored until assigned again, so an application never learns about anyone outside it. Routes under `/authz` use the application''s configured client authentication method and only see that application''s tuples. Tuples that name a person or group are deleted with them. Model changes are in the audit log; tuple writes are not.'
   - name: Forward auth
     description: 'The check that Traefik `forwardAuth`, nginx `auth_request` and Caddy `forward_auth` run before every request to a forward-auth application, outside `/api/v1`, and the sign-in it sends people to.'
   - name: Activity
@@ -740,11 +740,12 @@ paths:
                     description: Present when the request's `domain_hint`, or the domain of its `login_hint` when there is no `domain_hint`, is sent straight to an identity provider. The sign-in page goes there without showing the other options.
                   application:
                     type: object
-                    required: [name, homepage, logoUrl]
+                    required: [name, homepage, logoUrl, kerberosSignIn]
                     properties:
                       name: {type: string}
                       homepage: {type: string}
                       logoUrl: {type: [string, 'null']}
+                      kerberosSignIn: {type: boolean, description: 'Whether the application allows Windows sign-in. When it doesn''t, the sign-in page neither offers nor tries it.'}
         '404': {$ref: '#/components/responses/AuthRequestExpired'}
   /auth/passkey/begin:
     post:
@@ -899,6 +900,46 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
+  /auth/kerberos:
+    post:
+      tags: [Sign-in]
+      operationId: signInWithKerberos
+      summary: Sign in with Windows (Kerberos)
+      description: 'Works while Windows sign-in is turned on under `/methods`, set up under `/kerberos`, and the `kerberos` feature is on. Implements SPNEGO HTTP authentication (RFC 4559): without an `Authorization: Negotiate` header Halo answers `401` with `WWW-Authenticate: Negotiate`, and a browser on a computer joined to the domain sends the request again with a Kerberos ticket for Halo''s service principal. Halo decrypts the ticket with the uploaded keytab, checks its lifetime and the authenticator time with 5 minutes of clock skew, refuses an authenticator it already accepted on any instance, and refuses NTLM. The ticket''s client principal must be a single name in one of the configured realms. A principal linked to a person signs that person in; otherwise `name@REALM` becomes `name@<domain>` for that realm''s email domain, and the person with that email address signs in and the principal is linked to them. Halo never matches by display name or PAC. Sets the `halo_session` cookie on success. The account status, group assignment, access policies, risk, lockout and the sign-in log apply, and an application can turn Windows sign-in off with `kerberosSignIn`.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                authRequest: {$ref: '#/components/schemas/AuthRequestId'}
+                automatic: {type: boolean, description: 'Set by the sign-in page when it tries Windows sign-in without a click. Halo answers `204` without a challenge unless the client address is in one of the trusted network zones in `zoneIds` and the application allows Windows sign-in, so browsers elsewhere never see a challenge.'}
+      responses:
+        '200': {$ref: '#/components/responses/SignedIn'}
+        '204':
+          description: An automatic attempt from outside the configured network zones, or for an application with Windows sign-in turned off. Halo did not ask for a ticket.
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401':
+          description: '`ERR_KERBEROS_NO_TICKET` with `WWW-Authenticate: Negotiate`: send the request again with a ticket. A browser that can''t get one passes this response to the page.'
+          headers:
+            WWW-Authenticate:
+              schema: {type: string, const: Negotiate}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403':
+          description: '`ERR_KERBEROS_REJECTED`: the token isn''t a Kerberos ticket for Halo''s service principal, can''t be decrypted with the keytab, expired, came from a clock more than 5 minutes off, replays an authenticator, or names a principal that matches no person. Also the refusals in `SignInRefused`. The sign-in log records the reason.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404':
+          description: '`ERR_KERBEROS_UNAVAILABLE`: Windows sign-in is turned off or not set up. Also `ERR_AUTH_REQUEST_EXPIRED`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '429': {$ref: '#/components/responses/TooManyAttempts'}
   /auth/password:
     post:
       tags: [Sign-in]
@@ -3784,6 +3825,7 @@ paths:
                 requirePar: {type: boolean, description: 'Only for OpenID Connect and OAuth applications other than the Halo CLI, and not for service applications.'}
                 requirePkce: {type: boolean, description: 'Only for OpenID Connect and OAuth applications other than the Halo CLI, and not for service applications.'}
                 requireDpop: {type: boolean, description: Only for OpenID Connect and OAuth applications other than the Halo CLI.}
+                kerberosSignIn: {type: boolean, description: 'Not for bookmarks, RADIUS, LDAP or service applications.'}
                 tokenEndpointAuthMethod: {type: string, enum: [client_secret_basic, private_key_jwt], description: 'Only for web and service applications. `private_key_jwt` needs `jwks` or `jwksUri`, not both. Recorded as `application.update` with a diff.'}
                 jwks: {type: [object, 'null'], description: 'A JSON Web Key Set of 1 to 20 public signing keys: RSA of 2048 bits or more, EC on P-256, P-384 or P-521, or Ed25519. `null` removes it.'}
                 jwksUri: {type: string, description: 'An https:// URL on a public address that serves the application''s JSON Web Key Set, or an empty string.'}
@@ -4090,6 +4132,7 @@ paths:
       description: 'The calling application''s model and tuples answer. People who don''t exist, are suspended or deprovisioned, or aren''t assigned to the application are denied, and tuples naming groups the application isn''t assigned are ignored. `path` shows the relations that granted it, ending with the person, group or role, such as `["document:readme#viewer", "folder:eng#viewer", "group:grp_…"]`.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       requestBody:
         required: true
         content:
@@ -4113,6 +4156,7 @@ paths:
       description: 'For debugging. Each node lists the people, groups and roles that hold the relation directly, and children for the usersets, unions and parents it follows. A node already shown elsewhere in the tree appears again without children. People and groups no longer assigned to the application are left out.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       requestBody:
         required: true
         content:
@@ -4136,6 +4180,7 @@ paths:
       description: 'Groups and roles expand to their current members and holders. Suspended and deprovisioned people and people not assigned to the application are left out, and groups the application isn''t assigned don''t expand. Up to 1,000 people; `truncated` says whether there were more.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       requestBody:
         required: true
         content:
@@ -4166,6 +4211,7 @@ paths:
       description: 'Halo checks the first 1,000 objects of the type that appear in the application''s tuples, in order of their ids; `truncated` says whether there were more.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       requestBody:
         required: true
         content:
@@ -4202,6 +4248,7 @@ paths:
       description: 'Up to 1,000 tuples in order of object, relation and subject; `truncated` says whether there were more. Every filter is optional.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       parameters:
         - {name: object, in: query, schema: {type: string, examples: [document, 'document:readme']}, description: A type, or an object as `type:id`.}
         - {name: relation, in: query, schema: {type: string}}
@@ -4229,6 +4276,7 @@ paths:
       description: 'Up to 100 writes and deletes together. Deletes run first. Writing a tuple that exists does nothing, and neither does deleting one that doesn''t. Each written tuple must fit the model: its relation takes the kind of subject, such as `user`, `group`, `folder` or `team#member`. People and groups are named by their Halo ids and must be assigned to the application: one of its groups or a member of one. Others are refused with `422`. Deletes don''t check the model, so tuples a changed model no longer takes can still be removed.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       requestBody:
         required: true
         content:
@@ -5524,7 +5572,7 @@ paths:
       - name: method
         in: path
         required: true
-        schema: {type: string, enum: [passkey, security-key, totp, magic-link, recovery-codes, password, certificate]}
+        schema: {type: string, enum: [passkey, security-key, totp, magic-link, recovery-codes, password, certificate, kerberos]}
     put:
       tags: [Policies]
       operationId: setMethodEnabled
@@ -6412,6 +6460,64 @@ paths:
       operationId: deleteCertificateAuthority
       summary: Stop trusting a certificate authority
       description: 'Roles: security administrator. People who signed in with its certificates stay signed in.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /kerberos:
+    get:
+      tags: [Policies]
+      operationId: getKerberos
+      summary: Get the Windows sign-in setup
+      description: 'Roles: any administrator. `null` until a security administrator sets it up. The keytab itself is never returned.'
+      responses:
+        '200':
+          description: The setup, or `null`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - {$ref: '#/components/schemas/KerberosSource'}
+                  - {type: 'null'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    put:
+      tags: [Policies]
+      operationId: saveKerberos
+      summary: Set up or change Windows sign-in
+      description: 'Roles: security administrator. Halo keeps only the keytab''s AES and RC4 keys for `servicePrincipal`, sealed with `HALO_SECRET_KEY`. Omit `keytab` to keep the stored one; it must still hold a key for `servicePrincipal`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [servicePrincipal, realms]
+              properties:
+                servicePrincipal: {type: string, examples: [HTTP/auth.example.com@CORP.EXAMPLE.COM], description: 'The principal browsers ask the domain controller for, `HTTP/` and the host name in `HALO_PUBLIC_URL`, with the realm.'}
+                realms:
+                  type: array
+                  minItems: 1
+                  description: The realms whose people can sign in, each with the email domain their principal names map to.
+                  items: {$ref: '#/components/schemas/KerberosRealm'}
+                zoneIds: {type: array, items: {type: string}, description: Trusted network zones where the sign-in page tries Windows sign-in without a click. Empty by default.}
+                keytab: {type: string, contentEncoding: base64, description: 'The keytab file, as `ktpass` or `ktutil` writes it. Required the first time.'}
+      responses:
+        '200':
+          description: The saved setup.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/KerberosSource'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Policies]
+      operationId: deleteKerberos
+      summary: Remove Windows sign-in and its keytab
+      description: 'Roles: security administrator. People who signed in with Windows stay signed in. Linked principals are kept for when it is set up again.'
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
         '401': {$ref: '#/components/responses/ReauthRequired'}
@@ -7665,6 +7771,11 @@ components:
       type: http
       scheme: basic
       description: The application's client ID as the user name and one of its client secrets as the password. Accepted only on routes under `/authz`, for active web and service applications with an authorization model.
+    applicationAssertion:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 'For applications using private_key_jwt, send `Authorization: PrivateKeyJWT <assertion>`. The audience is the issuer or the requested endpoint URL. FAPI 2.0 applications send only the issuer as a string. Use a new assertion ID for each request.'
     receiverAccessToken:
       type: http
       scheme: bearer
@@ -8151,7 +8262,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     ApplicationUnauthenticated:
-      description: '`ERR_UNAUTHENTICATED`: no client ID and secret, a wrong or expired secret, or a disabled application.'
+      description: '`ERR_UNAUTHENTICATED`: the configured client credentials are missing or invalid, or the application is disabled.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -8538,7 +8649,7 @@ components:
       description: The id of an application's sign-in request, from the `authRequest` query parameter of the sign-in page. Omit it to sign in to Halo itself.
     MethodKind:
       type: string
-      enum: [passkey, security-key, totp, magic-link, recovery-codes, password, federated, certificate]
+      enum: [passkey, security-key, totp, magic-link, recovery-codes, password, federated, certificate, kerberos]
     RoleKey:
       type: string
       enum: [global_admin, security_admin, user_admin, helpdesk_admin, app_admin, auditor]
@@ -8955,8 +9066,7 @@ components:
           items: {type: string}
     Application:
       type: object
-      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent, backchannelLogoutUri, backchannelLogoutSessionRequired, requirePar, requirePkce, requireDpop, tokenEndpointAuthMethod, jwksUri, fapi2Profile]
-      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, roles, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent]
+      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent, backchannelLogoutUri, backchannelLogoutSessionRequired, requirePar, requirePkce, requireDpop, kerberosSignIn, tokenEndpointAuthMethod, jwksUri, fapi2Profile, roles]
       properties:
         id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
@@ -9012,6 +9122,7 @@ components:
         requirePar: {type: boolean, description: 'Authorization requests must be pushed to `/oauth2/par` first (RFC 9126) and reach `/oauth2/authorize` with only `client_id` and `request_uri`. Any other authorization request ends with `invalid_request`.'}
         requirePkce: {type: boolean, description: 'Every authorization request must send `code_challenge` with `code_challenge_method=S256`. Single-page and native applications always must, whatever this says.'}
         requireDpop: {type: boolean, description: 'Every token request must carry a DPoP proof (RFC 9449), so its access and refresh tokens only work with the key that signed the proof. A token request without one ends with `invalid_dpop_proof`. Refresh tokens issued without a proof stop working once this is on, and access tokens already issued last until they expire.'}
+        kerberosSignIn: {type: boolean, description: 'Whether people can reach this application with Windows sign-in (Kerberos). On by default. When off, a Kerberos sign-in to it, or single sign-on from a session that started with one, is blocked like an access policy block, and the sign-in page doesn''t offer or try Windows sign-in for it.'}
         tokenEndpointAuthMethod: {type: string, enum: [client_secret_basic, private_key_jwt], description: '`client_secret_basic` accepts the application''s client secrets with HTTP Basic or `client_secret_post`. `private_key_jwt` accepts only client assertions signed by its `jwks` or `jwksUri` keys. Single-page and native applications have no client authentication, whatever this says.'}
         jwks: {type: object, description: 'The JSON Web Key Set that signs the application''s client assertions. Absent when it has none.'}
         jwksUri: {type: string, description: 'Where Halo fetches the keys that sign the application''s client assertions. Empty when it has none.'}
@@ -9658,6 +9769,30 @@ components:
               subject: {type: string, examples: ['CN=Corporate Issuing CA,O=Example']}
               expiresAt: {type: string, format: date-time}
         createdAt: {type: string, format: date-time}
+    KerberosRealm:
+      type: object
+      required: [realm, domain]
+      properties:
+        realm: {type: string, examples: [CORP.EXAMPLE.COM]}
+        domain: {type: string, examples: [example.com], description: 'The email domain for this realm: `ada@CORP.EXAMPLE.COM` signs in the person whose email address is `ada@example.com`.'}
+    KerberosSource:
+      type: object
+      required: [servicePrincipal, realms, zoneIds, keys, updatedAt]
+      properties:
+        servicePrincipal: {type: string, examples: [HTTP/auth.example.com@CORP.EXAMPLE.COM]}
+        realms: {type: array, items: {$ref: '#/components/schemas/KerberosRealm'}}
+        zoneIds: {type: array, items: {type: string}}
+        keys:
+          type: array
+          description: The keys Halo kept from the keytab, without their values.
+          items:
+            type: object
+            required: [version, type, createdAt]
+            properties:
+              version: {type: integer, description: The key version number (kvno).}
+              type: {type: string, examples: [aes256-cts-hmac-sha1-96]}
+              createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
     NetworkZone:
       type: object
       required: [id, name, kind, cidrs, createdAt, updatedAt]
@@ -10087,7 +10222,7 @@ components:
         confirmFeatures: {type: boolean, writeOnly: true, description: Turn off the features in `featuresOff` even though they are in use.}
     FeatureId:
       type: string
-      enum: [saml, scim, provisioning, ssh, governance, webhooks, forward-auth, radius, ldap, log-streaming]
+      enum: [saml, scim, provisioning, ssh, governance, webhooks, forward-auth, radius, ldap, kerberos, log-streaming]
     Feature:
       type: object
       required: [id, name, description, enabled, usage]

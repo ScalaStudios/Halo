@@ -130,6 +130,8 @@ type Application struct {
 	RequirePKCE bool `json:"requirePkce"`
 	RequireDPoP bool `json:"requireDpop"`
 
+	KerberosSignIn bool `json:"kerberosSignIn"`
+
 	TokenEndpointAuthMethod string          `json:"tokenEndpointAuthMethod"`
 	JWKS                    json.RawMessage `json:"jwks,omitempty"`
 	JWKSURI                 string          `json:"jwksUri"`
