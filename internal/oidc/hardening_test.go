@@ -180,7 +180,7 @@ func TestSigningKeyRotationKeepsOldTokensValid(t *testing.T) {
 	before, _ := h.signInCLI()
 	der, err := halooidc.NewSigningKey("RS256")
 	h.must(err)
-	rotated, err := h.st.CreateSigningKey(ctx, "RS256", der)
+	rotated, err := h.st.CreateSigningKey(ctx, "RS256", der, "")
 	h.must(err)
 	_, h.token, err = h.st.CreateSession(ctx, store.NewSession{UserID: h.user.ID, Method: "totp"})
 	h.must(err)

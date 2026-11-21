@@ -12,11 +12,13 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
 	"slices"
 	"strings"
 
 	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/cryptosigner"
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 	"github.com/zitadel/oidc/v3/pkg/op"
 
@@ -26,14 +28,35 @@ import (
 var signatureAlgorithms = []jose.SignatureAlgorithm{jose.RS256, jose.ES256, jose.EdDSA}
 
 type signingKey struct {
-	id  string
-	alg jose.SignatureAlgorithm
-	key crypto.Signer
+	id       string
+	alg      jose.SignatureAlgorithm
+	key      crypto.Signer
+	external bool
 }
 
 func (k signingKey) ID() string                                  { return k.id }
 func (k signingKey) SignatureAlgorithm() jose.SignatureAlgorithm { return k.alg }
-func (k signingKey) Key() any                                    { return k.key }
+
+func (k signingKey) Key() any {
+	if k.external {
+		return cryptosigner.Opaque(externalSigner{k.key})
+	}
+	return k.key
+}
+
+type externalSigner struct{ crypto.Signer }
+
+func (s externalSigner) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+	signature, err := s.Signer.Sign(rand, digest, opts)
+	if err != nil {
+		return nil, vaultUnavailable(err)
+	}
+	return signature, nil
+}
+
+func vaultUnavailable(err error) error {
+	return oidc.ErrServerError().WithDescription("Halo could not use its signing key in Vault Transit. Try again; if it keeps failing, check the server log.").WithParent(err)
+}
 
 type publicKey struct{ signingKey }
 
@@ -91,11 +114,7 @@ func (s *storage) signingKeys(ctx context.Context, need jose.SignatureAlgorithm)
 		return nil, err
 	}
 	if !slices.ContainsFunc(rows, func(row store.SigningKey) bool { return row.Algorithm == string(need) }) {
-		der, err := NewSigningKey(string(need))
-		if err != nil {
-			return nil, err
-		}
-		row, err := s.st.CreateSigningKey(ctx, string(need), der)
+		row, err := CreateSigningKey(ctx, s.st, string(need))
 		if err != nil {
 			return nil, err
 		}
@@ -103,14 +122,36 @@ func (s *storage) signingKeys(ctx context.Context, need jose.SignatureAlgorithm)
 	}
 	keys := make([]signingKey, len(rows))
 	for i, row := range rows {
+		keys[i] = signingKey{row.ID, jose.SignatureAlgorithm(row.Algorithm), nil, row.ExternalKey != ""}
+		if keys[i].external {
+			if keys[i].key, err = s.st.Keys.Signer(ctx, row.ExternalKey); err != nil {
+				return nil, vaultUnavailable(err)
+			}
+			continue
+		}
 		parsed, err := x509.ParsePKCS8PrivateKey(row.PrivateKey)
 		key, ok := parsed.(crypto.Signer)
 		if err != nil || !ok {
 			return nil, fmt.Errorf("signing key %s is not a readable private key: %v", row.ID, err)
 		}
-		keys[i] = signingKey{row.ID, jose.SignatureAlgorithm(row.Algorithm), key}
+		keys[i].key = key
 	}
 	return keys, nil
+}
+
+func CreateSigningKey(ctx context.Context, st *store.Store, algorithm string) (store.SigningKey, error) {
+	if st.Keys.External() {
+		ref, err := st.Keys.CreateKey(ctx, algorithm)
+		if err != nil {
+			return store.SigningKey{}, vaultUnavailable(err)
+		}
+		return st.CreateSigningKey(ctx, algorithm, nil, ref)
+	}
+	der, err := NewSigningKey(algorithm)
+	if err != nil {
+		return store.SigningKey{}, err
+	}
+	return st.CreateSigningKey(ctx, algorithm, der, "")
 }
 
 func NewSigningKey(algorithm string) ([]byte, error) {

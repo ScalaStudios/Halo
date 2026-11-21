@@ -18,6 +18,7 @@ type samlCertificate struct {
 	NotAfter    time.Time  `json:"notAfter"`
 	CreatedAt   time.Time  `json:"createdAt"`
 	RetiredAt   *time.Time `json:"retiredAt"`
+	ExternalKey *string    `json:"externalKey"`
 }
 
 func (h *handlers) listSigningKeys(w http.ResponseWriter, r *http.Request, _ store.User) error {
@@ -35,7 +36,7 @@ func (h *handlers) listSigningKeys(w http.ResponseWriter, r *http.Request, _ sto
 		if err != nil {
 			return err
 		}
-		certificates = append(certificates, samlCertificate{k.ID, saml.Fingerprint(cert.Raw), cert.NotAfter, k.CreatedAt, k.RetiredAt})
+		certificates = append(certificates, samlCertificate{k.ID, saml.Fingerprint(cert.Raw), cert.NotAfter, k.CreatedAt, k.RetiredAt, k.ExternalKey})
 	}
 	return httpx.JSON(w, http.StatusOK, map[string]any{"oidc": nonNil(keys), "saml": certificates})
 }
@@ -53,11 +54,7 @@ func (h *handlers) rotateSigningKey(w http.ResponseWriter, r *http.Request, acto
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 		for _, alg := range algorithms {
-			der, err := oidc.NewSigningKey(alg)
-			if err != nil {
-				return err
-			}
-			key, err := tx.CreateSigningKey(r.Context(), alg, der)
+			key, err := oidc.CreateSigningKey(r.Context(), tx, alg)
 			if err != nil {
 				return err
 			}
@@ -74,16 +71,16 @@ func (h *handlers) rotateSigningKey(w http.ResponseWriter, r *http.Request, acto
 }
 
 func (h *handlers) rotateSAMLCertificate(w http.ResponseWriter, r *http.Request, actor store.User) error {
-	der, cert, err := saml.NewKey(h.cfg.Hostname())
+	key, err := saml.GenerateKey(r.Context(), h.st, h.cfg.Hostname())
 	if err != nil {
 		return err
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
-		keyID, err := tx.RotateSAMLKey(r.Context(), der, cert)
+		keyID, err := tx.RotateSAMLKey(r.Context(), key.PrivateKey, key.Certificate, key.ExternalKey)
 		if err != nil {
 			return err
 		}
-		return record(r, tx, actor, store.AuditEvent{Action: "saml_certificate.rotate", Summary: "Rotated the SAML signing certificate. SAML applications need the new certificate", TargetType: "saml_certificate", TargetID: keyID, TargetLabel: saml.Fingerprint(cert)})
+		return record(r, tx, actor, store.AuditEvent{Action: "saml_certificate.rotate", Summary: "Rotated the SAML signing certificate. SAML applications need the new certificate", TargetType: "saml_certificate", TargetID: keyID, TargetLabel: saml.Fingerprint(key.Certificate)})
 	})
 	if err != nil {
 		return err

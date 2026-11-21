@@ -27,11 +27,11 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	_, err = st.CreateTOTPSecret(ctx, u.ID, "Phone", st.Sealer.Seal([]byte("totp-seed")))
 	must(err)
-	_, err = st.CreateSigningKey(ctx, "RS256", []byte("oidc-key"))
+	_, err = st.CreateSigningKey(ctx, "RS256", []byte("oidc-key"), "")
 	must(err)
 	_, err = st.QueueMail(ctx, "ada@example.com", "Hello", "mail body", "<p>mail body</p>", false)
 	must(err)
-	must(st.CreateSAMLKey(ctx, []byte("saml-key"), []byte("saml-cert")))
+	must(st.CreateSAMLKey(ctx, []byte("saml-key"), []byte("saml-cert"), ""))
 	must(st.SaveAppProvisioning(ctx, app.ID, "https://wiki.example.com/scim", st.Sealer.Seal([]byte("scim-token")), true))
 	idp, err := st.SaveIdentityProvider(ctx, store.IdentityProvider{Kind: "oidc", Name: "Acme", Issuer: "https://idp.example.com", ClientID: "halo", Scopes: []string{}, AllowedDomains: []string{}, JITGroupIDs: []string{}}, "client-secret")
 	must(err)
@@ -40,8 +40,8 @@ func TestRotateSecretKey(t *testing.T) {
 	ruleID, _, err := st.CreateNotificationRule(ctx, store.NewNotificationRule{Name: "Admins", Destination: "slack", URL: "https://hooks.example.com/rule", Host: "hooks.example.com", Events: []string{"role.update"}, Threshold: 1, WindowMinutes: 10, QuietMinutes: 15})
 	must(err)
 	must(st.SaveApplicationHook(ctx, store.ApplicationHook{AppID: app.ID, Host: "checks.example.com", URLSealed: st.Sealer.Seal([]byte("https://checks.example.com/hook")), SecretSealed: st.Sealer.Seal([]byte("hook-secret")), Claims: []string{}}))
-	must(st.CreateSSHAuthority(ctx, false, []byte("ssh-seed"), "ssh-ed25519 AAAA"))
-	must(st.CreateSSHAuthority(ctx, true, []byte("host-seed"), "ssh-ed25519 BBBB"))
+	must(st.CreateSSHAuthority(ctx, false, []byte("ssh-seed"), "ssh-ed25519 AAAA", ""))
+	must(st.CreateSSHAuthority(ctx, true, []byte("host-seed"), "ssh-ed25519 BBBB", ""))
 	must(st.ReplaceRecoveryCodes(ctx, u.ID, [][]byte{st.RecoveryCodeHash("abcd")}))
 	approvalID, err := st.CreateApprovalRequest(ctx, store.ApprovalRequest{Action: "global-admin", Summary: "Set roles", TargetType: "user", TargetLabel: "Ada", Method: "PUT", Path: "/api/v1/users/x/roles", Body: []byte("approval-body"), State: "null", Requester: store.NamedRef{ID: u.ID}, ExpiresAt: time.Now().Add(time.Hour)})
 	must(err)
@@ -140,11 +140,11 @@ func TestRotateSecretKey(t *testing.T) {
 func TestSigningKeyLifecycle(t *testing.T) {
 	st := testdb.New(t)
 	ctx := context.Background()
-	first, err := st.CreateSigningKey(ctx, "RS256", []byte("first"))
+	first, err := st.CreateSigningKey(ctx, "RS256", []byte("first"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := st.CreateSigningKey(ctx, "RS256", []byte("second"))
+	second, err := st.CreateSigningKey(ctx, "RS256", []byte("second"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestSigningKeyLifecycle(t *testing.T) {
 		t.Fatalf("retired key: %+v %v", info, err)
 	}
 
-	ec, err := st.CreateSigningKey(ctx, "ES256", []byte("ec"))
+	ec, err := st.CreateSigningKey(ctx, "ES256", []byte("ec"), "")
 	if err != nil {
 		t.Fatal(err)
 	}

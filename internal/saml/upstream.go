@@ -40,6 +40,10 @@ func serviceProvider(ctx context.Context, st *store.Store, cfg config.Config, p 
 	if err != nil {
 		return nil, err
 	}
+	method := rsaSHA256
+	if external(key) {
+		key, cert, method = nil, nil, ""
+	}
 	base := cfg.PublicURL.JoinPath("saml", "sp", p.ID)
 	metadata := base.JoinPath("metadata")
 	entityID := metadata.String()
@@ -50,7 +54,7 @@ func serviceProvider(ctx context.Context, st *store.Store, cfg config.Config, p 
 		MetadataURL:       *metadata,
 		AcsURL:            *base.JoinPath("acs"),
 		IDPMetadata:       &idp,
-		SignatureMethod:   rsaSHA256,
+		SignatureMethod:   method,
 		AuthnNameIDFormat: saml.UnspecifiedNameIDFormat,
 		ValidateAudienceRestriction: func(a *saml.Assertion) error {
 			if len(a.Conditions.AudienceRestrictions) == 0 {

@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"halo/internal/kms"
 	"halo/internal/secret"
 )
 
@@ -50,6 +51,7 @@ type Store struct {
 	pool    *pgxpool.Pool
 	db      querier
 	Sealer  *secret.Sealer
+	Keys    *kms.Keys
 	codeKey []byte
 }
 
@@ -72,10 +74,10 @@ func (s *Store) Tx(ctx context.Context, fn func(*Store) error) error {
 		return fn(s)
 	}
 	if tx, ok := ctx.Value(txKey{}).(pgx.Tx); ok {
-		return fn(&Store{pool: s.pool, db: tx, Sealer: s.Sealer, codeKey: s.codeKey})
+		return fn(&Store{pool: s.pool, db: tx, Sealer: s.Sealer, Keys: s.Keys, codeKey: s.codeKey})
 	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		return fn(&Store{pool: s.pool, db: tx, Sealer: s.Sealer, codeKey: s.codeKey})
+		return fn(&Store{pool: s.pool, db: tx, Sealer: s.Sealer, Keys: s.Keys, codeKey: s.codeKey})
 	})
 }
 
@@ -89,7 +91,7 @@ func (s *Store) Savepoint(ctx context.Context, fn func(*Store) error) error {
 		begin = tx
 	}
 	return pgx.BeginFunc(ctx, begin, func(tx pgx.Tx) error {
-		return fn(&Store{pool: s.pool, db: tx, Sealer: s.Sealer, codeKey: s.codeKey})
+		return fn(&Store{pool: s.pool, db: tx, Sealer: s.Sealer, Keys: s.Keys, codeKey: s.codeKey})
 	})
 }
 
