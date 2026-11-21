@@ -49,6 +49,7 @@ type attempt struct {
 	risk       string
 	signals    []signal
 	accepted   map[string]int
+	passkey    bool
 }
 
 type state struct {
@@ -164,6 +165,9 @@ func (e *engine) Evaluate(ctx context.Context, in access.Input) (access.Decision
 	if err := e.acceptances(ctx, s, &a); err != nil {
 		return access.Decision{}, err
 	}
+	if a.passkey, err = e.st.PasskeyRequired(ctx, a.user.ID); err != nil {
+		return access.Decision{}, err
+	}
 	results, decision := decide(s, a)
 	decision.Risk, decision.EventID = a.risk, id.New("evt")
 	for _, sig := range a.signals {
@@ -187,6 +191,11 @@ func (e *engine) Evaluate(ctx context.Context, in access.Input) (access.Decision
 		}
 		if err := tx.RecordPolicyEvaluation(ctx, store.PolicyEvaluation{SignInID: decision.EventID, Risk: a.risk, Effect: decision.Effect, Matches: matches}); err != nil {
 			return err
+		}
+		if a.passkey && phishingResistant(a.method) && decision.Effect != access.Block {
+			if err := tx.SetPasskeyRequired(ctx, a.user.ID, false); err != nil {
+				return err
+			}
 		}
 		for _, sig := range a.signals {
 			if sig.Level == "medium" || sig.Level == "high" {
@@ -331,6 +340,8 @@ func decide(s state, a attempt) ([]result, access.Decision) {
 			groups = append(groups, s.group(g))
 		}
 		return results, access.Decision{Effect: access.Block, Reason: "Sign-in with passwords is limited to members of " + strings.Join(groups, " or ") + "."}
+	case a.passkey && !phishingResistant(a.method) && (winner == nil || winner.policy.Effect != access.Block):
+		return results, access.Decision{Effect: access.RequirePhishingResistant, Reason: "A risk response asks for a passkey or security key at the next sign-in.", Terms: pending}
 	case winner != nil:
 		return results, access.Decision{Effect: winner.policy.Effect, Policy: winner.policy.Name, Reason: winner.detail, Terms: pending, Contexts: contexts}
 	}

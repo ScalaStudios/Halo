@@ -73,7 +73,10 @@ tags:
   - name: Webhooks
     description: Signed HTTP delivery of audit and sign-in events, streaming them to syslog or OpenTelemetry, and notification rules that send chosen events to Slack, Discord or a webhook. An audit event's `data` has the fields of an `AuditEvent`, including `changes`.
   - name: API resources
-    description: Your own APIs, their scopes, and which applications may request them.
+    description: |
+      Your own APIs, their scopes, and which applications may request them.
+
+      **Revoked access tokens.** Halo issues JWT access tokens for APIs. Introspection at `/oauth2/introspect` reports a token inactive as soon as its session ends, the person is suspended or loses the application, consent is removed or the token is revoked. An API that checks tokens itself against `/oauth2/keys` sees none of that and keeps accepting a token until it expires. Keep `accessTokenTtl` at 5 to 15 minutes for such APIs, and either poll `GET /oauth2/revoked` or subscribe a webhook to `token.revoke`, then refuse tokens whose `jti` is listed.
   - name: SSH
     description: The SSH certificate authority, principal mappings and issued certificates.
   - name: Development
@@ -231,6 +234,37 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OAuthError'}
+  /oauth2/revoked:
+    servers:
+      - url: /
+    get:
+      tags: [API resources]
+      operationId: listRevokedAccessTokens
+      summary: List access tokens revoked before they expired
+      description: 'No authentication: the list holds only token identifiers and expiry times, which are useless without the tokens themselves. Lists, newest expiry first and at most 10,000, the access tokens Halo revoked that have not expired yet, whether a session ended, the person was suspended, their password or sign-in methods were reset, consent was removed, an automatic risk response acted, an application was turned off or a client revoked the token at `/oauth2/revoke`. A token replaced through a refresh is not listed, though introspection reports it inactive. Poll it from APIs that validate JWT access tokens themselves, and refuse a token whose `jti` is listed until its `exp`.'
+      security:
+        - {}
+      responses:
+        '200':
+          description: The revoked tokens.
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revoked]
+                properties:
+                  revoked:
+                    type: array
+                    maxItems: 10000
+                    items:
+                      type: object
+                      required: [jti, exp]
+                      properties:
+                        jti: {type: string, examples: [atk_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+                        exp: {type: integer, description: The token's `exp`, in seconds since the Unix epoch., examples: [1767225600]}
   /organization:
     get:
       tags: [Organization]
@@ -2747,7 +2781,7 @@ paths:
       tags: [Users]
       operationId: setTemporaryPassword
       summary: Set a temporary password
-      description: 'Roles: user or helpdesk administrator; only a global administrator can set one for an administrator. The person must choose a new password at their next sign-in. The same length and breach rules apply as for `PUT /me/password`. Limited roles apply.'
+      description: 'Roles: user or helpdesk administrator; only a global administrator can set one for an administrator. The person must choose a new password at their next sign-in. Their sessions end and their tokens are revoked. The same length and breach rules apply as for `PUT /me/password`. Limited roles apply.'
       requestBody: {$ref: '#/components/requestBodies/Password'}
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
@@ -8332,9 +8366,21 @@ components:
         securityEmailsOff:
           type: array
           default: []
-          items: {type: string, enum: [new_sign_in, method_added, method_removed, recovery_codes, email_changed, account_locked, access_pass, impersonation]}
-          description: 'Security emails Halo does not send. The others go to the person when their account signs in from a device or network it has not used before (the `new-device` and `new-network` risk signals), when a passkey, security key, authenticator app or password is added or removed, when recovery codes are replaced, when the email address changes (to the old and the new address), when incorrect passwords or codes lock the account, when an administrator creates a temporary access pass, and when an impersonation starts. They link to the account portal, never to a sign-in page, and never contain a code or a pass. Halo sends one email of a kind about the same thing within 15 minutes, and one lockout email within the lockout window. People can turn off `new_sign_in` for themselves at `/me/security-emails`.'
+          items: {type: string, enum: [new_sign_in, method_added, method_removed, recovery_codes, email_changed, account_locked, access_pass, impersonation, risk_response]}
+          description: 'Security emails Halo does not send. The others go to the person when their account signs in from a device or network it has not used before (the `new-device` and `new-network` risk signals), when a passkey, security key, authenticator app or password is added or removed, when recovery codes are replaced, when the email address changes (to the old and the new address), when incorrect passwords or codes lock the account, when an administrator creates a temporary access pass, when an impersonation starts, and when a `notify` risk response tells them about a risky sign-in. They link to the account portal, never to a sign-in page, and never contain a code or a pass. Halo sends one email of a kind about the same thing within 15 minutes, and one lockout email within the lockout window. People can turn off `new_sign_in` for themselves at `/me/security-emails`.'
         lockoutEmailAdmins: {type: boolean, default: false, description: 'Also email the active global administrators when incorrect passwords or codes lock someone''s account.'}
+        riskResponses:
+          type: array
+          default: []
+          maxItems: 20
+          description: 'What Halo does on its own, within about 20 seconds, when a sign-in raises a risk event. Each response applies to risk events of its `signal`, or of any signal when empty, at `level` or above. Every risk event is acted on once: `suspend` suspends the person, unless they are the last active global administrator, and ends their sessions; `revoke-sessions` ends their sessions and revokes their tokens; `require-passkey` does the same and refuses their next sign-in unless it uses a passkey or security key, while a temporary access pass still works; `notify` sends the person the `risk_response` security email. Responses never act on emergency access accounts. Each risk event that was acted on is recorded as `risk_event.respond` in the audit log, which notification rules can send on.'
+          items:
+            type: object
+            required: [signal, level, action]
+            properties:
+              signal: {type: string, enum: ['', risky-network, failed-sign-ins, new-device]}
+              level: {type: string, enum: [medium, high]}
+              action: {type: string, enum: [revoke-sessions, require-passkey, suspend, notify]}
         botProtectionSecret: {type: string, maxLength: 200, writeOnly: true, description: The secret key from the provider. Stored encrypted and never returned; `botProtectionSecretSet` in the response says whether one is stored. Omit it or send an empty string to keep the stored one.}
         signInLogDays: {type: integer, minimum: 0, maximum: 3650, default: 0, description: 'Days to keep sign-in log entries, between 7 and 3,650. 0 keeps them forever. Once a day Halo deletes older entries in batches and records the count as `log.prune` in the audit log. Only a global administrator can change it.'}
         auditLogDays: {type: integer, minimum: 0, maximum: 3650, default: 0, description: 'Days to keep audit log entries, between 30 and 3,650. 0 keeps them forever. Once a day Halo deletes older entries in batches and records the count as `log.prune` in the audit log. Only a global administrator can change it.'}
@@ -8356,7 +8402,7 @@ components:
       type: object
       required: [kind, label, description, variables, default, custom]
       properties:
-        kind: {type: string, enum: [invite, reset, magic_link, magic_code, sign_up, access_request, access_approved, access_denied, access_pass, new_sign_in, method_added, method_removed, recovery_codes, email_changed, account_locked, account_locked_admin, impersonation]}
+        kind: {type: string, enum: [invite, reset, magic_link, magic_code, sign_up, access_request, access_approved, access_denied, access_pass, new_sign_in, method_added, method_removed, recovery_codes, email_changed, account_locked, account_locked_admin, impersonation, risk_response]}
         label: {type: string, examples: [Invitation]}
         description: {type: string}
         variables:

@@ -602,3 +602,25 @@ func TestSignUpSettings(t *testing.T) {
 		t.Fatalf("audit: %+v", audit)
 	}
 }
+
+func TestRiskResponseSettings(t *testing.T) {
+	e := setup(t)
+	security := e.person("sam@example.com", "security_admin")
+	end := map[string]any{"signal": "risky-network", "level": "high", "action": "revoke-sessions"}
+	for _, responses := range [][]map[string]any{
+		{{"signal": "impossible-travel", "level": "high", "action": "suspend"}},
+		{{"signal": "", "level": "low", "action": "suspend"}},
+		{{"signal": "", "level": "high", "action": "delete"}},
+		{end, end},
+	} {
+		e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"riskResponses": responses}), 422)
+	}
+	got := decode[settingsResponse](t, e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"riskResponses": []map[string]any{end}}), 200))
+	if !slices.Equal(got.Settings.RiskResponses, []store.RiskResponse{{Signal: "risky-network", Level: "high", Action: "revoke-sessions"}}) || len(store.DefaultSettings.RiskResponses) != 0 {
+		t.Fatalf("risk responses: %+v", got.Settings.RiskResponses)
+	}
+	got = decode[settingsResponse](t, e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"riskResponses": nil}), 200))
+	if got.Settings.RiskResponses == nil || len(got.Settings.RiskResponses) != 0 {
+		t.Fatalf("clearing the risk responses: %+v", got.Settings.RiskResponses)
+	}
+}

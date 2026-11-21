@@ -161,7 +161,7 @@ func (s *Store) SetApplicationStatus(ctx context.Context, appID, status string, 
 	if status != "disabled" {
 		return nil
 	}
-	_, err = s.db.Exec(ctx, `update oidc_tokens set revoked_at = now() where client_id = $1 and revoked_at is null`, clientID)
+	_, err = s.db.Exec(ctx, `update oidc_tokens set revoked_at = now(), rotated = false where client_id = $1 and `+revocable, clientID)
 	return err
 }
 

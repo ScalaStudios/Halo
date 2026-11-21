@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 type OIDCToken struct {
@@ -21,6 +23,8 @@ type OIDCToken struct {
 	ExpiresAt   time.Time
 	SubjectID   *string
 }
+
+const revocable = `(revoked_at is null or rotated and expires_at > now())`
 
 const oidcTokenColumns = `id, kind, client_id, user_id, session_id, refresh_id, scopes, audience, amr, auth_time, created_at, expires_at, subject_token_id`
 
@@ -53,21 +57,43 @@ func (s *Store) GetActiveRefreshToken(ctx context.Context, hash []byte) (OIDCTok
 }
 
 func (s *Store) RevokeOIDCToken(ctx context.Context, tokenID string) error {
+	return s.revokeOIDCToken(ctx, tokenID, false)
+}
+
+func (s *Store) RotateOIDCToken(ctx context.Context, tokenID string) error {
+	return s.revokeOIDCToken(ctx, tokenID, true)
+}
+
+func (s *Store) revokeOIDCToken(ctx context.Context, tokenID string, rotated bool) error {
 	return s.Tx(ctx, func(tx *Store) error {
-		tag, err := tx.db.Exec(ctx, `update oidc_tokens set revoked_at = now() where id = $1 and revoked_at is null`, tokenID)
+		tag, err := tx.db.Exec(ctx, `update oidc_tokens set revoked_at = now(), rotated = $2 where id = $1 and revoked_at is null`, tokenID, rotated)
 		if err != nil {
 			return err
 		}
 		if tag.RowsAffected() == 0 {
 			return ErrNotFound
 		}
-		_, err = tx.db.Exec(ctx, `update oidc_tokens set revoked_at = now() where refresh_id = $1 and revoked_at is null`, tokenID)
+		_, err = tx.db.Exec(ctx, `update oidc_tokens set revoked_at = now(), rotated = $2 where refresh_id = $1 and revoked_at is null`, tokenID, rotated)
 		return err
 	})
 }
 
+type RevokedToken struct {
+	ID        string `json:"jti"`
+	ExpiresAt int64  `json:"exp"`
+}
+
+func (s *Store) RevokedAccessTokens(ctx context.Context) ([]RevokedToken, error) {
+	rows, err := s.db.Query(ctx, `select id, floor(extract(epoch from expires_at))::bigint from oidc_tokens
+		where kind = 'access' and not rotated and revoked_at is not null and expires_at > now() order by expires_at desc limit 10000`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[RevokedToken])
+}
+
 func (s *Store) RevokeClientTokens(ctx context.Context, userID, clientID string) error {
-	_, err := s.db.Exec(ctx, `update oidc_tokens set revoked_at = now() where user_id = $1 and client_id = $2 and revoked_at is null`, userID, clientID)
+	_, err := s.db.Exec(ctx, `update oidc_tokens set revoked_at = now(), rotated = false where user_id = $1 and client_id = $2 and `+revocable, userID, clientID)
 	return err
 }
 

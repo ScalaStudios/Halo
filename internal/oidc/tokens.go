@@ -203,7 +203,7 @@ func (s *storage) CreateAccessAndRefreshTokens(ctx context.Context, req op.Token
 	err = s.st.Tx(ctx, func(tx *store.Store) error {
 		if refreshing {
 			refresh.Scopes = prev.Scopes
-			if err := tx.RevokeOIDCToken(ctx, prev.ID); errors.Is(err, store.ErrNotFound) {
+			if err := tx.RotateOIDCToken(ctx, prev.ID); errors.Is(err, store.ErrNotFound) {
 				metrics.RefreshRefused.Inc()
 				return oidc.ErrInvalidGrant().WithDescription("The refresh token was already used.")
 			} else if err != nil {

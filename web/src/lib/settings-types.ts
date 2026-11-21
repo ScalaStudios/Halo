@@ -1,3 +1,4 @@
+import type { RiskEventType } from "./policy-types";
 import type { RoleKey } from "./provisioning-types";
 
 export type Theme = {
@@ -46,7 +47,10 @@ export type Settings = {
   signUpGroupIds: string[];
   securityEmailsOff: string[];
   lockoutEmailAdmins: boolean;
+  riskResponses: RiskResponse[];
 };
+
+export type RiskResponse = { signal: "" | RiskEventType; level: "medium" | "high"; action: "revoke-sessions" | "require-passkey" | "suspend" | "notify" };
 
 export type SignUp = { id: string; email: string; name: string; createdAt: string; verifiedAt: string };
 

@@ -150,7 +150,7 @@ function ResourceDialog({ resource, onClose }: { resource: ApiResource | null; o
           <Field label="Name" error={errors.name}>
             {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder="Billing API" />}
           </Field>
-          <Field label="Access token lifetime" hint="Overrides the application's lifetime for tokens addressed to this API.">
+          <Field label="Access token lifetime" hint="Overrides the application's lifetime for tokens addressed to this API. An API that checks tokens itself keeps accepting a revoked one until it expires, so keep it at 15 minutes or less and have the API poll /oauth2/revoked.">
             {(props) => (
               <Select {...props} value={ttl} onChange={(event) => setTtl(Number(event.target.value))}>
                 {lifetimes.map((seconds) => (

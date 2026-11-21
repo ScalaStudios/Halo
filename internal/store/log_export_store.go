@@ -66,7 +66,7 @@ func (s *Store) RecordLogExport(ctx context.Context, sentAt *time.Time, message 
 }
 
 func (s *Store) PollLogEvents(ctx context.Context, before time.Time, limit int) ([]WebhookEvent, error) {
-	return s.pollEvents(ctx, logCursor, before, limit)
+	return s.pollEvents(ctx, logCursor, eventSources, before, limit)
 }
 
 func (s *Store) queued(ctx context.Context, cursor, table string) (int, error) {

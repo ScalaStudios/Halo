@@ -99,3 +99,7 @@ func AccountLockedAdmin(to, person, personEmail string, attempts int, until time
 func Impersonation(to, name, admin, purpose, link string, until time.Time) Message {
 	return build("impersonation", to, map[string]string{"Name": firstName(name), "Administrator": admin, "Purpose": purpose, "Until": expiry(until), "Link": link})
 }
+
+func RiskResponse(to, name, risk, response, link string, at time.Time) Message {
+	return build("risk_response", to, map[string]string{"Name": firstName(name), "Risk": risk, "Response": response, "Link": link, "Time": expiry(at)})
+}

@@ -70,12 +70,20 @@ type Settings struct {
 	SecurityEmailsOff  []string `json:"securityEmailsOff"`
 	LockoutEmailAdmins bool     `json:"lockoutEmailAdmins"`
 
+	RiskResponses []RiskResponse `json:"riskResponses"`
+
 	EmailTemplates map[string]EmailTemplate `json:"emailTemplates,omitempty"`
 }
 
 type EmailTemplate struct {
 	Subject string `json:"subject"`
 	Body    string `json:"body"`
+}
+
+type RiskResponse struct {
+	Signal string `json:"signal"`
+	Level  string `json:"level"`
+	Action string `json:"action"`
 }
 
 type GroupSessionLimit struct {
@@ -115,6 +123,7 @@ var DefaultSettings = Settings{
 	SignUpDomains:        []string{},
 	SignUpGroupIDs:       []string{},
 	SecurityEmailsOff:    []string{},
+	RiskResponses:        []RiskResponse{},
 }
 
 const settingsTTL = 30 * time.Second
