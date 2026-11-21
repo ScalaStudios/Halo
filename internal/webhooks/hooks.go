@@ -28,7 +28,7 @@ const (
 )
 
 var (
-	HookClient     = GuardedClient()
+	HookClient     = httpx.GuardedClient()
 	hookTimeout    = 3 * time.Second
 	claimName      = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.:/-]{0,99}$`)
 	reservedClaims = []string{"iss", "sub", "aud", "exp", "nbf", "iat", "jti", "auth_time", "nonce", "acr", "amr", "azp", "at_hash", "c_hash", "s_hash", "sid",
@@ -178,7 +178,7 @@ func (in hookInput) apply(hook *store.ApplicationHook, seal func([]byte) []byte,
 		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || len(in.URL) > 2048 {
 			return httpx.Invalid("Enter the https:// URL of the hook, under 2,048 characters.")
 		}
-		if ip, err := netip.ParseAddr(u.Hostname()); err == nil && !public(ip) || local(u.Hostname()) {
+		if ip, err := netip.ParseAddr(u.Hostname()); err == nil && !httpx.PublicAddress(ip) || local(u.Hostname()) {
 			return httpx.Invalid("Hooks only call public addresses. Private, loopback and link-local addresses are refused.")
 		}
 		hook.Host, hook.URLSealed = u.Host, seal([]byte(in.URL))
