@@ -24,10 +24,15 @@ type Digest struct {
 	Recipients     []User
 }
 
-func (s *Store) ClaimWeeklyDigest(ctx context.Context) (bool, error) {
-	tag, err := s.db.Exec(ctx, `insert into settings (key, value) values ('weeklyDigestSentAt', to_jsonb(now()))
-		on conflict (key) do update set value = excluded.value, updated_at = now() where settings.updated_at <= now() - interval '7 days'`)
+func (s *Store) Claim(ctx context.Context, key string, every time.Duration) (bool, error) {
+	tag, err := s.db.Exec(ctx, `insert into settings (key, value) values ($1, to_jsonb(now()))
+		on conflict (key) do update set value = excluded.value, updated_at = now() where settings.updated_at <= now() - make_interval(secs => $2)`, key, every.Seconds())
 	return tag.RowsAffected() == 1, err
+}
+
+func (s *Store) Unclaim(ctx context.Context, key string) error {
+	_, err := s.db.Exec(ctx, `delete from settings where key = $1`, key)
+	return err
 }
 
 func (s *Store) WeeklyDigest(ctx context.Context, now time.Time) (Digest, error) {

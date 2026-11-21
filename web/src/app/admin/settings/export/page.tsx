@@ -1,13 +1,16 @@
 import { Check, X } from "lucide-react";
 import { ExportButton } from "@/components/settings/export-button";
+import { ImportConfiguration } from "@/components/settings/import-configuration";
 import { hasRole } from "@/components/settings/roles";
+import { ScheduledExportForm } from "@/components/settings/settings-forms";
 import { ReadOnlyNote } from "@/components/settings/shared";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { apiGet } from "@/lib/api/server";
+import type { SettingsResponse } from "@/lib/settings-types";
 import type { User } from "@/lib/types";
 
-export const metadata = { title: "Data export" };
+export const metadata = { title: "Export and import" };
 
 const INCLUDED = [
   "Organization profile and every setting on these pages",
@@ -21,12 +24,29 @@ const INCLUDED = [
 
 const EXCLUDED = ["Passkeys, authenticator app secrets and recovery codes", "Client secrets, API keys, webhook secrets and signing keys", "Sessions, tokens and the sign-in and audit logs"];
 
+const IMPORTED = [
+  "The settings on these pages, except email templates",
+  "Custom attributes, and groups with their owners and members",
+  "Applications, which keep the client secrets they have",
+  "Access policies, terms of use and access packages",
+];
+
+const NOT_IMPORTED = [
+  "People, and who holds which administrator role",
+  "Application roles and who holds them",
+  "Access reviews, terms acceptances and the audit log",
+  "SAML signing and encryption settings of applications",
+];
+
 export default async function ExportPage() {
-  const me = await apiGet<User>("/me");
+  const [me, { settings, bucketConfigured }] = await Promise.all([apiGet<User>("/me"), apiGet<SettingsResponse>("/settings")]);
   const allowed = hasRole(me);
   return (
     <div className="flex max-w-4xl flex-col gap-8">
-      <PageHeader title="Data export" description="Download your directory, applications and policies as one JSON file, for backups or a move to another system." />
+      <PageHeader
+        title="Export and import"
+        description="Download your directory, applications and policies as one JSON file for backups or a move to another system, and bring configuration back from one."
+      />
       <Card>
         <CardHeader title="What the export contains" description="Halo streams the file as it reads the database, so large directories download without waiting." />
         <CardBody className="grid grid-cols-1 gap-8 md:grid-cols-2">
@@ -44,6 +64,29 @@ export default async function ExportPage() {
           <ReadOnlyNote>Only a global administrator can export organization data.</ReadOnlyNote>
         )}
       </div>
+      <Card>
+        <CardHeader
+          title="Import configuration"
+          description="Bring this installation in line with an export from it or from another Halo. Objects are matched by id, then by name, and you see every change before anything is saved."
+        />
+        <CardBody className="flex flex-col gap-8">
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+            <ExportList title="Imported" items={IMPORTED} included />
+            <ExportList title="Never imported or changed" items={NOT_IMPORTED} included={false} />
+          </div>
+          <div className="flex flex-col gap-4">
+            <ImportConfiguration canImport={allowed} />
+            {allowed ? (
+              <p className="text-body-sm text-fg-3">
+                Each change is checked like the same change in the console and recorded in the audit log. When approvals are on, another global administrator approves the import.
+              </p>
+            ) : (
+              <ReadOnlyNote>Only a global administrator can import configuration.</ReadOnlyNote>
+            )}
+          </div>
+        </CardBody>
+      </Card>
+      <ScheduledExportForm settings={settings} bucketConfigured={bucketConfigured} canEdit={allowed} />
     </div>
   );
 }

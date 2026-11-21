@@ -24,6 +24,8 @@ var readers = []string{"security_admin", "user_admin", "helpdesk_admin", "app_ad
 
 type replayKey struct{}
 
+type approvedKey struct{}
+
 type Change struct {
 	Action      string
 	Summary     string
@@ -48,7 +50,11 @@ func New(d httpx.Deps) *Gate {
 }
 
 func required(s store.Settings, action string) bool {
-	return slices.Contains(s.ApprovalActions, action) || (action == "approval-settings" && len(s.ApprovalActions) > 0)
+	return slices.Contains(s.ApprovalActions, action) || ((action == "approval-settings" || action == "configuration-import") && len(s.ApprovalActions) > 0)
+}
+
+func Approved(ctx context.Context) context.Context {
+	return context.WithValue(ctx, approvedKey{}, true)
 }
 
 func (g *Gate) RefuseGlobalAdmin(ctx context.Context, roles []string) error {
@@ -64,6 +70,9 @@ func (g *Gate) RefuseGlobalAdmin(ctx context.Context, roles []string) error {
 
 func (g *Gate) Hold(w http.ResponseWriter, r *http.Request, actor store.User, c Change) (bool, error) {
 	ctx := r.Context()
+	if ctx.Value(approvedKey{}) != nil {
+		return false, nil
+	}
 	state, err := json.Marshal(c.State)
 	if err != nil {
 		return false, err

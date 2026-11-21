@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 
 	"halo/internal/config"
 	"halo/internal/httpx"
@@ -63,12 +62,7 @@ type bucket struct {
 }
 
 func newBucket(c config.S3) (bucket, error) {
-	client, err := minio.New(c.Endpoint.Host, &minio.Options{
-		Creds:        credentials.NewStaticV4(c.AccessKeyID, c.SecretAccessKey, ""),
-		Secure:       c.Endpoint.Scheme == "https",
-		Region:       c.Region,
-		BucketLookup: minio.BucketLookupPath,
-	})
+	client, err := c.Client()
 	return bucket{client: client, name: c.Bucket}, err
 }
 

@@ -82,12 +82,15 @@ var fields = []struct {
 	{"securityEmailsOff", "security emails turned off", false},
 	{"lockoutEmailAdmins", "lockout emails to administrators", false},
 	{"riskResponses", "automatic risk responses", false},
+	{"exportSchedule", "scheduled exports", true},
+	{"exportKeep", "number of scheduled exports kept", true},
 }
 
 type handler struct {
 	st   *store.Store
 	cfg  config.Config
 	gate *approval.Gate
+	mux  *http.ServeMux
 }
 
 type Org struct {
@@ -102,7 +105,7 @@ type Org struct {
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
-	h := &handler{st: d.Store, cfg: d.Config, gate: approval.New(d)}
+	h := &handler{st: d.Store, cfg: d.Config, gate: approval.New(d), mux: mux}
 	route := func(pattern string, roles []string, fn func(http.ResponseWriter, *http.Request, store.User) error) {
 		mux.Handle(pattern, httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
 			actor, err := httpx.RequireRole(r, roles...)
@@ -126,6 +129,10 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("DELETE /api/v1/email-templates/{kind}", nil, h.resetEmailTemplate)
 	route("POST /api/v1/email-templates/{kind}/preview", readers, h.previewEmailTemplate)
 	route("GET /api/v1/export", nil, h.export)
+	route("POST /api/v1/import", nil, h.importConfiguration)
+	if d.Jobs != nil && d.Config.S3.Configured() {
+		d.Jobs.Every("scheduled export", time.Hour, h.scheduledExport)
+	}
 	mux.HandleFunc("GET /api/v1/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/yaml")
 		w.Write(spec.OpenAPI)
@@ -179,7 +186,7 @@ func (h *handler) respond(w http.ResponseWriter, r *http.Request) error {
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
-	return httpx.JSON(w, http.StatusOK, map[string]any{"settings": s, "defaultOrganizationName": h.cfg.Organization, "issuer": h.cfg.Issuer(), "customCssDisabled": h.cfg.NoCustomCSS, "botProtectionSecretSet": err == nil})
+	return httpx.JSON(w, http.StatusOK, map[string]any{"settings": s, "defaultOrganizationName": h.cfg.Organization, "issuer": h.cfg.Issuer(), "customCssDisabled": h.cfg.NoCustomCSS, "botProtectionSecretSet": err == nil, "bucketConfigured": h.cfg.S3.Configured()})
 }
 
 func (h *handler) get(w http.ResponseWriter, r *http.Request, _ store.User) error {
@@ -268,6 +275,9 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	}
 	if err := validate(next); err != nil {
 		return err
+	}
+	if next.ExportSchedule != before.ExportSchedule && next.ExportSchedule != "off" && !h.cfg.S3.Configured() {
+		return httpx.Invalid("Scheduled exports are saved to the S3-compatible bucket. Set HALO_S3_ENDPOINT, HALO_S3_BUCKET, HALO_S3_ACCESS_KEY_ID and HALO_S3_SECRET_ACCESS_KEY first.")
 	}
 	if len(botSecret) > 200 {
 		return httpx.Invalid("The bot protection secret key is longer than 200 characters. Copy it again from your provider's dashboard.")
@@ -511,6 +521,10 @@ func validate(s store.Settings) error {
 		case slices.Index(s.RiskResponses, r) != i:
 			return httpx.Invalid("Each risk response must be different. Remove the repeated one and save again.")
 		}
+	case !slices.Contains([]string{"off", "daily", "weekly"}, s.ExportSchedule):
+		return httpx.Invalid(`Set scheduled exports to "off", "daily" or "weekly".`)
+	case !between(s.ExportKeep, 1, 365):
+		return httpx.Invalid("Keep between 1 and 365 scheduled exports.")
 	}
 	for _, kind := range s.SecurityEmailsOff {
 		if t, ok := halomail.Lookup(kind); !ok || !t.Security {
@@ -729,11 +743,25 @@ func (h *handler) export(w http.ResponseWriter, r *http.Request, actor store.Use
 	if err != nil {
 		return err
 	}
-	s, err := h.st.Settings(ctx)
+	if err := record(r, h.st, actor, store.AuditEvent{Action: "organization.export", Summary: "Exported the organization's directory, applications and policies as JSON", TargetType: "organization", TargetLabel: org.Name}); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Disposition", `attachment; filename="halo-export-`+time.Now().UTC().Format("2006-01-02")+`.json"`)
+	if err := h.writeExport(ctx, w); err != nil {
+		slog.ErrorContext(ctx, "export stopped", "error", err)
+	}
+	return nil
+}
+
+func (h *handler) writeExport(ctx context.Context, w io.Writer) error {
+	org, err := h.organization(ctx)
 	if err != nil {
 		return err
 	}
-	if err := record(r, h.st, actor, store.AuditEvent{Action: "organization.export", Summary: "Exported the organization's directory, applications and policies as JSON", TargetType: "organization", TargetLabel: org.Name}); err != nil {
+	s, err := h.st.Settings(ctx)
+	if err != nil {
 		return err
 	}
 	head, err := json.Marshal(struct {
@@ -744,15 +772,12 @@ func (h *handler) export(w http.ResponseWriter, r *http.Request, actor store.Use
 	if err != nil {
 		return err
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Disposition", `attachment; filename="halo-export-`+time.Now().UTC().Format("2006-01-02")+`.json"`)
 	write := func(b []byte) error {
 		_, err := w.Write(b)
 		return err
 	}
 	if err := write(head[:len(head)-1]); err != nil {
-		return nil
+		return err
 	}
 	for _, section := range store.ExportSections {
 		count := 0
@@ -765,8 +790,7 @@ func (h *handler) export(w http.ResponseWriter, r *http.Request, actor store.Use
 			return write(append([]byte(prefix), row...))
 		})
 		if err != nil {
-			slog.ErrorContext(ctx, "export stopped", "section", section.Name, "error", err)
-			return nil
+			return fmt.Errorf("%s: %w", section.Name, err)
 		}
 		closing := "]"
 		if count == 0 {
@@ -774,10 +798,9 @@ func (h *handler) export(w http.ResponseWriter, r *http.Request, actor store.Use
 		}
 		if exists {
 			if err := write([]byte(closing)); err != nil {
-				return nil
+				return err
 			}
 		}
 	}
-	_ = write([]byte("}\n"))
-	return nil
+	return write([]byte("}\n"))
 }

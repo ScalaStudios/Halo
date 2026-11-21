@@ -117,6 +117,7 @@ var catalog = []eventType{
 	{"notification_rule.delete", "A notification rule was deleted"},
 	{"notification_rule.update", "A notification rule was changed, paused or resumed"},
 	{"organization.export", "The organization was exported as JSON"},
+	{"organization.import", "Configuration was imported from a JSON export"},
 	{"policy.create", "An access policy was created"},
 	{"policy.delete", "An access policy was deleted"},
 	{"policy.reorder", "The order of access policies changed"},

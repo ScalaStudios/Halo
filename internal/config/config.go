@@ -7,6 +7,9 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type Config struct {
@@ -48,6 +51,15 @@ type S3 struct {
 
 func (s S3) Configured() bool {
 	return s.Endpoint != nil && s.Endpoint.Host != "" && s.Bucket != ""
+}
+
+func (s S3) Client() (*minio.Client, error) {
+	return minio.New(s.Endpoint.Host, &minio.Options{
+		Creds:        credentials.NewStaticV4(s.AccessKeyID, s.SecretAccessKey, ""),
+		Secure:       s.Endpoint.Scheme == "https",
+		Region:       s.Region,
+		BucketLookup: minio.BucketLookupPath,
+	})
 }
 
 type LogExport struct {
