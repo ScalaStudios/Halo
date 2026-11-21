@@ -103,6 +103,15 @@ func (h *handler) kerberosSignIn(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		a.user = &u
+		if i := slices.IndexFunc(source.Realms, func(m store.KerberosRealm) bool { return m.Realm == p.realm }); i >= 0 {
+			mapped, err := h.st.GetUserByEmail(ctx, p.name+"@"+source.Realms[i].Domain)
+			if err == nil && mapped.ID != u.ID {
+				return h.reject(r, a, "The principal "+p.String()+" is linked to "+u.Email+" but its realm now maps it to "+mapped.Email+". Remove the old link before either person signs in with Windows.", errKerberosRejected)
+			}
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+		}
 	case errors.Is(err, store.ErrNotFound):
 		i := slices.IndexFunc(source.Realms, func(m store.KerberosRealm) bool { return m.Realm == p.realm })
 		a.email = p.name + "@" + source.Realms[i].Domain

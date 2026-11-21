@@ -393,4 +393,17 @@ func TestKerberosSignIn(t *testing.T) {
 	if got := e.negotiate(valid("ada").token(t), map[string]any{}); got.status != http.StatusTooManyRequests || got.code != "ERR_TOO_MANY_ATTEMPTS" {
 		t.Fatalf("locked out: %+v", got)
 	}
+
+	moved, err := st.GetUser(ctx, ada.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved.Email = "ada.lovelace@example.com"
+	if err := st.UpdateUserProfile(ctx, moved); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateUser(ctx, store.NewUser{Email: "ada@example.com", Name: "Ada Byron", Status: "active", GroupIDs: []string{group.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	expectRejected("reissued account name", other.negotiate(valid("ada").token(t), map[string]any{}), "ERR_KERBEROS_REJECTED", "is linked to ada.lovelace@example.com but its realm now maps it to ada@example.com")
 }
