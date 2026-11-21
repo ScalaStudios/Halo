@@ -24,7 +24,15 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
     <div className="flex flex-col gap-8">
       <PageHeader title="Users" description={`${pluralize(users.length, "person", "people")}, ${active} active.`} />
       {signUps.length && response ? (
-        <SignUpQueue signUps={signUps} groups={assigned.filter((g) => response.settings.signUpGroupIds.includes(g.id))} canDecide={hasRole(me, "user_admin")} />
+        <SignUpQueue
+          signUps={signUps}
+          groups={assigned.filter((g) => response.settings.signUpGroupIds.includes(g.id))}
+          canDecide={hasRole(me, "user_admin")}
+          proofingRequired={
+            response.settings.identityProofingSignUps &&
+            (response.settings.identityProofingGroupIds.length === 0 || response.settings.identityProofingGroupIds.some((g) => response.settings.signUpGroupIds.includes(g)))
+          }
+        />
       ) : null}
       <UsersTable users={users} groups={assigned} initialView={view} inviteOpen={invite === "1"} canGrantRoles={hasRole(me)} />
     </div>

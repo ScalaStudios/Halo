@@ -67,6 +67,13 @@ type Settings struct {
 	SignUpDomains  []string `json:"signUpDomains"`
 	SignUpGroupIDs []string `json:"signUpGroupIds"`
 
+	IdentityProofingInvites  bool     `json:"identityProofingInvites"`
+	IdentityProofingSignUps  bool     `json:"identityProofingSignUps"`
+	IdentityProofingGroupIDs []string `json:"identityProofingGroupIds"`
+	IdentityProofingProvider string   `json:"identityProofingProvider"`
+	IdentityProofingName     string   `json:"identityProofingName"`
+	IdentityProofingEndpoint string   `json:"identityProofingEndpoint"`
+
 	SecurityEmailsOff  []string `json:"securityEmailsOff"`
 	LockoutEmailAdmins bool     `json:"lockoutEmailAdmins"`
 
@@ -132,6 +139,8 @@ var DefaultSettings = Settings{
 	ExportSchedule:       "off",
 	ExportKeep:           7,
 	FeaturesOff:          []string{},
+
+	IdentityProofingGroupIDs: []string{},
 }
 
 const settingsTTL = 30 * time.Second
@@ -286,6 +295,14 @@ func (s Settings) AuthenticatorRulesFor(u User) []AuthenticatorRule {
 
 func (s Settings) ClientRegistrationOn() bool {
 	return slices.Contains([]string{"open", "token", "approval"}, s.ClientRegistration)
+}
+
+func (s Settings) ProofingRequired(groupIDs []string, signUp bool) bool {
+	on := s.IdentityProofingInvites
+	if signUp {
+		on = s.IdentityProofingSignUps
+	}
+	return on && (len(s.IdentityProofingGroupIDs) == 0 || slices.ContainsFunc(groupIDs, func(g string) bool { return slices.Contains(s.IdentityProofingGroupIDs, g) }))
 }
 
 func (s Settings) PasswordAllowed(u User) bool {

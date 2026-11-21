@@ -78,6 +78,8 @@ func (s *Store) GroupUses(ctx context.Context, groupID string) ([]GroupUse, erro
 		select distinct 'administrator role of', u.id, u.name from users u
 			left join user_roles r on r.user_id = u.id left join role_eligibilities e on e.user_id = u.id
 			where $1 = any(r.scope) or $1 = any(e.scope)
+		union all
+		select 'security default', '', 'Identity checks' from settings where key = 'identityProofingGroupIds' and value ? $1
 		order by 1, 3`, groupID)
 	if err != nil {
 		return nil, err

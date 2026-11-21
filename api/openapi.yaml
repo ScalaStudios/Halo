@@ -1165,6 +1165,7 @@ paths:
                       name: {type: string}
                       email: {type: string}
                   purpose: {type: string, enum: [invite, reset, access-pass], description: '`access-pass` for a link from `/auth/access-pass`.'}
+                  identityProof: {$ref: '#/components/schemas/IdentityProofState'}
         '403': {$ref: '#/components/responses/Suspended'}
         '404': {$ref: '#/components/responses/LinkExpired'}
   /auth/enroll/begin:
@@ -1172,6 +1173,7 @@ paths:
       tags: [Sign-in]
       operationId: beginEnrollment
       summary: Start registering the first passkey or security key
+      description: 'Refused with `403 ERR_IDENTITY_CHECK_REQUIRED` while the person is invited, `identityProofingInvites` applies to them and they have no successful identity check.'
       security: []
       requestBody:
         required: true
@@ -1185,8 +1187,36 @@ paths:
       responses:
         '200': {$ref: '#/components/responses/Ceremony'}
         '400': {$ref: '#/components/responses/BadJSON'}
+        '403': {$ref: '#/components/responses/SignInRefused'}
+        '404': {$ref: '#/components/responses/LinkExpired'}
+  /auth/enroll/identity-proof:
+    post:
+      tags: [Sign-in]
+      operationId: startEnrollmentIdentityProof
+      summary: Start an identity check with the verification provider
+      description: 'Works while the person is invited, `identityProofingInvites` applies to them and they have no successful check yet. Halo creates a verification session at the provider set in `identityProofingProvider` and answers with the address to send the person to; the provider sends them back to `/enroll?proofing=done`, without the setup link''s token. The result arrives by `POST /identity-proofing/webhook` or when Halo asks the provider, on `GET /auth/enroll` and every 10 minutes for 2 days. Halo stores only the provider''s session id, the result and the dates, never what the person showed the provider. At most 5 checks per person an hour. Recorded as `user.identity_proof.start`.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: {type: string}
+      responses:
+        '200': {$ref: '#/components/responses/IdentityProofStarted'}
+        '400': {$ref: '#/components/responses/BadJSON'}
         '403': {$ref: '#/components/responses/Suspended'}
         '404': {$ref: '#/components/responses/LinkExpired'}
+        '409':
+          description: '`ERR_NO_IDENTITY_PROVIDER`: no provider is connected, so an administrator checks identities in person. `ERR_CONFLICT`: the link needs no check, or the person already has a successful one.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '429': {$ref: '#/components/responses/IdentityProofLimit'}
+        '502': {$ref: '#/components/responses/IdentityProviderUnavailable'}
   /auth/enroll/finish:
     post:
       tags: [Sign-in]
@@ -1272,6 +1302,7 @@ paths:
                       name: {type: string}
                       email: {type: string}
                   purpose: {type: string, enum: [sign-up]}
+                  identityProof: {$ref: '#/components/schemas/IdentityProofState'}
         '403': {$ref: '#/components/responses/SignUpRefused'}
         '404': {$ref: '#/components/responses/SignUpOff'}
   /auth/sign-up/begin:
@@ -1294,12 +1325,40 @@ paths:
         '400': {$ref: '#/components/responses/BadJSON'}
         '403': {$ref: '#/components/responses/SignUpRefused'}
         '404': {$ref: '#/components/responses/SignUpOff'}
+  /auth/sign-up/identity-proof:
+    post:
+      tags: [Sign-in]
+      operationId: startSignUpIdentityProof
+      summary: Start an identity check for a sign-up
+      description: 'Works like `/auth/enroll/identity-proof` while `identityProofingSignUps` applies to the groups in `signUpGroupIds`. The provider sends the person back to `/sign-up?proofing=done`. Asking `/auth/sign-up` for a new link under another name deletes the checks of the unconfirmed sign-up.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: {type: string}
+      responses:
+        '200': {$ref: '#/components/responses/IdentityProofStarted'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '403': {$ref: '#/components/responses/SignUpRefused'}
+        '404': {$ref: '#/components/responses/SignUpOff'}
+        '409':
+          description: '`ERR_NO_IDENTITY_PROVIDER` or `ERR_CONFLICT`, as for `/auth/enroll/identity-proof`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '429': {$ref: '#/components/responses/IdentityProofLimit'}
+        '502': {$ref: '#/components/responses/IdentityProviderUnavailable'}
   /auth/sign-up/finish:
     post:
       tags: [Sign-in]
       operationId: finishSignUp
       summary: Save the passkey and confirm the email address
-      description: 'Uses up the link in the same transaction that confirms the address and keeps the passkey, and records `user.sign_up` in the audit log. When `signUp` is `open`, creates an active account with a confirmed address, adds it to the assigned groups in `signUpGroupIds` and no others, gives it no roles, and signs in like `/auth/enroll/finish`. When it is `approval`, no account or session exists yet: the sign-up waits under `/sign-ups` and the response is `{"pending": true}`. The passkey rules of the groups in `signUpGroupIds` apply, and a key that breaks them is refused with `403 ERR_AUTHENTICATOR_NOT_ALLOWED`.'
+      description: 'Uses up the link in the same transaction that confirms the address and keeps the passkey, and records `user.sign_up` in the audit log. When `signUp` is `open`, creates an active account with a confirmed address, adds it to the assigned groups in `signUpGroupIds` and no others, gives it no roles, and signs in like `/auth/enroll/finish`. When it is `approval`, no account or session exists yet: the sign-up waits under `/sign-ups` and the response is `{"pending": true}`. The passkey rules of the groups in `signUpGroupIds` apply, and a key that breaks them is refused with `403 ERR_AUTHENTICATOR_NOT_ALLOWED`. While `identityProofingSignUps` applies and the sign-up has no successful identity check, no account is created even when `signUp` is `open`: the sign-up waits under `/sign-ups` for an in-person check and the response is `{"pending": true, "identityCheck": true}`.'
       security: []
       requestBody:
         required: true
@@ -1324,6 +1383,7 @@ paths:
                   redirect: {type: string}
                   terms: {type: string}
                   pending: {type: boolean}
+                  identityCheck: {type: boolean, description: The sign-up waits for an identity check rather than for approval.}
         '400': {$ref: '#/components/responses/RegistrationFailed'}
         '403': {$ref: '#/components/responses/SignUpRefused'}
         '404': {$ref: '#/components/responses/SignUpOff'}
@@ -3107,6 +3167,43 @@ paths:
         '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /users/{id}/identity-proofs:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Users]
+      operationId: listIdentityProofs
+      summary: List a person's identity checks
+      description: 'Roles: any administrator. Newest first. Limited roles apply. The same records are in the `identityProofs` section of `GET /users/{id}/export`, and permanent deletion deletes them.'
+      responses:
+        '200':
+          description: The identity checks.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/IdentityProof'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      tags: [Users]
+      operationId: checkIdentity
+      summary: Record an in-person identity check
+      description: 'Roles: user or helpdesk administrator, with a recent sign-in; only a global administrator can check someone who holds or is eligible for an administrator role, and nobody can check themselves. Limited roles apply. For invited and active people. While `identityProofingInvites` applies to an invited person, they can finish their setup link only after a successful check. Recorded as `user.identity_proof`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InPersonCheck'}
+      responses:
+        '201': {$ref: '#/components/responses/IdentityProofResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /users/{id}/access-pass:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -3288,7 +3385,7 @@ paths:
       tags: [Users]
       operationId: approveSignUp
       summary: Approve a sign-up
-      description: 'Roles: user administrator. Creates an active account with the confirmed address and the passkey from the sign-up, in the assigned groups in `signUpGroupIds` at the time of approval and no others, with no roles. Recorded as `user.sign_up.approve`.'
+      description: 'Roles: user administrator. Creates an active account with the confirmed address and the passkey from the sign-up, in the assigned groups in `signUpGroupIds` at the time of approval and no others, with no roles. Identity checks of the sign-up move to the account. While `identityProofingSignUps` applies and the sign-up has no successful identity check, answers `409 ERR_IDENTITY_CHECK_REQUIRED`. Recorded as `user.sign_up.approve`.'
       responses:
         '200': {$ref: '#/components/responses/UserResponse'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -3308,6 +3405,26 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /sign-ups/{id}/identity-proofs:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Users]
+      operationId: checkSignUpIdentity
+      summary: Record an in-person identity check for a sign-up
+      description: 'Roles: user administrator, with a recent sign-in. Records that you checked the person''s identity in person or on a video call, with the kind of document you saw. The check moves to the account when the sign-up is approved, and is deleted with the sign-up when it is rejected. Recorded as `user.identity_proof`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InPersonCheck'}
+      responses:
+        '201': {$ref: '#/components/responses/IdentityProofResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /attributes:
     get:
       tags: [Users]
@@ -5726,6 +5843,43 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /identity-proofing/webhook:
+    post:
+      tags: [Users]
+      operationId: receiveIdentityProofResult
+      summary: Receive an identity check result from the verification provider
+      description: |-
+        Without a session or API key. Register this address at the provider and save its signing secret as `identityProofingWebhookSecret`; without one, every event is refused and Halo asks the provider for results instead.
+
+        With `identityProofingProvider` set to `stripe`, send Stripe Identity events with the `Stripe-Signature` header Stripe adds. Halo reads `identity.verification_session.verified` as a success, and `identity.verification_session.requires_input` and `identity.verification_session.canceled` as a failure, and answers other events without acting on them.
+
+        With `generic`, the provider signs the raw body like Halo signs webhooks: `Halo-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>" with the signing secret>`, and sends `{"id": "<unique event id>", "session": "<session id>", "status": "verified" | "failed"}`. Halo creates sessions with `POST <identityProofingEndpoint>`, `Authorization: Bearer <identityProofingApiKey>` and `{"returnUrl": "…"}`, and expects `{"id": "…", "url": "https://…"}` back; it asks for a result with `GET <identityProofingEndpoint>/<id>` and reads `status` as `pending`, `verified` or `failed`.
+
+        The signature must be within 5 minutes of Halo's clock, and each event id is used once, so a replayed event is answered `200` without acting on it again. Only the first result of a session counts. Halo reads only the event id, the session id and the result, never the person's details. Each result is recorded as `user.identity_proof.result`.
+      security: []
+      parameters:
+        - {name: Halo-Signature, in: header, schema: {type: string, examples: ['t=1763640000,v1=5f2b…']}}
+        - {name: Stripe-Signature, in: header, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        '200':
+          description: The event was received.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received: {type: boolean}
+        '401':
+          description: '`ERR_SIGNATURE`: the signature header is missing, older than 5 minutes or does not match, or no provider or signing secret is saved.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /compliance-sources/{id}/reports:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -8189,7 +8343,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     SignInRefused:
-      description: '`ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED` (not in a group assigned to the application), `ERR_BLOCKED_BY_POLICY`, `ERR_BLOCKED_BY_HOOK` (the application''s hook denied the sign-in or failed and fails closed; `message` holds its reason), `ERR_STRONGER_AUTH_REQUIRED` (a policy requires a passkey or security key), `ERR_STEP_UP_REQUIRED` (the method does not meet an authentication context the application asked for or a policy requires; `message` names the methods that do), `ERR_SESSION_LIMIT` (the person holds as many sessions as the session limit allows), `ERR_CHALLENGE_REQUIRED` or `ERR_CHALLENGE_FAILED` (see `ChallengeToken`), or `ERR_CROSS_SITE`. Refused sign-ins are recorded in the sign-in log.'
+      description: '`ERR_ACCOUNT_SUSPENDED`, `ERR_IDENTITY_CHECK_REQUIRED` (the person is invited, `identityProofingInvites` applies to them and they have no successful identity check, so the account stays inactive), `ERR_NOT_ASSIGNED` (not in a group assigned to the application), `ERR_BLOCKED_BY_POLICY`, `ERR_BLOCKED_BY_HOOK` (the application''s hook denied the sign-in or failed and fails closed; `message` holds its reason), `ERR_STRONGER_AUTH_REQUIRED` (a policy requires a passkey or security key), `ERR_STEP_UP_REQUIRED` (the method does not meet an authentication context the application asked for or a policy requires; `message` names the methods that do), `ERR_SESSION_LIMIT` (the person holds as many sessions as the session limit allows), `ERR_CHALLENGE_REQUIRED` or `ERR_CHALLENGE_FAILED` (see `ChallengeToken`), or `ERR_CROSS_SITE`. Refused sign-ins are recorded in the sign-in log.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -8401,6 +8555,30 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/IdentityProvider'}
+    IdentityProofStarted:
+      description: The address at the provider to send the person to.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [url]
+            properties:
+              url: {type: string, format: uri}
+    IdentityProofResponse:
+      description: The identity check.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/IdentityProof'}
+    IdentityProofLimit:
+      description: '`ERR_RATE_LIMITED`: the person started 5 identity checks in the last hour.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    IdentityProviderUnavailable:
+      description: '`ERR_IDENTITY_PROVIDER_UNAVAILABLE`: the provider could not be reached or refused the API key. The details are in Halo''s log.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     SettingsResponse:
       description: The settings, the organization name from `HALO_ORGANIZATION` and the issuer.
       content:
@@ -8414,6 +8592,8 @@ components:
               issuer: {type: string, format: uri}
               customCssDisabled: {type: boolean, description: '`HALO_DISABLE_CUSTOM_CSS=1` is set, so no page uses `customCss`.'}
               botProtectionSecretSet: {type: boolean, description: A secret key for `botProtection` is stored.}
+              identityProofingKeySet: {type: boolean, description: An `identityProofingApiKey` is stored.}
+              identityProofingWebhookSecretSet: {type: boolean, description: An `identityProofingWebhookSecret` is stored.}
               bucketConfigured: {type: boolean, description: '`HALO_S3_ENDPOINT` and the related variables are set, so `exportSchedule` can be turned on.'}
     ApiResourceResponse:
       description: The API resource.
@@ -9394,6 +9574,7 @@ components:
         applicationPreferences: {type: array, items: {type: object}}
         securityEmails: {type: array, items: {type: object}, description: 'Security emails Halo sent, with what each was about: the IP address of a new sign-in, a sign-in method, a new email address or a temporary access pass expiry.'}
         securityEmailOptOuts: {type: array, items: {type: object}, description: Security emails the person turned off.}
+        identityProofs: {type: array, items: {type: object}, description: 'Identity checks: the method, provider, provider session id, result, document kind and note, who checked the person in person, and the dates.'}
     ApprovalRequest:
       type: object
       required: [id, action, summary, targetType, targetId, targetLabel, requester, createdAt, expiresAt, status, decidedBy, decidedAt, outcome, canDecide]
@@ -10044,6 +10225,14 @@ components:
         signUp: {type: string, enum: ['off', open, approval], default: 'off', description: 'Who can create an account at `/auth/sign-up`: nobody, anyone at an allowed domain once they confirm their address and create a passkey, or the same people after a user administrator approves them under `/sign-ups`. Turning it on with an empty `signUpDomains` needs a verified domain.'}
         signUpDomains: {type: array, default: [], maxItems: 100, items: {type: string, examples: [example.com]}, description: 'Email domains people can sign up with, matched exactly and without case. Empty allows the verified domains under `/domains`.'}
         signUpGroupIds: {type: array, default: [], items: {type: string}, description: 'Assigned groups that new accounts from sign-up join. Dynamic groups are skipped.'}
+        identityProofingInvites: {type: boolean, default: false, description: 'Invited people need a successful identity check before their account is activated: an in-person check through `POST /users/{id}/identity-proofs`, or a check with the provider from their setup page. Until then their setup link and every sign-in are refused with `ERR_IDENTITY_CHECK_REQUIRED`.'}
+        identityProofingSignUps: {type: boolean, default: false, description: 'People who sign up need a successful identity check before their sign-up becomes an account, also when `signUp` is `open`.'}
+        identityProofingGroupIds: {type: array, default: [], maxItems: 100, items: {type: string}, description: 'Limit identity checks to people in these groups, or to sign-ups whose `signUpGroupIds` include one. Empty applies them to everyone. A listed group can''t be deleted.'}
+        identityProofingProvider: {type: string, enum: ['', generic, stripe], default: '', description: 'The identity verification service people can use from their setup page. Empty means administrators check identities in person only. Connecting one needs `identityProofingApiKey`. Halo calls it only at public addresses.'}
+        identityProofingName: {type: string, maxLength: 60, description: 'The name people see on their setup page, for `generic` only.'}
+        identityProofingEndpoint: {type: string, format: uri, maxLength: 500, description: 'The https address where Halo creates verification sessions, for `generic` only. See `POST /identity-proofing/webhook` for what Halo sends and expects.'}
+        identityProofingApiKey: {type: string, maxLength: 500, writeOnly: true, description: 'The provider''s API key, sent as a bearer token. For Stripe, a secret or restricted key starting with `sk_` or `rk_`. Stored encrypted and never returned. Omit it to keep the stored one.'}
+        identityProofingWebhookSecret: {type: string, maxLength: 500, writeOnly: true, description: 'The secret the provider signs result webhooks with. For Stripe, the endpoint''s signing secret starting with `whsec_`. Stored encrypted and never returned. Omit it to keep the stored one.'}
         securityEmailsOff:
           type: array
           default: []
@@ -10180,6 +10369,36 @@ components:
         name: {type: string}
         createdAt: {type: string, format: date-time, description: When the person last asked for the sign-up link.}
         verifiedAt: {type: string, format: date-time, description: When the person confirmed the address and created the passkey.}
+        identityProof: {type: string, enum: ['', pending, verified, failed], description: 'The best identity check result: `verified` when any check succeeded, otherwise the newest one. Empty when there is none.'}
+    IdentityProofState:
+      type: object
+      required: [required, status, provider]
+      properties:
+        required: {type: boolean, description: The person needs a successful identity check before the account is activated.}
+        status: {type: string, enum: ['', pending, verified, failed], description: 'The best result, as for `SignUp.identityProof`. A pending check with the provider is refreshed first.'}
+        provider: {type: string, description: 'The name of the connected verification provider, or empty when only in-person checks are possible.'}
+    IdentityProof:
+      type: object
+      required: [id, method, provider, reference, status, document, note, checkedBy, createdAt, completedAt]
+      properties:
+        id: {type: string, examples: [idp_01JD6Z4Q8M2X3Y4Z5A6B7C8D9E]}
+        method: {type: string, enum: [in-person, provider]}
+        provider: {type: string, enum: ['', generic, stripe]}
+        reference: {type: string, description: 'The provider''s session id. Empty for in-person checks.'}
+        status: {type: string, enum: [pending, verified, failed]}
+        document: {type: string, enum: ['', passport, national-id, driving-licence, residence-permit, other], description: The kind of document an administrator checked in person.}
+        note: {type: string, description: How the administrator checked the person.}
+        checkedBy:
+          oneOf: [{$ref: '#/components/schemas/NamedRef'}, {type: 'null'}]
+          description: The administrator who checked the person in person.
+        createdAt: {type: string, format: date-time}
+        completedAt: {type: [string, 'null'], format: date-time}
+    InPersonCheck:
+      type: object
+      required: [document, note]
+      properties:
+        document: {type: string, enum: [passport, national-id, driving-licence, residence-permit, other]}
+        note: {type: string, minLength: 1, maxLength: 500, description: 'How you checked the person, such as where you met and what you compared. Leave out the document number: a note with five or more digits in a row is refused.', examples: [Met at the Lisbon office and compared the photo]}
     Domain:
       type: object
       required: [id, name, token, createdAt, verifiedAt]

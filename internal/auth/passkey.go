@@ -223,7 +223,11 @@ func (h *handler) enrollInfo(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return httpx.JSON(w, http.StatusOK, map[string]any{"user": map[string]string{"name": u.Name, "email": u.Email}, "purpose": purpose})
+	proof, err := h.enrollProofState(r.Context(), u)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, map[string]any{"user": map[string]string{"name": u.Name, "email": u.Email}, "purpose": purpose, "identityProof": proof})
 }
 
 func (h *handler) enrollBegin(w http.ResponseWriter, r *http.Request) error {
@@ -236,6 +240,11 @@ func (h *handler) enrollBegin(w http.ResponseWriter, r *http.Request) error {
 	u, _, err := h.enrollee(r, in.Token)
 	if err != nil {
 		return err
+	}
+	if missing, err := h.unproven(r.Context(), u); err != nil {
+		return err
+	} else if missing {
+		return errProofRequired
 	}
 	return h.registerBegin(w, r, u, "", &u.ID)
 }

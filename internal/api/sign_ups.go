@@ -25,7 +25,10 @@ func (h *handlers) approveSignUp(w http.ResponseWriter, r *http.Request, actor s
 	var u store.User
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
 		var err error
-		u, err = tx.ActivateSignUp(ctx, r.PathValue("id"), settings.SignUpGroupIDs)
+		u, err = tx.ActivateSignUp(ctx, r.PathValue("id"), settings.SignUpGroupIDs, settings.ProofingRequired(settings.SignUpGroupIDs, true))
+		if errors.Is(err, store.ErrProofRequired) {
+			return httpx.Fail(http.StatusConflict, "ERR_IDENTITY_CHECK_REQUIRED", "Your organization checks the identity of people who sign up, and this person's identity isn't confirmed yet. Check it in person first, or wait for their identity check to finish.")
+		}
 		if errors.Is(err, store.ErrConflict) {
 			return conflict("Someone already has an account with this email address, so the sign-up can't become one. Reject it instead.")
 		}
