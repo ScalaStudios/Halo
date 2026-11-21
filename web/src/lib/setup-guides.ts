@@ -17,6 +17,68 @@ export function endpoints(issuer: string) {
   };
 }
 
+export function proxyGuides(app: Pick<Application, "id" | "claims" | "redirectUris">, issuer: string): SetupGuide[] {
+  const verify = `${issuer}/forward-auth/${app.id}/verify`;
+  const origins = app.redirectUris.map((uri) => new URL(uri).origin);
+  const hosts = app.redirectUris.map((uri) => new URL(uri).host);
+  const headers = app.claims.map((claim) => claim.name);
+  const variable = (header: string) => `$halo_${header.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+  return [
+    {
+      title: "Traefik",
+      description: `Add the middleware to the routers of ${hosts.join(", ")}. Traefik sends X-Forwarded-Host and X-Forwarded-Uri itself.`,
+      file: "dynamic.yml",
+      code: ["http:", "  middlewares:", "    halo:", "      forwardAuth:", `        address: ${verify}`, "        authResponseHeaders:", ...headers.map((h) => `          - ${h}`)].join("\n"),
+    },
+    {
+      title: "nginx",
+      description: "Needs the auth_request module. nginx gets a 401 with the sign-in address and turns it into a redirect.",
+      file: "nginx.conf",
+      code: [
+        "server {",
+        `    server_name ${app.redirectUris.map((uri) => new URL(uri).hostname).join(" ")};`,
+        "",
+        "    location / {",
+        "        auth_request /halo-auth;",
+        "        auth_request_set $halo_location $upstream_http_location;",
+        "        auth_request_set $halo_cookie $upstream_http_set_cookie;",
+        ...headers.map((h) => `        auth_request_set ${variable(h)} $upstream_http_${h.toLowerCase().replace(/-/g, "_")};`),
+        "        error_page 401 =302 $halo_location;",
+        "        add_header Set-Cookie $halo_cookie always;",
+        ...headers.map((h) => `        proxy_set_header ${h} ${variable(h)};`),
+        "        proxy_pass http://127.0.0.1:8080;",
+        "    }",
+        "",
+        "    location = /halo-auth {",
+        "        internal;",
+        `        proxy_pass ${verify}?nginx;`,
+        "        proxy_ssl_server_name on;",
+        "        proxy_pass_request_body off;",
+        '        proxy_set_header Content-Length "";',
+        "        proxy_set_header X-Forwarded-Host $http_host;",
+        "        proxy_set_header X-Forwarded-Uri $request_uri;",
+        "    }",
+        "}",
+      ].join("\n"),
+    },
+    {
+      title: "Caddy",
+      description: "Caddy sends X-Forwarded-Host and X-Forwarded-Uri itself, and removes these headers from requests it doesn't let through.",
+      file: "Caddyfile",
+      code: [
+        `${origins.join(", ")} {`,
+        `\tforward_auth ${issuer} {`,
+        `\t\turi /forward-auth/${app.id}/verify`,
+        "\t\theader_up Host {upstream_hostport}",
+        `\t\tcopy_headers ${headers.join(" ")}`,
+        "\t}",
+        "\treverse_proxy 127.0.0.1:8080",
+        "}",
+      ].join("\n"),
+    },
+  ];
+}
+
 const pairs = (rows: [string, string][]) => {
   const width = Math.max(16, ...rows.map(([key]) => key.length + 2));
   return rows.map(([key, value]) => `${key.padEnd(width)}${value}`).join("\n");

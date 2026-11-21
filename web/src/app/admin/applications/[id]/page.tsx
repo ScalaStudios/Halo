@@ -4,7 +4,7 @@ import { AvatarEditor } from "@/components/account/avatar-editor";
 import { AppActions, DangerZone } from "@/components/applications/app-actions";
 import { ClaimMappingsForm } from "@/components/applications/claim-mappings";
 import { CredentialList } from "@/components/applications/credentials";
-import { AuthenticationForm, BackchannelLogoutForm, ScopesForm, SignInFrequencyForm } from "@/components/applications/edit-application";
+import { AuthenticationForm, BackchannelLogoutForm, ProtectedAddressesForm, ScopesForm, SignInFrequencyForm } from "@/components/applications/edit-application";
 import { HookForm } from "@/components/applications/hook-form";
 import { RolesTable } from "@/components/applications/roles";
 import { SamlAttributesForm, SamlConnectionFields, SamlSettingsForm } from "@/components/applications/saml";
@@ -26,7 +26,7 @@ import { formatDuration, pluralize } from "@/lib/format";
 import type { ApiResource } from "@/lib/infra-types";
 import type { SamlApplication } from "@/lib/saml-types";
 import type { WebhookDelivery } from "@/lib/settings-types";
-import { endpoints, setupGuide } from "@/lib/setup-guides";
+import { endpoints, proxyGuides, setupGuide } from "@/lib/setup-guides";
 import type { Application, ApplicationHook, Attribute, Group, Organization, Session, SignInEvent, User } from "@/lib/types";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -52,8 +52,9 @@ export default async function ApplicationPage({ params, searchParams }: { params
 
   const saml = app.protocol === "saml";
   const bookmark = app.protocol === "bookmark";
+  const forward = app.protocol === "forward-auth";
   const service = app.type === "service";
-  const hookable = !saml && !bookmark && !service && app.clientId !== "halo-cli";
+  const hookable = !saml && !bookmark && !forward && !service && app.clientId !== "halo-cli";
   const roleable = !bookmark && !service && app.clientId !== "halo-cli";
   const owner = users.find((u) => u.id === app.owner);
   const appGroups = groups.filter((g) => app.groupIds.includes(g.id));
@@ -65,7 +66,17 @@ export default async function ApplicationPage({ params, searchParams }: { params
         { id: "overview", label: "Overview" },
         { id: "users", label: "Users & groups", count: appGroups.length },
       ]
-    : [
+    : forward
+      ? [
+          { id: "overview", label: "Overview" },
+          { id: "authentication", label: "Authentication" },
+          { id: "claims", label: "Headers", count: app.claims.length },
+          { id: "users", label: "Users & groups", count: appGroups.length },
+          { id: "roles", label: "Roles", count: app.roles.length },
+          { id: "sessions", label: "Sessions", count: appSessions.length },
+          { id: "logs", label: "Logs", count: appSignIns.length },
+        ]
+      : [
         { id: "overview", label: "Overview" },
         { id: "authentication", label: "Authentication" },
         { id: "permissions", label: "Permissions", count: app.scopes.length },
@@ -114,16 +125,16 @@ export default async function ApplicationPage({ params, searchParams }: { params
               awaitingApproval: app.awaitingApproval,
               redirectUris: app.redirectUris,
               postLogoutUris: app.postLogoutUris,
-              hasSecret: !saml && !bookmark && (app.type === "web" || app.type === "service"),
+              hasSecret: !saml && !bookmark && !forward && (app.type === "web" || app.type === "service"),
             }}
             directory={users}
           />
         </header>
         <DescriptionList
-          className={`grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 ${bookmark ? "xl:grid-cols-4" : "xl:grid-cols-6"}`}
+          className={`grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 ${bookmark ? "xl:grid-cols-4" : forward ? "xl:grid-cols-5" : "xl:grid-cols-6"}`}
           items={[
             { label: "Protocol", value: PROTOCOL_LABEL[app.protocol] },
-            ...(bookmark ? [] : [{ label: "Type", value: TYPE_LABEL[app.type] }]),
+            ...(bookmark || forward ? [] : [{ label: "Type", value: TYPE_LABEL[app.type] }]),
             {
               label: "Status",
               value: (
@@ -166,7 +177,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         {tab === "overview" ? <OverviewTab app={app} issuer={org.issuer} /> : null}
         {tab === "authentication" ? (
           <div className="flex flex-col gap-6">
-            <AuthenticationTab app={app} resources={resources} />
+            {forward ? <ProtectedAddressesForm key={app.redirectUris.join()} app={app} /> : <AuthenticationTab app={app} resources={resources} />}
             {service ? null : <SignInFrequencyForm key={app.maxAuthAge} app={app} />}
             {hookable ? <HookForm key={JSON.stringify(hook)} appId={app.id} appName={app.name} hook={hook} /> : null}
             {hookable ? <BackchannelLogoutForm key={`${app.backchannelLogoutUri}:${app.backchannelLogoutSessionRequired}`} app={app} /> : null}
@@ -197,18 +208,20 @@ export default async function ApplicationPage({ params, searchParams }: { params
         {tab === "claims" && !app.saml ? (
           <div className="flex flex-col gap-6">
             <SectionTitle
-              title={saml ? "Attributes" : "Claims"}
+              title={saml ? "Attributes" : forward ? "Headers" : "Claims"}
               description={
                 saml
                   ? `Sent in every SAML assertion to ${app.name}.`
-                  : service
+                  : forward
+                    ? `Sent to the proxy with every request Halo lets through to ${app.name}. The proxy replaces any copy the browser sent and passes them on.`
+                    : service
                     ? `Included in access tokens issued to ${app.name}.`
                     : `Included in ID tokens and the userinfo response for ${app.name}.`
               }
             />
             <SimpleTable
-              caption={saml ? "Attributes" : "Claims"}
-              head={[saml ? "Attribute" : "Claim", "Source"]}
+              caption={saml ? "Attributes" : forward ? "Headers" : "Claims"}
+              head={[saml ? "Attribute" : forward ? "Header" : "Claim", "Source"]}
               rows={app.claims.map((claim) => [
                 <span key="n" className="font-mono text-code-sm break-all text-fg">
                   {claim.name}
@@ -223,14 +236,23 @@ export default async function ApplicationPage({ params, searchParams }: { params
         {tab === "claims" && !service ? (
           <div className="mt-12 flex flex-col gap-6">
             <SectionTitle
-              title={saml ? "Attribute mappings" : "Claim mappings"}
+              title={saml ? "Attribute mappings" : forward ? "Header mappings" : "Claim mappings"}
               description={
                 saml
                   ? `Send a profile field, group names or a custom attribute to ${app.name} under the name it expects. A mapping replaces the attribute above with the same name, and Not sent leaves it out.`
-                  : `Add a profile field, group names or a custom attribute to ID tokens and userinfo for ${app.name}. A mapping replaces the claim above with the same name, and Not sent leaves it out. Halo's protocol claims, such as sub and iss, can't be mapped.`
+                  : forward
+                    ? `Send a profile field, group names or a custom attribute in the header ${app.name} expects, like Remote-User. A mapping replaces the header above with the same name, and Not sent leaves it out. Update the proxy configuration after you add a header.`
+                    : `Add a profile field, group names or a custom attribute to ID tokens and userinfo for ${app.name}. A mapping replaces the claim above with the same name, and Not sent leaves it out. Halo's protocol claims, such as sub and iss, can't be mapped.`
               }
             />
-            <ClaimMappingsForm key={JSON.stringify(app.claimMappings)} appId={app.id} appName={app.name} saml={saml} mappings={app.claimMappings} attributes={attributes} />
+            <ClaimMappingsForm
+              key={JSON.stringify(app.claimMappings)}
+              appId={app.id}
+              appName={app.name}
+              kind={saml ? "attribute" : forward ? "header" : "claim"}
+              mappings={app.claimMappings}
+              attributes={attributes}
+            />
           </div>
         ) : null}
         {tab === "users" ? (
@@ -284,7 +306,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
           <div className="flex flex-col gap-6">
             <SectionTitle
               title="Roles"
-              description={`Halo sends the keys of the roles a person holds to ${app.name} ${saml ? "in the roles attribute of every assertion" : "in the roles claim of ID tokens, userinfo and access tokens"}. Rename it with a mapping on the ${saml ? "Attributes" : "Claims"} tab.`}
+              description={`Halo sends the keys of the roles a person holds to ${app.name} ${saml ? "in the roles attribute of every assertion" : forward ? "in the X-Halo-Roles header" : "in the roles claim of ID tokens, userinfo and access tokens"}. Rename it with a mapping on the ${saml ? "Attributes" : forward ? "Headers" : "Claims"} tab.`}
             />
             <RolesTable
               appId={app.id}
@@ -382,6 +404,32 @@ function OverviewTab({ app, issuer }: { app: SamlApplication; issuer: string }) 
           </CardBody>
         </Card>
         <DangerZone id={app.id} name={app.name} disabled={app.status === "disabled"} bookmark className="xl:col-span-12" />
+      </div>
+    );
+  }
+  if (app.protocol === "forward-auth") {
+    return (
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <Card className="min-w-0 xl:col-span-5">
+          <CardHeader title="Connection details" description={`What the reverse proxy in front of ${app.name} needs to ask Halo before every request.`} />
+          <CardBody className="flex flex-col gap-4">
+            <CopyField
+              label="Verify endpoint"
+              value={`${issuer}/forward-auth/${app.id}/verify`}
+              hint="Halo reads X-Forwarded-Host and X-Forwarded-Uri only from addresses in HALO_TRUSTED_PROXIES. With more than one protected address, point the proxy at Halo's server directly."
+            />
+            {app.redirectUris.map((uri, index) => (
+              <CopyField key={uri} label={app.redirectUris.length > 1 ? `Protected address ${index + 1}` : "Protected address"} value={uri} />
+            ))}
+            <CopyField label="Sign-out path" value="/_halo/sign-out" hint={`Link to it on ${app.name}'s own address. It ends the person's Halo session.`} />
+          </CardBody>
+        </Card>
+        <div id="setup-guide" className="flex min-w-0 scroll-mt-24 flex-col gap-6 xl:col-span-7">
+          {proxyGuides(app, issuer).map((guide) => (
+            <SetupGuideCard key={guide.title} guide={guide} />
+          ))}
+        </div>
+        <DangerZone id={app.id} name={app.name} disabled={app.status === "disabled"} className="xl:col-span-12" />
       </div>
     );
   }

@@ -24,10 +24,28 @@ const PROFILE = [
   ["user.roles", "Application roles"],
 ] as const;
 
-export function ClaimMappingsForm({ appId, appName, saml, mappings, attributes }: { appId: string; appName: string; saml: boolean; mappings: Claim[]; attributes: Attribute[] }) {
+const KINDS = {
+  claim: { caption: "Claim mappings", name: "Claim name", placeholder: "employee_id" },
+  attribute: { caption: "Attribute mappings", name: "SAML attribute name", placeholder: "employeeNumber" },
+  header: { caption: "Header mappings", name: "Header name", placeholder: "X-Employee-Id" },
+} as const;
+
+export function ClaimMappingsForm({
+  appId,
+  appName,
+  kind,
+  mappings,
+  attributes,
+}: {
+  appId: string;
+  appName: string;
+  kind: keyof typeof KINDS;
+  mappings: Claim[];
+  attributes: Attribute[];
+}) {
   const [rows, setRows] = useState<Claim[]>(mappings);
   const { pending, run, errorFor, toast } = useMutation();
-  const noun = saml ? "attribute" : "claim";
+  const noun = kind;
   const update = (index: number, change: Partial<Claim>) => setRows(rows.map((row, i) => (i === index ? { ...row, ...change } : row)));
 
   function submit(event: FormEvent) {
@@ -44,8 +62,8 @@ export function ClaimMappingsForm({ appId, appName, saml, mappings, attributes }
     <form onSubmit={submit} noValidate className="flex flex-col gap-6">
       {rows.length > 0 ? (
         <SimpleTable
-          caption={saml ? "Attribute mappings" : "Claim mappings"}
-          head={[saml ? "SAML attribute name" : "Claim name", "Value", "Actions"]}
+          caption={KINDS[kind].caption}
+          head={[KINDS[kind].name, "Value", "Actions"]}
           rows={rows.map((row, i) => [
             <Input
               key="n"
@@ -53,7 +71,7 @@ export function ClaimMappingsForm({ appId, appName, saml, mappings, attributes }
               mono
               className="min-w-48"
               aria-label={`Name of ${noun} ${i + 1}`}
-              placeholder={saml ? "employeeNumber" : "employee_id"}
+              placeholder={KINDS[kind].placeholder}
               autoComplete="off"
               value={row.name}
               onChange={(event) => update(i, { name: event.target.value })}

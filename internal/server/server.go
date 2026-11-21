@@ -12,6 +12,7 @@ import (
 	"halo/internal/avatars"
 	"halo/internal/compliance"
 	"halo/internal/config"
+	"halo/internal/forwardauth"
 	"halo/internal/governance"
 	"halo/internal/httpx"
 	"halo/internal/jobs"
@@ -135,6 +136,7 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 	root.Handle("/saml/", authn.Resolve(authn.KeyScope("", samlHandler)))
 	root.Handle("POST /saml/sp/{id}/acs", samlHandler)
 	root.Handle("/scim/", authn.Resolve(authn.KeyScope("scim", scimHandler)))
+	root.Handle("/forward-auth/", forwardauth.New(deps))
 	root.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := st.Ping(r.Context()); err != nil {
 			http.Error(w, "database unreachable", http.StatusServiceUnavailable)

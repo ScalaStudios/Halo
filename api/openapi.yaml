@@ -43,7 +43,9 @@ tags:
   - name: Groups
     description: Assigned and rule-based groups and their members.
   - name: Applications
-    description: OpenID Connect, OAuth and SAML applications, bookmarks, their secrets and group assignments, and the collections that group them in the account portal.
+    description: OpenID Connect, OAuth, SAML and forward-auth applications, bookmarks, their secrets and group assignments, and the collections that group them in the account portal.
+  - name: Forward auth
+    description: 'The check that Traefik `forwardAuth`, nginx `auth_request` and Caddy `forward_auth` run before every request to a forward-auth application, outside `/api/v1`, and the sign-in it sends people to.'
   - name: Activity
     description: Sessions, the sign-in log, the audit log, the overview and security recommendations.
   - name: Reports
@@ -1046,6 +1048,60 @@ paths:
         '302':
           description: Redirect after the sign-in or its failure.
         '403': {$ref: '#/components/responses/CrossSite'}
+  /forward-auth/{id}/verify:
+    servers:
+      - url: /
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+      - {name: nginx, in: query, description: 'Present for nginx `auth_request`, which only accepts 2xx, 401 and 403: every redirect becomes a 401 with the same `Location` and `Set-Cookie`.', schema: {type: string}, allowEmptyValue: true}
+      - {name: X-Forwarded-Uri, in: header, required: true, description: 'The path and query of the original request. Read only from addresses in `HALO_TRUSTED_PROXIES`.', schema: {type: string}}
+      - {name: X-Forwarded-Host, in: header, description: 'The host of the original request, one of the protected addresses. Read only from addresses in `HALO_TRUSTED_PROXIES`. An application with one protected address uses it when the header names another host.', schema: {type: string}}
+    get:
+      tags: [Forward auth]
+      operationId: verifyForwardAuth
+      summary: Check a request to a forward-auth application
+      description: 'The proxy calls this with the cookies of the original request. Identity comes only from the `__Host-halo_{id}` cookie on the protected address, which belongs to a Halo session: ending, revoking or limiting that session, suspending the person, removing them from the application or disabling it takes effect on the next request, and the cookie lasts at most an hour before Halo checks the access policies again. `/_halo/callback` on a protected address trades a one-time code for that cookie, only in the browser that started the sign-in, and `/_halo/sign-out` removes it and sends the person to the Halo sign-out page. Checks are not written to the sign-in log; the sign-in at `/forward-auth/{id}/start` is.'
+      security: []
+      responses:
+        '200':
+          description: 'Let the request through. Every header of the application''s `claims` is set, empty when the person has no value. List values, such as group names, are joined by commas, with any comma inside one of them sent as a space, and control characters are removed.'
+          headers:
+            X-Halo-User: {description: The person's id, unless the claim mappings change it., schema: {type: string}}
+            X-Halo-Email: {schema: {type: string}}
+            X-Halo-Name: {schema: {type: string}}
+            X-Halo-Groups: {description: The names of the person's groups., schema: {type: string}}
+            X-Halo-Roles: {description: The keys of the application roles the person holds. Only when the application has roles., schema: {type: string}}
+        '302':
+          description: 'Not signed in, signed in longer ago than the sign-in frequency allows, or a callback or sign-out. Unauthenticated requests go to `/forward-auth/{id}/start` with a state cookie for the protected address.'
+        '401':
+          description: The same as 302 when `nginx` is present.
+        '403':
+          description: The person isn't assigned or the application is disabled, the callback code is expired, used or from another browser, or the request didn't come from a trusted proxy with an address of the application.
+          content:
+            text/plain:
+              schema: {type: string}
+        '404':
+          description: No forward-auth application has this id.
+  /forward-auth/{id}/start:
+    servers:
+      - url: /
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+      - {name: rd, in: query, required: true, description: 'The address to return to. Its scheme and host must match a protected address exactly, ignoring case; Halo rebuilds it from that address and the path and query.', schema: {type: string, format: uri}}
+      - {name: state, in: query, required: true, description: The value of the state cookie the check set on the protected address., schema: {type: string}}
+    get:
+      tags: [Forward auth]
+      operationId: startForwardAuth
+      summary: Sign in to a forward-auth application
+      description: 'Halo''s own origin, with the Halo session. Like a SAML sign-in, it checks that the application is active and assigned to the person, the sign-in frequency, and the access policies, then writes the sign-in log and redirects to `/_halo/callback` on the protected address with a code that works once for one minute.'
+      security: []
+      responses:
+        '303':
+          description: To the callback, to `/sign-in` when there is no Halo session or it is older than the sign-in frequency, or to the terms of use.
+        '400':
+          description: The return address isn't a protected address of the application, or the state is missing.
+        '403':
+          description: Disabled, not assigned or blocked by an access policy. Recorded in the sign-in log.
   /saml/sp/{id}/metadata:
     servers:
       - url: /
@@ -3180,7 +3236,7 @@ paths:
       tags: [Applications]
       operationId: createApplication
       summary: Register an application
-      description: 'Roles: application administrator. OpenID Connect web applications and services get a client secret, returned once. SAML applications take their settings in `saml` and are always `web`. Bookmarks only open their `homepage` from the account portal, have no sign-in protocol and are always `web`.'
+      description: 'Roles: application administrator. OpenID Connect web applications and services get a client secret, returned once. SAML applications take their settings in `saml` and are always `web`. Forward-auth applications take their protected addresses in `redirectUris`, open the first one from the account portal unless `homepage` is set, have no secret and are always `web`. Bookmarks only open their `homepage` from the account portal, have no sign-in protocol and are always `web`.'
       requestBody:
         required: true
         content:
@@ -3191,12 +3247,12 @@ paths:
               properties:
                 name: {type: string, maxLength: 200}
                 description: {type: string, maxLength: 2000}
-                protocol: {type: string, enum: [oidc, oauth, saml, bookmark]}
+                protocol: {type: string, enum: [oidc, oauth, saml, forward-auth, bookmark]}
                 type: {type: string, enum: [web, spa, native, service]}
                 homepage: {type: string, format: uri, description: 'Required for bookmarks: the http or https address the bookmark opens.'}
                 redirectUris:
                   type: array
-                  description: Required for OpenID Connect applications other than services. https only, except http://localhost and http://127.0.0.1.
+                  description: Required for OpenID Connect applications other than services, and for forward-auth applications, where they are the protected addresses with only a scheme and host. https only, except http://localhost and http://127.0.0.1.
                   items: {type: string, format: uri}
                 postLogoutUris:
                   type: array
@@ -7360,14 +7416,14 @@ components:
         id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
         description: {type: string}
-        protocol: {type: string, enum: [oidc, oauth, saml, bookmark]}
+        protocol: {type: string, enum: [oidc, oauth, saml, forward-auth, bookmark]}
         type: {type: string, enum: [web, spa, native, service]}
         status: {type: string, enum: [active, disabled]}
         clientId: {type: string, description: 'The client ID, such as `hl_…`, or the entity ID for SAML applications.'}
         homepage: {type: string}
         redirectUris:
           type: array
-          description: For SAML applications, the ACS URLs.
+          description: For SAML applications, the ACS URLs. For forward-auth applications, the protected addresses.
           items: {type: string}
         postLogoutUris:
           type: array
@@ -7381,7 +7437,7 @@ components:
           items: {$ref: '#/components/schemas/Claim'}
         claimMappings:
           type: array
-          description: Claims added, renamed or left out for this application, in ID tokens and userinfo, or SAML assertions. A mapping replaces a claim Halo would send under the same name. Empty values are not sent.
+          description: Claims added, renamed or left out for this application, in ID tokens and userinfo, SAML assertions, or forward-auth headers. A mapping replaces a claim Halo would send under the same name. Empty values are not sent, except forward-auth headers, which are sent empty. Forward-auth header names are letters, digits and hyphens, written as canonical headers, and can't be `Set-Cookie`, `Location`, `Content-*`, `X-Forwarded-*` or another header that proxies or browsers set themselves.
           items: {$ref: '#/components/schemas/ClaimMapping'}
         roles:
           type: array

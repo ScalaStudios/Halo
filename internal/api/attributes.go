@@ -30,6 +30,10 @@ const (
 
 var attributeName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
 
+var headerName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,63}$`)
+
+var proxyHeaders = []string{"Authorization", "Cache-Control", "Connection", "Cookie", "Host", "Location", "Set-Cookie", "Transfer-Encoding", "Upgrade"}
+
 var attributeKinds = map[string]string{
 	"string":  "text",
 	"number":  "a number",
@@ -321,10 +325,16 @@ func (h *handlers) checkMappings(ctx context.Context, app store.Application, map
 	clean := []store.Claim{}
 	for _, m := range mappings {
 		m.Name = strings.TrimSpace(m.Name)
+		forward := app.Protocol == "forward-auth"
+		if forward {
+			m.Name = http.CanonicalHeaderKey(m.Name)
+		}
 		attribute, custom := strings.CutPrefix(m.Source, "attribute.")
 		switch {
 		case m.Name == "" || len(m.Name) > maxClaimName || !utf8.ValidString(m.Name) || strings.ContainsFunc(m.Name, func(c rune) bool { return unicode.IsSpace(c) || unicode.IsControl(c) }):
 			return nil, httpx.Invalid(fmt.Sprintf("%q is not a valid claim name. Use up to %d characters without spaces, such as employee_id.", m.Name, maxClaimName))
+		case forward && (!headerName.MatchString(m.Name) || slices.Contains(proxyHeaders, m.Name) || strings.HasPrefix(m.Name, "Content-") || strings.HasPrefix(m.Name, "X-Forwarded-")):
+			return nil, httpx.Invalid(fmt.Sprintf("%q can't be a header for %s. Use up to 64 letters, digits and hyphens, such as X-Employee-Id, and not a header that proxies or browsers set themselves.", m.Name, app.Name))
 		case app.Protocol != "saml" && slices.Contains(oidc.ReservedClaims, m.Name):
 			return nil, httpx.Invalid(fmt.Sprintf("Halo sets %s itself in every token, so it can't be mapped. Pick another claim name.", m.Name))
 		case slices.ContainsFunc(clean, func(c store.Claim) bool { return c.Name == m.Name }):

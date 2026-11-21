@@ -81,7 +81,11 @@ func (s *Store) SetSAMLSettings(ctx context.Context, appID, entityID string, acs
 }
 
 func (s *Store) SAMLApplication(ctx context.Context, appID string) (Application, error) {
-	a, err := scanApp(s.db.QueryRow(ctx, `select `+appColumns+` from applications where id = $1 and protocol = 'saml'`, appID))
+	return s.protocolApplication(ctx, appID, "saml")
+}
+
+func (s *Store) protocolApplication(ctx context.Context, appID, protocol string) (Application, error) {
+	a, err := scanApp(s.db.QueryRow(ctx, `select `+appColumns+` from applications where id = $1 and protocol = $2`, appID, protocol))
 	if err != nil {
 		return Application{}, notFound(err)
 	}
