@@ -490,7 +490,7 @@ type simulation struct {
 	Policies []simulatedPolicy `json:"policies"`
 }
 
-func (e *engine) lockedOut(ctx context.Context, actorID, actorMethod, ip, trust string) (bool, error) {
+func (e *engine) lockedOut(ctx context.Context, actorID, actorMethod, ip, trust string, compliance *store.DeviceCompliance) (bool, error) {
 	s, err := e.load(ctx)
 	if err != nil {
 		return false, err
@@ -515,6 +515,7 @@ func (e *engine) lockedOut(ctx context.Context, actorID, actorMethod, ip, trust 
 		for _, method := range methods {
 			a := newAttempt(u, nil, method, ip)
 			a.trust = trust
+			a.compliance, a.evidence = complianceOf(compliance)
 			if err := e.assess(ctx, &a, s.zones, 0); err != nil {
 				return false, err
 			}

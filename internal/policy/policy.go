@@ -335,19 +335,20 @@ func restricts(p store.AccessPolicy) bool {
 func (h *handlers) refuseLockout(r *http.Request, tx *store.Store, actor store.User) error {
 	ctx := r.Context()
 	trust, method := "unknown", ""
+	var compliance *store.DeviceCompliance
 	if token := httpx.DeviceToken(r); token != "" {
 		device, _, err := tx.FindDevice(ctx, actor.ID, secret.Hash(token))
 		if err != nil {
 			return err
 		}
 		if device != nil {
-			trust = device.Trust
+			trust, compliance = device.Trust, device.Compliance
 		}
 	}
 	if sess, ok := httpx.CurrentSession(r); ok {
 		method = sess.Method
 	}
-	locked, err := (&engine{st: tx}).lockedOut(ctx, actor.ID, method, httpx.ClientIP(r), trust)
+	locked, err := (&engine{st: tx}).lockedOut(ctx, actor.ID, method, httpx.ClientIP(r), trust, compliance)
 	if err == nil && locked {
 		err = errLockout
 	}
