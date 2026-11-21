@@ -224,14 +224,14 @@ func (s *storage) userinfo(ctx context.Context, info *oidc.UserInfo, u store.Use
 			info.Picture = s.issuer + *u.AvatarURL
 		}
 	}
-	var mappings []store.Claim
+	var app store.Application
 	if clientID != "" {
-		app, err := s.st.GetApplicationByClientID(ctx, clientID)
-		if err != nil && !errors.Is(err, store.ErrNotFound) {
+		var err error
+		if app, err = s.st.GetApplicationByClientID(ctx, clientID); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
-		mappings = app.ClaimMappings
 	}
+	mappings, roles := app.ClaimMappings, app.RoleKeys(u)
 	names := []string{}
 	if slices.Contains(scopes, groupsScope) || len(mappings) > 0 {
 		groups, err := s.st.ListGroupsRaw(ctx)
@@ -246,6 +246,9 @@ func (s *storage) userinfo(ctx context.Context, info *oidc.UserInfo, u store.Use
 	}
 	if slices.Contains(scopes, groupsScope) {
 		info.AppendClaims(groupsScope, names)
+	}
+	if len(roles) > 0 {
+		info.AppendClaims("roles", roles)
 	}
 	for _, m := range mappings {
 		if slices.Contains(ReservedClaims, m.Name) {
@@ -262,7 +265,7 @@ func (s *storage) userinfo(ctx context.Context, info *oidc.UserInfo, u store.Use
 			info.Picture = ""
 		}
 		delete(info.Claims, m.Name)
-		if v := u.ClaimValue(m.Source, names); v != nil {
+		if v := u.ClaimValue(m.Source, names, roles); v != nil {
 			info.AppendClaims(m.Name, v)
 		}
 	}
@@ -343,10 +346,36 @@ func (s *storage) SetIntrospectionFromToken(ctx context.Context, resp *oidc.Intr
 	return nil
 }
 
-func (s *storage) GetPrivateClaimsFromScopes(ctx context.Context, _, _ string, scopes []string) (map[string]any, error) {
+func (s *storage) GetPrivateClaimsFromScopes(ctx context.Context, userID, clientID string, scopes []string) (map[string]any, error) {
 	signingAccessToken(ctx)
 	claims := hookClaims(ctx)
 	claims["scope"] = strings.Join(scopes, " ")
+	app, err := s.st.GetApplicationByClientID(ctx, clientID)
+	if errors.Is(err, store.ErrNotFound) || err == nil && len(app.Roles) == 0 {
+		return claims, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	u, err := s.st.GetUser(ctx, userID)
+	if errors.Is(err, store.ErrNotFound) {
+		return claims, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	roles := app.RoleKeys(u)
+	if len(roles) > 0 {
+		claims["roles"] = roles
+	}
+	for _, m := range app.ClaimMappings {
+		if m.Name == "roles" {
+			delete(claims, m.Name)
+		}
+		if m.Source == "user.roles" && len(roles) > 0 && !slices.Contains(ReservedClaims, m.Name) {
+			claims[m.Name] = roles
+		}
+	}
 	return claims, nil
 }
 

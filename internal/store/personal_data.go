@@ -21,6 +21,7 @@ var PersonalDataSections = []ExportSection{
 	{"signIns", "sign_in_events", `select id, time, email, app_id, result, method, ip, location, device, risk, reason, challenge, impersonator_id, hook from sign_in_events
 		where user_id = $1 or lower(email) = (select lower(email) from users where id = $1) order by time`},
 	{"auditEvents", "audit_events", `select id, time, actor_id, action, summary, changes from audit_events where target_id = $1 order by time, id`},
+	{"applicationRoles", "app_role_users", `select r.app_id, a.name as application, r.key, r.name from app_role_users x join app_roles r on r.id = x.role_id join applications a on a.id = r.app_id where x.user_id = $1 order by a.name, r.key`},
 	{"consents", "consent_grants", `select c.app_id, a.name as application, c.scopes, c.granted_at from consent_grants c join applications a on a.id = c.app_id where c.user_id = $1 order by c.granted_at`},
 	{"tokens", "oidc_tokens", `select kind, client_id, scopes, audience, created_at, expires_at, revoked_at from oidc_tokens where user_id = $1 order by created_at`},
 	{"accessRequests", "access_requests", `select r.id, r.package_id, p.name as package, r.justification, r.duration_days, r.status, r.decided_at, r.decision_note, r.expires_at, r.ended_at, r.end_reason, r.created_at

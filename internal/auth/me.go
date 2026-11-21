@@ -125,13 +125,14 @@ func (h *handler) revokeOtherSessions(w http.ResponseWriter, r *http.Request) er
 }
 
 type myApplication struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	Homepage    string  `json:"homepage"`
-	LaunchURL   string  `json:"launchUrl"`
-	LogoURL     *string `json:"logoUrl"`
-	Favourite   bool    `json:"favourite"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Homepage    string   `json:"homepage"`
+	LaunchURL   string   `json:"launchUrl"`
+	LogoURL     *string  `json:"logoUrl"`
+	Favourite   bool     `json:"favourite"`
+	Roles       []string `json:"roles"`
 }
 
 func (h *handler) myApplications(ctx context.Context, u store.User) ([]myApplication, error) {
@@ -150,7 +151,11 @@ func (h *handler) myApplications(ctx context.Context, u store.User) ([]myApplica
 			if a.Protocol == "saml" {
 				launch = "/saml/launch/" + a.ID
 			}
-			out = append(out, myApplication{ID: a.ID, Name: a.Name, Description: a.Description, Homepage: a.Homepage, LaunchURL: launch, LogoURL: a.LogoURL, Favourite: prefs[a.ID].Favourite})
+			roles := []string{}
+			for _, r := range a.RolesOf(u) {
+				roles = append(roles, r.Name)
+			}
+			out = append(out, myApplication{ID: a.ID, Name: a.Name, Description: a.Description, Homepage: a.Homepage, LaunchURL: launch, LogoURL: a.LogoURL, Favourite: prefs[a.ID].Favourite, Roles: roles})
 		}
 	}
 	slices.SortStableFunc(out, func(a, b myApplication) int {

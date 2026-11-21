@@ -3414,6 +3414,93 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /applications/{id}/roles:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Applications]
+      operationId: createApplicationRole
+      summary: Define a role in an application
+      description: 'Roles: application administrator. Not for service applications or bookmarks. People and members of the groups receive the key in a `roles` claim in ID tokens, userinfo and JWT access tokens, a `roles` SAML attribute and the SCIM `roles` attribute. A role doesn''t let anyone sign in: the groups assigned to the application still decide that. Writes an `application.role.create` audit event.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, name]
+              properties:
+                key: {type: string, pattern: '^[A-Za-z][A-Za-z0-9_.:-]{0,63}$', description: What the application receives. Can't be changed later., examples: [billing.admin]}
+                name: {type: string, maxLength: 100, examples: [Billing administrator]}
+                description: {type: string, maxLength: 500}
+                groupIds:
+                  type: array
+                  items: {type: string}
+                userIds:
+                  type: array
+                  maxItems: 200
+                  items: {type: string}
+      responses:
+        '201':
+          description: The role.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApplicationRole'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /applications/{id}/roles/{roleId}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+      - name: roleId
+        in: path
+        required: true
+        schema: {type: string}
+    patch:
+      tags: [Applications]
+      operationId: updateApplicationRole
+      summary: Rename an application role or change who holds it
+      description: 'Roles: application administrator. Send only the fields to change; `groupIds` and `userIds` replace the whole list. The key can''t be changed. Writes an `application.role.update` audit event with the old and new values.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string, maxLength: 100}
+                description: {type: string, maxLength: 500}
+                groupIds:
+                  type: array
+                  items: {type: string}
+                userIds:
+                  type: array
+                  maxItems: 200
+                  items: {type: string}
+      responses:
+        '200':
+          description: The role.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApplicationRole'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Applications]
+      operationId: deleteApplicationRole
+      summary: Delete an application role and its assignments
+      description: 'Roles: application administrator. The role leaves tokens and assertions issued from now on. Writes an `application.role.delete` audit event.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /applications/{id}/logo:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -7118,11 +7205,28 @@ components:
         name: {type: string, maxLength: 256, description: 'The claim or SAML attribute name, without spaces. OpenID Connect applications can''t map `sub`, `iss`, `aud`, `exp`, `iat`, `nbf`, `jti`, `nonce`, `azp`, `acr`, `amr`, `sid`, `auth_time`, `at_hash`, `c_hash`, `act`, `client_id` or `scope`.', examples: [employee_id]}
         source:
           type: string
-          description: '`user.id`, `user.email`, `user.emailVerified`, `user.name`, `user.givenName`, `user.familyName`, `user.title`, `user.department`, `user.location`, `user.groups` (group names), `attribute.<name>` for a custom attribute, or `none` to leave out a claim Halo would otherwise send under this name.'
+          description: '`user.id`, `user.email`, `user.emailVerified`, `user.name`, `user.givenName`, `user.familyName`, `user.title`, `user.department`, `user.location`, `user.groups` (group names), `user.roles` (keys of the application roles the person holds), `attribute.<name>` for a custom attribute, or `none` to leave out a claim Halo would otherwise send under this name.'
           examples: [attribute.employeeNumber]
+    ApplicationRole:
+      type: object
+      required: [id, key, name, description, groupIds, userIds]
+      properties:
+        id: {type: string, examples: [arl_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        key: {type: string, description: The value sent in the `roles` claim and SAML attribute., examples: [billing.admin]}
+        name: {type: string}
+        description: {type: string}
+        groupIds:
+          type: array
+          description: Members of these groups hold the role.
+          items: {type: string}
+        userIds:
+          type: array
+          description: People who hold the role directly.
+          items: {type: string}
     Application:
       type: object
       required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent, backchannelLogoutUri, backchannelLogoutSessionRequired]
+      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, roles, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent]
       properties:
         id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
@@ -7150,6 +7254,10 @@ components:
           type: array
           description: Claims added, renamed or left out for this application, in ID tokens and userinfo, or SAML assertions. A mapping replaces a claim Halo would send under the same name. Empty values are not sent.
           items: {$ref: '#/components/schemas/ClaimMapping'}
+        roles:
+          type: array
+          description: Roles defined in the application, by name. Separate from Halo's administrator roles.
+          items: {$ref: '#/components/schemas/ApplicationRole'}
         groupIds:
           type: array
           items: {type: string}
@@ -7226,7 +7334,7 @@ components:
             certificateExpiresAt: {type: string, format: date-time}
     MyApplication:
       type: object
-      required: [id, name, description, homepage, launchUrl, logoUrl, favourite]
+      required: [id, name, description, homepage, launchUrl, logoUrl, favourite, roles]
       properties:
         id: {type: string}
         name: {type: string}
@@ -7235,6 +7343,10 @@ components:
         launchUrl: {type: string, description: 'The homepage, or `/saml/launch/{id}` for SAML applications.'}
         logoUrl: {type: [string, 'null']}
         favourite: {type: boolean}
+        roles:
+          type: array
+          description: Names of the roles you hold in the application.
+          items: {type: string}
     Collection:
       type: object
       required: [id, name, applicationIds, groupIds, createdAt]

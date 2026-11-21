@@ -116,6 +116,7 @@ type Application struct {
 	SetupGuide     string       `json:"setupGuide"`
 	LogoURL        *string      `json:"logoUrl"`
 	ClaimMappings  []Claim      `json:"claimMappings"`
+	Roles          []AppRole    `json:"roles"`
 
 	BackchannelLogoutURI             string `json:"backchannelLogoutUri"`
 	BackchannelLogoutSessionRequired bool   `json:"backchannelLogoutSessionRequired"`

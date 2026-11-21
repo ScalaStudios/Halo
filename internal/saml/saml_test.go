@@ -268,6 +268,24 @@ func TestIdentityProvider(t *testing.T) {
 		!slices.Equal(attribute(a, "mail"), []string{ada.Name}) || attribute(a, "memberOf") != nil || attribute(a, "costCentre") != nil {
 		t.Fatalf("mapped attributes: %+v", a.AttributeStatements)
 	}
+	app.ClaimMappings = []store.Claim{{Name: "appRoles", Source: "user.roles"}}
+	must(st.UpdateApplication(ctx, app))
+	_, err = st.CreateAppRole(ctx, app.ID, store.AppRole{Key: "agent", Name: "Agent", GroupIDs: []string{group.ID}})
+	must(err)
+	_, err = st.CreateAppRole(ctx, app.ID, store.AppRole{Key: "supervisor", Name: "Supervisor", UserIDs: []string{ada.ID}})
+	must(err)
+	a, _, _ = assertion(call("GET", redirect.String(), passkey, nil), sp, request.ID)
+	if !slices.Equal(attribute(a, "roles"), []string{"agent", "supervisor"}) || !slices.Equal(attribute(a, "appRoles"), []string{"agent", "supervisor"}) {
+		t.Fatalf("role attributes: %+v", a.AttributeStatements)
+	}
+	groupsAsRoles := store.SAMLSettings{NameIDFormat: "persistent", SignResponse: true, Encryption: "off", Attributes: store.SAMLAttributes{Email: "mail", Groups: "roles"}}
+	must(st.SetSAMLSettings(ctx, app.ID, entityID, []string{acsURL.String()}, groupsAsRoles))
+	a, _, _ = assertion(call("GET", redirect.String(), passkey, nil), sp, request.ID)
+	if !slices.Equal(attribute(a, "roles"), []string{"Support"}) {
+		t.Fatalf("a groups attribute named roles must win over the default roles attribute: %+v", a.AttributeStatements)
+	}
+	groupsAsRoles.Attributes.Groups = "memberOf"
+	must(st.SetSAMLSettings(ctx, app.ID, entityID, []string{acsURL.String()}, groupsAsRoles))
 	app.ClaimMappings = []store.Claim{}
 	must(st.UpdateApplication(ctx, app))
 

@@ -116,7 +116,7 @@ func (h *handlers) view(ctx context.Context, app store.Application) (any, error)
 	if err != nil {
 		return nil, err
 	}
-	app.Claims = store.MapClaims(store.SAMLClaims(settings), app.ClaimMappings)
+	app.Claims = app.Mapped(store.SAMLClaims(settings))
 	return struct {
 		store.Application
 		SAML samlView `json:"saml"`

@@ -74,6 +74,8 @@ func TestPersonalDataExportAndPermanentDeletion(t *testing.T) {
 	must(t, st.SetGroupOwners(ctx, e.group.ID, []string{erin.ID}))
 	must(t, st.GrantConsent(ctx, erin.ID, app.ID, []string{"openid", "email"}))
 	must(t, st.SetAppPreferences(ctx, erin.ID, []string{app.ID}, nil))
+	_, err = st.CreateAppRole(ctx, app.ID, store.AppRole{Key: "approver", Name: "Approver", UserIDs: []string{erin.ID}})
+	must(t, err)
 	must(t, st.SetSecurityEmailOptOuts(ctx, erin.ID, []string{"new_sign_in"}))
 	_, err = st.ClaimSecurityEmail(ctx, erin.ID, "email_changed", "erin.erasure@example.com", time.Now(), time.Minute)
 	must(t, err)
