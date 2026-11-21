@@ -22,6 +22,8 @@ var (
 	RefreshRefused    = NewCounter("halo_refresh_tokens_refused_total", "Refresh tokens refused because they were unknown, expired, revoked or already used.")
 	SCIMRuns          = NewCounter("halo_scim_outbound_runs_total", "Outbound SCIM runs by result.", "result")
 	SCIMRecords       = NewCounter("halo_scim_outbound_records_total", "Users and groups that outbound SCIM changed, by resource and action.", "resource", "action")
+	LDAPRuns          = NewCounter("halo_ldap_sync_runs_total", "LDAP directory sync runs by result. Dry runs are not counted.", "result")
+	LDAPChanges       = NewCounter("halo_ldap_sync_changes_total", "People, groups and memberships that LDAP directory sync changed, by action.", "action")
 	WebhookDeliveries = NewCounter("halo_webhook_deliveries_total", "Webhook delivery attempts by outcome: delivered, pending for a retry, or failed for good.", "outcome")
 	LogExport         = NewCounter("halo_log_export_events_total", "Sign-in and audit events for the log exporter by outcome: sent, failed and retried later, rejected by the collector, or dropped from a full queue.", "outcome")
 	RateLimited       = NewCounter("halo_rate_limited_requests_total", "Requests refused by the API rate limit, by scope.", "scope")
@@ -38,6 +40,7 @@ func init() {
 	RefreshRefused.Add(0)
 	for _, v := range []string{"success", "failure"} {
 		SCIMRuns.Add(0, v)
+		LDAPRuns.Add(0, v)
 	}
 	for _, v := range []string{"delivered", "pending", "failed"} {
 		WebhookDeliveries.Add(0, v)

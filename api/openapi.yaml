@@ -65,7 +65,7 @@ tags:
   - name: Service accounts
     description: Non-human accounts, their API keys and the federated credentials that let workloads sign in without one.
   - name: Provisioning
-    description: Outbound SCIM provisioning to applications.
+    description: Outbound SCIM provisioning to applications, and LDAP directory sync into Halo.
   - name: Identity providers
     description: Google, Microsoft Entra, GitHub and generic OpenID Connect providers people sign in with.
   - name: Settings
@@ -2401,7 +2401,7 @@ paths:
       tags: [Users]
       operationId: updateUser
       summary: Change a person's profile
-      description: 'Roles: user or helpdesk administrator. Helpdesk administrators can change title, department, location and custom attributes only. Only a global administrator can change a person who holds an administrator role. Send only the fields to change; an empty `managerId` removes the manager. Limited roles apply.'
+      description: 'Roles: user or helpdesk administrator. Helpdesk administrators can change title, department, location and custom attributes only. Only a global administrator can change a person who holds an administrator role. Send only the fields to change; an empty `managerId` removes the manager. Limited roles apply. Refused with `ERR_CONFLICT` for people synced from an LDAP directory, whose `directory` is set: change them in the directory.'
       requestBody:
         required: true
         content:
@@ -5437,6 +5437,124 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotConfigured'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /ldap-directories:
+    get:
+      tags: [Provisioning]
+      operationId: listLDAPDirectories
+      summary: List LDAP directories
+      description: 'Roles: any administrator. Bind passwords are never returned.'
+      responses:
+        '200':
+          description: The directories, by name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/LDAPDirectory'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Provisioning]
+      operationId: createLDAPDirectory
+      summary: Add an LDAP directory to sync people and groups from
+      description: 'Roles: user administrator (not limited to groups), with a recent sign-in. Halo reads the directory with a read-only bind account and never writes to it or creates passwords. The bind password is stored sealed with `HALO_SECRET_KEY` and re-sealed when the key rotates. Saving doesn''t sync: preview with `POST /ldap-directories/{id}/sync?dryRun=true`, then turn on `enabled` or sync now.'
+      requestBody: {$ref: '#/components/requestBodies/LDAPDirectoryInput'}
+      responses:
+        '201':
+          description: The directory.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LDAPDirectory'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409':
+          description: '`ERR_CONFLICT`: a directory with that name exists.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /ldap-directories/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Provisioning]
+      operationId: updateLDAPDirectory
+      summary: Replace a directory's settings
+      description: 'Roles: user administrator (not limited to groups), with a recent sign-in. Leave `password` empty to keep the current one.'
+      requestBody: {$ref: '#/components/requestBodies/LDAPDirectoryInput'}
+      responses:
+        '200':
+          description: The directory.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LDAPDirectory'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: '`ERR_CONFLICT`: a directory with that name exists.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Provisioning]
+      operationId: deleteLDAPDirectory
+      summary: Delete a directory and its sync history
+      description: 'Roles: user administrator (not limited to groups), with a recent sign-in. The people and groups it synced stay in Halo, keep their status and memberships, and can be edited in Halo again.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /ldap-directories/{id}/sync:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Provisioning]
+      operationId: syncLDAPDirectory
+      summary: Sync a directory now, or preview the sync
+      description: |-
+        Roles: user administrator (not limited to groups). Runs even when scheduled syncs are off, and also every `intervalMinutes` while `enabled` is on. Halo connects over LDAPS or StartTLS unless `security` is `none`, binds, and reads people and groups with the simple paged results control, 500 entries a page. It then compares every entry with Halo and changes only what differs, in one transaction:
+
+        - Creates people as invited, with their mapped profile fields, manager and custom attributes, marked as synced from the directory so their profile can't be changed in Halo. Someone already in Halo with the same email address who isn't synced from this directory is left alone and listed in `skipped`.
+        - Updates people whose mapped attributes changed.
+        - Suspends people and ends their sessions when they leave the directory, fall outside the people filter, or are disabled in Active Directory (`userAccountControl` flag 2), and restores people it suspended when they are back. It never suspends an emergency access account or the last active global administrator. Leaver and joiner lifecycle rules run for these changes as for any other.
+        - Creates an assigned group for each directory group and keeps its members from this directory in step. A Halo group with the same name that isn't synced from this directory is left alone. Members added in Halo who aren't synced from this directory stay.
+
+        When the search returns nobody but people were synced before, the sync fails and suspends nobody. Each change writes an `ldap.*` audit event. With `dryRun=true` nothing is changed or recorded, and the response shows what a sync would do. A failed connection, bind or search changes nothing and is reported in `error` with status 200.
+      parameters:
+        - {name: dryRun, in: query, schema: {type: boolean}}
+      responses:
+        '200':
+          description: The result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/LDAPSyncReport'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /ldap-directories/{id}/syncs:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Provisioning]
+      operationId: listLDAPSyncs
+      summary: List a directory's recent syncs
+      description: 'Roles: any administrator. The 50 most recent syncs, newest first. Syncs are kept for 90 days; dry runs are not recorded.'
+      responses:
+        '200':
+          description: The syncs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/LDAPSync'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /identity-providers:
     get:
       tags: [Identity providers]
@@ -6726,6 +6844,27 @@ components:
               clientSecret: {type: string, maxLength: 1024, description: 'The client secret, for `intune`. Required when adding one.'}
               maxAgeMinutes: {type: integer, minimum: 60, maximum: 43200, default: 1440}
               rotateSecret: {type: boolean, description: 'Give an `agent` source a new signing secret.'}
+    LDAPDirectoryInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name, url, bindDn, userBaseDn, mapping]
+            properties:
+              name: {type: string, maxLength: 100, examples: [Active Directory]}
+              url: {type: string, maxLength: 300, description: '`ldaps://host[:port]` for `ldaps`, `ldap://host[:port]` otherwise.', examples: ['ldaps://dc1.example.com']}
+              security: {type: string, enum: [ldaps, starttls, none], default: ldaps, description: '`none` sends the bind password unencrypted. Choose it only for a directory on the same host or a test network.'}
+              caCertificate: {type: string, maxLength: 65536, description: 'PEM certificate authorities to trust for this directory instead of the system ones.'}
+              bindDn: {type: string, maxLength: 500, examples: ['CN=halo-sync,OU=Service Accounts,DC=example,DC=com']}
+              password: {type: string, maxLength: 1024, writeOnly: true, description: The bind password. Required when adding a directory. Stored sealed and never returned.}
+              userBaseDn: {type: string, maxLength: 500, examples: ['OU=Staff,DC=example,DC=com']}
+              userFilter: {type: string, maxLength: 1000, default: '(&(objectClass=person)(mail=*))'}
+              groupBaseDn: {type: string, maxLength: 500, description: Leave empty to sync people only.}
+              groupFilter: {type: string, maxLength: 1000, default: '(|(objectClass=group)(objectClass=groupOfNames))'}
+              mapping: {$ref: '#/components/schemas/LDAPMapping'}
+              enabled: {type: boolean, default: false, description: Sync every `intervalMinutes`.}
+              intervalMinutes: {type: integer, minimum: 15, maximum: 1440, default: 60}
     NotificationRuleInput:
       required: true
       content:
@@ -7355,7 +7494,10 @@ components:
           description: Applications the person is assigned to through their groups.
           items: {type: string}
         managerId: {type: [string, 'null']}
-        source: {type: string, examples: [Halo, 'SCIM · Okta', Google]}
+        source: {type: string, examples: [Halo, 'SCIM · Okta', 'LDAP · Active Directory', Google]}
+        directory:
+          oneOf: [{$ref: '#/components/schemas/NamedRef'}, {type: 'null'}]
+          description: The LDAP directory this person is synced from. Their profile can't be changed in Halo while it is set.
         createdAt: {type: string, format: date-time}
         lastSignInAt: {type: [string, 'null'], format: date-time}
         avatarUrl: {type: [string, 'null'], description: 'Path of the profile picture, or null. With the `profile` scope, ID tokens and userinfo carry the absolute URL as `picture`.', examples: ['/api/v1/users/usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9/avatar?v=1790000000']}
@@ -8268,6 +8410,90 @@ components:
         createdBy: {type: [string, 'null']}
         createdAt: {type: string, format: date-time}
         lastUsedAt: {type: [string, 'null'], format: date-time, description: The last time a workload exchanged a token through it.}
+    LDAPMapping:
+      type: object
+      required: [id, email, name]
+      description: The directory attribute for each Halo field. Leave an optional field empty to leave it out of the sync.
+      properties:
+        id: {type: string, description: 'A stable entry ID that survives renames and moves.', examples: [objectGUID, entryUUID]}
+        email: {type: string, examples: [mail]}
+        name: {type: string, examples: [displayName, cn]}
+        title: {type: string, examples: [title]}
+        department: {type: string, examples: [department]}
+        location: {type: string, examples: [l]}
+        manager: {type: string, description: An attribute holding the manager's DN. The manager must be synced from the same directory., examples: [manager]}
+        groupName: {type: string, default: cn}
+        member: {type: string, default: member, description: An attribute holding member DNs.}
+        attributes:
+          type: object
+          description: 'Custom user attribute names to directory attributes. Self-service attributes can''t be mapped. Dates are read as YYYY-MM-DD or LDAP generalized time, booleans as TRUE or FALSE.'
+          additionalProperties: {type: string}
+          examples: [{employeeNumber: employeeNumber}]
+    LDAPDirectory:
+      type: object
+      required: [id, name, url, security, caCertificate, bindDn, userBaseDn, userFilter, groupBaseDn, groupFilter, mapping, enabled, intervalMinutes, syncedAt, syncError, createdAt, updatedAt, people, groups]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        url: {type: string}
+        security: {type: string, enum: [ldaps, starttls, none]}
+        caCertificate: {type: string}
+        bindDn: {type: string}
+        userBaseDn: {type: string}
+        userFilter: {type: string}
+        groupBaseDn: {type: string}
+        groupFilter: {type: string}
+        mapping: {$ref: '#/components/schemas/LDAPMapping'}
+        enabled: {type: boolean}
+        intervalMinutes: {type: integer}
+        syncedAt: {type: [string, 'null'], format: date-time, description: When the last sync started.}
+        syncError: {type: string, description: Why the last sync failed, empty after a successful one.}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        people: {type: integer, description: People synced from the directory.}
+        groups: {type: integer, description: Groups synced from the directory.}
+    LDAPSync:
+      type: object
+      required: [id, startedAt, finishedAt, result, error, counts, skipped]
+      properties:
+        id: {type: string}
+        startedAt: {type: string, format: date-time}
+        finishedAt: {type: string, format: date-time}
+        result: {type: string, enum: [succeeded, failed]}
+        error: {type: string}
+        counts:
+          type: object
+          required: [created, updated, suspended, restored, groupsCreated, groupsRenamed, membersAdded, membersRemoved]
+          properties:
+            created: {type: integer}
+            updated: {type: integer}
+            suspended: {type: integer}
+            restored: {type: integer}
+            groupsCreated: {type: integer}
+            groupsRenamed: {type: integer}
+            membersAdded: {type: integer}
+            membersRemoved: {type: integer}
+        skipped:
+          type: array
+          description: Up to 100 entries Halo left alone, and why.
+          items: {type: string}
+    LDAPSyncReport:
+      allOf:
+        - {$ref: '#/components/schemas/LDAPSync'}
+        - type: object
+          required: [dryRun, changes]
+          properties:
+            dryRun: {type: boolean}
+            changes:
+              type: array
+              description: Up to 1,000 changes the sync made, or would make in a dry run.
+              items:
+                type: object
+                required: [action, target, detail]
+                properties:
+                  action: {type: string, enum: [user.create, user.update, user.suspend, user.restore, group.create, group.update]}
+                  target: {type: string, description: The person or group.}
+                  detail: {type: string}
     AppProvisioning:
       type: object
       required: [appId, baseUrl, enabled, lastSyncAt, lastError, created, updated, deactivated, provisioned, groupIds, groupsCreated, groupsUpdated, groupsDeleted, updatedAt]

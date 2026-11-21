@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Bot } from "lucide-react";
+import { LDAPDirectories } from "@/components/provisioning/ldap-directories";
 import { OutboundTable } from "@/components/provisioning/outbound";
 import { ActivityList, activeKeys, canProvision, lastUsed } from "@/components/provisioning/shared";
 import { buttonClasses } from "@/components/ui/button";
@@ -11,19 +12,21 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SectionTitle } from "@/components/ui/section-title";
 import { apiGet } from "@/lib/api/server";
 import { formatRelative, pluralize } from "@/lib/format";
-import type { AppProvisioning, ServiceAccount } from "@/lib/provisioning-types";
-import type { Application, AuditEvent, Group, Organization } from "@/lib/types";
+import type { AppProvisioning, LDAPDirectory, ServiceAccount } from "@/lib/provisioning-types";
+import type { Application, Attribute, AuditEvent, Group, Organization } from "@/lib/types";
 
 export const metadata = { title: "Provisioning" };
 
 export default async function ProvisioningPage() {
-  const [org, accounts, audit, applications, configs, groups] = await Promise.all([
+  const [org, accounts, audit, applications, configs, groups, directories, attributes] = await Promise.all([
     apiGet<Organization>("/organization"),
     apiGet<ServiceAccount[]>("/service-accounts"),
     apiGet<AuditEvent[]>("/audit"),
     apiGet<Application[]>("/applications"),
     apiGet<AppProvisioning[]>("/provisioning/applications"),
     apiGet<Group[]>("/groups"),
+    apiGet<LDAPDirectory[]>("/ldap-directories"),
+    apiGet<Attribute[]>("/attributes", []),
   ]);
   const connectors = accounts
     .map((account) => ({ account, keys: activeKeys(account.keys).filter((key) => key.scopes.includes("scim")) }))
@@ -40,7 +43,7 @@ export default async function ProvisioningPage() {
     <div className="flex flex-col gap-8">
       <PageHeader
         title="Provisioning"
-        description="SCIM 2.0 in both directions: your HR system or identity provider keeps people in Halo current, and Halo keeps accounts in your applications current."
+        description="SCIM 2.0 in both directions and LDAP directory sync: your HR system, identity provider or directory keeps people in Halo current, and Halo keeps accounts in your applications current."
       />
 
       <section className="flex flex-col gap-6">
@@ -117,6 +120,8 @@ export default async function ProvisioningPage() {
           <ActivityList events={activity} actorNames={actorNames} empty="No SCIM changes yet. They appear here as soon as a connector creates or updates someone." />
         </Card>
       </section>
+
+      <LDAPDirectories directories={directories} attributes={attributes} />
 
       <section className="flex flex-col gap-6">
         <SectionTitle

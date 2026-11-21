@@ -9,7 +9,7 @@ export default function Loading() {
   return (
     <PageSkeleton
       title="Provisioning"
-      description="SCIM 2.0 in both directions: your HR system or identity provider keeps people in Halo current, and Halo keeps accounts in your applications current."
+      description="SCIM 2.0 in both directions and LDAP directory sync: your HR system, identity provider or directory keeps people in Halo current, and Halo keeps accounts in your applications current."
     >
       <section className="flex flex-col gap-6">
         <SectionTitle title="Inbound" description="Workday, BambooHR, Okta or Microsoft Entra ID create, update and deactivate people and groups in Halo." />
@@ -52,6 +52,13 @@ export default function Loading() {
           />
           <ListSkeleton rows={4} className="border-t border-border" />
         </Card>
+      </section>
+      <section className="flex flex-col gap-6">
+        <SectionTitle
+          title="LDAP directories"
+          description="Halo reads people and groups from Active Directory or OpenLDAP, keeps their profiles and group members in step, and suspends people who leave or are disabled. It never writes to the directory."
+        />
+        <TableSkeleton simple columns={5} rows={1} />
       </section>
       <section className="flex flex-col gap-6">
         <SectionTitle title="Outbound" description={<SkeletonText chars={190} />} />

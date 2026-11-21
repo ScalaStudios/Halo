@@ -40,6 +40,7 @@ export type User = {
   guest: boolean;
   sponsor: NamedRef | null;
   expiresAt: string | null;
+  directory: NamedRef | null;
   attributes: Record<string, AttributeValue>;
   impersonation?: Impersonation;
 };

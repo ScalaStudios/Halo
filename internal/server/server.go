@@ -16,6 +16,7 @@ import (
 	"halo/internal/governance"
 	"halo/internal/httpx"
 	"halo/internal/jobs"
+	"halo/internal/ldapsync"
 	"halo/internal/logexport"
 	"halo/internal/mail"
 	"halo/internal/metrics"
@@ -74,6 +75,9 @@ var sensitiveRoutes = []string{
 	"POST /api/v1/compliance-sources",
 	"PUT /api/v1/compliance-sources/{id}",
 	"DELETE /api/v1/compliance-sources/{id}",
+	"POST /api/v1/ldap-directories",
+	"PUT /api/v1/ldap-directories/{id}",
+	"DELETE /api/v1/ldap-directories/{id}",
 	"PUT /api/v1/applications/{id}/hook",
 	"DELETE /api/v1/applications/{id}/hook",
 }
@@ -103,7 +107,7 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 	})
 
 	apiMux := http.NewServeMux()
-	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, governance.Register, policy.Register, compliance.Register, apikeys.Register, provisioning.Register, settings.Register, webhooks.Register, logexport.Register, oidc.Register, sshca.Register, avatars.Register, approval.Register} {
+	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, governance.Register, policy.Register, compliance.Register, apikeys.Register, provisioning.Register, ldapsync.Register, settings.Register, webhooks.Register, logexport.Register, oidc.Register, sshca.Register, avatars.Register, approval.Register} {
 		if err := register(apiMux, deps); err != nil {
 			return nil, err
 		}

@@ -39,6 +39,7 @@ type User struct {
 	Guest         bool       `json:"guest"`
 	Sponsor       *NamedRef  `json:"sponsor"`
 	ExpiresAt     *time.Time `json:"expiresAt"`
+	Directory     *NamedRef  `json:"directory"`
 
 	EligibleRoles  []string            `json:"eligibleRoles"`
 	Activations    []RoleActivation    `json:"activations"`
