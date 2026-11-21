@@ -20,6 +20,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"halo/internal/httpx"
+	halosaml "halo/internal/saml"
 	"halo/internal/secret"
 	"halo/internal/store"
 )
@@ -66,6 +67,9 @@ func (h *handler) browser(fn func(http.ResponseWriter, *http.Request, *store.Fed
 	return func(w http.ResponseWriter, r *http.Request) error {
 		var s store.FederationState
 		location, err := fn(w, r, &s)
+		if err == nil && location == "" {
+			return nil
+		}
 		if err != nil {
 			var e *httpx.Error
 			if !errors.As(err, &e) {
@@ -101,17 +105,29 @@ func (h *handler) federatedStart(w http.ResponseWriter, r *http.Request, s *stor
 	if err != nil {
 		return "", err
 	}
+	state := secret.Token(32)
+	begin := func() error {
+		if err := h.st.CreateFederationState(ctx, state, *s); err != nil {
+			return err
+		}
+		http.SetCookie(w, h.federationCookie(state, int(store.FederationStateLifetime.Seconds())))
+		return nil
+	}
+	if p.Kind == "saml" {
+		return halosaml.Begin(ctx, w, h.st, h.cfg, p, state, func(requestID string) error {
+			s.ProviderID, s.Nonce = p.ID, requestID
+			return begin()
+		})
+	}
 	party, err := h.relyingParty(ctx, p)
 	if err != nil {
 		slog.WarnContext(ctx, "identity provider unreachable", "provider", p.ID, "error", err)
 		return "", errProviderUnreachable
 	}
-	state := secret.Token(32)
 	s.ProviderID, s.CodeVerifier, s.Nonce = p.ID, secret.Token(32), secret.Token(16)
-	if err := h.st.CreateFederationState(ctx, state, *s); err != nil {
+	if err := begin(); err != nil {
 		return "", err
 	}
-	http.SetCookie(w, h.federationCookie(state, int(store.FederationStateLifetime.Seconds())))
 	opts := []rp.AuthURLOpt{rp.WithCodeChallenge(oidc.NewSHACodeChallenge(s.CodeVerifier))}
 	if p.Kind != "github" {
 		opts = append(opts, rp.AuthURLOpt(rp.WithURLParam("nonce", s.Nonce)))
@@ -120,9 +136,30 @@ func (h *handler) federatedStart(w http.ResponseWriter, r *http.Request, s *stor
 }
 
 func (h *handler) federatedCallback(w http.ResponseWriter, r *http.Request, s *store.FederationState) (string, error) {
-	ctx := r.Context()
 	q := r.URL.Query()
-	state := q.Get("state")
+	return h.federatedReturn(w, r, s, q.Get("state"), func(p store.IdentityProvider, a attempt) (federatedProfile, error) {
+		if p.Kind == "saml" {
+			return federatedProfile{}, errors.New("the OpenID Connect callback received a SAML sign-in")
+		}
+		if code := q.Get("error"); code != "" {
+			return federatedProfile{}, h.reject(r, a, p.Name+" returned "+code+".", errFederationCancelled)
+		}
+		return h.exchange(r.Context(), p, q.Get("code"), *s)
+	})
+}
+
+func (h *handler) samlCallback(w http.ResponseWriter, r *http.Request, s *store.FederationState) (string, error) {
+	return h.federatedReturn(w, r, s, r.PostFormValue("RelayState"), func(p store.IdentityProvider, _ attempt) (federatedProfile, error) {
+		if p.Kind != "saml" || p.ID != r.PathValue("id") {
+			return federatedProfile{}, errors.New("the SAML response arrived for another identity provider")
+		}
+		profile, err := halosaml.SignIn(r.Context(), h.st, h.cfg, p, r.PostFormValue("SAMLResponse"), s.Nonce)
+		return federatedProfile{subject: profile.Subject, email: profile.Email, name: profile.Name, verified: profile.Email != "", claims: profile.Claims}, err
+	})
+}
+
+func (h *handler) federatedReturn(w http.ResponseWriter, r *http.Request, s *store.FederationState, state string, verify func(store.IdentityProvider, attempt) (federatedProfile, error)) (string, error) {
+	ctx := r.Context()
 	cookie, _ := r.Cookie(federationCookie)
 	http.SetCookie(w, h.federationCookie("", -1))
 	if state == "" || cookie == nil || !secret.Equal([]byte(cookie.Value), []byte(state)) {
@@ -148,10 +185,10 @@ func (h *handler) federatedCallback(w http.ResponseWriter, r *http.Request, s *s
 		return "", err
 	}
 	a := attempt{method: "federated", app: app, request: s.AuthRequest}
-	if code := q.Get("error"); code != "" {
-		return "", h.reject(r, a, p.Name+" returned "+code+".", errFederationCancelled)
+	profile, err := verify(p, a)
+	if e := (*httpx.Error)(nil); errors.As(err, &e) {
+		return "", err
 	}
-	profile, err := h.exchange(ctx, p, q.Get("code"), *s)
 	if err != nil {
 		slog.WarnContext(ctx, "federated sign-in not verified", "provider", p.ID, "error", err)
 		return "", h.reject(r, a, "Halo could not verify the response from "+p.Name+".", errFederationFailed)

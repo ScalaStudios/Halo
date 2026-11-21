@@ -129,6 +129,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		"GET /api/v1/auth/providers":                   h.providers,
 		"GET /api/v1/auth/federated/{id}/start":        h.browser(h.federatedStart),
 		"GET " + FederationCallbackPath:                h.browser(h.federatedCallback),
+		"POST /api/v1/auth/federated/{id}/acs":         h.browser(h.samlCallback),
 		"GET /api/v1/me/identities":                    h.myIdentities,
 		"DELETE /api/v1/me/identities/{id}":            h.unlinkIdentity,
 		"GET /api/v1/identity-providers":               h.listProviders,

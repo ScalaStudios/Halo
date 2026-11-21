@@ -7,7 +7,7 @@ export default function Loading() {
       <Card className="p-6">
         <FieldSkeleton
           label="Callback URL"
-          hint="Register this exact URL in each provider's app registration: as the redirect URI for Google, Microsoft Entra and OpenID Connect, and as the authorization callback URL for GitHub."
+          hint="Register this exact URL in each provider's app registration: as the redirect URI for Google, Microsoft Entra and OpenID Connect, and as the authorization callback URL for GitHub. SAML providers get their own metadata URL instead, shown when you edit one."
         />
       </Card>
       <TableSkeleton simple columns={6} rows={2} />

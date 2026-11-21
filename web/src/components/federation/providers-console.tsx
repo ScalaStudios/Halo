@@ -1,7 +1,7 @@
 "use client";
 
 import { Ellipsis, LogIn, Network, Pencil, Plus, Power, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { providerStartUrl } from "@/components/auth/providers";
 import { useMutation } from "@/components/console/use-mutation";
 import { Badge, Tag } from "@/components/ui/badge";
@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/card";
 import { CopyField } from "@/components/ui/copy-field";
 import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Checkbox, Field, Input, Select } from "@/components/ui/input";
+import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { PageHeader } from "@/components/ui/page-header";
 import { SimpleTable } from "@/components/ui/simple-table";
@@ -25,9 +25,14 @@ const KIND: Record<ProviderKind, { label: string; name: string; scopes: string; 
   microsoft: { label: "Microsoft Entra ID", name: "Microsoft", scopes: "openid email profile", description: "Work accounts from one Entra tenant." },
   github: { label: "GitHub", name: "GitHub", scopes: "read:user user:email", description: "GitHub.com or GitHub Enterprise Server." },
   oidc: { label: "OpenID Connect", name: "", scopes: "openid email profile", description: "Okta, Keycloak, Authentik or any OIDC provider." },
+  saml: { label: "SAML 2.0", name: "", scopes: "", description: "Universities, government schemes and enterprise IdPs that only speak SAML." },
 };
 
 const FIELD: Record<ProfileField, string> = { name: "Name", title: "Job title", department: "Department", location: "Location" };
+
+type Source = "url" | "xml" | "values";
+
+const SOURCES: Record<Source, string> = { url: "Metadata URL", xml: "Metadata file or XML", values: "Entity ID, SSO URL and certificate" };
 
 const ENTRA = /^https:\/\/login\.microsoftonline\.com\/([^/]+)\/v2\.0$/;
 const TEST_NEXT = "/admin/identity-providers";
@@ -80,7 +85,7 @@ export function ProvidersConsole({ callbackUrl, providers, groups }: { callbackU
         <CopyField
           label="Callback URL"
           value={callbackUrl}
-          hint="Register this exact URL in each provider's app registration: as the redirect URI for Google, Microsoft Entra and OpenID Connect, and as the authorization callback URL for GitHub."
+          hint="Register this exact URL in each provider's app registration: as the redirect URI for Google, Microsoft Entra and OpenID Connect, and as the authorization callback URL for GitHub. SAML providers get their own metadata URL instead, shown when you edit one."
         />
       </Card>
       {providers.length ? (
@@ -137,7 +142,7 @@ export function ProvidersConsole({ callbackUrl, providers, groups }: { callbackU
           <EmptyState
             icon={Network}
             title="No identity providers yet"
-            description="Add Google, Microsoft Entra ID, GitHub or any OpenID Connect provider so people can sign in with the account they already have."
+            description="Add Google, Microsoft Entra ID, GitHub, any OpenID Connect provider or a SAML 2.0 identity provider so people can sign in with the account they already have."
             action={add}
           />
         </Card>
@@ -148,7 +153,13 @@ export function ProvidersConsole({ callbackUrl, providers, groups }: { callbackU
         </p>
       ) : null}
       {editing ? (
-        <ProviderDialog key={editing === "new" ? "new" : editing.id} provider={editing === "new" ? null : editing} groups={groups} onClose={() => setEditing(null)} />
+        <ProviderDialog
+          key={editing === "new" ? "new" : editing.id}
+          provider={editing === "new" ? null : editing}
+          callbackUrl={callbackUrl}
+          groups={groups}
+          onClose={() => setEditing(null)}
+        />
       ) : null}
       <Dialog
         open={deleting !== null}
@@ -175,7 +186,7 @@ export function ProvidersConsole({ callbackUrl, providers, groups }: { callbackU
   );
 }
 
-function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvider | null; groups: Group[]; onClose: () => void }) {
+function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: IdentityProvider | null; callbackUrl: string; groups: Group[]; onClose: () => void }) {
   const { pending, run, errorFor, toast } = useMutation();
   const [kind, setKind] = useState<ProviderKind>(provider?.kind ?? "google");
   const [name, setName] = useState(provider?.name ?? KIND.google.name);
@@ -193,13 +204,27 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
   const [profileMap, setProfileMap] = useState<ProviderMapping["profile"]>(provider?.mapping.profile ?? []);
   const [groupClaim, setGroupClaim] = useState(provider?.mapping.groupClaim || "groups");
   const [groupMap, setGroupMap] = useState<ProviderMapping["groups"]>(provider?.mapping.groups ?? []);
+  const [source, setSource] = useState<Source>(provider?.metadataXml ? "xml" : "url");
+  const [metadataUrl, setMetadataUrl] = useState("");
+  const [metadataXml, setMetadataXml] = useState(provider?.metadataXml ?? "");
+  const [ssoUrl, setSsoUrl] = useState("");
+  const [certificate, setCertificate] = useState("");
+  const [emailAttribute, setEmailAttribute] = useState(provider?.emailAttribute ?? "");
   const [errors, setErrors] = useState<
-    Partial<Record<"name" | "issuer" | "tenant" | "clientId" | "clientSecret" | "domains" | "profileMap" | "groupClaim" | "groupMap", string>>
+    Partial<
+      Record<
+        "name" | "issuer" | "tenant" | "clientId" | "clientSecret" | "domains" | "metadata" | "ssoUrl" | "certificate" | "profileMap" | "groupClaim" | "groupMap",
+        string
+      >
+    >
   >({});
+  const file = useRef<HTMLInputElement>(null);
   const mapped = kind !== "github";
   const unusedFields = (Object.keys(FIELD) as ProfileField[]).filter((f) => !profileMap.some((m) => m.field === f));
   const assigned = groups.filter((g) => g.kind === "assigned");
-  const secretRequired = !provider?.hasSecret && kind !== "oidc";
+  const saml = kind === "saml";
+  const secretRequired = !provider?.hasSecret && kind !== "oidc" && !saml;
+  const serviceProvider = provider && saml ? `${callbackUrl.replace(/\/api\/v1\/auth\/federated\/callback$/, "")}/saml/sp/${provider.id}` : null;
 
   function pick(next: ProviderKind) {
     if (name === KIND[kind].name) setName(KIND[next].name);
@@ -212,8 +237,21 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
     const next = {
       name: name.trim() ? undefined : "Enter the name people see on the sign-in button.",
       tenant: kind === "microsoft" && !tenant.trim() ? "Enter the directory (tenant) ID from the Entra app's overview page." : undefined,
-      issuer: kind === "oidc" && !issuer.trim() ? "Enter the issuer URL, for example https://auth.example.com." : undefined,
-      clientId: clientId.trim() ? undefined : "Enter the client ID from the provider's app registration.",
+      issuer:
+        kind === "oidc" && !issuer.trim()
+          ? "Enter the issuer URL, for example https://auth.example.com."
+          : saml && source === "values" && !issuer.trim()
+            ? "Enter the identity provider's entity ID."
+            : undefined,
+      metadata:
+        saml && source === "url" && !metadataUrl.trim()
+          ? "Enter the metadata URL, starting with https://."
+          : saml && source === "xml" && !metadataXml.trim()
+            ? "Paste the metadata XML, or choose the metadata file."
+            : undefined,
+      ssoUrl: saml && source === "values" && !ssoUrl.trim() ? "Enter the single sign-on URL, starting with https://." : undefined,
+      certificate: saml && source === "values" && !certificate.trim() ? "Paste the signing certificate in PEM format." : undefined,
+      clientId: saml || clientId.trim() ? undefined : "Enter the client ID from the provider's app registration.",
       clientSecret: secretRequired && !clientSecret.trim() ? "Enter the client secret from the provider's app registration." : undefined,
       domains:
         words(domains).length > 0
@@ -233,9 +271,14 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
       kind,
       name: name.trim(),
       issuer: kind === "microsoft" ? `https://login.microsoftonline.com/${tenant.trim()}/v2.0` : issuer.trim(),
-      clientId: clientId.trim(),
-      clientSecret: clientSecret.trim(),
-      scopes: words(scopes),
+      clientId: saml ? "" : clientId.trim(),
+      clientSecret: saml ? "" : clientSecret.trim(),
+      scopes: saml ? [] : words(scopes),
+      metadataUrl: saml && source === "url" ? metadataUrl.trim() : "",
+      metadataXml: saml && source === "xml" ? metadataXml : "",
+      ssoUrl: saml && source === "values" ? ssoUrl.trim() : "",
+      certificate: saml && source === "values" ? certificate : "",
+      emailAttribute: saml ? emailAttribute.trim() : "",
       enabled,
       showOnSignIn,
       routeByDomain,
@@ -263,7 +306,9 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
             ? "Its button is on the sign-in page."
             : saved.routeByDomain
               ? `People from ${saved.allowedDomains.join(", ")} go straight to it when they sign in.`
-              : "Use Test sign-in to check it, then show it on the sign-in page.",
+              : saved.kind === "saml" && !provider
+                ? "Open Edit to copy Halo's metadata URL into the identity provider, then use Test sign-in."
+                : "Use Test sign-in to check it, then show it on the sign-in page.",
         });
         onClose();
       },
@@ -279,7 +324,11 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
       }}
       error={errorFor("save")}
       title={provider ? `Edit ${provider.name}` : "Add identity provider"}
-      description="Create an app registration at the provider with the callback URL from this page, then copy its client ID and secret here."
+      description={
+        saml
+          ? "Import the identity provider's metadata. Halo signs in as a SAML service provider with its own metadata URL for each provider."
+          : "Create an app registration at the provider with the callback URL from this page, then copy its client ID and secret here."
+      }
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -340,21 +389,137 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
             )}
           </Field>
         ) : null}
-        <Field label="Client ID" error={errors.clientId}>
-          {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={clientId} onChange={(event) => setClientId(event.target.value)} />}
-        </Field>
-        <Field
-          label="Client secret"
-          hint={provider?.hasSecret ? "Leave empty to keep the current secret. Halo stores it encrypted and never shows it again." : kind === "oidc" ? "Optional for public clients that use PKCE. Stored encrypted." : "Stored encrypted. Halo never shows it again."}
-          error={errors.clientSecret}
-        >
-          {(props) => (
-            <Input {...props} mono type="password" autoComplete="new-password" spellCheck={false} value={clientSecret} onChange={(event) => setClientSecret(event.target.value)} />
-          )}
-        </Field>
-        <Field label="Scopes" hint="Separated by spaces. Halo needs the email address and a stable account ID.">
-          {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={scopes} onChange={(event) => setScopes(event.target.value)} />}
-        </Field>
+        {saml ? (
+          <>
+            {serviceProvider ? (
+              <>
+                <CopyField label="Halo metadata URL" value={`${serviceProvider}/metadata`} hint="Give this to the identity provider. It is also Halo's entity ID for this provider." />
+                <CopyField label="ACS URL" value={`${serviceProvider}/acs`} hint="Where the identity provider posts its SAML response, with the HTTP-POST binding." />
+              </>
+            ) : null}
+            <Field label="Identity provider settings">
+              {(props) => (
+                <Select {...props} value={source} onChange={(event) => setSource(event.target.value as Source)}>
+                  {(Object.keys(SOURCES) as Source[]).map((key) => (
+                    <option key={key} value={key}>
+                      {SOURCES[key]}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            {source === "url" ? (
+              <Field label="Metadata URL" hint="Halo downloads the metadata when you save. Only public https:// addresses work." error={errors.metadata}>
+                {(props) => (
+                  <Input
+                    {...props}
+                    mono
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={metadataUrl}
+                    onChange={(event) => setMetadataUrl(event.target.value)}
+                    placeholder="https://idp.example.com/saml/metadata"
+                  />
+                )}
+              </Field>
+            ) : null}
+            {source === "xml" ? (
+              <Field label="Metadata XML" hint="Halo reads the entity ID, single sign-on URL and signing certificates from it." error={errors.metadata}>
+                {(props) => (
+                  <div className="flex flex-col gap-3">
+                    <Textarea
+                      {...props}
+                      mono
+                      rows={6}
+                      spellCheck={false}
+                      value={metadataXml}
+                      onChange={(event) => setMetadataXml(event.target.value)}
+                      placeholder={'<EntityDescriptor entityID="https://idp.example.com" …>'}
+                    />
+                    <input
+                      ref={file}
+                      type="file"
+                      accept=".xml,application/xml,text/xml,application/samlmetadata+xml"
+                      hidden
+                      onChange={(event) => {
+                        const chosen = event.target.files?.[0];
+                        event.target.value = "";
+                        if (chosen) void chosen.text().then(setMetadataXml);
+                      }}
+                    />
+                    <Button size="sm" variant="secondary" className="self-start" onClick={() => file.current?.click()}>
+                      Choose metadata file
+                    </Button>
+                  </div>
+                )}
+              </Field>
+            ) : null}
+            {source === "values" ? (
+              <>
+                <Field label="Entity ID" hint="The identity provider's issuer, from its SAML settings." error={errors.issuer}>
+                  {(props) => (
+                    <Input {...props} mono autoComplete="off" spellCheck={false} value={issuer} onChange={(event) => setIssuer(event.target.value)} placeholder="https://idp.example.com" />
+                  )}
+                </Field>
+                <Field label="Single sign-on URL" hint="Halo sends signed AuthnRequests here with the HTTP-Redirect binding." error={errors.ssoUrl}>
+                  {(props) => (
+                    <Input
+                      {...props}
+                      mono
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={ssoUrl}
+                      onChange={(event) => setSsoUrl(event.target.value)}
+                      placeholder="https://idp.example.com/saml/sso"
+                    />
+                  )}
+                </Field>
+                <Field label="Signing certificate" hint="The X.509 certificate the identity provider signs responses with, in PEM." error={errors.certificate}>
+                  {(props) => (
+                    <Textarea
+                      {...props}
+                      mono
+                      rows={4}
+                      spellCheck={false}
+                      value={certificate}
+                      onChange={(event) => setCertificate(event.target.value)}
+                      placeholder="-----BEGIN CERTIFICATE-----"
+                    />
+                  )}
+                </Field>
+              </>
+            ) : null}
+            <Field label="Email attribute" hint="The attribute that holds the email address, by name or friendly name, like mail. Leave empty to use the NameID.">
+              {(props) => (
+                <Input {...props} mono autoComplete="off" spellCheck={false} value={emailAttribute} onChange={(event) => setEmailAttribute(event.target.value)} placeholder="NameID" />
+              )}
+            </Field>
+          </>
+        ) : (
+          <>
+            <Field label="Client ID" error={errors.clientId}>
+              {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={clientId} onChange={(event) => setClientId(event.target.value)} />}
+            </Field>
+            <Field
+              label="Client secret"
+              hint={
+                provider?.hasSecret
+                  ? "Leave empty to keep the current secret. Halo stores it encrypted and never shows it again."
+                  : kind === "oidc"
+                    ? "Optional for public clients that use PKCE. Stored encrypted."
+                    : "Stored encrypted. Halo never shows it again."
+              }
+              error={errors.clientSecret}
+            >
+              {(props) => (
+                <Input {...props} mono type="password" autoComplete="new-password" spellCheck={false} value={clientSecret} onChange={(event) => setClientSecret(event.target.value)} />
+              )}
+            </Field>
+            <Field label="Scopes" hint="Separated by spaces. Halo needs the email address and a stable account ID.">
+              {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={scopes} onChange={(event) => setScopes(event.target.value)} />}
+            </Field>
+          </>
+        )}
         <Field
           label="Allowed email domains"
           hint="Separated by spaces. Only verified addresses at these domains can link to a Halo account. Leave empty to link any verified address that matches an existing account."

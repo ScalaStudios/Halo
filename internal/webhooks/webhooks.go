@@ -43,7 +43,7 @@ type handler struct {
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
-	h := &handler{st: d.Store, client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: noRedirect}, guarded: GuardedClient()}
+	h := &handler{st: d.Store, client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: noRedirect}, guarded: httpx.GuardedClient()}
 	if d.Jobs != nil {
 		d.Jobs.Every("deliver webhooks", 10*time.Second, func(ctx context.Context) error { return h.run(ctx, time.Now()) })
 	}

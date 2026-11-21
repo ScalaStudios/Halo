@@ -73,6 +73,8 @@ func New(d httpx.Deps) (http.Handler, error) {
 	mux.HandleFunc("POST /saml/sso", h.sso)
 	mux.HandleFunc("GET /saml/resume", h.resume)
 	mux.HandleFunc("GET /saml/launch/{appId}", h.launch)
+	mux.HandleFunc("GET /saml/sp/{id}/metadata", h.serviceProviderMetadata)
+	mux.HandleFunc("POST /saml/sp/{id}/acs", h.assertionConsumer)
 	return mux, nil
 }
 
@@ -136,14 +138,18 @@ func ParseMetadata(raw string) (string, []string, string, error) {
 	return ed.EntityID, acs, certificate, nil
 }
 
-func EncryptionCertificate(raw string) (*x509.Certificate, string, error) {
+func parseCertificate(raw string) (*x509.Certificate, error) {
 	der := []byte(raw)
 	if block, _ := pem.Decode(der); block != nil {
 		der = block.Bytes
 	} else {
 		der, _ = base64.StdEncoding.DecodeString(strings.Join(strings.Fields(raw), ""))
 	}
-	cert, err := x509.ParseCertificate(der)
+	return x509.ParseCertificate(der)
+}
+
+func EncryptionCertificate(raw string) (*x509.Certificate, string, error) {
+	cert, err := parseCertificate(raw)
 	if err != nil {
 		return nil, "", errors.New("Halo couldn't read the encryption certificate. Paste the service provider's X.509 certificate in PEM format, starting with -----BEGIN CERTIFICATE-----.")
 	}
@@ -392,9 +398,16 @@ func (h *handler) respond(w http.ResponseWriter, r *http.Request, req *saml.IdpA
 		internal(w, r, err)
 		return
 	}
+	post(w, form.URL, map[string]string{"SAMLResponse": form.SAMLResponse, "RelayState": form.RelayState})
+}
+
+func post(w http.ResponseWriter, action string, fields map[string]string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = pages.ExecuteTemplate(w, "form", form)
+	_ = pages.ExecuteTemplate(w, "form", struct {
+		URL    string
+		Fields map[string]string
+	}{action, fields})
 }
 
 func (h *handler) signIn(w http.ResponseWriter, r *http.Request, req *saml.IdpAuthnRequest) {
@@ -635,9 +648,8 @@ a:focus-visible,button:focus-visible{outline:2px solid #fa7e26;outline-offset:2p
 {{end}}{{define "form"}}{{template "head" "Signing in"}}<form method="post" action="{{.URL}}">
 {{template "logo"}}
 <p>Signing you in…</p>
-<input type="hidden" name="SAMLResponse" value="{{.SAMLResponse}}">
-{{if .RelayState}}<input type="hidden" name="RelayState" value="{{.RelayState}}">
-{{end}}<noscript><button type="submit">Continue</button></noscript>
+{{range $name, $value := .Fields}}{{if $value}}<input type="hidden" name="{{$name}}" value="{{$value}}">
+{{end}}{{end}}<noscript><button type="submit">Continue</button></noscript>
 </form>
 <script>document.forms[0].submit()</script>
 </body>

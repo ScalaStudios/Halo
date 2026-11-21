@@ -2,6 +2,7 @@ package auth
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"net/http"
 	"regexp"
@@ -10,6 +11,7 @@ import (
 
 	"halo/internal/approval"
 	"halo/internal/httpx"
+	halosaml "halo/internal/saml"
 	"halo/internal/store"
 )
 
@@ -18,7 +20,7 @@ var (
 	errLastLink     = httpx.Fail(http.StatusConflict, "ERR_LAST_METHOD", "This is your last way to sign in, so it can't be unlinked. Add a passkey or authenticator app first.")
 	entraIssuer     = regexp.MustCompile(`^https://login\.microsoftonline\.com/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/v2\.0$`)
 	domainPattern   = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
-	defaultScopes   = map[string][]string{"google": {"openid", "email", "profile"}, "microsoft": {"openid", "email", "profile"}, "github": {"read:user", "user:email"}, "oidc": {"openid", "email", "profile"}}
+	defaultScopes   = map[string][]string{"google": {"openid", "email", "profile"}, "microsoft": {"openid", "email", "profile"}, "github": {"read:user", "user:email"}, "oidc": {"openid", "email", "profile"}, "saml": {}}
 )
 
 type providerInput struct {
@@ -35,6 +37,11 @@ type providerInput struct {
 	JIT            bool          `json:"jit"`
 	JITGroupIDs    []string      `json:"jitGroupIds"`
 	Mapping        store.Mapping `json:"mapping"`
+	MetadataURL    string        `json:"metadataUrl"`
+	MetadataXML    string        `json:"metadataXml"`
+	SSOURL         string        `json:"ssoUrl"`
+	Certificate    string        `json:"certificate"`
+	EmailAttribute string        `json:"emailAttribute"`
 }
 
 func (h *handler) listProviders(w http.ResponseWriter, r *http.Request) error {
@@ -168,6 +175,8 @@ func providerFields(old, p store.IdentityProvider, secret bool) string {
 		{"client ID", old.ClientID != p.ClientID},
 		{"client secret", secret},
 		{"scopes", !slices.Equal(old.Scopes, p.Scopes)},
+		{"SAML metadata", old.SAMLMetadata != p.SAMLMetadata},
+		{"email attribute", old.EmailAttribute != p.EmailAttribute},
 		{"on or off state", old.Enabled != p.Enabled},
 		{"sign-in page button", old.ShowOnSignIn != p.ShowOnSignIn},
 		{"email domain routing", old.RouteByDomain != p.RouteByDomain},
@@ -223,9 +232,10 @@ func (h *handler) validProvider(r *http.Request, in providerInput, existing stor
 	defaults, known := defaultScopes[p.Kind]
 	switch {
 	case !known:
-		return p, httpx.Invalid(`Choose a provider kind: "google", "microsoft", "github" or "oidc".`)
+		return p, httpx.Invalid(`Choose a provider kind: "google", "microsoft", "github", "oidc" or "saml".`)
 	case p.Name == "" || len(p.Name) > 100:
 		return p, httpx.Invalid("Enter a name of up to 100 characters. People see it on the sign-in button, as in “Continue with Google”.")
+	case p.Kind == "saml":
 	case p.ClientID == "":
 		return p, httpx.Invalid("Enter the client ID from the provider's app registration.")
 	case strings.TrimSpace(in.ClientSecret) == "" && !existing.HasSecret && p.Kind != "oidc":
@@ -240,8 +250,14 @@ func (h *handler) validProvider(r *http.Request, in providerInput, existing stor
 		}
 	case "github":
 		p.Issuer = strings.TrimSuffix(cmp.Or(p.Issuer, "https://github.com"), "/")
+	case "saml":
+		var err error
+		if p.SAMLMetadata, p.Issuer, err = h.samlMetadata(r.Context(), in, existing); err != nil {
+			return p, err
+		}
+		p.ClientID, p.EmailAttribute, in.Scopes = "", strings.TrimSpace(in.EmailAttribute), nil
 	}
-	if !httpx.ValidIssuer(p.Issuer, h.cfg.Dev) {
+	if p.Kind != "saml" && !httpx.ValidIssuer(p.Issuer, h.cfg.Dev) {
 		return p, httpx.Invalid("Enter the provider URL starting with https://, for example https://auth.example.com.")
 	}
 	p.Scopes = []string{}
@@ -253,7 +269,7 @@ func (h *handler) validProvider(r *http.Request, in providerInput, existing stor
 	if len(p.Scopes) == 0 {
 		p.Scopes = defaults
 	}
-	if p.Kind != "github" && !slices.Contains(p.Scopes, "openid") {
+	if p.Kind != "github" && p.Kind != "saml" && !slices.Contains(p.Scopes, "openid") {
 		p.Scopes = append([]string{"openid"}, p.Scopes...)
 	}
 	p.AllowedDomains = []string{}
@@ -308,6 +324,29 @@ func (h *handler) validProvider(r *http.Request, in providerInput, existing stor
 	var err error
 	p.Mapping, err = validMapping(p.Kind, in.Mapping, assigned)
 	return p, err
+}
+
+func (h *handler) samlMetadata(ctx context.Context, in providerInput, existing store.IdentityProvider) (string, string, error) {
+	metadata, err := strings.TrimSpace(in.MetadataXML), error(nil)
+	switch {
+	case strings.TrimSpace(in.MetadataURL) != "":
+		metadata, err = halosaml.FetchMetadata(ctx, strings.TrimSpace(in.MetadataURL))
+	case metadata == "" && strings.TrimSpace(in.SSOURL) != "":
+		metadata, err = halosaml.ManualMetadata(strings.TrimSpace(in.Issuer), strings.TrimSpace(in.SSOURL), in.Certificate)
+	case metadata == "":
+		metadata = existing.SAMLMetadata
+	}
+	if err == nil && metadata == "" {
+		err = errors.New("Add the identity provider's metadata URL or XML, or enter its entity ID, single sign-on URL and signing certificate.")
+	}
+	entityID := ""
+	if err == nil {
+		entityID, err = halosaml.IdentityProviderEntityID(metadata, h.cfg.Dev)
+	}
+	if err != nil {
+		return "", "", httpx.Invalid(err.Error())
+	}
+	return metadata, entityID, nil
 }
 
 func (h *handler) myIdentities(w http.ResponseWriter, r *http.Request) error {

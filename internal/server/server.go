@@ -130,6 +130,7 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 	root.Handle("/oauth2/register/", registration)
 	root.Handle("/.well-known/", provider)
 	root.Handle("/saml/", authn.Resolve(authn.KeyScope("", samlHandler)))
+	root.Handle("POST /saml/sp/{id}/acs", samlHandler)
 	root.Handle("/scim/", authn.Resolve(authn.KeyScope("scim", scimHandler)))
 	root.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := st.Ping(r.Context()); err != nil {
