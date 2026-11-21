@@ -431,7 +431,6 @@ export function BackchannelLogoutForm({ app }: { app: Pick<Application, "id" | "
   );
 }
 
-function DurationField({ label, hint, value, onChange, error }: { label: string; hint: string; value: Duration; onChange: (value: Duration) => void; error?: string }) {
 export function DurationField({ label, hint, value, onChange, error }: { label: string; hint: string; value: Duration; onChange: (value: Duration) => void; error?: string }) {
   return (
     <Field label={label} hint={hint} error={error}>
