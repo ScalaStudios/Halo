@@ -45,7 +45,7 @@ tags:
   - name: Applications
     description: OpenID Connect, OAuth, SAML and forward-auth applications, bookmarks, their secrets and group assignments, and the collections that group them in the account portal.
   - name: Authorization
-    description: 'Relationship-based permissions for applications, in the style of Zanzibar. An application administrator gives a web or service application a model of types and relations. The application then writes tuples such as `document:readme#viewer@user:usr_…` and asks whether a person has a relation on an object. Groups expand to their members, relations combine other relations, application roles and relations of a parent object, and suspended or deprovisioned people are always denied. Routes under `/authz` authenticate as the application with HTTP Basic, its client ID and a client secret, and only ever see that application''s tuples. Tuples that name a person or group are deleted with them. Model changes are in the audit log; tuple writes are not.'
+    description: 'Relationship-based permissions for applications, in the style of Zanzibar. An application administrator gives a web or service application a model of types and relations. The application then writes tuples such as `document:readme#viewer@user:usr_…` and asks whether a person has a relation on an object. Groups expand to their members, relations combine other relations, application roles and relations of a parent object, and suspended or deprovisioned people are always denied. Tuples can name only the people and groups assigned to the application, the same ones who can sign in to it, and a person or group that is later unassigned is ignored until assigned again, so an application never learns about anyone outside it. Routes under `/authz` authenticate as the application with HTTP Basic, its client ID and a client secret, and only ever see that application''s tuples. Tuples that name a person or group are deleted with them. Model changes are in the audit log; tuple writes are not.'
   - name: Forward auth
     description: 'The check that Traefik `forwardAuth`, nginx `auth_request` and Caddy `forward_auth` run before every request to a forward-auth application, outside `/api/v1`, and the sign-in it sends people to.'
   - name: Activity
@@ -3753,7 +3753,7 @@ paths:
       tags: [Authorization]
       operationId: checkPermission
       summary: Ask whether a person has a relation on an object
-      description: 'The calling application''s model and tuples answer. People who don''t exist, are suspended or deprovisioned are denied. `path` shows the relations that granted it, ending with the person, group or role, such as `["document:readme#viewer", "folder:eng#viewer", "group:grp_…"]`.'
+      description: 'The calling application''s model and tuples answer. People who don''t exist, are suspended or deprovisioned, or aren''t assigned to the application are denied, and tuples naming groups the application isn''t assigned are ignored. `path` shows the relations that granted it, ending with the person, group or role, such as `["document:readme#viewer", "folder:eng#viewer", "group:grp_…"]`.'
       security:
         - applicationClient: []
       requestBody:
@@ -3776,7 +3776,7 @@ paths:
       tags: [Authorization]
       operationId: expandRelation
       summary: Show the tree of who has a relation on an object
-      description: 'For debugging. Each node lists the people, groups and roles that hold the relation directly, and children for the usersets, unions and parents it follows. A node already shown elsewhere in the tree appears again without children.'
+      description: 'For debugging. Each node lists the people, groups and roles that hold the relation directly, and children for the usersets, unions and parents it follows. A node already shown elsewhere in the tree appears again without children. People and groups no longer assigned to the application are left out.'
       security:
         - applicationClient: []
       requestBody:
@@ -3799,7 +3799,7 @@ paths:
       tags: [Authorization]
       operationId: listSubjects
       summary: List the people who have a relation on an object
-      description: 'Groups and roles expand to their current members and holders. Suspended and deprovisioned people are left out. Up to 1,000 people; `truncated` says whether there were more.'
+      description: 'Groups and roles expand to their current members and holders. Suspended and deprovisioned people and people not assigned to the application are left out, and groups the application isn''t assigned don''t expand. Up to 1,000 people; `truncated` says whether there were more.'
       security:
         - applicationClient: []
       requestBody:
@@ -3892,7 +3892,7 @@ paths:
       tags: [Authorization]
       operationId: writeTuples
       summary: Write and delete tuples in one transaction
-      description: 'Up to 100 writes and deletes together. Deletes run first. Writing a tuple that exists does nothing, and neither does deleting one that doesn''t. Each written tuple must fit the model: its relation takes the kind of subject, such as `user`, `group`, `folder` or `team#member`. People and groups are named by their Halo ids and must exist. Deletes don''t check the model, so tuples a changed model no longer takes can still be removed.'
+      description: 'Up to 100 writes and deletes together. Deletes run first. Writing a tuple that exists does nothing, and neither does deleting one that doesn''t. Each written tuple must fit the model: its relation takes the kind of subject, such as `user`, `group`, `folder` or `team#member`. People and groups are named by their Halo ids and must be assigned to the application: one of its groups or a member of one. Others are refused with `422`. Deletes don''t check the model, so tuples a changed model no longer takes can still be removed.'
       security:
         - applicationClient: []
       requestBody:

@@ -253,13 +253,13 @@ func (h *handlers) ask(r *http.Request, c caller, byType bool) (question, object
 	return q, o, c.relation(o, q.Relation)
 }
 
-func (h *handlers) person(r *http.Request, raw string) (store.User, error) {
+func (h *handlers) person(r *http.Request, c caller, raw string) (store.User, error) {
 	s, ok := parseSubject(raw)
 	if !ok || s.typ != "user" || s.rel != "" {
 		return store.User{}, httpx.Invalid("Ask about a person as user:id, with the Halo user ID that is the sub claim of their tokens.")
 	}
 	u, err := h.st.GetUser(r.Context(), s.id)
-	if errors.Is(err, store.ErrNotFound) || err == nil && !active(u) {
+	if errors.Is(err, store.ErrNotFound) || err == nil && (!active(u) || !slices.Contains(u.AppIDs, c.app.ID)) {
 		return store.User{}, nil
 	}
 	return u, err
@@ -270,7 +270,7 @@ func (h *handlers) check(w http.ResponseWriter, r *http.Request, c caller) error
 	if err != nil {
 		return err
 	}
-	u, err := h.person(r, q.Subject)
+	u, err := h.person(r, c, q.Subject)
 	if err != nil {
 		return err
 	}
@@ -319,7 +319,7 @@ func (h *handlers) listObjects(w http.ResponseWriter, r *http.Request, c caller)
 	if err != nil {
 		return err
 	}
-	u, err := h.person(r, q.Subject)
+	u, err := h.person(r, c, q.Subject)
 	if err != nil {
 		return err
 	}
@@ -401,6 +401,13 @@ func (h *handlers) writeTuples(w http.ResponseWriter, r *http.Request, c caller)
 			return err
 		}
 		deletes = append(deletes, t)
+	}
+	drop, err := newResolver(r.Context(), h.st, c, store.User{}, 0).unassigned(writes)
+	if err != nil {
+		return err
+	}
+	if i := slices.IndexFunc(writes, drop); i >= 0 {
+		return httpx.Invalid(fmt.Sprintf("%s isn't assigned to %s, so tuples can't name it. Use people and groups assigned to the application, the same ones who can sign in to it.", in.Writes[i].Subject, c.app.Name))
 	}
 	if err := h.st.WriteTuples(r.Context(), c.app.ID, writes, deletes); errors.Is(err, store.ErrNotFound) {
 		return httpx.Invalid("A person or group in these tuples is not in Halo. Use their Halo IDs, such as user:usr_… and group:grp_….")

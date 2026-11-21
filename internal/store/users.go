@@ -90,6 +90,10 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 	return s.queryUsers(ctx, `kind = 'person'`)
 }
 
+func (s *Store) UsersByID(ctx context.Context, ids []string) ([]User, error) {
+	return s.queryUsers(ctx, `id = any($1)`, ids)
+}
+
 func (s *Store) ListSponsoredGuests(ctx context.Context, sponsorID string) ([]User, error) {
 	return s.queryUsers(ctx, `guest and sponsor_id = $1`, sponsorID)
 }
