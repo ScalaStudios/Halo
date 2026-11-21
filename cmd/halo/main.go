@@ -131,7 +131,7 @@ func serve(ctx context.Context) error {
 		go app.Jobs.Run(ctx)
 		srv := &http.Server{Addr: cfg.Listen, Handler: app.Handler, ReadHeaderTimeout: 10 * time.Second}
 		metricsSrv := &http.Server{Addr: cfg.MetricsListen, Handler: app.Metrics, ReadHeaderTimeout: 10 * time.Second}
-		errs := make(chan error, 3)
+		errs := make(chan error, 4)
 		if cfg.RADIUSListen != "" {
 			addr, err := net.ResolveUDPAddr("udp", cfg.RADIUSListen)
 			if err != nil {
@@ -158,10 +158,16 @@ func serve(ctx context.Context) error {
 				errs <- metricsSrv.ListenAndServe()
 			}()
 		}
+		if app.LDAP != nil {
+			go func() { errs <- app.LDAP.ListenAndServe() }()
+		}
 		select {
 		case err := <-errs:
 			return err
 		case <-ctx.Done():
+			if app.LDAP != nil {
+				app.LDAP.Close()
+			}
 			shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			if err := srv.Shutdown(shutdown); err != nil && !errors.Is(err, http.ErrServerClosed) {

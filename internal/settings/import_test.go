@@ -426,6 +426,7 @@ func TestImportRestoresApplicationsWithoutScopes(t *testing.T) {
 		{"name": "Status", "protocol": "bookmark", "homepage": "https://status.example.com"},
 		{"name": "Files", "protocol": "forward-auth", "redirectUris": []string{"https://files.example.com"}},
 		{"name": "VPN", "protocol": "radius", "redirectUris": []string{"10.0.0.0/24"}},
+		{"name": "NAS", "protocol": "ldap"},
 	} {
 		created := decode[struct {
 			Application store.Application `json:"application"`
@@ -437,11 +438,11 @@ func TestImportRestoresApplicationsWithoutScopes(t *testing.T) {
 	for _, id := range ids {
 		e.expect(e.call(admin, "DELETE", "/api/v1/applications/"+id, nil), http.StatusNoContent)
 	}
-	if rep := e.importFile(admin, file, false, false, http.StatusOK); !rep.Applied || len(rep.Changes) != 3 {
+	if rep := e.importFile(admin, file, false, false, http.StatusOK); !rep.Applied || len(rep.Changes) != 4 {
 		t.Fatalf("import: %v", lines(rep.Changes))
 	}
 	now := e.exportFile(admin)
-	if vpn := named(now, "applications", "VPN"); vpn == nil || vpn["protocol"] != "radius" || vpn["maxAuthAge"] != float64(3600) || named(now, "applications", "Status") == nil || named(now, "applications", "Files") == nil {
+	if vpn := named(now, "applications", "VPN"); vpn == nil || vpn["protocol"] != "radius" || vpn["maxAuthAge"] != float64(3600) || named(now, "applications", "Status") == nil || named(now, "applications", "Files") == nil || named(now, "applications", "NAS") == nil {
 		t.Fatalf("restored applications: %v", rows(now, "applications"))
 	}
 }

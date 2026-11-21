@@ -121,6 +121,14 @@ var All = []Feature{
 		},
 	},
 	{
+		ID: "ldap", Name: "LDAP server",
+		Description: "A read-only directory on Halo's LDAP port for applications and devices that only speak LDAP. While it is off, the port closes every connection without answering.",
+		usage: func(ctx context.Context, st *store.Store) ([]string, error) {
+			apps, err := st.ListApplications(ctx)
+			return tally(apps, err, func(a store.Application) bool { return a.Protocol == "ldap" }, "application reads the directory over LDAP", "applications read the directory over LDAP")
+		},
+	},
+	{
 		ID: "log-streaming", Name: "Log streaming",
 		Description: "Every sign-in and audit event sent to syslog or an OpenTelemetry collector.",
 		Paths:       []string{"/api/v1/log-export"},

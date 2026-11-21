@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bookmark, Check, FileKey, KeyRound, Network, ServerCog, ShieldCheck, type LucideIcon } from "lucide-react";
+import { Bookmark, BookUser, Check, FileKey, KeyRound, Network, ServerCog, ShieldCheck, type LucideIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { ActionError } from "@/components/ui/action-error";
@@ -14,9 +14,9 @@ import { cn } from "@/lib/cn";
 import { NAME_ID_FORMATS, type NameIdFormat, type SamlApplication } from "@/lib/saml-types";
 import { endpoints, setupGuide } from "@/lib/setup-guides";
 import { SamlConnectionFields } from "./saml";
-import { RadiusServerFields, SecretWarning, SetupGuideCard, TYPE_ICON } from "./shared";
+import { LdapConnectionFields, RadiusServerFields, SecretWarning, SetupGuideCard, TYPE_ICON } from "./shared";
 
-type Protocol = "oidc" | "saml" | "oauth" | "forward-auth" | "radius" | "bookmark";
+type Protocol = "oidc" | "saml" | "oauth" | "forward-auth" | "radius" | "ldap" | "bookmark";
 type Source = "values" | "metadata";
 type Platform = "web" | "spa" | "native";
 type Template = { value: string; label: string; uri: string; entityId?: string; guide: string; platform?: Platform; hint?: string; more?: string[]; scopes?: string[] };
@@ -37,6 +37,12 @@ const PROTOCOLS: Option<Protocol>[] = [
     label: "RADIUS",
     description: "Password sign-in for VPNs and network devices that ask a RADIUS server, limited to the groups you assign.",
     icon: Network,
+  },
+  {
+    value: "ldap",
+    label: "LDAP",
+    description: "A read-only directory for applications and devices that only speak LDAP, like Proxmox VE, NAS and printers.",
+    icon: BookUser,
   },
   { value: "bookmark", label: "Bookmark", description: "A link in the account portal, like an intranet page, status page or helpdesk. Nobody signs in through Halo.", icon: Bookmark },
 ];
@@ -190,6 +196,10 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
       submitRadius();
       return;
     }
+    if (protocol === "ldap") {
+      submitLdap();
+      return;
+    }
     const next = {
       name: name.trim() ? undefined : "Enter a name. People see it on the Halo sign-in screen.",
       uri: needsUri && !aether ? uriError(uri) : undefined,
@@ -267,6 +277,18 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
     );
   }
 
+  function submitLdap() {
+    const next = { name: name.trim() ? undefined : "Enter a name. People see it in the sign-in log and their account portal." };
+    setErrors(next);
+    if (next.name) return;
+    void run(
+      "create",
+      () => api<{ application: SamlApplication; clientSecret: string | null }>("/applications", { body: { name: name.trim(), protocol } }),
+      setCreated,
+      "inline",
+    );
+  }
+
   function submitSaml() {
     const values = source === "values";
     const next = {
@@ -304,17 +326,24 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
           <CardHeader
             title="Application created"
             description={
-              application.saml
-                ? `Give ${appName} these values so it trusts Halo, or point it at the metadata URL.`
-                : radius
-                  ? `Enter these values in the RADIUS settings of ${appName}. Use PAP, and send a Message-Authenticator with every request: Halo ignores requests without one.`
-                  : clientSecret
-                  ? `Add these values to ${appName} to finish connecting it to Halo.`
-                  : `Add these values to ${appName}. It is a public client, so it has no secret and must sign in with PKCE.`
+              application.ldap
+                ? `Give ${appName} these values, then assign groups. It sees only the people in them.`
+                : application.saml
+                  ? `Give ${appName} these values so it trusts Halo, or point it at the metadata URL.`
+                  : radius
+                    ? `Enter these values in the RADIUS settings of ${appName}. Use PAP, and send a Message-Authenticator with every request: Halo ignores requests without one.`
+                    : clientSecret
+                      ? `Add these values to ${appName} to finish connecting it to Halo.`
+                      : `Add these values to ${appName}. It is a public client, so it has no secret and must sign in with PKCE.`
             }
           />
           <CardBody className="flex flex-col gap-4">
-            {application.saml ? (
+            {application.ldap ? (
+              <>
+                <LdapConnectionFields ldap={application.ldap} />
+                {clientSecret ? <CopyField label="Bind password" value={clientSecret} secret /> : null}
+              </>
+            ) : application.saml ? (
               <>
                 <SamlConnectionFields idp={application.saml.idp} />
                 <CopyField label="SP entity ID" value={application.clientId} />
@@ -335,7 +364,11 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
             {application.redirectUris.map((redirect) => (
               <CopyField key={redirect} label={application.saml ? "ACS URL" : radius ? "Client address" : "Redirect URI"} value={redirect} />
             ))}
-            {clientSecret ? (
+            {clientSecret && application.ldap ? (
+              <SecretWarning>
+                This is the only time Halo shows the bind password. Store it in your secret manager now. If you lose it, rotate it from the application page.
+              </SecretWarning>
+            ) : clientSecret ? (
               <SecretWarning>
                 This is the only time Halo shows the {radius ? "shared" : "client"} secret. Store it in your secret manager now. If you lose it, rotate it from the Credentials tab.
               </SecretWarning>
@@ -343,7 +376,7 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
           </CardBody>
         </Card>
         <div className="flex flex-wrap justify-end gap-2">
-          {radius ? null : (
+          {radius || application.ldap ? null : (
             <Button variant="secondary" aria-expanded={guideOpen} onClick={() => setGuideOpen(!guideOpen)}>
               {guideOpen ? "Hide setup guide" : "View setup guide"}
             </Button>
@@ -479,6 +512,14 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
                 hint="The IP address or CIDR range the VPN or device sends RADIUS requests from. Add more on the Authentication tab."
               >
                 {(props) => <Input {...props} mono value={address} onChange={(e) => setAddress(e.target.value)} placeholder="10.0.0.5" />}
+              </Field>
+            </div>
+          ) : null}
+          {current === "Details" && protocol === "ldap" ? (
+            <div className="flex flex-col gap-6">
+              <h2 className="text-h4 text-fg">Application details</h2>
+              <Field label="Name" error={errors.name} hint="Halo creates its bind DN and password next. Assign groups after you create it.">
+                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Proxmox VE" />}
               </Field>
             </div>
           ) : null}

@@ -78,6 +78,12 @@ metrics:
     interval: 30s
     tokenKey: ""
 
+ldap:
+  enabled: false
+  port: 6360
+  tls: ldaps
+  certificateSecret: ""
+
 ingress:
   enabled: false
   className: ""

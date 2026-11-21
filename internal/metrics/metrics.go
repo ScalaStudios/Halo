@@ -26,6 +26,8 @@ var (
 	LDAPChanges       = NewCounter("halo_ldap_sync_changes_total", "People, groups and memberships that LDAP directory sync changed, by action.", "action")
 	WebhookDeliveries = NewCounter("halo_webhook_deliveries_total", "Webhook delivery attempts by outcome: delivered, pending for a retry, or failed for good.", "outcome")
 	LogExport         = NewCounter("halo_log_export_events_total", "Sign-in and audit events for the log exporter by outcome: sent, failed and retried later, rejected by the collector, or dropped from a full queue.", "outcome")
+	LDAPBinds         = NewCounter("halo_ldap_binds_total", "LDAP binds by kind (application, person, or other for anonymous binds and unknown DNs) and result.", "kind", "result")
+	LDAPSearches      = NewCounter("halo_ldap_searches_total", "LDAP searches by result.", "result")
 	RateLimited       = NewCounter("halo_rate_limited_requests_total", "Requests refused by the API rate limit, by scope.", "scope")
 	HTTPRequests      = NewCounter("halo_http_requests_total", "HTTP requests by route pattern and status code.", "route", "status")
 	RADIUSRequests    = NewCounter("halo_radius_requests_total", "RADIUS requests by outcome: accept, reject, challenge, accounting, or dropped without a reply for an unknown client, a missing or wrong Message-Authenticator, a malformed packet, the rate limit or a server error.", "outcome")
@@ -44,6 +46,10 @@ func init() {
 	for _, v := range []string{"success", "failure"} {
 		SCIMRuns.Add(0, v)
 		LDAPRuns.Add(0, v)
+		LDAPSearches.Add(0, v)
+		for _, kind := range []string{"application", "person", "other"} {
+			LDAPBinds.Add(0, kind, v)
+		}
 	}
 	for _, v := range []string{"delivered", "pending", "failed"} {
 		WebhookDeliveries.Add(0, v)
@@ -54,7 +60,7 @@ func init() {
 	for _, v := range []string{"account", "address"} {
 		Lockouts.Add(0, v)
 	}
-	for _, v := range []string{"api", "scim", "bulk", "radius"} {
+	for _, v := range []string{"api", "scim", "bulk", "radius", "ldap"} {
 		RateLimited.Add(0, v)
 	}
 	for _, v := range []string{"accept", "reject", "challenge", "accounting", "dropped"} {

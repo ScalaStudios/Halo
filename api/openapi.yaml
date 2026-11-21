@@ -43,7 +43,7 @@ tags:
   - name: Groups
     description: Assigned and rule-based groups and their members.
   - name: Applications
-    description: OpenID Connect, OAuth, SAML, forward-auth and RADIUS applications, bookmarks, their secrets and group assignments, and the collections that group them in the account portal.
+    description: OpenID Connect, OAuth, SAML, forward-auth, RADIUS and LDAP applications, bookmarks, their secrets and group assignments, and the collections that group them in the account portal.
   - name: Authorization
     description: 'Relationship-based permissions for applications, in the style of Zanzibar. An application administrator gives a web or service application a model of types and relations. The application then writes tuples such as `document:readme#viewer@user:usr_…` and asks whether a person has a relation on an object. Groups expand to their members, relations combine other relations, application roles and relations of a parent object, and suspended or deprovisioned people are always denied. Tuples can name only the people and groups assigned to the application, the same ones who can sign in to it, and a person or group that is later unassigned is ignored until assigned again, so an application never learns about anyone outside it. Routes under `/authz` authenticate as the application with HTTP Basic, its client ID and a client secret, and only ever see that application''s tuples. Tuples that name a person or group are deleted with them. Model changes are in the audit log; tuple writes are not.'
   - name: Forward auth
@@ -3637,7 +3637,7 @@ paths:
       tags: [Applications]
       operationId: createApplication
       summary: Register an application
-      description: 'Roles: application administrator. OpenID Connect web applications and services get a client secret, returned once. SAML applications take their settings in `saml` and are always `web`. Forward-auth applications take their protected addresses in `redirectUris`, open the first one from the account portal unless `homepage` is set, have no secret and are always `web`. RADIUS clients take the IP addresses or CIDR ranges they send from in `redirectUris`, get a shared secret returned once in `clientSecret` and are always `web`. Bookmarks only open their `homepage` from the account portal, have no sign-in protocol and are always `web`.'
+      description: 'Roles: application administrator. OpenID Connect web applications and services get a client secret, returned once. SAML applications take their settings in `saml` and are always `web`. Forward-auth applications take their protected addresses in `redirectUris`, open the first one from the account portal unless `homepage` is set, have no secret and are always `web`. RADIUS clients take the IP addresses or CIDR ranges they send from in `redirectUris`, get a shared secret returned once in `clientSecret` and are always `web`. LDAP applications get a bind password in `clientSecret`, returned once, take no redirect URIs, scopes or SAML settings and are always `web`. Bookmarks only open their `homepage` from the account portal, have no sign-in protocol and are always `web`.'
       requestBody:
         required: true
         content:
@@ -3648,7 +3648,7 @@ paths:
               properties:
                 name: {type: string, maxLength: 200}
                 description: {type: string, maxLength: 2000}
-                protocol: {type: string, enum: [oidc, oauth, saml, forward-auth, radius, bookmark]}
+                protocol: {type: string, enum: [oidc, oauth, saml, forward-auth, radius, ldap, bookmark]}
                 type: {type: string, enum: [web, spa, native, service]}
                 homepage: {type: string, format: uri, description: 'Required for bookmarks: the http or https address the bookmark opens.'}
                 redirectUris:
@@ -3668,7 +3668,7 @@ paths:
                 saml: {$ref: '#/components/schemas/SAMLInput'}
       responses:
         '201':
-          description: The application and, for web applications and services, the client secret, or for RADIUS clients the shared secret.
+          description: The application and, for web applications and services, the client secret, for RADIUS clients the shared secret, or for LDAP applications the bind password.
           content:
             application/json:
               schema:
@@ -3689,7 +3689,7 @@ paths:
       tags: [Applications]
       operationId: getApplication
       summary: Get one application
-      description: 'Roles: any administrator. SAML applications include a `saml` object, and RADIUS clients `radiusPort`.'
+      description: 'Roles: any administrator. SAML applications include a `saml` object, RADIUS clients `radiusPort` and LDAP applications `ldap`.'
       responses:
         '200': {$ref: '#/components/responses/ApplicationResponse'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -3778,7 +3778,7 @@ paths:
       tags: [Applications]
       operationId: rotateClientSecret
       summary: Create a new client secret
-      description: 'Roles: application administrator. For RADIUS clients this creates a shared secret. Every older secret stops working 24 hours later. The body is optional.'
+      description: 'Roles: application administrator. For RADIUS clients this creates a shared secret. Every older secret stops working 24 hours later. For an LDAP application this replaces the bind password, the previous one stops working at once, and the response has no `credential`. The body is optional.'
       requestBody:
         content:
           application/json:
@@ -3793,7 +3793,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [credential, clientSecret]
+                required: [clientSecret]
                 properties:
                   credential: {$ref: '#/components/schemas/Credential'}
                   clientSecret: {type: string}
@@ -8742,7 +8742,7 @@ components:
         id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
         description: {type: string}
-        protocol: {type: string, enum: [oidc, oauth, saml, forward-auth, radius, bookmark]}
+        protocol: {type: string, enum: [oidc, oauth, saml, forward-auth, radius, ldap, bookmark]}
         type: {type: string, enum: [web, spa, native, service]}
         status: {type: string, enum: [active, disabled]}
         clientId: {type: string, description: 'The client ID, such as `hl_…`, or the entity ID for SAML applications.'}
@@ -8794,6 +8794,16 @@ components:
         requirePkce: {type: boolean, description: 'Every authorization request must send `code_challenge` with `code_challenge_method=S256`. Single-page and native applications always must, whatever this says.'}
         requireDpop: {type: boolean, description: 'Every token request must carry a DPoP proof (RFC 9449), so its access and refresh tokens only work with the key that signed the proof. A token request without one ends with `invalid_dpop_proof`. Refresh tokens issued without a proof stop working once this is on, and access tokens already issued last until they expire.'}
         saml: {$ref: '#/components/schemas/SAMLView'}
+        ldap:
+          type: object
+          description: 'LDAP applications only. Where the application finds its directory. `url` is empty while `HALO_LDAP_LISTEN` is unset.'
+          required: [url, baseDn, bindDn, peopleDn, groupsDn]
+          properties:
+            url: {type: string, examples: ['ldaps://auth.example.com:636']}
+            baseDn: {type: string, examples: ['ou=app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9,dc=auth,dc=example,dc=com']}
+            bindDn: {type: string, examples: ['cn=bind,ou=app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9,dc=auth,dc=example,dc=com']}
+            peopleDn: {type: string}
+            groupsDn: {type: string}
     SAMLAttributes:
       type: object
       description: The attribute name Halo sends each value under. An empty name stops sending it.
@@ -9854,7 +9864,7 @@ components:
         confirmFeatures: {type: boolean, writeOnly: true, description: Turn off the features in `featuresOff` even though they are in use.}
     FeatureId:
       type: string
-      enum: [saml, scim, provisioning, ssh, governance, webhooks, forward-auth, radius, log-streaming]
+      enum: [saml, scim, provisioning, ssh, governance, webhooks, forward-auth, radius, ldap, log-streaming]
     Feature:
       type: object
       required: [id, name, description, enabled, usage]

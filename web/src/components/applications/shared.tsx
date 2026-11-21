@@ -19,7 +19,7 @@ export function statusKey(app: Pick<Application, "status" | "awaitingApproval">)
   return app.awaitingApproval ? "awaiting" : app.status;
 }
 
-export const PROTOCOL_LABEL = { oidc: "OpenID Connect", saml: "SAML 2.0", oauth: "OAuth 2.0", "forward-auth": "Forward auth", radius: "RADIUS", bookmark: "Bookmark" } as const;
+export const PROTOCOL_LABEL = { oidc: "OpenID Connect", saml: "SAML 2.0", oauth: "OAuth 2.0", "forward-auth": "Forward auth", radius: "RADIUS", ldap: "LDAP", bookmark: "Bookmark" } as const;
 export const TYPE_LABEL = { web: "Web", spa: "Single-page", native: "Native / CLI", service: "Service" } as const;
 
 export const TYPE_ICON: Record<AppType, LucideIcon> = { web: AppWindow, spa: PanelsTopLeft, native: Terminal, service: ServerCog };
@@ -60,6 +60,30 @@ export function RadiusServerFields({ issuer, port }: { issuer: string; port?: nu
     <>
       <CopyField label="Server" value={new URL(issuer).hostname} hint="The address of the Halo server itself. RADIUS runs over UDP, so HTTP proxies and ingresses don't carry it." />
       <CopyField label="Port" value={String(port)} hint="For authentication and accounting." />
+    </>
+  );
+}
+
+export function LdapConnectionFields({ ldap }: { ldap: NonNullable<Application["ldap"]> }) {
+  return (
+    <>
+      {ldap.url ? (
+        <CopyField
+          label="Server"
+          value={ldap.url}
+          hint={ldap.url.startsWith("ldaps://") ? undefined : "Turn on StartTLS in the application. Halo refuses binds without TLS unless HALO_LDAP_TLS is none."}
+        />
+      ) : (
+        <SecretWarning>The LDAP server is off. Set HALO_LDAP_LISTEN, with HALO_LDAP_CERT_FILE and HALO_LDAP_KEY_FILE for TLS, and restart Halo.</SecretWarning>
+      )}
+      <CopyField label="Base DN" value={ldap.baseDn} />
+      <CopyField label="Bind DN" value={ldap.bindDn} hint="The application binds as this DN with its bind password to search for people and groups." />
+      <CopyField
+        label="User search base"
+        value={ldap.peopleDn}
+        hint="inetOrgPerson entries: uid and mail hold the email address, cn the name and memberOf the groups. People bind as their own DN with their Halo password; people without one can't."
+      />
+      <CopyField label="Group search base" value={ldap.groupsDn} hint="groupOfNames entries, with a member attribute for each person." />
     </>
   );
 }

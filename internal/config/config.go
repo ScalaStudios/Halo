@@ -18,6 +18,7 @@ type Config struct {
 	SMTP           SMTP
 	S3             S3
 	LogExport      LogExport
+	LDAP           LDAP
 	TrustedProxies []string
 	CertHeader     string
 	PublicURL      *url.URL
@@ -78,6 +79,13 @@ func (v Vault) WrapCommand() string {
 	return "vault write -field=ciphertext " + v.Mount + "/encrypt/" + v.WrappingKey + ` plaintext="$(openssl rand -base64 32)"`
 }
 
+type LDAP struct {
+	Listen   string
+	TLS      string
+	CertFile string
+	KeyFile  string
+}
+
 type LogExport struct {
 	Protocol     string
 	Endpoint     string
@@ -120,6 +128,21 @@ func Load() (Config, error) {
 	}
 
 	cfg.RADIUSListen = os.Getenv("HALO_RADIUS_LISTEN")
+
+	cfg.LDAP = LDAP{Listen: os.Getenv("HALO_LDAP_LISTEN"), TLS: os.Getenv("HALO_LDAP_TLS"), CertFile: os.Getenv("HALO_LDAP_CERT_FILE"), KeyFile: os.Getenv("HALO_LDAP_KEY_FILE")}
+	if cfg.LDAP.Listen != "" {
+		if cfg.LDAP.TLS == "" {
+			cfg.LDAP.TLS = "ldaps"
+		}
+		switch {
+		case cfg.LDAP.Listen == cfg.Listen || cfg.LDAP.Listen == cfg.MetricsListen:
+			problems = append(problems, "HALO_LDAP_LISTEN must differ from HALO_LISTEN and HALO_METRICS_LISTEN, for example :636")
+		case cfg.LDAP.TLS != "ldaps" && cfg.LDAP.TLS != "starttls" && cfg.LDAP.TLS != "none":
+			problems = append(problems, "HALO_LDAP_TLS must be ldaps (the default), starttls, or none to accept passwords without TLS")
+		case cfg.LDAP.TLS != "none" && (cfg.LDAP.CertFile == "" || cfg.LDAP.KeyFile == ""):
+			problems = append(problems, "HALO_LDAP_CERT_FILE and HALO_LDAP_KEY_FILE are required for LDAPS and StartTLS: PEM files with the certificate chain and its private key")
+		}
+	}
 
 	cfg.Dev = os.Getenv("HALO_DEV") == "1"
 	cfg.NoCustomCSS = os.Getenv("HALO_DISABLE_CUSTOM_CSS") == "1"

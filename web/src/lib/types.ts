@@ -99,7 +99,7 @@ export type JoinableGroup = Group & { requested: boolean };
 export type JoinRequest = { user: NamedRef; createdAt: string };
 export type OwnedGroupDetail = { group: OwnedGroup; members: Required<NamedRef>[]; requests: JoinRequest[]; people: Required<NamedRef>[] };
 
-export type Protocol = "oidc" | "saml" | "oauth" | "bookmark" | "forward-auth" | "radius";
+export type Protocol = "oidc" | "saml" | "oauth" | "bookmark" | "forward-auth" | "radius" | "ldap";
 export type AppType = "web" | "spa" | "native" | "service";
 
 export type Credential = {
@@ -163,6 +163,7 @@ export type Application = {
   setupGuide: "grafana" | "forgejo" | "aether" | "generic-oidc" | "generic-saml" | "kubernetes" | "aws-iam-identity-center" | "slack";
   logoUrl: string | null;
   registeredDynamically: boolean;
+  ldap?: { url: string; baseDn: string; bindDn: string; peopleDn: string; groupsDn: string };
   awaitingApproval: boolean;
   requiresConsent: boolean;
   backchannelLogoutUri: string;
