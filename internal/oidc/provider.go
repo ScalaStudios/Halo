@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"html/template"
@@ -185,6 +186,9 @@ func New(d httpx.Deps) (http.Handler, error) {
 				return
 			}
 		}
+		if r.Form.Has("request") {
+			requestObjectHints(r.Form)
+		}
 		formPostErrors(w, r, r.Form.Get("response_mode"), r.Form.Get("redirect_uri"), serve)
 	})
 	mux.Handle("POST /oauth2/par", cors.New(*provider.CORSOptions()).Handler(st.pushAuthRequest(provider)))
@@ -218,6 +222,23 @@ func New(d httpx.Deps) (http.Handler, error) {
 }
 
 var formPostPage = template.Must(template.New("form_post").Parse(`<!doctype html><html><head><meta charset="utf-8"></head><body onload="document.forms[0].submit()"><form method="post" action="{{.Action}}">{{range $name, $values := .Params}}{{range $values}}<input type="hidden" name="{{$name}}" value="{{.}}">{{end}}{{end}}<noscript><button type="submit">Continue</button></noscript></form></body></html>`))
+
+func requestObjectHints(form url.Values) {
+	parts := strings.Split(form.Get("request"), ".")
+	if len(parts) != 3 {
+		return
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	var claims map[string]any
+	if err != nil || json.Unmarshal(payload, &claims) != nil {
+		return
+	}
+	for _, name := range []string{"response_mode", "state"} {
+		if value, ok := claims[name].(string); ok && !form.Has(name) {
+			form.Set(name, value)
+		}
+	}
+}
 
 func formPostErrors(w http.ResponseWriter, r *http.Request, mode, redirectURI string, next http.HandlerFunc) {
 	if mode != string(oidc.ResponseModeFormPost) || redirectURI == "" {

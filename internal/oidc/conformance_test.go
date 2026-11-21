@@ -1,6 +1,7 @@
 package oidc_test
 
 import (
+	"encoding/base64"
 	"io"
 	"net/http"
 	"net/url"
@@ -22,11 +23,8 @@ func TestTokenResponsesForbidCaching(t *testing.T) {
 	}
 }
 
-func TestFormPostErrorResponses(t *testing.T) {
-	h := newHarness(t, nil)
-	q := authorization(h.app.ClientID, true)
-	q.Set("response_mode", "form_post")
-	q.Set("prompt", "none")
+func formPost(t *testing.T, h *harness, q url.Values, wantError, wantState string) {
+	t.Helper()
 	res, err := (&http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Get(h.srv.URL + "/oauth2/authorize?" + q.Encode())
 	if err != nil {
 		t.Fatal(err)
@@ -35,11 +33,26 @@ func TestFormPostErrorResponses(t *testing.T) {
 	body, _ := io.ReadAll(res.Body)
 	page := string(body)
 	if res.StatusCode != http.StatusOK || res.Header.Get("Location") != "" || !strings.HasPrefix(res.Header.Get("Content-Type"), "text/html") || res.Header.Get("Cache-Control") != "no-store" {
-		t.Fatalf("prompt=none without a session: %d %v %s", res.StatusCode, res.Header, page)
+		t.Fatalf("want a form post page: %d %v %s", res.StatusCode, res.Header, page)
 	}
-	for _, want := range []string{`<form method="post" action="` + callback + `">`, `name="error" value="login_required"`, `name="state" value="st-fapi"`} {
+	for _, want := range []string{`<form method="post" action="` + callback + `">`, `name="error" value="` + wantError + `"`, `name="state" value="` + wantState + `"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("form post page lacks %s: %s", want, page)
 		}
 	}
+}
+
+func TestFormPostErrorResponses(t *testing.T) {
+	h := newHarness(t, nil)
+	q := authorization(h.app.ClientID, true)
+	q.Set("response_mode", "form_post")
+	q.Set("prompt", "none")
+	formPost(t, h, q, "login_required", "st-fapi")
+}
+
+func TestUnsupportedRequestObjectAnswersAsTheObjectAsks(t *testing.T) {
+	h := newHarness(t, nil)
+	object := `{"client_id":"` + h.app.ClientID + `","redirect_uri":"` + callback + `","response_type":"code","scope":"openid","state":"st-object","response_mode":"form_post"}`
+	q := url.Values{"client_id": {h.app.ClientID}, "redirect_uri": {callback}, "response_type": {"code"}, "scope": {"openid"}, "request": {"eyJhbGciOiJub25lIn0." + base64.RawURLEncoding.EncodeToString([]byte(object)) + "."}}
+	formPost(t, h, q, "request_not_supported", "st-object")
 }
