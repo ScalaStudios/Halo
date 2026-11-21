@@ -1,13 +1,16 @@
 package oidc
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"html/template"
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -182,7 +185,7 @@ func New(d httpx.Deps) (http.Handler, error) {
 				return
 			}
 		}
-		serve(w, r)
+		formPostErrors(w, r, r.Form.Get("response_mode"), r.Form.Get("redirect_uri"), serve)
 	})
 	mux.Handle("POST /oauth2/par", cors.New(*provider.CORSOptions()).Handler(st.pushAuthRequest(provider)))
 	mux.HandleFunc("GET /oauth2/logout/return", st.logoutReturn)
@@ -209,9 +212,41 @@ func New(d httpx.Deps) (http.Handler, error) {
 		if err == nil && req.Done && st.awaitConsent(w, r, req, provider) {
 			return
 		}
-		provider.ServeHTTP(w, r)
+		formPostErrors(w, r, req.ResponseMode, req.RedirectURI, provider.ServeHTTP)
 	})
 	return mux, nil
+}
+
+var formPostPage = template.Must(template.New("form_post").Parse(`<!doctype html><html><head><meta charset="utf-8"></head><body onload="document.forms[0].submit()"><form method="post" action="{{.Action}}">{{range $name, $values := .Params}}{{range $values}}<input type="hidden" name="{{$name}}" value="{{.}}">{{end}}{{end}}<noscript><button type="submit">Continue</button></noscript></form></body></html>`))
+
+func formPostErrors(w http.ResponseWriter, r *http.Request, mode, redirectURI string, next http.HandlerFunc) {
+	if mode != string(oidc.ResponseModeFormPost) || redirectURI == "" {
+		next(w, r)
+		return
+	}
+	rec := httptest.NewRecorder()
+	next(rec, r)
+	target, err := url.Parse(redirectURI)
+	location, locErr := url.Parse(rec.Header().Get("Location"))
+	if rec.Code != http.StatusFound || err != nil || locErr != nil || location.Query().Get("error") == "" || location.Scheme != target.Scheme || location.Host != target.Host || location.Path != target.Path {
+		maps.Copy(w.Header(), rec.Header())
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(rec.Body.Bytes())
+		return
+	}
+	params := location.Query()
+	for name := range target.Query() {
+		params.Del(name)
+	}
+	var page bytes.Buffer
+	if err := formPostPage.Execute(&page, map[string]any{"Action": template.URL(target.String()), "Params": params}); err != nil {
+		http.Error(w, "Halo could not send the response to the application. Go back to the application and try again.", http.StatusInternalServerError)
+		return
+	}
+	w.Header()["Set-Cookie"] = rec.Header()["Set-Cookie"]
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(page.Bytes())
 }
 
 func rewrite(w http.ResponseWriter, r *http.Request, next http.HandlerFunc, edit func([]byte) []byte) {
