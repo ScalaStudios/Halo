@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { empty, list, row } from "@/components/account/list";
-import { ActivateRole, CancelRequest, DeactivateRole, RequestAccess } from "@/components/governance/request-access";
+import { ActivateRole, CancelRequest, DeactivateRole, ExtendAccess, RequestAccess } from "@/components/governance/request-access";
 import { GuestAccessButton } from "@/components/directory/guest-access";
 import { PendingRequests } from "@/components/governance/requests";
-import { approversLabel, dueLabel, durationLabel, grantLabel, joinNames, REQUEST_STATUS, ReviewProgress } from "@/components/governance/shared";
+import { approversLabel, dueLabel, grantLabel, joinNames, REQUEST_STATUS, requestDurationLabel, ReviewProgress } from "@/components/governance/shared";
 import { ROLES } from "@/components/provisioning/shared";
 import { keysOf } from "@/components/settings/roles";
 import { Badge } from "@/components/ui/badge";
@@ -13,26 +13,30 @@ import { SectionTitle } from "@/components/ui/section-title";
 import { apiGet } from "@/lib/api/server";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { STATUS } from "@/lib/labels";
-import type { AccessPackage, AccessRequest, AccessReview } from "@/lib/governance-types";
+import type { AccessPackage, AccessRequest, AccessReview, NamedRef } from "@/lib/governance-types";
 import type { Organization, User } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Access" };
 
-function requestDetail(request: AccessRequest): string {
+function requestDetail(request: AccessRequest, userId: string): string {
+  const who =
+    request.requester.id !== userId ? `For ${request.requester.name} · ` : request.requestedBy && request.requestedBy.id !== userId ? `Asked by ${request.requestedBy.name} · ` : "";
   switch (request.status) {
     case "pending":
-      return `${durationLabel(request.durationDays)} · Waiting on ${approversLabel(request.approvers)} · Asked ${formatRelative(request.createdAt).toLowerCase()}`;
+      return `${who}${requestDurationLabel(request)}${request.stages > 1 ? ` · Stage ${request.stage} of ${request.stages}` : ""} · Waiting on ${approversLabel(request.approvers)} · Asked ${formatRelative(request.createdAt).toLowerCase()}`;
     case "approved":
-      return `Approved by ${request.decidedBy?.name ?? "an approver"} · ${grantLabel(request)}`;
+      return `${who}Approved by ${request.decidedBy?.name ?? "an approver"} · ${grantLabel(request)}`;
     case "denied":
-      return `Denied by ${request.decidedBy?.name ?? "an approver"}`;
+      return `${who}Denied by ${request.decidedBy?.name ?? "an approver"}`;
     case "cancelled":
-      return "You cancelled this request";
+      return `${who}Cancelled`;
+    case "expired":
+      return `${who}Nobody decided in time, so Halo closed it`;
   }
 }
 
 export default async function AccessPage() {
-  const [user, org, packages, requests, grants, approvals, reviews, guests] = await Promise.all([
+  const [user, org, packages, requests, grants, approvals, reviews, guests, reports] = await Promise.all([
     apiGet<User>("/me"),
     apiGet<Organization>("/organization"),
     apiGet<AccessPackage[]>("/me/access-packages"),
@@ -41,8 +45,9 @@ export default async function AccessPage() {
     apiGet<AccessRequest[]>("/me/approvals"),
     apiGet<AccessReview[]>("/me/reviews"),
     apiGet<User[]>("/me/guests"),
+    apiGet<NamedRef[]>("/me/direct-reports"),
   ]);
-  const pendingIds = requests.filter((r) => r.status === "pending").map((r) => r.package.id);
+  const pendingIds = requests.filter((r) => r.status === "pending" && r.requester.id === user.id).map((r) => r.package.id);
   const admin = user.roles.length > 0;
   const standing = keysOf(user);
   const eligible = user.eligibleRoles.filter((role) => !standing.includes(role));
@@ -53,7 +58,7 @@ export default async function AccessPage() {
         size="large"
         title="Access"
         description="What you can reach and why. Groups decide which applications you see; roles decide what you can change in Halo."
-        actions={packages.length ? <RequestAccess packages={packages} pendingIds={pendingIds} /> : null}
+        actions={packages.length ? <RequestAccess packages={packages} pendingIds={pendingIds} reports={reports} /> : null}
       />
 
       {packages.length === 0 ? (
@@ -135,8 +140,9 @@ export default async function AccessPage() {
                   <p className="flex flex-wrap items-center gap-2 text-body-sm font-semibold text-fg">
                     {request.package.name}
                     <Badge tone={REQUEST_STATUS[request.status].tone}>{REQUEST_STATUS[request.status].label}</Badge>
+                    {request.extends ? <Badge tone="neutral">Extension</Badge> : null}
                   </p>
-                  <p className="text-body-sm text-fg-3">{requestDetail(request)}</p>
+                  <p className="text-body-sm text-fg-3">{requestDetail(request, user.id)}</p>
                   {request.decisionNote ? <p className="text-body-sm text-fg-3">“{request.decisionNote}”</p> : null}
                 </div>
                 {request.status === "pending" ? (
@@ -156,15 +162,22 @@ export default async function AccessPage() {
         <SectionTitle title="Access you were granted" description="Approved packages. Halo removes the access when it ends." />
         {grants.length ? (
           <ul className={list}>
-            {grants.map((grant) => (
-              <li key={grant.id} className={row}>
-                <div className="flex min-w-0 flex-col gap-1">
-                  <p className="text-body-sm font-semibold text-fg">{grant.package.name}</p>
-                  <p className="text-body-sm text-fg-3">Groups: {joinNames(grant.groups)}</p>
-                </div>
-                <span className="shrink-0 text-caption text-fg-3">{grantLabel(grant)}</span>
-              </li>
-            ))}
+            {grants.map((grant) => {
+              const pkg = packages.find((p) => p.id === grant.package.id);
+              const asked = requests.some((r) => r.status === "pending" && r.extends === grant.id);
+              return (
+                <li key={grant.id} className={row}>
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <p className="text-body-sm font-semibold text-fg">{grant.package.name}</p>
+                    <p className="text-body-sm text-fg-3">Groups: {joinNames(grant.groups)}</p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-3">
+                    <span className="text-caption text-fg-3">{asked ? `${grantLabel(grant)} · Extension requested` : grantLabel(grant)}</span>
+                    {grant.expiresAt && pkg && !asked ? <ExtendAccess grant={grant} pkg={pkg} /> : null}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <p className={empty}>No approved access right now.</p>

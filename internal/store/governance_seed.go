@@ -93,7 +93,7 @@ func (s *Store) seedGovernance(ctx context.Context, now time.Time) error {
 		if err != nil {
 			return err
 		}
-		if err := s.DenyAccessRequest(ctx, requestID, d.decider, d.note, ago(d.minutes)); err != nil {
+		if err := s.DenyAccessRequest(ctx, requestID, 1, d.decider, d.note, ago(d.minutes)); err != nil {
 			return err
 		}
 	}
@@ -108,7 +108,7 @@ func (s *Store) seedGovernance(ctx context.Context, now time.Time) error {
 		if err != nil {
 			return err
 		}
-		if err := s.ApproveAccessRequest(ctx, requestID, luna, "", ago(60*20)); err != nil {
+		if _, err := s.ApproveAccessRequest(ctx, requestID, 1, luna, "", ago(60*20)); err != nil {
 			return err
 		}
 	}

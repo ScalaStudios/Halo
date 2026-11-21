@@ -48,8 +48,16 @@ func MagicLink(to, name, app, link, code string) Message {
 	return build("magic_code", to, vars)
 }
 
-func AccessRequested(to, requester, requesterEmail, pkg, duration, reason, link string) Message {
-	return build("access_request", to, map[string]string{"Requester": requester, "RequesterEmail": requesterEmail, "Package": pkg, "Duration": duration, "Reason": reason, "Link": link})
+func AccessRequested(to, requester, requesterEmail, requestedBy, pkg, duration, reason, answers, link string) Message {
+	return build("access_request", to, map[string]string{"Requester": requester, "RequesterEmail": requesterEmail, "RequestedBy": requestedBy, "Package": pkg, "Duration": duration, "Reason": reason, "Answers": answers, "Link": link})
+}
+
+func AccessRequestedForYou(to, requestedBy, pkg, duration, link string) Message {
+	return build("access_request_for_you", to, map[string]string{"RequestedBy": requestedBy, "Package": pkg, "Duration": duration, "Link": link})
+}
+
+func AccessExpired(to, pkg, link string) Message {
+	return build("access_expired", to, map[string]string{"Package": pkg, "Link": link})
 }
 
 func AccessDecided(to string, approved bool, approver, pkg, expires, groups, note, link string) Message {

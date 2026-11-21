@@ -2104,7 +2104,7 @@ paths:
       tags: [Account, Access requests]
       operationId: createAccessRequest
       summary: Request an access package
-      description: Emails the package's approvers. Approvers cannot decide their own requests.
+      description: Emails the approvers of the package's first stage. Nobody decides a request they made or that is for them. Send `beneficiaryId` to request for someone who reports to you, or for a guest you sponsor who has no manager; they get an email and see the request in their account. Send `extendsId` to ask for more time on access you hold that has an end date; the extension goes through the package's stages again and, when approved, adds its duration to the current end date.
       security: *personal
       requestBody:
         required: true
@@ -2112,15 +2112,20 @@ paths:
           application/json:
             schema:
               type: object
-              required: [packageId]
               properties:
-                packageId: {type: string}
+                packageId: {type: string, description: Required unless you send `extendsId`.}
+                beneficiaryId: {type: string, description: 'The person who gets the access, when it is not you. They must report to you: their manager is you, or they are a guest you sponsor with no manager.'}
+                extendsId: {type: string, description: The id of the active grant to extend. The package and the beneficiary come from it.}
                 durationDays:
                   type: [integer, 'null']
                   minimum: 1
                   maximum: 365
-                  description: How long you need access. Required, and at most the package's `maxDays`, when the package sets one. `null` asks for access until it is revoked.
+                  description: How long you need access, or how many more days for an extension. Required, and at most the package's `maxDays`, when the package sets one. `null` asks for access until it is revoked.
                 justification: {type: string, maxLength: 2000, description: 'Required when the package sets `requireJustification`.'}
+                answers:
+                  type: object
+                  description: Answers to the package's questions, keyed by question id. Required questions need an answer, and a choice question takes one of its choices.
+                  additionalProperties: {type: string, maxLength: 500}
       responses:
         '201':
           description: The pending request.
@@ -2129,9 +2134,13 @@ paths:
               schema: {$ref: '#/components/schemas/AccessRequest'}
         '400': {$ref: '#/components/responses/BadJSON'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
-        '403': {$ref: '#/components/responses/CrossSite'}
+        '403':
+          description: '`ERR_FORBIDDEN`: `beneficiaryId` is not someone who reports to you, or you are a guest. `ERR_CROSS_SITE`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
         '409':
-          description: '`ERR_CONFLICT`: the package is archived, or you already have a pending request for it.'
+          description: '`ERR_CONFLICT`: the package is archived, the person already has a pending request for it, or the grant to extend has ended or lasts until it is revoked.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -2170,6 +2179,22 @@ paths:
                 type: array
                 items: {$ref: '#/components/schemas/AccessRequest'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/direct-reports:
+    get:
+      tags: [Account, Access requests]
+      operationId: listMyDirectReports
+      summary: List the people you can request access for
+      description: Active and invited people whose manager is you, and guests you sponsor who have no manager. Empty for guests.
+      security: *personal
+      responses:
+        '200':
+          description: The people, by name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/NamedRef'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
   /me/approvals:
     get:
       tags: [Account, Access requests]
@@ -2178,7 +2203,7 @@ paths:
       security: *personal
       responses:
         '200':
-          description: Pending requests where you are an approver and not the requester, or every pending request for a global administrator.
+          description: Pending requests where you are an approver of the current stage and neither the beneficiary nor the person who asked, or every such pending request for a global administrator.
           content:
             application/json:
               schema:
@@ -4497,7 +4522,7 @@ paths:
       parameters:
         - name: status
           in: query
-          description: A status or a comma-separated list, such as `approved,denied`.
+          description: 'A status or a comma-separated list, such as `approved,denied`: `pending`, `approved`, `denied`, `cancelled` or `expired`.'
           schema: {type: string, examples: [pending]}
       responses:
         '200':
@@ -4516,8 +4541,8 @@ paths:
     post:
       tags: [Access requests]
       operationId: approveAccessRequest
-      summary: Approve a pending request
-      description: 'Roles: an approver of the package or a global administrator, who is not the requester. Adds the requester to the package''s groups, starts the expiry clock and emails the requester. The body is optional.'
+      summary: Approve the current stage of a pending request
+      description: 'Roles: an approver of the current stage or a global administrator, who is neither the beneficiary nor the person who asked. Before the last stage, the request moves to the next stage and its approvers get an email. At the last stage, Halo adds the beneficiary to the package''s groups, starts the expiry clock and emails them. Approving an extension adds its duration to the current end date and ends the old grant with `endReason` `extended`, keeping the memberships. The body is optional.'
       requestBody: {$ref: '#/components/requestBodies/DecisionNote'}
       responses:
         '200': {$ref: '#/components/responses/AccessRequestResponse'}
@@ -4534,7 +4559,7 @@ paths:
       tags: [Access requests]
       operationId: denyAccessRequest
       summary: Deny a pending request
-      description: 'Roles: an approver of the package or a global administrator, who is not the requester. Emails the requester. The body is optional.'
+      description: 'Roles: an approver of the current stage or a global administrator, who is neither the beneficiary nor the person who asked. A denial at any stage ends the request. Emails the beneficiary. The body is optional.'
       requestBody: {$ref: '#/components/requestBodies/DecisionNote'}
       responses:
         '200': {$ref: '#/components/responses/AccessRequestResponse'}
@@ -7239,8 +7264,19 @@ components:
                 items: {type: string}
               approverIds:
                 type: array
-                description: Without approvers, only a global administrator can decide requests.
+                description: 'Used only when `stages` is left out: one stage decided by these people. A package with other stages refuses it. Without approvers, only a global administrator can decide requests.'
                 items: {type: string}
+              stages:
+                type: array
+                minItems: 1
+                maxItems: 3
+                description: Approval stages in order. Each stage is decided by any one of its approvers, and a denial at any stage ends the request. Left out on an update, the stages stay as they are.
+                items: {$ref: '#/components/schemas/AccessStageInput'}
+              questions:
+                type: array
+                maxItems: 10
+                description: Questions on the request form. Approvers see the answers, which are kept with each request. Left out on an update, the questions stay as they are. Leave `id` empty on a new question.
+                items: {$ref: '#/components/schemas/AccessQuestion'}
               maxDays:
                 type: [integer, 'null']
                 minimum: 1
@@ -7665,7 +7701,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     DecisionForbidden:
-      description: '`ERR_SELF_APPROVAL`: you made the request yourself, which global administrators cannot decide either; the message names who can. `ERR_FORBIDDEN`: you are not an approver of the package. `ERR_CROSS_SITE`.'
+      description: '`ERR_SELF_APPROVAL`: the request is for you or you made it, which global administrators cannot decide either; the message names who can. `ERR_FORBIDDEN`: you are not an approver of the current stage. `ERR_CROSS_SITE`.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -8614,9 +8650,53 @@ components:
                     - {type: 'null'}
                 at: {type: string, format: date-time}
             - {type: 'null'}
+    AccessStageInput:
+      type: object
+      required: [approver]
+      properties:
+        approver:
+          type: string
+          enum: [people, manager, group-owners]
+          description: '`people`: the people in `approverIds`. `manager`: the beneficiary''s manager, or a guest''s sponsor when the guest has no manager. `group-owners`: the owners of `groupId`.'
+        approverIds: {type: array, items: {type: string}, description: Only for `people`.}
+        groupId: {type: [string, 'null'], description: An assigned group. Required for `group-owners`.}
+        fallbackIds:
+          type: array
+          items: {type: string}
+          description: Decide the stage when nobody above can, such as a beneficiary without a manager, and get the stage when its deadline passes. Without fallback approvers, global administrators decide a stage nobody else can.
+        timeoutDays:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 30
+          description: Days the stage waits. Then it goes to the fallback approvers once, for the same number of days, and after that, or straight away without fallback approvers, the request expires. `null` waits until someone decides.
+    AccessStage:
+      type: object
+      required: [approver, approvers, group, fallback, timeoutDays]
+      properties:
+        approver: {type: string, enum: [people, manager, group-owners]}
+        approvers:
+          type: array
+          items: {$ref: '#/components/schemas/NamedRef'}
+        group:
+          oneOf:
+            - {$ref: '#/components/schemas/NamedRef'}
+            - {type: 'null'}
+        fallback:
+          type: array
+          items: {$ref: '#/components/schemas/NamedRef'}
+        timeoutDays: {type: [integer, 'null']}
+    AccessQuestion:
+      type: object
+      required: [text, kind]
+      properties:
+        id: {type: string, maxLength: 40}
+        text: {type: string, maxLength: 200, examples: [Ticket number]}
+        kind: {type: string, enum: [text, choice]}
+        choices: {type: array, minItems: 2, maxItems: 20, items: {type: string, maxLength: 100}, description: Only for `choice`.}
+        required: {type: boolean}
     AccessPackage:
       type: object
-      required: [id, name, description, owner, groups, approvers, maxDays, requireJustification, archived, pendingRequests, activeGrants, createdAt]
+      required: [id, name, description, owner, groups, approvers, stages, questions, maxDays, requireJustification, archived, pendingRequests, activeGrants, createdAt]
       properties:
         id: {type: string, examples: [pkg_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
@@ -8630,7 +8710,14 @@ components:
           items: {$ref: '#/components/schemas/NamedRef'}
         approvers:
           type: array
+          description: Everyone named as an approver in any stage, without fallback approvers.
           items: {$ref: '#/components/schemas/NamedRef'}
+        stages:
+          type: array
+          items: {$ref: '#/components/schemas/AccessStage'}
+        questions:
+          type: array
+          items: {$ref: '#/components/schemas/AccessQuestion'}
         maxDays: {type: [integer, 'null']}
         requireJustification: {type: boolean}
         archived: {type: boolean}
@@ -8639,14 +8726,46 @@ components:
         createdAt: {type: string, format: date-time}
     AccessRequest:
       type: object
-      required: [id, package, requester, justification, durationDays, status, decidedBy, decidedAt, decisionNote, expiresAt, endedAt, endReason, groups, approvers, createdAt, canDecide]
+      required: [id, package, requester, requestedBy, extends, justification, answers, durationDays, status, stage, stages, stageDueAt, stageApprovals, decidedBy, decidedAt, decisionNote, expiresAt, endedAt, endReason, groups, approvers, createdAt, canDecide]
       properties:
         id: {type: string, examples: [req_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         package: {$ref: '#/components/schemas/NamedRef'}
-        requester: {$ref: '#/components/schemas/NamedRef'}
+        requester: {$ref: '#/components/schemas/NamedRef', description: The person who gets the access.}
+        requestedBy:
+          description: The manager or sponsor who asked on the requester's behalf. Null when the requester asked themselves.
+          oneOf:
+            - {$ref: '#/components/schemas/NamedRef'}
+            - {type: 'null'}
+        extends: {type: [string, 'null'], description: The id of the grant this request extends.}
         justification: {type: string}
+        answers:
+          type: array
+          description: The answers given, with each question's text as it was asked.
+          items:
+            type: object
+            required: [questionId, question, answer]
+            properties:
+              questionId: {type: string}
+              question: {type: string}
+              answer: {type: string}
         durationDays: {type: [integer, 'null']}
-        status: {type: string, enum: [pending, approved, denied, cancelled]}
+        status: {type: string, enum: [pending, approved, denied, cancelled, expired], description: '`expired`: nobody decided before the deadline.'}
+        stage: {type: integer, description: The current stage, or the last one for a decided request.}
+        stages: {type: integer}
+        stageDueAt: {type: [string, 'null'], format: date-time, description: When the current stage of a pending request reaches its deadline.}
+        stageApprovals:
+          type: array
+          items:
+            type: object
+            required: [stage, by, note, at]
+            properties:
+              stage: {type: integer}
+              by:
+                oneOf:
+                  - {$ref: '#/components/schemas/NamedRef'}
+                  - {type: 'null'}
+              note: {type: string}
+              at: {type: string, format: date-time}
         decidedBy:
           oneOf:
             - {$ref: '#/components/schemas/NamedRef'}
@@ -8655,12 +8774,13 @@ components:
         decisionNote: {type: string}
         expiresAt: {type: [string, 'null'], format: date-time, description: When an approved grant ends. Null for grants that last until revoked.}
         endedAt: {type: [string, 'null'], format: date-time}
-        endReason: {type: [string, 'null'], enum: [expired, revoked, null]}
+        endReason: {type: [string, 'null'], enum: [expired, revoked, extended, null]}
         groups:
           type: array
           items: {$ref: '#/components/schemas/NamedRef'}
         approvers:
           type: array
+          description: Who can decide the current stage of a pending request. Empty when only a global administrator can, and for decided requests.
           items: {$ref: '#/components/schemas/NamedRef'}
         createdAt: {type: string, format: date-time}
         canDecide: {type: boolean}
