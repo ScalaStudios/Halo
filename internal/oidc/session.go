@@ -89,22 +89,25 @@ func policyReason(decision access.Decision) string {
 }
 
 func (s *storage) TerminateSessionFromRequest(ctx context.Context, req *op.EndSessionRequest) (string, error) {
-	if err := s.TerminateSession(ctx, req.UserID, req.ClientID); err != nil {
-		return "", err
-	}
 	sid := ""
 	if req.IDTokenHintClaims != nil {
-		if sid, _ = req.IDTokenHintClaims.Claims["sid"].(string); sid != "" {
-			if err := s.st.RevokeSession(ctx, sid, req.UserID); err != nil && !errors.Is(err, store.ErrNotFound) {
-				return "", err
-			}
-		}
+		sid, _ = req.IDTokenHintClaims.Claims["sid"].(string)
 	}
 	q := url.Values{}
 	confirm := req.IDTokenHintClaims == nil
 	if r, ok := ctx.Value(requestKey{}).(*http.Request); ok {
 		if current, signedIn := httpx.CurrentSession(r); signedIn && current.ID != sid {
 			confirm = true
+		}
+	}
+	if !confirm {
+		if err := s.TerminateSession(ctx, req.UserID, req.ClientID); err != nil {
+			return "", err
+		}
+		if sid != "" {
+			if err := s.st.RevokeSession(ctx, sid, req.UserID); err != nil && !errors.Is(err, store.ErrNotFound) {
+				return "", err
+			}
 		}
 	}
 	if confirm {

@@ -5,7 +5,7 @@ export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-halo-conformance}"
 export SUITE_TAG="${SUITE_TAG:-release-v5.3.4}"
 mkdir -p out/bin out/certs out/config out/suite/certs-keys out/results
 
-if [ ! -f out/certs/tls.crt ]; then
+if [ ! -s out/certs/tls.key ] || ! openssl x509 -in out/certs/tls.crt -checkend 86400 -noout >/dev/null 2>&1; then
   openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 30 -subj "/CN=Halo conformance" \
     -addext "subjectAltName=DNS:halo.test,DNS:localhost.emobix.co.uk" -addext "basicConstraints=critical,CA:TRUE" \
     -addext "keyUsage=critical,digitalSignature,keyCertSign" -addext "extendedKeyUsage=serverAuth" \

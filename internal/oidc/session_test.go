@@ -384,6 +384,14 @@ func TestEndSession(t *testing.T) {
 	sess, token := h.session(h.user, "passkey")
 	idToken, refreshToken, _ := h.tokens(h.silent(token, nil).Query().Get("code"))
 	other, otherToken := h.session(h.user, "passkey")
+	if status, location := h.get("/oauth2/logout?"+url.Values{"id_token_hint": {idToken}}.Encode(), otherToken); status != http.StatusFound || location.String() != "/signed-out?confirm=1" {
+		t.Fatalf("logout with an id_token_hint from another session must ask to confirm: %d %s", status, location)
+	}
+	for _, sessionToken := range []string{token, otherToken} {
+		if _, err := h.st.SessionByToken(context.Background(), sessionToken); err != nil {
+			t.Fatalf("confirming logout modified a live session: %v", err)
+		}
+	}
 	status, refreshToken := h.refresh(refreshToken)
 	if status != http.StatusOK || refreshToken == "" {
 		t.Fatalf("refresh before logout: %d", status)
@@ -419,9 +427,6 @@ func TestEndSession(t *testing.T) {
 	}
 	if status, location := h.get("/oauth2/logout?client_id="+h.app.ClientID, ""); status != http.StatusFound || location.String() != "/signed-out?confirm=1" {
 		t.Fatalf("logout without an id_token_hint must ask to confirm: %d %s", status, location)
-	}
-	if status, location := h.get("/oauth2/logout?"+url.Values{"id_token_hint": {idToken}}.Encode(), otherToken); status != http.StatusFound || location.String() != "/signed-out?confirm=1" {
-		t.Fatalf("logout with an id_token_hint from another session must ask to confirm: %d %s", status, location)
 	}
 
 	for next, want := range map[string]string{

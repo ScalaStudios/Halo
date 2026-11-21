@@ -189,6 +189,7 @@ func New(d httpx.Deps) (http.Handler, error) {
 			if r, ok = st.pushedAuthRequest(w, r); !ok {
 				return
 			}
+			_ = r.ParseForm()
 		}
 		if r.Form.Has("request") {
 			requestObjectHints(r.Form)
@@ -226,10 +227,12 @@ func New(d httpx.Deps) (http.Handler, error) {
 			http.Error(w, "This sign-in was completed in a different browser session. Start again from the application.", http.StatusForbidden)
 			return
 		}
-		if err == nil && req.Done && st.awaitConsent(w, r, req, provider) {
-			return
-		}
-		formPostErrors(w, r, req.ResponseMode, req.RedirectURI, provider.ServeHTTP)
+		formPostErrors(w, r, req.ResponseMode, req.RedirectURI, func(w http.ResponseWriter, r *http.Request) {
+			if err == nil && req.Done && st.awaitConsent(w, r, req, provider) {
+				return
+			}
+			provider.ServeHTTP(w, r)
+		})
 	})
 	return mux, nil
 }
@@ -279,8 +282,12 @@ func formPostErrors(w http.ResponseWriter, r *http.Request, mode, redirectURI st
 		return
 	}
 	params := location.Query()
-	for name := range target.Query() {
-		params.Del(name)
+	for name, values := range target.Query() {
+		for _, value := range values {
+			if i := slices.Index(params[name], value); i >= 0 {
+				params[name] = slices.Delete(params[name], i, i+1)
+			}
+		}
 	}
 	var page bytes.Buffer
 	if err := formPostPage.Execute(&page, map[string]any{"Action": template.URL(target.String()), "Params": params}); err != nil {

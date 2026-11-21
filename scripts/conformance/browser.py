@@ -8,6 +8,7 @@ import sys
 import time
 import traceback
 import urllib.parse
+from urllib.error import URLError
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -16,6 +17,7 @@ from halo import HALO, SUITE, USER_EMAIL, USER_PASSWORD, Browser
 suite = Browser()
 browsers = {}
 handled = set()
+interactions = {}
 admin_group = json.load(open("out/config/admin.json"))["group_id"]
 admin = Browser(open("out/config/admin-cookie").read().strip())
 
@@ -131,6 +133,9 @@ def submit_fragment(test, b, res, fragment):
 
 
 def visit(test, url, method):
+    acknowledgement = f"{SUITE}/api/runner/browser/{test}/visit?" + urllib.parse.urlencode({"url": url})
+    yield lambda: suite.request("POST", acknowledgement)
+    log(test, f"visiting {method} {url[:160]}")
     b = browsers.setdefault(test, Browser())
     b.signed_in = getattr(b, "signed_in", False)
     trail = []
@@ -141,13 +146,14 @@ def visit(test, url, method):
             url, fragment = url.split("#", 1)
             fragment = "#" + fragment
         if form is not None:
-            res = b.request("POST", url, form=form)
+            res = yield lambda: b.request("POST", url, form=form)
         else:
-            res = b.request(method, url)
+            res = yield lambda: b.request(method, url)
         trail.append(f"{'POST' if form is not None else method} {url[:120]} -> {res.status}")
         form, method = None, "GET"
         if url.startswith(SUITE):
-            if not submit_fragment(test, b, res, fragment) and res.status >= 400:
+            submitted = yield lambda: submit_fragment(test, b, res, fragment)
+            if not submitted and res.status >= 400:
                 log(test, f"suite answered {res.status}: {res.text[:200]}")
             if res.location:
                 url = res.location
@@ -157,13 +163,13 @@ def visit(test, url, method):
             nxt = res.location
             path = urllib.parse.urlsplit(nxt).path
             if nxt.startswith(HALO) and path == "/sign-in" and "consent=" in nxt:
-                nxt = consent(test, b, nxt, trail)
+                nxt = yield lambda: consent(test, b, nxt, trail)
             elif nxt.startswith(HALO) and path == "/sign-in":
-                nxt = sign_in(test, b, nxt, trail)
+                nxt = yield lambda: sign_in(test, b, nxt, trail)
             elif nxt.startswith(HALO) and path == "/signed-out":
-                nxt = signed_out(test, b, nxt, trail)
+                nxt = yield lambda: signed_out(test, b, nxt, trail)
             if not nxt:
-                capture(test, trail)
+                yield lambda: capture(test, trail)
                 return
             url = nxt
             continue
@@ -175,7 +181,7 @@ def visit(test, url, method):
             continue
         trail.append(page_text(res))
         log(test, f"stopped at {url[:120]}: {res.status} {page_text(res)[:200]}")
-        capture(test, trail)
+        yield lambda: capture(test, trail)
         return
 
 
@@ -189,14 +195,22 @@ def main():
                     continue
                 for entry in (info.json().get("browser") or {}).get("urlsWithMethod") or []:
                     key = (test, entry["url"])
-                    if key in handled:
-                        continue
-                    handled.add(key)
-                    suite.request("POST", f"{SUITE}/api/runner/browser/{test}/visit?" + urllib.parse.urlencode({"url": entry["url"]}))
-                    log(test, f"visiting {entry.get('method', 'GET')} {entry['url'][:160]}")
-                    visit(test, entry["url"], entry.get("method") or "GET")
-        except Exception:
+                    if key not in handled and key not in interactions:
+                        interaction = visit(test, entry["url"], entry.get("method") or "GET")
+                        interactions[key] = (interaction, next(interaction))
+        except (URLError, TimeoutError):
             traceback.print_exc()
+        for key, (interaction, action) in interactions.copy().items():
+            try:
+                while True:
+                    result = action()
+                    action = interaction.send(result)
+                    interactions[key] = (interaction, action)
+            except StopIteration:
+                del interactions[key]
+                handled.add(key)
+            except (URLError, TimeoutError):
+                traceback.print_exc()
         time.sleep(1)
 
 

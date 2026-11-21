@@ -1,6 +1,8 @@
 package oidc_test
 
 import (
+	"cmp"
+	"context"
 	"encoding/base64"
 	"io"
 	"net/http"
@@ -35,7 +37,7 @@ func formPost(t *testing.T, h *harness, q url.Values, wantError, wantState strin
 	if res.StatusCode != http.StatusOK || res.Header.Get("Location") != "" || !strings.HasPrefix(res.Header.Get("Content-Type"), "text/html") || res.Header.Get("Cache-Control") != "no-store" {
 		t.Fatalf("want a form post page: %d %v %s", res.StatusCode, res.Header, page)
 	}
-	for _, want := range []string{`<form method="post" action="` + callback + `">`, `name="error" value="` + wantError + `"`, `name="state" value="` + wantState + `"`} {
+	for _, want := range []string{`<form method="post" action="` + cmp.Or(q.Get("redirect_uri"), callback) + `">`, `name="error" value="` + wantError + `"`, `name="state" value="` + wantState + `"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("form post page lacks %s: %s", want, page)
 		}
@@ -47,6 +49,20 @@ func TestFormPostErrorResponses(t *testing.T) {
 	q := authorization(h.app.ClientID, true)
 	q.Set("response_mode", "form_post")
 	q.Set("prompt", "none")
+	formPost(t, h, q, "login_required", "st-fapi")
+	pushed, _ := h.do(http.MethodPost, "/oauth2/par", q, basicAuth(h.app.ClientID, h.secret))
+	requestURI, _ := pushed.body["request_uri"].(string)
+	if pushed.status != http.StatusCreated || requestURI == "" {
+		t.Fatalf("pushed authorization request: %d %v", pushed.status, pushed.body)
+	}
+	formPost(t, h, url.Values{"client_id": {h.app.ClientID}, "request_uri": {requestURI}}, "login_required", "st-fapi")
+
+	app := h.app
+	app.RedirectURIs = append(app.RedirectURIs, callback+"?state=route")
+	if err := h.st.UpdateApplication(context.Background(), app); err != nil {
+		t.Fatal(err)
+	}
+	q.Set("redirect_uri", callback+"?state=route")
 	formPost(t, h, q, "login_required", "st-fapi")
 }
 
