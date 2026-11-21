@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -107,6 +108,8 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		"GET /api/v1/me/sessions":                h.sessions,
 		"DELETE /api/v1/me/sessions/{id}":        h.revokeSession,
 		"POST /api/v1/me/sessions/revoke-others": h.revokeOtherSessions,
+		"GET /api/v1/me/security-emails":         h.securityEmails,
+		"PUT /api/v1/me/security-emails":         h.setSecurityEmails,
 		"GET /api/v1/me/applications":            h.applications,
 		"PUT /api/v1/me/applications":            h.arrangeApplications,
 		"GET /api/v1/me/collections":             h.collections,
@@ -176,7 +179,38 @@ func (h *handler) reject(r *http.Request, a attempt, reason string, e *httpx.Err
 	if err := h.st.RecordSignIn(r.Context(), a.event(r, "failure", reason)); err != nil {
 		return err
 	}
+	if a.user != nil && slices.Contains(guessedMethods, a.method) {
+		go h.notifyLocked(context.WithoutCancel(r.Context()), *a.user)
+	}
 	return e
+}
+
+func (h *handler) notifyLocked(ctx context.Context, u store.User) {
+	settings, err := h.st.Settings(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "lockout email not sent", "user", u.ID, "error", err)
+		return
+	}
+	failures, err := h.st.RecentFailures(ctx, u.ID, u.Email, guessedMethods, lockoutStart(settings))
+	if err != nil || failures < settings.LockoutThreshold {
+		return
+	}
+	until := time.Now().Add(time.Duration(settings.LockoutMinutes) * time.Minute)
+	msgs := []mail.Message{mail.AccountLocked(u.Email, u.Name, settings.LockoutThreshold, until, h.cfg.Issuer()+"/account/activity")}
+	if settings.LockoutEmailAdmins {
+		admins, err := h.st.GlobalAdminEmails(ctx, u.ID)
+		if err != nil {
+			slog.WarnContext(ctx, "lockout email to administrators not sent", "user", u.ID, "error", err)
+		}
+		for _, to := range admins {
+			msgs = append(msgs, mail.AccountLockedAdmin(to, u.Name, u.Email, settings.LockoutThreshold, until, h.cfg.Issuer()+"/admin/users/"+u.ID))
+		}
+	}
+	mail.SendSecurity(ctx, h.mailer, h.st, u.ID, "", msgs...)
+}
+
+func (h *handler) notify(r *http.Request, userID, subject string, msgs ...mail.Message) {
+	go mail.SendSecurity(context.WithoutCancel(r.Context()), h.mailer, h.st, userID, subject, msgs...)
 }
 
 func (h *handler) target(ctx context.Context, requestID string) (*store.Application, error) {
@@ -290,6 +324,14 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 	}
 	if token != "" {
 		h.auth.SetSession(w, token)
+		if slices.ContainsFunc(decision.Signals, func(s string) bool { return s == "new-device" || s == "new-network" }) {
+			appName := ""
+			if a.app != nil {
+				appName = a.app.Name
+			}
+			e := a.event(r, "success", "")
+			h.notify(r, u.ID, e.IP, mail.NewSignIn(u.Email, u.Name, appName, e.Device, e.IP, h.cfg.Issuer()+"/account/sessions", time.Now()))
+		}
 	}
 	return httpx.JSON(w, http.StatusOK, map[string]string{"redirect": redirect})
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/pquerna/otp/totp"
 
 	"halo/internal/httpx"
+	"halo/internal/mail"
 	"halo/internal/metrics"
 	"halo/internal/secret"
 	"halo/internal/store"
@@ -238,6 +239,7 @@ func (h *handler) totpConfirm(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	h.notify(r, u.ID, m.ID, mail.MethodAdded(u.Email, u.Name, m.Label, h.cfg.Issuer()+"/account/security", time.Now()))
 	return httpx.JSON(w, http.StatusOK, m)
 }
 
@@ -262,5 +264,6 @@ func (h *handler) recoveryCodes(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	h.notify(r, u.ID, "", mail.RecoveryCodes(u.Email, u.Name, h.cfg.Issuer()+"/account/security", time.Now()))
 	return httpx.JSON(w, http.StatusOK, map[string]any{"codes": codes})
 }

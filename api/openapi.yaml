@@ -10,8 +10,8 @@ info:
 
     **Authentication.** Send either the `halo_session` cookie of a signed-in person, or an API key of a service account as `Authorization: Bearer hlk_…`. API keys work only when they have the `api` scope, act with the roles of their service account, and are ignored on the personal routes under `/me` and on the sign-in routes under `/auth`. A workload with a federated credential on a service account trades a token from its own identity provider for an API key that expires after an hour at `POST /oauth2/token`. The personal routes under `/me/` (with a trailing segment, not `/me` itself) also accept an access token that `halo login` obtained for the built-in Halo CLI application.
 
-    **Re-authentication.** Sensitive operations need a recent strong sign-in when a person calls them with a session: a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, within the last `reauthMinutes` (10 by default). Otherwise they answer `401` with `ERR_REAUTH_REQUIRED`; confirm with `/me/reauthenticate/begin` and `/me/reauthenticate`, then send the same request again. A person with no passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE` instead. API keys are not affected, and an approved change applies without asking the requester again. The sensitive operations are the ones whose `401` response lists `ERR_REAUTH_REQUIRED`: granting or activating administrator roles, creating service accounts and API keys, rotating signing keys, SAML certificates and client secrets, changing access policies, sign-in methods and organization settings, resetting or changing another person's sign-in methods, extending a guest's access or changing their sponsor, changing identity providers, exporting the configuration and approving a held change. Adding or removing your own passkey, security key or authenticator app, and creating recovery codes, need it too once you have a passkey, security key or authenticator app.
-    **Re-authentication.** Sensitive operations need a recent strong sign-in when a person calls them with a session: a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, within the last `reauthMinutes` (10 by default). Otherwise they answer `401` with `ERR_REAUTH_REQUIRED`; confirm with `/me/reauthenticate/begin` and `/me/reauthenticate`, then send the same request again. A person with no passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE` instead. API keys are not affected, and an approved change applies without asking the requester again. The sensitive operations are the ones whose `401` response lists `ERR_REAUTH_REQUIRED`: granting or activating administrator roles, creating service accounts, API keys and federated credentials, removing federated credentials, rotating signing keys, SAML certificates and client secrets, changing access policies, sign-in methods and organization settings, resetting or changing another person's sign-in methods, changing identity providers, exporting the configuration and approving a held change. Adding or removing your own passkey, security key or authenticator app, and creating recovery codes, need it too once you have a passkey, security key or authenticator app.
+    **Re-authentication.** Sensitive operations need a recent strong sign-in when a person calls them with a session: a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, within the last `reauthMinutes` (10 by default). Otherwise they answer `401` with `ERR_REAUTH_REQUIRED`; confirm with `/me/reauthenticate/begin` and `/me/reauthenticate`, then send the same request again. A person with no passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE` instead. API keys are not affected, and an approved change applies without asking the requester again. The sensitive operations are the ones whose `401` response lists `ERR_REAUTH_REQUIRED`: granting or activating administrator roles, creating service accounts and API keys, rotating signing keys, SAML certificates and client secrets, changing access policies, sign-in methods and organization settings, resetting or changing another person's sign-in methods, extending a guest's access or changing their sponsor, changing identity providers, exporting the configuration and approving a held change. Adding or removing your own passkey, security key or authenticator app, creating recovery codes, and choosing your security emails, need it too once you have a passkey, security key or authenticator app.
+    **Re-authentication.** Sensitive operations need a recent strong sign-in when a person calls them with a session: a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, within the last `reauthMinutes` (10 by default). Otherwise they answer `401` with `ERR_REAUTH_REQUIRED`; confirm with `/me/reauthenticate/begin` and `/me/reauthenticate`, then send the same request again. A person with no passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE` instead. API keys are not affected, and an approved change applies without asking the requester again. The sensitive operations are the ones whose `401` response lists `ERR_REAUTH_REQUIRED`: granting or activating administrator roles, creating service accounts, API keys and federated credentials, removing federated credentials, rotating signing keys, SAML certificates and client secrets, changing access policies, sign-in methods and organization settings, resetting or changing another person's sign-in methods, changing identity providers, exporting the configuration and approving a held change. Adding or removing your own passkey, security key or authenticator app, creating recovery codes, and choosing your security emails, need it too once you have a passkey, security key or authenticator app.
 
     **Roles.** Each operation states the roles it requires. A global administrator passes every role check. "Any administrator" means security, user, helpdesk or application administrator, or auditor.
 
@@ -1429,6 +1429,47 @@ paths:
         '200': {$ref: '#/components/responses/Revoked'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/CrossSite'}
+  /me/security-emails:
+    get:
+      tags: [Account]
+      operationId: listMySecurityEmails
+      summary: List the security emails Halo sends you
+      description: The security emails your organization turned on, and whether you get each one. Only emails about a new sign-in can be turned off.
+      security: *personal
+      responses:
+        '200':
+          description: Your security emails.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/SecurityEmail'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+    put:
+      tags: [Account]
+      operationId: setMySecurityEmails
+      summary: Choose the security emails you get
+      description: Replaces the list of security emails you turned off. Only `new_sign_in` can be in it; your organization decides the others.
+      security: *personal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                'off': {type: array, items: {type: string, enum: [new_sign_in]}}
+      responses:
+        '200':
+          description: Your security emails after the change.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/SecurityEmail'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /me/applications:
     get:
       tags: [Account]
@@ -4924,7 +4965,7 @@ paths:
       tags: [Settings]
       operationId: listEmailTemplates
       summary: List the email templates
-      description: 'Roles: any administrator. Each email Halo sends for invitations, resets, sign-in links and codes and access requests, with its variables, Halo''s default subject and body, and the custom subject and body when one is saved.'
+      description: 'Roles: any administrator. Each email Halo sends for invitations, resets, sign-in links and codes, access requests and security notices, with its variables, Halo''s default subject and body, and the custom subject and body when one is saved.'
       responses:
         '200':
           description: The email templates.
@@ -5572,7 +5613,7 @@ components:
       name: kind
       in: path
       required: true
-      schema: {type: string, enum: [invite, reset, magic_link, magic_code, sign_up, access_request, access_approved, access_denied, access_pass]}
+      schema: {type: string, enum: [invite, reset, magic_link, magic_code, sign_up, access_request, access_approved, access_denied, access_pass, new_sign_in, method_added, method_removed, recovery_codes, email_changed, account_locked, account_locked_admin, impersonation]}
     UserId:
       name: userId
       in: path
@@ -6816,6 +6857,8 @@ components:
         sshCertificates: {type: array, items: {type: object}}
         riskEvents: {type: array, items: {type: object}}
         applicationPreferences: {type: array, items: {type: object}}
+        securityEmails: {type: array, items: {type: object}, description: 'Security emails Halo sent, with what each was about: the IP address of a new sign-in, a sign-in method, a new email address or a temporary access pass expiry.'}
+        securityEmailOptOuts: {type: array, items: {type: object}, description: Security emails the person turned off.}
     ApprovalRequest:
       type: object
       required: [id, action, summary, targetType, targetId, targetLabel, requester, createdAt, expiresAt, status, decidedBy, decidedAt, outcome, canDecide]
@@ -7315,9 +7358,23 @@ components:
         signUp: {type: string, enum: ['off', open, approval], default: 'off', description: 'Who can create an account at `/auth/sign-up`: nobody, anyone at an allowed domain once they confirm their address and create a passkey, or the same people after a user administrator approves them under `/sign-ups`. Turning it on with an empty `signUpDomains` needs a verified domain.'}
         signUpDomains: {type: array, default: [], maxItems: 100, items: {type: string, examples: [example.com]}, description: 'Email domains people can sign up with, matched exactly and without case. Empty allows the verified domains under `/domains`.'}
         signUpGroupIds: {type: array, default: [], items: {type: string}, description: 'Assigned groups that new accounts from sign-up join. Dynamic groups are skipped.'}
+        securityEmailsOff:
+          type: array
+          default: []
+          items: {type: string, enum: [new_sign_in, method_added, method_removed, recovery_codes, email_changed, account_locked, access_pass, impersonation]}
+          description: 'Security emails Halo does not send. The others go to the person when their account signs in from a device or network it has not used before (the `new-device` and `new-network` risk signals), when a passkey, security key, authenticator app or password is added or removed, when recovery codes are replaced, when the email address changes (to the old and the new address), when incorrect passwords or codes lock the account, when an administrator creates a temporary access pass, and when an impersonation starts. They link to the account portal, never to a sign-in page, and never contain a code or a pass. Halo sends one email of a kind about the same thing within 15 minutes, and one lockout email within the lockout window. People can turn off `new_sign_in` for themselves at `/me/security-emails`.'
+        lockoutEmailAdmins: {type: boolean, default: false, description: 'Also email the active global administrators when incorrect passwords or codes lock someone''s account.'}
         botProtectionSecret: {type: string, maxLength: 200, writeOnly: true, description: The secret key from the provider. Stored encrypted and never returned; `botProtectionSecretSet` in the response says whether one is stored. Omit it or send an empty string to keep the stored one.}
         signInLogDays: {type: integer, minimum: 0, maximum: 3650, default: 0, description: 'Days to keep sign-in log entries, between 7 and 3,650. 0 keeps them forever. Once a day Halo deletes older entries in batches and records the count as `log.prune` in the audit log. Only a global administrator can change it.'}
         auditLogDays: {type: integer, minimum: 0, maximum: 3650, default: 0, description: 'Days to keep audit log entries, between 30 and 3,650. 0 keeps them forever. Once a day Halo deletes older entries in batches and records the count as `log.prune` in the audit log. Only a global administrator can change it.'}
+    SecurityEmail:
+      type: object
+      required: [kind, label, 'on', canTurnOff]
+      properties:
+        kind: {type: string, examples: [new_sign_in]}
+        label: {type: string, examples: [New sign-in]}
+        'on': {type: boolean, description: Whether Halo sends it to you.}
+        canTurnOff: {type: boolean, description: Whether you can turn it off. Only `new_sign_in` can be.}
     EmailTemplateText:
       type: object
       required: [subject, body]
@@ -7328,7 +7385,7 @@ components:
       type: object
       required: [kind, label, description, variables, default, custom]
       properties:
-        kind: {type: string, enum: [invite, reset, magic_link, magic_code, sign_up, access_request, access_approved, access_denied, access_pass]}
+        kind: {type: string, enum: [invite, reset, magic_link, magic_code, sign_up, access_request, access_approved, access_denied, access_pass, new_sign_in, method_added, method_removed, recovery_codes, email_changed, account_locked, account_locked_admin, impersonation]}
         label: {type: string, examples: [Invitation]}
         description: {type: string}
         variables:
@@ -7341,6 +7398,7 @@ components:
               description: {type: string}
               example: {type: string, description: The value previews and the check on save use.}
         required: {type: string, description: 'A variable the body must use, such as `Link` for an invitation or `Code` for a sign-in code.'}
+        security: {type: boolean, description: 'A security email to the person about their own account, which `securityEmailsOff` can turn off. Left out for other emails.'}
         default: {$ref: '#/components/schemas/EmailTemplateText'}
         custom:
           oneOf:

@@ -6,8 +6,10 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"halo/internal/httpx"
+	"halo/internal/mail"
 	"halo/internal/metrics"
 	"halo/internal/secret"
 	"halo/internal/store"
@@ -190,5 +192,6 @@ func (h *handler) setMyPassword(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	h.notify(r, u.ID, "password", mail.MethodAdded(u.Email, u.Name, "A new password", h.cfg.Issuer()+"/account/security", time.Now()))
 	return noContent(w)
 }

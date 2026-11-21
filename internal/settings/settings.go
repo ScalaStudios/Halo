@@ -22,6 +22,7 @@ import (
 	"halo/internal/approval"
 	"halo/internal/config"
 	"halo/internal/httpx"
+	halomail "halo/internal/mail"
 	"halo/internal/store"
 )
 
@@ -78,6 +79,8 @@ var fields = []struct {
 	{"signUp", "sign-up", false},
 	{"signUpDomains", "sign-up domains", false},
 	{"signUpGroupIds", "groups for people who sign up", false},
+	{"securityEmailsOff", "security emails turned off", false},
+	{"lockoutEmailAdmins", "lockout emails to administrators", false},
 }
 
 type handler struct {
@@ -196,6 +199,7 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	next.ImpersonationGroups = slices.Clone(before.ImpersonationGroups)
 	next.SignUpDomains = slices.Clone(before.SignUpDomains)
 	next.SignUpGroupIDs = slices.Clone(before.SignUpGroupIDs)
+	next.SecurityEmailsOff = slices.Clone(before.SecurityEmailsOff)
 	var rules []store.AuthenticatorRule
 	in := struct {
 		store.Settings
@@ -253,6 +257,10 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 		}
 	}
 	next.SignUpDomains = domains
+	next.SecurityEmailsOff = slices.Compact(slices.Sorted(slices.Values(next.SecurityEmailsOff)))
+	if next.SecurityEmailsOff == nil {
+		next.SecurityEmailsOff = []string{}
+	}
 	if err := validate(next); err != nil {
 		return err
 	}
@@ -484,6 +492,11 @@ func validate(s store.Settings) error {
 		return httpx.Invalid(`Set sign-up to "off", "open" or "approval".`)
 	case len(s.SignUpDomains) > 100:
 		return httpx.Invalid("List at most 100 email domains for sign-up.")
+	}
+	for _, kind := range s.SecurityEmailsOff {
+		if t, ok := halomail.Lookup(kind); !ok || !t.Security {
+			return httpx.Invalid("“" + kind + "” is not a security email. Use new_sign_in, method_added, method_removed, recovery_codes, email_changed, account_locked, access_pass or impersonation.")
+		}
 	}
 	for _, d := range s.SignUpDomains {
 		if len(d) > 253 || !domainPattern.MatchString(d) {

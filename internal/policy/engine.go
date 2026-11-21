@@ -152,6 +152,9 @@ func (e *engine) Evaluate(ctx context.Context, in access.Input) (access.Decision
 	}
 	results, decision := decide(s, a)
 	decision.Risk, decision.EventID = a.risk, id.New("evt")
+	for _, sig := range a.signals {
+		decision.Signals = append(decision.Signals, sig.Type)
+	}
 	err = e.st.Tx(ctx, func(tx *store.Store) error {
 		var deviceID *string
 		if hash != nil {

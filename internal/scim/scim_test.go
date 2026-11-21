@@ -642,3 +642,27 @@ func TestBulkKeepsOrderPerResource(t *testing.T) {
 		t.Fatalf("members after add, remove all, add and remove by bulkId selector: %+v %v", g.Members, err)
 	}
 }
+
+func TestUserNameChangeEmailsBothAddresses(t *testing.T) {
+	e := setup(t)
+	ada := e.person("ada@example.com")
+	rec, _ := e.call("PATCH", "/scim/v2/Users/"+ada.ID, map[string]any{
+		"schemas":    []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
+		"Operations": []map[string]any{{"op": "replace", "path": "userName", "value": "ada.lovelace@example.com"}},
+	})
+	e.expect(rec, 200)
+	messages, err := e.st.ListMail(context.Background(), 5)
+	if err != nil || len(messages) != 2 {
+		t.Fatalf("outbox: %+v %v", messages, err)
+	}
+	to := []string{messages[0].To, messages[1].To}
+	slices.Sort(to)
+	for _, m := range messages {
+		if m.Subject != "The email address of your Halo account changed" || !strings.Contains(m.Text, "Workday connector changed the email address of your Halo account from ada@example.com to ada.lovelace@example.com") {
+			t.Fatalf("email: %+v", m)
+		}
+	}
+	if !slices.Equal(to, []string{"ada.lovelace@example.com", "ada@example.com"}) {
+		t.Fatalf("recipients: %v", to)
+	}
+}

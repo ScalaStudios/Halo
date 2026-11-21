@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"halo/internal/httpx"
+	"halo/internal/mail"
 	"halo/internal/store"
 )
 
@@ -118,14 +119,20 @@ func fail(status int, scimType, detail string) *scimError {
 type handlerFunc func(w http.ResponseWriter, r *http.Request, actor store.User) error
 
 type server struct {
-	st   *store.Store
-	auth *httpx.Auth
-	base string
-	mux  *http.ServeMux
+	st     *store.Store
+	auth   *httpx.Auth
+	base   string
+	issuer string
+	mailer mail.Mailer
+	mux    *http.ServeMux
 }
 
 func New(d httpx.Deps) (http.Handler, error) {
-	s := &server{st: d.Store, auth: d.Auth, base: d.Config.Issuer() + "/scim/v2", mux: http.NewServeMux()}
+	mailer := d.Mailer
+	if mailer == nil {
+		mailer = mail.New(d.Config, d.Store)
+	}
+	s := &server{st: d.Store, auth: d.Auth, base: d.Config.Issuer() + "/scim/v2", issuer: d.Config.Issuer(), mailer: mailer, mux: http.NewServeMux()}
 	for pattern, fn := range map[string]handlerFunc{
 		"GET /scim/v2/ServiceProviderConfig": s.serviceProviderConfig,
 		"GET /scim/v2/ResourceTypes":         discover(s.resourceTypes),

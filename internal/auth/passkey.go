@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 
 	"halo/internal/httpx"
+	"halo/internal/mail"
 	"halo/internal/store"
 )
 
@@ -322,5 +324,6 @@ func (h *handler) addPasskeyFinish(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
+	h.notify(r, u.ID, m.ID, mail.MethodAdded(u.Email, u.Name, m.Label, h.cfg.Issuer()+"/account/security", time.Now()))
 	return httpx.JSON(w, http.StatusOK, m)
 }

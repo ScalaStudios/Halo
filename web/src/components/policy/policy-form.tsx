@@ -11,6 +11,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { HoldToConfirm } from "@/components/ui/hold-to-confirm";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
+import { cn } from "@/lib/cn";
 import { METHOD, RISK } from "@/lib/labels";
 import type { AccessPolicy, DeviceCondition, NetworkCondition, PolicyConditions, PolicyEffect, PolicyMode } from "@/lib/policy-types";
 import { DEVICE_CONDITION, EFFECT, HALO_APP, MODE, NETWORK_CONDITION, POLICY_METHODS, RISK_LEVELS, describePolicy, policyState, type Names } from "./shared";
@@ -42,12 +43,26 @@ export function FieldError({ children }: { children?: string }) {
   return children ? <p className="text-caption text-danger">{children}</p> : null;
 }
 
-export function CheckList({ legend, options, selected, onToggle, empty }: { legend: string; options: Option[]; selected: string[]; onToggle: (id: string, on: boolean) => void; empty: ReactNode }) {
+export function CheckList({
+  legend,
+  options,
+  selected,
+  onToggle,
+  empty,
+  scroll = true,
+}: {
+  legend: string;
+  options: Option[];
+  selected: string[];
+  onToggle: (id: string, on: boolean) => void;
+  empty: ReactNode;
+  scroll?: boolean;
+}) {
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="mb-2 text-label text-fg">{legend}</legend>
       {options.length ? (
-        <div className="flex max-h-64 flex-col gap-3 overflow-y-auto rounded-md border border-border bg-sunken p-4">
+        <div className={cn("flex flex-col gap-3 rounded-md border border-border bg-sunken p-4", scroll && "max-h-64 overflow-y-auto")}>
           {options.map((o) => (
             <label key={o.id} className="flex cursor-pointer items-start gap-3">
               <Checkbox className="mt-0.5" checked={selected.includes(o.id)} onChange={(event) => onToggle(o.id, event.target.checked)} />

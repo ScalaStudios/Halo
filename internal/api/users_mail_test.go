@@ -76,3 +76,40 @@ func TestInviteWithoutSMTPIsNotEmailed(t *testing.T) {
 		t.Fatalf("invite without SMTP: %+v, outbox %+v %v", out, messages, err)
 	}
 }
+
+func TestEmailChangeAndRemovedMethodAreEmailed(t *testing.T) {
+	st, h, server := mailed(t)
+	ctx := context.Background()
+	_, admin := person(t, st, "uma@example.com", "user_admin")
+	sam, _ := person(t, st, "sam@example.com")
+	key, err := st.AddWebAuthnCredential(ctx, store.WebAuthnCredential{UserID: sam.ID, Kind: "security-key", Label: "YubiKey", CredentialID: []byte("credential"), PublicKey: []byte("public-key"), Transports: []string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expect(t, call(t, h, admin, "PATCH", "/api/v1/users/"+sam.ID, map[string]any{"email": "sam.lee@example.com"}), 200)
+	expect(t, call(t, h, admin, "PATCH", "/api/v1/users/"+sam.ID, map[string]any{"title": "Analyst"}), 200)
+	expect(t, call(t, h, admin, "DELETE", "/api/v1/users/"+sam.ID+"/methods/"+key.ID, nil), 204)
+	settings := store.DefaultSettings
+	settings.SecurityEmailsOff = []string{"email_changed"}
+	if err := st.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	st.ForgetSettings()
+	expect(t, call(t, h, admin, "PATCH", "/api/v1/users/"+sam.ID, map[string]any{"email": "sam@example.com"}), 200)
+
+	got := server.Deliveries()
+	want := []struct{ to, subject, text string }{
+		{"sam@example.com", "The email address of your Halo account changed", "uma changed the email address of your Halo account from sam@example.com to sam.lee@example.com"},
+		{"sam.lee@example.com", "The email address of your Halo account changed", "uma changed the email address of your Halo account from sam@example.com to sam.lee@example.com"},
+		{"sam.lee@example.com", "A sign-in method was removed from your Halo account", "YubiKey was removed from your Halo account by uma on"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("deliveries: %+v", got)
+	}
+	for i, w := range want {
+		if got[i].To != "TO:<"+w.to+">" || !strings.Contains(got[i].Data, "Subject: "+w.subject) || !strings.Contains(strings.NewReplacer("=\r\n", "", "=\n", "").Replace(got[i].Data), w.text) {
+			t.Errorf("delivery %d: want %s %q, got %+v", i, w.to, w.subject, got[i])
+		}
+	}
+}

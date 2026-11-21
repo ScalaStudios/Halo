@@ -1,6 +1,7 @@
 package mail
 
 import (
+	"strconv"
 	"strings"
 	"time"
 )
@@ -61,4 +62,40 @@ func AccessDecided(to string, approved bool, approver, pkg, expires, groups, not
 
 func GuestExpiring(to, guest, guestEmail, link string, expires time.Time) Message {
 	return build("guest_expiring", to, map[string]string{"Guest": guest, "GuestEmail": guestEmail, "Expires": expiry(expires), "Link": link})
+}
+
+func NewSignIn(to, name, app, device, ip, link string, at time.Time) Message {
+	return build("new_sign_in", to, map[string]string{"Name": firstName(name), "Application": app, "Device": device, "IP": ip, "Link": link, "Time": expiry(at)})
+}
+
+func MethodAdded(to, name, method, link string, at time.Time) Message {
+	return build("method_added", to, map[string]string{"Name": firstName(name), "Method": method, "Link": link, "Time": expiry(at)})
+}
+
+func MethodRemoved(to, name, method, admin, link string, at time.Time) Message {
+	return build("method_removed", to, map[string]string{"Name": firstName(name), "Method": method, "Administrator": admin, "Link": link, "Time": expiry(at)})
+}
+
+func RecoveryCodes(to, name, link string, at time.Time) Message {
+	return build("recovery_codes", to, map[string]string{"Name": firstName(name), "Link": link, "Time": expiry(at)})
+}
+
+func EmailChanged(name, oldEmail, newEmail, admin, link string, at time.Time) []Message {
+	vars := map[string]string{"Name": firstName(name), "OldEmail": oldEmail, "NewEmail": newEmail, "Administrator": admin, "Link": link, "Time": expiry(at)}
+	if strings.EqualFold(oldEmail, newEmail) {
+		return []Message{build("email_changed", newEmail, vars)}
+	}
+	return []Message{build("email_changed", oldEmail, vars), build("email_changed", newEmail, vars)}
+}
+
+func AccountLocked(to, name string, attempts int, until time.Time, link string) Message {
+	return build("account_locked", to, map[string]string{"Name": firstName(name), "Attempts": strconv.Itoa(attempts), "Until": expiry(until), "Link": link})
+}
+
+func AccountLockedAdmin(to, person, personEmail string, attempts int, until time.Time, link string) Message {
+	return build("account_locked_admin", to, map[string]string{"Person": person, "PersonEmail": personEmail, "Attempts": strconv.Itoa(attempts), "Until": expiry(until), "Link": link})
+}
+
+func Impersonation(to, name, admin, purpose, link string, until time.Time) Message {
+	return build("impersonation", to, map[string]string{"Name": firstName(name), "Administrator": admin, "Purpose": purpose, "Until": expiry(until), "Link": link})
 }

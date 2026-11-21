@@ -67,6 +67,9 @@ type Settings struct {
 	SignUpDomains  []string `json:"signUpDomains"`
 	SignUpGroupIDs []string `json:"signUpGroupIds"`
 
+	SecurityEmailsOff  []string `json:"securityEmailsOff"`
+	LockoutEmailAdmins bool     `json:"lockoutEmailAdmins"`
+
 	EmailTemplates map[string]EmailTemplate `json:"emailTemplates,omitempty"`
 }
 
@@ -111,6 +114,7 @@ var DefaultSettings = Settings{
 	SignUp:               "off",
 	SignUpDomains:        []string{},
 	SignUpGroupIDs:       []string{},
+	SecurityEmailsOff:    []string{},
 }
 
 const settingsTTL = 30 * time.Second

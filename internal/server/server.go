@@ -72,6 +72,7 @@ var ownMethodRoutes = []string{
 	"POST /api/v1/me/totp/begin",
 	"POST /api/v1/me/recovery-codes",
 	"DELETE /api/v1/me/methods/{id}",
+	"PUT /api/v1/me/security-emails",
 }
 
 type App struct {

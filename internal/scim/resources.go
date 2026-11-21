@@ -11,8 +11,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"halo/internal/httpx"
+	halomail "halo/internal/mail"
 	"halo/internal/scim/filter"
 	"halo/internal/store"
 )
@@ -454,6 +456,9 @@ func (s *server) changeUser(w http.ResponseWriter, r *http.Request, actor store.
 	}
 	if err != nil {
 		return err
+	}
+	if email != cur.Email {
+		halomail.SendSecurity(r.Context(), s.mailer, s.st, cur.ID, email, halomail.EmailChanged(name, cur.Email, email, actor.Name, s.issuer+"/account", time.Now())...)
 	}
 	return s.respondUser(w, r, cur.ID, http.StatusOK)
 }

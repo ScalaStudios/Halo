@@ -114,8 +114,7 @@ func (h *handlers) startImpersonation(w http.ResponseWriter, r *http.Request, ac
 	if err != nil {
 		return err
 	}
-	h.email(r, halomail.Message{To: target.Email, Subject: actor.Name + " is viewing Halo as you", Text: "Hi " + target.Name + ",\n\n" + actor.Name + " (" + actor.Email + ") started viewing your Halo account as you, to help with: " + grant.Reason +
-		"\n\nThey can look but not change anything, and their access ends by " + until.UTC().Format("15:04 UTC") + ". If you did not expect this, tell your IT team, or end it now by signing out of your other sessions: " + h.cfg.Issuer() + "/account/sessions"})
+	halomail.SendSecurity(r.Context(), h.mailer, h.st, target.ID, grant.ID, halomail.Impersonation(target.Email, target.Name, actor.Name, grant.Reason, h.cfg.Issuer()+"/account/sessions", until))
 	h.auth.SetSession(w, token)
 	return httpx.JSON(w, http.StatusOK, map[string]string{"redirect": "/account"})
 }
