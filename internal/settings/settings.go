@@ -509,6 +509,10 @@ func validate(s store.Settings) error {
 		return httpx.Invalid("List at most 100 email domains for sign-up.")
 	case len(s.RiskResponses) > 20:
 		return httpx.Invalid("Add at most 20 automatic risk responses.")
+	case !slices.Contains([]string{"off", "daily", "weekly"}, s.ExportSchedule):
+		return httpx.Invalid(`Set scheduled exports to "off", "daily" or "weekly".`)
+	case !between(s.ExportKeep, 1, 365):
+		return httpx.Invalid("Keep between 1 and 365 scheduled exports.")
 	}
 	for i, r := range s.RiskResponses {
 		switch {
@@ -521,10 +525,6 @@ func validate(s store.Settings) error {
 		case slices.Index(s.RiskResponses, r) != i:
 			return httpx.Invalid("Each risk response must be different. Remove the repeated one and save again.")
 		}
-	case !slices.Contains([]string{"off", "daily", "weekly"}, s.ExportSchedule):
-		return httpx.Invalid(`Set scheduled exports to "off", "daily" or "weekly".`)
-	case !between(s.ExportKeep, 1, 365):
-		return httpx.Invalid("Keep between 1 and 365 scheduled exports.")
 	}
 	for _, kind := range s.SecurityEmailsOff {
 		if t, ok := halomail.Lookup(kind); !ok || !t.Security {

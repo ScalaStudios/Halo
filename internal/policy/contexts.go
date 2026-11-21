@@ -104,7 +104,7 @@ func (h *handlers) updateContext(w http.ResponseWriter, r *http.Request, actor s
 		if updated, err = tx.UpdateAuthContext(r.Context(), c); err != nil {
 			return found(err, "This authentication context")
 		}
-		if err := h.refuseLockout(r, tx, actor); err != nil {
+		if err := RefuseLockout(r, tx, actor); err != nil {
 			return err
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "authentication_context.update", Summary: summary, TargetType: "authentication_context", TargetID: updated.ID, TargetLabel: updated.Name, Changes: store.Diff(old, updated)})
