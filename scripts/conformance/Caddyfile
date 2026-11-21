@@ -1,0 +1,9 @@
+{
+	admin off
+	auto_https disable_redirects
+}
+
+halo.test {
+	tls /certs/tls.crt /certs/tls.key
+	reverse_proxy halo-web:3200
+}

@@ -12,15 +12,7 @@ import (
 	"halo/internal/store"
 )
 
-var formPostPage = template.Must(template.New("form_post").Parse(`<!doctype html>
-<html>
-<head><meta charset="UTF-8" /></head>
-<body onload="javascript:document.forms[0].submit()">
-<form method="post" action="{{.RedirectURI}}">
-{{range $name, $value := .Params}}<input type="hidden" name="{{$name}}" value="{{$value}}" />
-{{end}}</form>
-</body>
-</html>`))
+var formPostPage = template.Must(template.New("form_post").Parse(`<!doctype html><html><head><meta charset="utf-8"></head><body onload="document.forms[0].submit()"><form method="post" action="{{.Action}}">{{range $name, $values := .Params}}{{range $values}}<input type="hidden" name="{{$name}}" value="{{.}}">{{end}}{{end}}<noscript><button type="submit">Continue</button></noscript></form></body></html>`))
 
 type issuedResponse struct {
 	http.ResponseWriter
@@ -78,10 +70,10 @@ func (s *storage) formPostPage(ctx context.Context, authReq op.AuthRequest, auth
 	if err != nil {
 		return nil, err
 	}
-	params := map[string]string{"code": resp.Code, "iss": s.issuer}
+	params := url.Values{"code": {resp.Code}, "iss": {s.issuer}}
 	if resp.State != "" {
-		params["state"] = resp.State
+		params.Set("state", resp.State)
 	}
 	var page bytes.Buffer
-	return &page, formPostPage.Execute(&page, map[string]any{"RedirectURI": authReq.GetRedirectURI(), "Params": params})
+	return &page, formPostPage.Execute(&page, map[string]any{"Action": authReq.GetRedirectURI(), "Params": params})
 }

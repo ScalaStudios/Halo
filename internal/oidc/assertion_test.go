@@ -482,13 +482,15 @@ func TestAuthorizationResponseIssuer(t *testing.T) {
 
 	silent := authorization(id, true)
 	silent.Set("prompt", "none")
-	for _, mode := range []string{"", "form_post"} {
-		silent.Set("response_mode", mode)
-		r, _ := h.do(http.MethodGet, "/oauth2/authorize?"+silent.Encode(), nil)
-		location, _ := url.Parse(r.location)
-		if r.status != http.StatusFound || location.Query().Get("error") != "login_required" || location.Query().Get("iss") != issuer {
-			t.Errorf("error response in mode %q: %d %q", mode, r.status, r.location)
-		}
+	r, _ := h.do(http.MethodGet, "/oauth2/authorize?"+silent.Encode(), nil)
+	location, _ = url.Parse(r.location)
+	if r.status != http.StatusFound || location.Query().Get("error") != "login_required" || location.Query().Get("iss") != issuer {
+		t.Errorf("error response in query mode: %d %q", r.status, r.location)
+	}
+	silent.Set("response_mode", "form_post")
+	page = formPost(t, h, silent, "login_required", silent.Get("state"))
+	if !strings.Contains(page, `name="iss" value="`+issuer+`"`) {
+		t.Errorf("form_post error response lacks the issuer: %s", page)
 	}
 
 	unregistered := authorization(id, true)

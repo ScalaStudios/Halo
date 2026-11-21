@@ -1,13 +1,17 @@
 package oidc
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"html/template"
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -156,6 +160,8 @@ func New(d httpx.Deps) (http.Handler, error) {
 		})
 	})
 	mux.HandleFunc("POST /oauth2/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Pragma", "no-cache")
 		_ = r.ParseForm()
 		if r.PostForm.Get("grant_type") == string(oidc.GrantTypeClientCredentials) && r.PostForm.Get("client_assertion_type") == oidc.ClientAssertionTypeJWTAssertion && !st.application(r.Context(), r.PostForm.Get("client_id")) {
 			workload.ServeHTTP(w, r)
@@ -187,15 +193,37 @@ func New(d httpx.Deps) (http.Handler, error) {
 	})
 	mux.HandleFunc("/oauth2/authorize", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
+		if r.Form.Has("request_uri") && !strings.HasPrefix(r.Form.Get("request_uri"), requestURIPrefix) {
+			formPostErrors(w, r, r.Form.Get("response_mode"), r.Form.Get("redirect_uri"), func(w http.ResponseWriter, r *http.Request) {
+				requestURINotSupported(withIssuer(w, st.issuer, r.Form.Get("redirect_uri")), r, provider)
+			})
+			return
+		}
 		if r.Form.Has("request_uri") {
 			var ok bool
 			if r, ok = st.pushedAuthRequest(w, r); !ok {
 				return
 			}
+			_ = r.ParseForm()
 		}
-		serve(withIssuer(w, st.issuer, r.FormValue("redirect_uri")), r)
+		if r.Form.Has("request") {
+			requestObjectHints(r.Form)
+		}
+		redirectURI := r.Form.Get("redirect_uri")
+		formPostErrors(w, r, r.Form.Get("response_mode"), redirectURI, func(w http.ResponseWriter, r *http.Request) {
+			serve(withIssuer(w, st.issuer, redirectURI), r)
+		})
 	})
 	mux.Handle("POST /oauth2/par", cors.New(*provider.CORSOptions()).Handler(http.MaxBytesHandler(st.authenticateClient(st.pushAuthRequest(provider)), 64<<10)))
+	logout := func(w http.ResponseWriter, r *http.Request) {
+		if r.ParseForm() == nil && r.Form.Get("post_logout_redirect_uri") != "" && r.Form.Get("id_token_hint") == "" && r.Form.Get("client_id") == "" {
+			op.RequestError(w, r, oidc.ErrInvalidRequest().WithDescription("A post-logout redirect requires an ID-token hint or client ID."), nil)
+			return
+		}
+		serve(w, r)
+	}
+	mux.HandleFunc("GET /oauth2/logout", logout)
+	mux.HandleFunc("POST /oauth2/logout", logout)
 	mux.HandleFunc("GET /oauth2/logout/return", st.logoutReturn)
 	registerTransmitter(mux, d.Store, d.Config.Issuer())
 	mux.Handle("GET /oauth2/revoked", httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
@@ -217,18 +245,81 @@ func New(d httpx.Deps) (http.Handler, error) {
 			http.Error(w, "This sign-in was completed in a different browser session. Start again from the application.", http.StatusForbidden)
 			return
 		}
-		if err == nil {
-			w = withIssuer(w, st.issuer, req.RedirectURI)
-		}
-		if err == nil && req.Done && st.awaitConsent(w, r, req, provider) {
-			return
-		}
-		if err == nil && req.Done && req.ResponseMode == string(oidc.ResponseModeFormPost) && st.formPost(w, r, req, provider) {
-			return
-		}
-		provider.ServeHTTP(w, r)
+		formPostErrors(w, r, req.ResponseMode, req.RedirectURI, func(w http.ResponseWriter, r *http.Request) {
+			if err == nil {
+				w = withIssuer(w, st.issuer, req.RedirectURI)
+			}
+			if err == nil && req.Done && st.awaitConsent(w, r, req, provider) {
+				return
+			}
+			if err == nil && req.Done && req.ResponseMode == string(oidc.ResponseModeFormPost) && st.formPost(w, r, req, provider) {
+				return
+			}
+			provider.ServeHTTP(w, r)
+		})
 	})
 	return mux, nil
+}
+
+func requestURINotSupported(w http.ResponseWriter, r *http.Request, provider *op.Provider) {
+	req := &oidc.AuthRequest{ClientID: r.Form.Get("client_id"), RedirectURI: r.Form.Get("redirect_uri"), State: r.Form.Get("state"), ResponseType: oidc.ResponseType(r.Form.Get("response_type")), ResponseMode: oidc.ResponseMode(r.Form.Get("response_mode"))}
+	client, err := provider.Storage().GetClientByClientID(r.Context(), req.ClientID)
+	if err != nil || op.ValidateAuthReqRedirectURI(client, req.RedirectURI, req.ResponseType) != nil {
+		http.Error(w, "Halo accepts request_uri only from its pushed authorization request endpoint, and this request has no registered redirect URI to report that to. Go back to the application and start again.", http.StatusBadRequest)
+		return
+	}
+	op.AuthRequestError(w, r, req, &oidc.Error{ErrorType: "request_uri_not_supported", Description: "Halo accepts request_uri only from its pushed authorization request endpoint."}, provider)
+}
+
+func requestObjectHints(form url.Values) {
+	parts := strings.Split(form.Get("request"), ".")
+	if len(parts) != 3 {
+		return
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	var claims map[string]any
+	if err != nil || json.Unmarshal(payload, &claims) != nil {
+		return
+	}
+	for _, name := range []string{"response_mode", "state"} {
+		if value, ok := claims[name].(string); ok && !form.Has(name) {
+			form.Set(name, value)
+		}
+	}
+}
+
+func formPostErrors(w http.ResponseWriter, r *http.Request, mode, redirectURI string, next http.HandlerFunc) {
+	if mode != string(oidc.ResponseModeFormPost) || redirectURI == "" {
+		next(w, r)
+		return
+	}
+	rec := httptest.NewRecorder()
+	next(rec, r)
+	target, err := url.Parse(redirectURI)
+	location, locErr := url.Parse(rec.Header().Get("Location"))
+	if rec.Code != http.StatusFound || err != nil || locErr != nil || location.Query().Get("error") == "" || location.Scheme != target.Scheme || location.Host != target.Host || location.Path != target.Path {
+		maps.Copy(w.Header(), rec.Header())
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(rec.Body.Bytes())
+		return
+	}
+	params := location.Query()
+	for name, values := range target.Query() {
+		for _, value := range values {
+			if i := slices.Index(params[name], value); i >= 0 {
+				params[name] = slices.Delete(params[name], i, i+1)
+			}
+		}
+	}
+	var page bytes.Buffer
+	if err := formPostPage.Execute(&page, map[string]any{"Action": template.URL(target.String()), "Params": params}); err != nil {
+		http.Error(w, "Halo could not send the response to the application. Go back to the application and try again.", http.StatusInternalServerError)
+		return
+	}
+	w.Header()["Set-Cookie"] = rec.Header()["Set-Cookie"]
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(page.Bytes())
 }
 
 func rewrite(w http.ResponseWriter, r *http.Request, next http.HandlerFunc, edit func([]byte) []byte) {

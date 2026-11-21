@@ -65,7 +65,7 @@ Halo works in the same space as hosted services such as Microsoft Entra ID, Okta
 | SPNEGO (RFC 4559) and Kerberos V5 (RFC 4120) | Partial | Windows sign-in on the sign-in page: Kerberos tickets for Halo's service principal, checked with a keytab, with a replay cache shared by every Halo server and 5 minutes of clock skew. No NTLM, mutual authentication, delegation or PAC |
 | LDAP (RFC 4511 and RFC 4513) | Partial | A client that syncs people and groups from a directory over LDAPS or StartTLS with the simple paged results control (RFC 2696), and a read-only server for applications that only speak LDAP: simple binds over LDAPS or StartTLS, search with and, or, not, equality, substring and presence filters and paged results, and no writes or SASL |
 
-"Implemented" means the feature works in the current release. Halo has not been through OpenID Foundation conformance testing or any other certification.
+"Implemented" means the feature works in the current release. Halo is not OpenID Certified or certified in any other way. [CONFORMANCE.md](CONFORMANCE.md) records which OpenID Foundation conformance suite test plans pass when we run the suite against Halo, with the date, the Halo version and every known warning.
 
 ## Quick start
 
@@ -516,7 +516,7 @@ Known limitations today:
 
 - One organization per installation.
 - Run a single Halo server; see [Self-hosting](#self-hosting).
-- Halo has not been through OpenID Connect conformance testing or an independent security audit.
+- Halo is not OpenID Certified and has not had an independent security audit. [CONFORMANCE.md](CONFORMANCE.md) lists the OpenID Foundation conformance suite plans it passes when we run them, and the profiles it doesn't meet.
 
 [CHANGELOG.md](CHANGELOG.md) records what has shipped.
 
