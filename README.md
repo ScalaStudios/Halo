@@ -46,11 +46,13 @@ Halo works in the same space as hosted services such as Microsoft Entra ID, Okta
 | --- | --- | --- |
 | OpenID Connect Core 1.0 and Discovery 1.0 | Implemented | ID tokens signed with RS256, ES256 or EdDSA, userinfo, `prompt` and `max_age`, discovery at `/.well-known/openid-configuration`, RP-initiated logout, and back-channel logout with signed logout tokens |
 | OAuth 2.0 (RFC 6749) | Implemented | Authorization code, refresh token and client credentials grants; refresh tokens rotate by default, and a used one is rejected |
-| PKCE (RFC 7636) | Implemented | `S256`, required for single-page and native applications |
+| PKCE (RFC 7636) | Implemented | `S256`, required for single-page and native applications and for any application set to require it |
 | Device Authorization Grant (RFC 8628) | Implemented | Used by `halo login` to sign people in on the command line |
 | Token Introspection (RFC 7662) and Revocation (RFC 7009) | Implemented | Introspection for APIs that check opaque tokens, and revocation for applications that sign people out |
 | Resource Indicators (RFC 8707) | Partial | The `resource` parameter selects an API resource on authorization, device, client credentials and token exchange requests, and its JWT access tokens carry it in `aud` |
 | Token Exchange (RFC 8693) | Partial | Web and service applications with token exchange turned on trade a person's access token for one to an API they have scopes on, with the application in the `act` claim. Access tokens only, and no `actor_token` |
+| Pushed Authorization Requests (RFC 9126) | Implemented | `/oauth2/par`, with a `request_uri` that works once within 60 seconds, and an option per application to require it |
+| DPoP (RFC 9449) | Partial | Access and refresh tokens bound to the client's key with `cnf.jkt`, proofs checked at the token and userinfo endpoints, and an option per application to require it; no server-provided nonces or `dpop_jkt` |
 | SAML 2.0 | Implemented | Web browser single sign-on as an identity provider: SP- and IdP-initiated, HTTP-Redirect and HTTP-POST bindings, signed assertions and metadata, and assertions encrypted with AES-256-GCM or AES-256-CBC per service provider. No single logout |
 | SCIM 2.0 (RFC 7643 and RFC 7644) | Implemented | A server for users and groups with the full filter grammar and bulk operations, and a client that provisions users into applications |
 | WebAuthn and FIDO2 | Implemented | Passkeys and security keys as discoverable credentials, for sign-in without a username |

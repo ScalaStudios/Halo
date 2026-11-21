@@ -96,6 +96,7 @@ func (s *storage) GetPrivateClaimsFromTokenExchangeRequest(ctx context.Context, 
 	}
 	claims := hookClaims(ctx)
 	claims["scope"], claims["act"] = strings.Join(req.GetScopes(), " "), act
+	confirm(ctx, claims)
 	return claims, nil
 }
 

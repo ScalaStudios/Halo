@@ -77,6 +77,8 @@ tags:
       Your own APIs, their scopes, and which applications may request them.
 
       **Revoked access tokens.** Halo issues JWT access tokens for APIs. Introspection at `/oauth2/introspect` reports a token inactive as soon as its session ends, the person is suspended or loses the application, consent is removed or the token is revoked. An API that checks tokens itself against `/oauth2/keys` sees none of that and keeps accepting a token until it expires. Keep `accessTokenTtl` at 5 to 15 minutes for such APIs, and either poll `GET /oauth2/revoked` or subscribe a webhook to `token.revoke`, then refuse tokens whose `jti` is listed.
+
+      **DPoP-bound tokens.** An application binds its tokens to a key it holds by sending a DPoP proof (RFC 9449) in the `DPoP` header of each token request: a JWT with `typ` `dpop+jwt`, the public key in `jwk`, signed with one of `dpop_signing_alg_values_supported` from discovery, with a new `jti`, `htm` and `htu` matching the request and an `iat` within a minute. Halo refuses a `jti` it has seen. The token response then says `token_type: DPoP`, JWT access tokens carry `cnf.jkt`, the key's SHA-256 thumbprint (RFC 7638), and introspection reports `token_type: DPoP` and `cnf`. A refresh token issued with a proof refreshes only with a proof from the same key, and one issued without a proof only without one. At `/oauth2/userinfo` the application sends `Authorization: DPoP <token>` with a proof that also has `ath`, the base64url SHA-256 hash of the token, and Halo refuses a bound token sent as a bearer token. An API that receives bound tokens checks the proof the same way and compares the thumbprint of its `jwk` with `cnf.jkt`.
   - name: SSH
     description: The SSH certificate authority, principal mappings and issued certificates.
   - name: Development
@@ -231,6 +233,55 @@ paths:
               schema: {$ref: '#/components/schemas/OAuthError'}
         '500':
           description: '`server_error`: Halo could not fetch the issuer''s signing keys.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+  /oauth2/par:
+    servers:
+      - url: /
+    post:
+      tags: [Applications]
+      operationId: pushAuthorizationRequest
+      summary: Push an authorization request
+      description: 'Pushed authorization requests (RFC 9126). The application posts the parameters it would send to `/oauth2/authorize`, authenticated like at the token endpoint, and Halo checks them as the authorization endpoint does. It then sends the person to `/oauth2/authorize?client_id=…&request_uri=…`. Halo uses only the pushed parameters, ignores any others in that URL, and accepts each `request_uri` once, within 60 seconds. A used, expired or unknown `request_uri`, or one sent with another `client_id`, ends with a `400` page and no redirect. Discovery lists the endpoint in `pushed_authorization_request_endpoint`.'
+      security:
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [response_type, redirect_uri, scope]
+              properties:
+                client_id: {type: string, description: Required unless the application authenticates with HTTP Basic.}
+                client_secret: {type: string, description: 'Web applications authenticate with this or with HTTP Basic. Single-page and native applications send only `client_id`.'}
+                response_type: {type: string, enum: [code]}
+                redirect_uri: {type: string}
+                scope: {type: string, examples: [openid email offline_access]}
+                state: {type: string}
+                nonce: {type: string}
+                code_challenge: {type: string}
+                code_challenge_method: {type: string, enum: [S256]}
+              additionalProperties: {type: string}
+      responses:
+        '201':
+          description: The reference to send to `/oauth2/authorize`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request_uri, expires_in]
+                properties:
+                  request_uri: {type: string, examples: ['urn:ietf:params:oauth:request_uri:…']}
+                  expires_in: {type: integer, examples: [60]}
+        '400':
+          description: '`invalid_request`: a parameter would fail at `/oauth2/authorize`, such as an unregistered `redirect_uri` or missing PKCE, the body has `request_uri` or a `client_id` other than the authenticated one. `unauthorized_client`: the HTTP Basic secret is wrong.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '401':
+          description: '`invalid_client`: a web or service application did not authenticate, or its `client_secret` is wrong.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OAuthError'}
@@ -3379,6 +3430,9 @@ paths:
                   items: {$ref: '#/components/schemas/ClaimMapping'}
                 backchannelLogoutUri: {type: string, description: 'An https:// URL on a public address, or an empty string to stop sending logout tokens. Not for SAML applications, bookmarks or service applications.'}
                 backchannelLogoutSessionRequired: {type: boolean, description: Not for SAML applications, bookmarks or service applications.}
+                requirePar: {type: boolean, description: 'Only for OpenID Connect and OAuth applications other than the Halo CLI, and not for service applications.'}
+                requirePkce: {type: boolean, description: 'Only for OpenID Connect and OAuth applications other than the Halo CLI, and not for service applications.'}
+                requireDpop: {type: boolean, description: Only for OpenID Connect and OAuth applications other than the Halo CLI.}
       responses:
         '200': {$ref: '#/components/responses/ApplicationResponse'}
         '400': {$ref: '#/components/responses/BadJSON'}
@@ -7649,7 +7703,7 @@ components:
           items: {type: string}
     Application:
       type: object
-      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent, backchannelLogoutUri, backchannelLogoutSessionRequired]
+      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent, backchannelLogoutUri, backchannelLogoutSessionRequired, requirePar, requirePkce, requireDpop]
       required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, roles, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent]
       properties:
         id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
@@ -7702,6 +7756,9 @@ components:
         requiresConsent: {type: boolean, description: 'People see the requested scopes and allow them before their first sign-in, and again when the application asks for scopes they have not allowed. `prompt=none` then fails with `consent_required`. On for clients that registered themselves, off for applications created in the console. Any OpenID Connect application that sends `prompt=consent` gets the screen regardless.'}
         backchannelLogoutUri: {type: string, description: 'OpenID Connect Back-Channel Logout. When a Halo session the application got tokens in ends, by sign-out, revocation, the session limit, a device block, suspension, an authentication reset, the end of an impersonation, expiry or deletion of the person, Halo posts `logout_token` to this URL. The token is a JWT typed `logout+jwt`, signed like the application''s ID tokens, with `iss`, `aud`, `iat`, `exp`, `jti`, `sub`, `sid` and the back-channel logout event. Empty when off.'}
         backchannelLogoutSessionRequired: {type: boolean, description: 'The application needs `sid` in logout tokens. Halo always sends it, so this only records what the application expects.'}
+        requirePar: {type: boolean, description: 'Authorization requests must be pushed to `/oauth2/par` first (RFC 9126) and reach `/oauth2/authorize` with only `client_id` and `request_uri`. Any other authorization request ends with `invalid_request`.'}
+        requirePkce: {type: boolean, description: 'Every authorization request must send `code_challenge` with `code_challenge_method=S256`. Single-page and native applications always must, whatever this says.'}
+        requireDpop: {type: boolean, description: 'Every token request must carry a DPoP proof (RFC 9449), so its access and refresh tokens only work with the key that signed the proof. A token request without one ends with `invalid_dpop_proof`. Refresh tokens issued without a proof stop working once this is on, and access tokens already issued last until they expire.'}
         saml: {$ref: '#/components/schemas/SAMLView'}
     SAMLAttributes:
       type: object

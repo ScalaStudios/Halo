@@ -10,8 +10,12 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/rs/cors"
+	httphelper "github.com/zitadel/oidc/v3/pkg/http"
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 	"github.com/zitadel/oidc/v3/pkg/op"
 	"golang.org/x/text/language"
@@ -28,7 +32,7 @@ const (
 	deviceAuthorizationLimit  = 20
 )
 
-var ReservedClaims = []string{"sub", "iss", "aud", "exp", "iat", "nbf", "jti", "nonce", "azp", "acr", "amr", "sid", "auth_time", "at_hash", "c_hash", "act", "client_id", "scope"}
+var ReservedClaims = []string{"sub", "iss", "aud", "exp", "iat", "nbf", "jti", "nonce", "azp", "acr", "amr", "sid", "auth_time", "at_hash", "c_hash", "act", "client_id", "scope", "cnf"}
 
 var supportedClaims = []string{"sub", "aud", "exp", "iat", "iss", "auth_time", "nonce", "acr", "amr", "at_hash", "azp", "client_id", "scope", "sid", "email", "email_verified", "name", "preferred_username", "picture", groupsScope, "roles"}
 
@@ -55,6 +59,10 @@ func New(d httpx.Deps) (http.Handler, error) {
 		op.WithCustomDeviceAuthorizationEndpoint(op.NewEndpoint("oauth2/device_authorization")),
 		op.WithIDTokenHintVerifierOpts(op.WithSupportedIDTokenHintSigningAlgorithms(store.SigningAlgorithms...)),
 		op.WithAccessTokenVerifierOpts(op.WithSupportedAccessTokenSigningAlgorithms(store.SigningAlgorithms...)),
+		func(o *op.Provider) error {
+			o.CORSOptions().AllowedHeaders = append(o.CORSOptions().AllowedHeaders, oidc.DPoPHeader)
+			return nil
+		},
 	}
 	if d.Config.Dev {
 		options = append(options, op.WithAllowInsecure())
@@ -82,11 +90,11 @@ func New(d httpx.Deps) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", serve)
 	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
-		rec := httptest.NewRecorder()
-		serve(rec, r)
-		body := rec.Body.Bytes()
-		var c oidc.DiscoveryConfiguration
-		if rec.Code == http.StatusOK && json.Unmarshal(body, &c) == nil {
+		rewrite(w, r, serve, func(body []byte) []byte {
+			var c oidc.DiscoveryConfiguration
+			if json.Unmarshal(body, &c) != nil {
+				return body
+			}
 			c.ResponseTypesSupported = []string{string(oidc.ResponseTypeCode)}
 			c.GrantTypesSupported = slices.DeleteFunc(c.GrantTypesSupported, func(g oidc.GrantType) bool { return g == oidc.GrantTypeImplicit || g == oidc.GrantTypeBearer })
 			c.IntrospectionEndpointAuthSigningAlgValuesSupported, c.RevocationEndpointAuthSigningAlgValuesSupported = nil, nil
@@ -99,11 +107,13 @@ func New(d httpx.Deps) (http.Handler, error) {
 			if settings, err := d.Store.Settings(r.Context()); err == nil && settings.ClientRegistrationOn() {
 				c.RegistrationEndpoint = d.Config.Issuer() + "/oauth2/register"
 			}
-			body, _ = json.Marshal(c)
-		}
-		maps.Copy(w.Header(), rec.Header())
-		w.WriteHeader(rec.Code)
-		_, _ = w.Write(body)
+			body, _ = json.Marshal(struct {
+				oidc.DiscoveryConfiguration
+				PushedAuthorizationRequestEndpoint string                    `json:"pushed_authorization_request_endpoint"`
+				DPoPSigningAlgValuesSupported      []jose.SignatureAlgorithm `json:"dpop_signing_alg_values_supported"`
+			}{c, d.Config.Issuer() + "/oauth2/par", dpopAlgorithms})
+			return body
+		})
 	})
 	mux.HandleFunc("POST /oauth2/device_authorization", func(w http.ResponseWriter, r *http.Request) {
 		recent, err := d.Store.CountDeviceAuthorizations(r.Context(), httpx.ClientIP(r), time.Now().Add(-deviceAuthorizationWindow))
@@ -123,8 +133,56 @@ func New(d httpx.Deps) (http.Handler, error) {
 			workload.ServeHTTP(w, r)
 			return
 		}
+		if len(r.Header.Values(oidc.DPoPHeader)) == 0 {
+			serve(w, r)
+			return
+		}
+		jkt, err := st.proof(r, "")
+		if err != nil {
+			op.RequestError(w, r, err, nil)
+			return
+		}
+		rewrite(w, r.WithContext(withDPoP(r.Context(), jkt)), serve, func(body []byte) []byte {
+			var resp map[string]any
+			if json.Unmarshal(body, &resp) != nil {
+				return body
+			}
+			resp["token_type"] = dpopTokenType
+			body, _ = json.Marshal(resp)
+			return body
+		})
+	})
+	mux.HandleFunc("/oauth2/userinfo", func(w http.ResponseWriter, r *http.Request) {
+		scheme, token, _ := strings.Cut(r.Header.Get("Authorization"), " ")
+		if !strings.EqualFold(scheme, dpopTokenType) {
+			serve(w, r)
+			return
+		}
+		jkt, err := st.proof(r, token)
+		var e *oidc.Error
+		if errors.As(err, &e) {
+			w.Header().Set("WWW-Authenticate", `DPoP error="invalid_dpop_proof"`)
+			httphelper.MarshalJSONWithStatus(w, e, http.StatusUnauthorized)
+			return
+		}
+		if err != nil {
+			http.Error(w, "Halo could not check the DPoP proof. Try again.", http.StatusInternalServerError)
+			return
+		}
+		r.Header.Set("Authorization", oidc.PrefixBearer+token)
+		serve(w, r.WithContext(withDPoP(r.Context(), jkt)))
+	})
+	mux.HandleFunc("/oauth2/authorize", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.Form.Has("request_uri") {
+			var ok bool
+			if r, ok = st.pushedAuthRequest(w, r); !ok {
+				return
+			}
+		}
 		serve(w, r)
 	})
+	mux.Handle("POST /oauth2/par", cors.New(*provider.CORSOptions()).Handler(st.pushAuthRequest(provider)))
 	mux.HandleFunc("GET /oauth2/logout/return", st.logoutReturn)
 	mux.Handle("GET /oauth2/revoked", httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
 		revoked, err := d.Store.RevokedAccessTokens(r.Context())
@@ -151,6 +209,18 @@ func New(d httpx.Deps) (http.Handler, error) {
 		provider.ServeHTTP(w, r)
 	})
 	return mux, nil
+}
+
+func rewrite(w http.ResponseWriter, r *http.Request, next http.HandlerFunc, edit func([]byte) []byte) {
+	rec := httptest.NewRecorder()
+	next(rec, r)
+	body := rec.Body.Bytes()
+	if rec.Code == http.StatusOK {
+		body = edit(body)
+	}
+	maps.Copy(w.Header(), rec.Header())
+	w.WriteHeader(rec.Code)
+	_, _ = w.Write(body)
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {

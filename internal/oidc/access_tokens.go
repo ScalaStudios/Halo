@@ -41,7 +41,7 @@ func AccessTokenResolver(st *store.Store) httpx.AccessTokenResolver {
 			return store.User{}, errAccessToken
 		}
 		t, err := st.GetActiveOIDCToken(ctx, claims.ID)
-		if err != nil || t.Kind != "access" || t.ClientID != CLIClientID || t.UserID == nil || *t.UserID != claims.Subject {
+		if err != nil || t.Kind != "access" || t.DPoPJKT != "" || t.ClientID != CLIClientID || t.UserID == nil || *t.UserID != claims.Subject {
 			return store.User{}, errAccessToken
 		}
 		return st.GetUser(ctx, claims.Subject)
