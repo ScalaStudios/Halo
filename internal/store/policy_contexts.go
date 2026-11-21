@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var MethodUsing = map[string]string{"passkey": "a passkey", "security-key": "a security key", "totp": "an authenticator app", "magic-link": "a magic link", "recovery-codes": "a recovery code", "password": "a password", "federated": "an identity provider", "access-pass": "a temporary access pass", "certificate": "a client certificate"}
+var MethodUsing = map[string]string{"passkey": "a passkey", "security-key": "a security key", "totp": "an authenticator app", "magic-link": "a magic link", "recovery-codes": "a recovery code", "password": "a password", "federated": "an identity provider", "access-pass": "a temporary access pass", "certificate": "a client certificate", "kerberos": "a Kerberos ticket"}
 
 type AuthContext struct {
 	ID        string    `json:"id"`

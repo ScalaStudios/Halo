@@ -409,6 +409,14 @@ func TestEndSession(t *testing.T) {
 	if status, _ := h.get("/oauth2/logout?"+url.Values{"id_token_hint": {idToken}, "post_logout_redirect_uri": {"https://evil.example.com/"}}.Encode(), ""); status != http.StatusBadRequest {
 		t.Fatalf("unregistered post_logout_redirect_uri: %d", status)
 	}
+	query := url.Values{"post_logout_redirect_uri": {loggedOut}, "state": {"bye"}}
+	if status, location := h.get("/oauth2/logout?"+query.Encode(), otherToken); status != http.StatusBadRequest || location.String() != "" {
+		t.Fatalf("a post-logout redirect requires an application: %d %s", status, location)
+	}
+	query.Set("client_id", h.app.ClientID)
+	if status, location := h.get("/oauth2/logout?"+query.Encode(), otherToken); status != http.StatusFound || location.Query().Get("confirm") != "1" || location.Query().Get("next") != loggedOut+"?state=bye" {
+		t.Fatalf("logout with a client ID and registered redirect must ask to confirm: %d %s", status, location)
+	}
 	if status, location := h.get("/oauth2/logout?client_id="+h.app.ClientID, ""); status != http.StatusFound || location.String() != "/signed-out?confirm=1" {
 		t.Fatalf("logout without an id_token_hint must ask to confirm: %d %s", status, location)
 	}

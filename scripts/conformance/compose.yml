@@ -1,0 +1,108 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: halo
+      POSTGRES_PASSWORD: halo
+      POSTGRES_DB: halo
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U halo -d halo"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  halo-server:
+    image: alpine:3.22
+    command: ["/halo/halo", "serve"]
+    volumes:
+      - ./out/bin:/halo:ro
+      - ./out/certs:/certs:ro
+    environment:
+      HALO_DATABASE_URL: postgres://halo:halo@postgres:5432/halo?sslmode=disable
+      HALO_PUBLIC_URL: https://halo.test
+      HALO_SECRET_KEY: ${HALO_SECRET_KEY}
+      HALO_ORGANIZATION: Halo Conformance
+      SSL_CERT_FILE: /certs/tls.crt
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  halo-web:
+    image: ${HALO_WEB_IMAGE:-halo-web:conformance}
+    environment:
+      HALO_API_URL: http://halo-server:8080
+    depends_on:
+      halo-server:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./out/certs:/certs:ro
+    networks:
+      default:
+        aliases:
+          - halo.test
+    depends_on:
+      - halo-web
+
+  mongodb:
+    image: mongo:6.0.13
+    tmpfs:
+      - /data/db
+
+  server:
+    image: registry.gitlab.com/openid/conformance-suite:${SUITE_TAG:-release-v5.3.4}
+    environment:
+      BASE_URL: https://localhost.emobix.co.uk:8443
+      BASE_MTLS_URL: https://localhost.emobix.co.uk:8444
+      MONGODB_HOST: mongodb
+      SPRING_PROFILES_ACTIVE: dev
+      OIDC_GOOGLE_CLIENTID: google-client
+      OIDC_GOOGLE_SECRET: google-secret
+      OIDC_GITLAB_CLIENTID: gitlab-client
+      OIDC_GITLAB_SECRET: gitlab-secret
+      SERVER_TOMCAT_REMOTEIP_INTERNALPROXIES: '198\.18\.28\.\d{1,3}'
+    depends_on:
+      - mongodb
+
+  nginx:
+    image: registry.gitlab.com/openid/conformance-suite/nginx:${SUITE_TAG:-release-v5.3.4}
+    volumes:
+      - ./out/certs/tls.crt:/etc/ssl/certs/nginx-selfsigned.crt:ro
+      - ./out/certs/tls.key:/etc/ssl/private/nginx-selfsigned.key:ro
+    networks:
+      default:
+        aliases:
+          - localhost.emobix.co.uk
+    depends_on:
+      - server
+
+  runner:
+    image: python:3.13-alpine
+    working_dir: /conformance
+    volumes:
+      - .:/conformance
+    environment:
+      CONFORMANCE_SERVER: https://localhost.emobix.co.uk:8443/
+      CONFORMANCE_SERVER_MTLS: https://localhost.emobix.co.uk:8444/
+      CONFORMANCE_DEV_MODE: "1"
+      CONFORMANCE_MAX_CONSECUTIVE_FAILURES: "1000"
+      HALO_URL: https://halo.test
+      PYTHONUNBUFFERED: "1"
+    profiles: ["runner"]
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 198.18.28.0/24

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, CircleAlert, CircleCheck, CircleUserRound, Clock, Fingerprint } from "lucide-react";
+import { ChevronDown, CircleAlert, CircleCheck, CircleUserRound, Clock, Fingerprint, Monitor } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
@@ -113,6 +113,9 @@ export function SignInFlow({
   const [resent, setResent] = useState(false);
   const [checking, setChecking] = useState(false);
   const [certifying, setCertifying] = useState(false);
+  const [negotiating, setNegotiating] = useState(false);
+  const windows = allowed.includes("kerberos");
+  const untried = useRef(windows && step === "start" && !failure);
   const home = methods.length > 0 ? "choose" : "start";
   const emailed = emailSignIn === "link" ? "link" : "code";
   const changing = step === "new-password";
@@ -143,6 +146,12 @@ export function SignInFlow({
   useEffect(() => {
     if (step === "redirect" && !checked.current && route) follow(route, true);
   }, [step, route]);
+
+  useEffect(() => {
+    if (step !== "start" || !untried.current) return;
+    untried.current = false;
+    void windowsSignIn(true);
+  }, [step]);
 
   function follow(provider: SignInProvider, replace = false) {
     checked.current = true;
@@ -261,6 +270,20 @@ export function SignInFlow({
       setNotice(describeFailure(error));
     } finally {
       setCertifying(false);
+    }
+  }
+
+  async function windowsSignIn(automatic = false) {
+    setNegotiating(true);
+    if (!automatic) setNotice(null);
+    try {
+      const result = await api<SignedIn | undefined>("/auth/kerberos", { body: { authRequest, automatic } });
+      if (result) finish(result);
+    } catch (error) {
+      if (expired(error)) return setStep("expired");
+      if (!automatic || !(error instanceof ApiError && error.code === "ERR_KERBEROS_NO_TICKET")) setNotice(describeFailure(error));
+    } finally {
+      setNegotiating(false);
     }
   }
 
@@ -409,13 +432,19 @@ export function SignInFlow({
           </div>
           {alert}
           <div className="flex flex-col gap-6">
-            {passkeys || providers.length > 0 ? (
+            {passkeys || windows || providers.length > 0 ? (
               <>
                 <div className="flex flex-col gap-2">
                   {passkeys ? (
                     <Button variant="primary" size="lg" className="w-full" autoFocus={focus === "passkey"} onClick={() => passkey("passkey")}>
                       <Fingerprint aria-hidden="true" size={20} strokeWidth={1.75} />
                       Continue with passkey
+                    </Button>
+                  ) : null}
+                  {windows ? (
+                    <Button variant={passkeys ? "secondary" : "primary"} size="lg" className="w-full" loading={negotiating} onClick={() => windowsSignIn()}>
+                      <Monitor aria-hidden="true" size={20} strokeWidth={1.75} className={passkeys ? "text-fg-3" : undefined} />
+                      Sign in with Windows
                     </Button>
                   ) : null}
                   <ProviderButtons providers={providers} authRequest={authRequest} next={next} />

@@ -30,6 +30,7 @@ jobs:
           go-version-file: go.mod
       - run: apt-get update && apt-get install -y --no-install-recommends sudo
       - run: go vet ./...
+      - run: go vet -tags pkcs11 ./internal/kms/
       - run: go test ./...
 
   web:

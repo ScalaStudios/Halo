@@ -78,6 +78,7 @@ func TestPersonalDataExportAndPermanentDeletion(t *testing.T) {
 	must(t, err)
 	must(t, st.WriteTuples(ctx, app.ID, []store.Tuple{{ObjectType: "invoice", ObjectID: "inv-7", Relation: "approver", SubjectType: "user", SubjectID: erin.ID}}, nil))
 	must(t, st.SetSecurityEmailOptOuts(ctx, erin.ID, []string{"new_sign_in"}))
+	must(t, st.LinkKerberosPrincipal(ctx, "erin@CORP.EXAMPLE.COM", erin.ID))
 	_, err = st.ClaimSecurityEmail(ctx, erin.ID, "email_changed", "erin.erasure@example.com", time.Now(), time.Minute)
 	must(t, err)
 	must(t, st.CreateOIDCTokens(ctx, store.OIDCToken{ID: "tok_erin", Kind: "access", ClientID: app.ClientID, UserID: &erin.ID, Scopes: []string{"openid"}, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}))

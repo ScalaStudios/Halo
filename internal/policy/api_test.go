@@ -327,7 +327,7 @@ func TestMethodsAndDevicesAPI(t *testing.T) {
 	}
 	methods := decode[[]method](t, call(t, h, token, "GET", "/api/v1/methods", nil))
 	totpRow := methods[slices.IndexFunc(methods, func(m method) bool { return m.Method == "totp" })]
-	if len(methods) != 7 || methods[0].Method != "passkey" || methods[5].Method != "password" || methods[5].Enabled || methods[6].Method != "certificate" || methods[6].Enabled || totpRow.Users != 1 || totpRow.Exclusive != 1 {
+	if len(methods) != 8 || methods[0].Method != "passkey" || methods[5].Method != "password" || methods[5].Enabled || methods[6].Method != "certificate" || methods[6].Enabled || methods[7].Method != "kerberos" || methods[7].Enabled || totpRow.Users != 1 || totpRow.Exclusive != 1 {
 		t.Fatalf("methods: %+v", methods)
 	}
 	for _, kind := range []string{"passkey", "security-key", "totp"} {
@@ -340,6 +340,28 @@ func TestMethodsAndDevicesAPI(t *testing.T) {
 	}](t, call(t, h, "", "GET", "/api/v1/auth/methods", nil))
 	if !slices.Equal(enabled.Methods, []string{"magic-link", "recovery-codes"}) || enabled.EmailSignIn != "link" {
 		t.Fatalf("enabled methods: %+v", enabled)
+	}
+	expect(t, call(t, h, token, "PUT", "/api/v1/methods/kerberos", map[string]any{"enabled": true}), 204)
+	offered := func() []string {
+		return decode[struct{ Methods []string }](t, call(t, h, "", "GET", "/api/v1/auth/methods", nil)).Methods
+	}
+	if got := offered(); slices.Contains(got, "kerberos") {
+		t.Fatalf("Windows sign-in without a keytab: %v", got)
+	}
+	if err := st.SaveKerberosSource(ctx, store.KerberosSource{ServicePrincipal: "HTTP/auth.example.com@CORP.EXAMPLE.COM", Realms: []store.KerberosRealm{}, ZoneIDs: []string{}, Keytab: []byte("keytab")}); err != nil {
+		t.Fatal(err)
+	}
+	if got := offered(); !slices.Contains(got, "kerberos") {
+		t.Fatalf("Windows sign-in with a keytab: %v", got)
+	}
+	settings, _ := st.Settings(ctx)
+	settings.FeaturesOff = []string{"kerberos"}
+	if err := st.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	st.ForgetSettings()
+	if got := offered(); slices.Contains(got, "kerberos") {
+		t.Fatalf("Windows sign-in with the feature off: %v", got)
 	}
 	expect(t, call(t, h, token, "PUT", "/api/v1/methods/sms", map[string]any{"enabled": false}), 404)
 	federated := call(t, h, token, "PUT", "/api/v1/methods/federated", map[string]any{"enabled": false})

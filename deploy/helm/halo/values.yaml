@@ -71,6 +71,25 @@ vault:
   wrappingKey: ""
   signing: false
 
+awsKms:
+  region: ""
+  endpoint: ""
+  wrappingKey: ""
+  signing: false
+
+gcpKms:
+  keyRing: ""
+  endpoint: ""
+  hsm: false
+  wrappingKey: ""
+  signing: false
+
+azureKeyVault:
+  url: ""
+  hsm: false
+  wrappingKey: ""
+  signing: false
+
 metrics:
   enabled: false
   port: 9090

@@ -11,6 +11,7 @@ let admin: APIRequestContext;
 let server: ChildProcess | undefined;
 let enrollUrl = "";
 let appId = "";
+let clientId = "";
 let userId = "";
 let groupId = "";
 
@@ -23,7 +24,7 @@ test.beforeAll(async ({ playwright }) => {
       data: { name: `E2E example app ${stamp}`, protocol: "oidc", type: "web", redirectUris: [`${example}/callback`], groupIds: [groupId] },
     }),
   );
-  appId = created.application.id;
+  ({ id: appId, clientId } = created.application);
   server = await startExample("./examples/go-web-client", `${example}/`, { CLIENT_ID: created.application.clientId, CLIENT_SECRET: created.clientSecret, HALO_ISSUER: halo });
 });
 
@@ -57,4 +58,16 @@ test("an invited person enrolls a passkey and signs in to an OpenID Connect app 
 
   const events = await json<{ userId: string; appId: string; result: string; method: string }[]>(await admin.get(`/api/v1/sign-ins?user=${userId}`));
   expect(events.filter((e) => e.appId === appId && e.result === "success" && e.method === "passkey").length).toBeGreaterThanOrEqual(1);
+
+  const authorization = new URL("/oauth2/authorize", halo);
+  authorization.search = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: `${example}/callback`,
+    response_type: "code",
+    scope: "openid",
+    prompt: "login",
+  }).toString();
+  await page.goto(authorization.href);
+  await expect(page.getByRole("heading", { name: /sign in to continue to e2e example app/i })).toBeVisible();
+  await expect(page.getByText("Confirm it's you", { exact: true })).toHaveCount(0);
 });

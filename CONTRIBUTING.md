@@ -74,16 +74,24 @@ docker compose -f compose.dev.yml down -v && docker compose -f compose.dev.yml u
 
 ## Run the checks
 
-Run these before you open a pull request. CI runs the same four on every pull request and on every push to `main` (`.github/workflows/ci.yml`).
+Run these before you open a pull request. CI runs the same five on every pull request and on every push to `main` (`.github/workflows/ci.yml`). The second needs cgo and a C compiler, because it checks the PKCS #11 code behind the `pkcs11` build tag.
 
 ```bash
 go vet ./...
+go vet -tags pkcs11 ./internal/kms/
 go test ./...
 cd web && npx tsc --noEmit
 cd web && bun run build
 ```
 
 `go test ./...` creates a throwaway database for each test on the development PostgreSQL and drops it afterwards. To use another server, set `HALO_TEST_DATABASE_URL`, for example `postgres://halo:halo@localhost:5436/halo`; the user needs permission to create databases. When PostgreSQL is unreachable, the database tests are skipped rather than failed, so check the output for `SKIP`.
+
+The PKCS #11 test runs only with the build tag and a token labelled `halo` with user PIN `1234`, such as one in SoftHSM:
+
+```bash
+softhsm2-util --init-token --free --label halo --pin 1234 --so-pin 0000
+HALO_TEST_PKCS11_MODULE=/usr/lib/softhsm/libsofthsm2.so go test -tags pkcs11 -run TestPKCS11 ./internal/kms/
+```
 
 The end-to-end tests use a virtual authenticator in Chromium to enroll passkeys and sign in through Halo to [`examples/go-web-client`](examples/go-web-client) over OpenID Connect and [`examples/go-saml-sp`](examples/go-saml-sp) over SAML. They also cover magic links, access requests, access policies, and every console page at desktop and phone widths:
 

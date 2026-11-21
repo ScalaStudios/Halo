@@ -1,0 +1,23 @@
+name: conformance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+
+jobs:
+  openid:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: scripts/conformance/run.sh
+      - if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: conformance-results
+          path: scripts/conformance/out/results
+          if-no-files-found: warn

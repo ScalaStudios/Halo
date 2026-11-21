@@ -17,7 +17,7 @@ export async function send(path: string, init: RequestInit, fallback: string): P
   let res = await request();
   if (!res.ok) {
     const error = await toApiError(res, fallback);
-    if (error.code !== "ERR_REAUTH_REQUIRED" || !confirmIdentity) throw error;
+    if (path === "/auth/continue" || error.code !== "ERR_REAUTH_REQUIRED" || !confirmIdentity) throw error;
     confirming ??= confirmIdentity().finally(() => (confirming = null));
     if (!(await confirming)) throw error;
     res = await request();

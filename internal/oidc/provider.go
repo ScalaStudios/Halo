@@ -196,6 +196,15 @@ func New(d httpx.Deps) (http.Handler, error) {
 		formPostErrors(w, r, r.Form.Get("response_mode"), r.Form.Get("redirect_uri"), serve)
 	})
 	mux.Handle("POST /oauth2/par", cors.New(*provider.CORSOptions()).Handler(st.pushAuthRequest(provider)))
+	logout := func(w http.ResponseWriter, r *http.Request) {
+		if r.ParseForm() == nil && r.Form.Get("post_logout_redirect_uri") != "" && r.Form.Get("id_token_hint") == "" && r.Form.Get("client_id") == "" {
+			op.RequestError(w, r, oidc.ErrInvalidRequest().WithDescription("A post-logout redirect requires an ID-token hint or client ID."), nil)
+			return
+		}
+		serve(w, r)
+	}
+	mux.HandleFunc("GET /oauth2/logout", logout)
+	mux.HandleFunc("POST /oauth2/logout", logout)
 	mux.HandleFunc("GET /oauth2/logout/return", st.logoutReturn)
 	registerTransmitter(mux, d.Store, d.Config.Issuer())
 	mux.Handle("GET /oauth2/revoked", httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
