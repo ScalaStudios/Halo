@@ -50,17 +50,17 @@ func (h *handlers) attribute(r *http.Request) (store.Attribute, error) {
 	return all[i], nil
 }
 
-func administrator(u store.User) bool {
-	return u.HasRole("global_admin") || u.HasRole(readers...)
-}
-
 func (h *handlers) listAttributes(w http.ResponseWriter, r *http.Request, actor store.User) error {
 	all, err := h.st.ListAttributes(r.Context())
 	if err != nil {
 		return err
 	}
-	if !administrator(actor) {
+	groups, admin := actor.Scope(readers...)
+	if !admin {
 		return httpx.JSON(w, http.StatusOK, nonNil(slices.DeleteFunc(all, func(a store.Attribute) bool { return !a.SelfService && actor.Attributes[a.Name] == nil })))
+	}
+	if groups != nil {
+		return httpx.JSON(w, http.StatusOK, nonNil(all))
 	}
 	counts, err := h.st.AttributeCounts(r.Context())
 	if err != nil {
@@ -299,7 +299,7 @@ func (h *handlers) updateMyAttributes(w http.ResponseWriter, r *http.Request, ac
 	}
 	next.Attributes = values
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
-		if err := tx.UpdateUserProfile(r.Context(), next); err != nil {
+		if err := tx.SetUserAttributes(r.Context(), actor.ID, values); err != nil {
 			return err
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "user.update", Summary: "Updated their " + strings.Join(changed, ", "), TargetType: "user", TargetID: actor.ID, TargetLabel: actor.Name, Changes: store.Diff(actor, next)})

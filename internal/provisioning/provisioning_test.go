@@ -364,7 +364,7 @@ func TestOutboundProvisioning(t *testing.T) {
 		t.Fatal(err)
 	}
 	withAttributes.Attributes = map[string]any{"costCentre": "CC-42", "teams": []string{"Platform"}}
-	if err := st.UpdateUserProfile(ctx, withAttributes); err != nil {
+	if err := st.SetUserAttributes(ctx, withAttributes.ID, withAttributes.Attributes); err != nil {
 		t.Fatal(err)
 	}
 	if c, ada = sync(), remote.user("ada@example.com"); c.Updated != 1 || fmt.Sprint(ada[scim.AttributesSchema]) != "map[costCentre:CC-42 teams:[Platform]]" || !strings.Contains(fmt.Sprint(ada["schemas"]), scim.AttributesSchema) {

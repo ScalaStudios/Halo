@@ -102,7 +102,7 @@ func (h *handlers) updateGuest(w http.ResponseWriter, r *http.Request, actor sto
 	if err != nil {
 		return err
 	}
-	if !administrator(actor) {
+	if !actor.Manages(updated, readers...) {
 		updated.Attributes = nil
 	}
 	return httpx.JSON(w, http.StatusOK, updated)

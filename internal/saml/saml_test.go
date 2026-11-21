@@ -259,7 +259,7 @@ func TestIdentityProvider(t *testing.T) {
 	}
 
 	ada.Attributes = map[string]any{"employeeNumber": 1000000, "teams": []string{"Platform", "Security"}, "contractor": false}
-	must(st.UpdateUserProfile(ctx, ada))
+	must(st.SetUserAttributes(ctx, ada.ID, ada.Attributes))
 	app.ClaimMappings = []store.Claim{{Name: "employeeNumber", Source: "attribute.employeeNumber"}, {Name: "teams", Source: "attribute.teams"}, {Name: "contractor", Source: "attribute.contractor"},
 		{Name: "mail", Source: "user.name"}, {Name: "memberOf", Source: store.OmitClaim}, {Name: "costCentre", Source: "attribute.costCentre"}}
 	must(st.UpdateApplication(ctx, app))

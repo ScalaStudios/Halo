@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -475,6 +476,9 @@ func TestFederatedMapping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := e.st.SetUserAttributes(ctx, ada.ID, map[string]any{"employeeNumber": "E-7"}); err != nil {
+		t.Fatal(err)
+	}
 	eng, ops, manual := e.group("Engineering"), e.group("Operations", ada), e.group("Book club", ada)
 	rule := `user.department == "Engineering"`
 	dynamic, err := e.st.CreateGroup(ctx, store.NewGroup{Name: "Engineers", Kind: "dynamic", Rule: &rule})
@@ -555,10 +559,13 @@ func TestFederatedMapping(t *testing.T) {
 		}
 	}
 
-	signIn(map[string]any{"name": "Ada King", "jobTitle": "Engineer", "department": "", "groups": []string{"eng-id", "unmapped"}, "roles": []string{"global_admin"}}, "", "/account")
+	signIn(map[string]any{"name": "Ada King", "jobTitle": "Engineer", "department": "", "groups": []string{"eng-id", "unmapped"}, "roles": []string{"global_admin"}, "employeeNumber": "E-9"}, "", "/account")
 	got := user(ada.ID)
 	if got.Name != "Ada King" || got.Title != "Engineer" || got.Department != "" || got.Location != "Lisbon" {
 		t.Fatalf("profile updated: %+v", got)
+	}
+	if !reflect.DeepEqual(got.Attributes, map[string]any{"employeeNumber": "E-7"}) {
+		t.Fatalf("mapping never changes custom attributes: %#v", got.Attributes)
 	}
 	if !slices.Contains(got.GroupIDs, eng.ID) || slices.Contains(got.GroupIDs, ops.ID) || !slices.Contains(got.GroupIDs, manual.ID) {
 		t.Fatalf("groups follow the provider for mapped groups only: %v", got.GroupIDs)

@@ -801,6 +801,11 @@ func (h *handlers) updateUser(w http.ResponseWriter, r *http.Request, actor stor
 		} else if err != nil {
 			return err
 		}
+		if len(labels) > 0 {
+			if err := tx.SetUserAttributes(r.Context(), target.ID, attributes); err != nil {
+				return err
+			}
+		}
 		return record(r, tx, actor, store.AuditEvent{Action: "user.update", Summary: "Updated " + strings.Join(changed, ", "), TargetType: "user", TargetID: target.ID, TargetLabel: next.Name, Changes: store.Diff(target, next)})
 	})
 	if err != nil {

@@ -9,10 +9,21 @@ import (
 )
 
 func (s *Store) UpdateUserProfile(ctx context.Context, u User) error {
-	tag, err := s.db.Exec(ctx, `update users set email = $2, email_verified = email_verified and lower(email) = lower($2), name = $3, title = $4, department = $5, location = $6, manager_id = $7, attributes = $8, updated_at = now() where id = $1`,
-		u.ID, u.Email, u.Name, u.Title, u.Department, u.Location, u.ManagerID, u.Attributes)
+	tag, err := s.db.Exec(ctx, `update users set email = $2, email_verified = email_verified and lower(email) = lower($2), name = $3, title = $4, department = $5, location = $6, manager_id = $7, updated_at = now() where id = $1`,
+		u.ID, u.Email, u.Name, u.Title, u.Department, u.Location, u.ManagerID)
 	if err != nil {
 		return conflict(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) SetUserAttributes(ctx context.Context, userID string, values map[string]any) error {
+	tag, err := s.db.Exec(ctx, `update users set attributes = $2, updated_at = now() where id = $1`, userID, values)
+	if err != nil {
+		return err
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound

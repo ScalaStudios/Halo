@@ -2823,7 +2823,7 @@ paths:
       tags: [Users]
       operationId: listAttributes
       summary: List the custom user attributes
-      description: 'Anyone signed in. Administrators get every attribute with `people` counted. Anyone else gets only the attributes they can change themselves or hold a value for, with `people` 0.'
+      description: 'Anyone signed in. Administrators get every attribute, with `people` counted for organization-wide roles and 0 for limited roles. Anyone else gets only the attributes they can change themselves or hold a value for, with `people` 0.'
       responses:
         '200':
           description: The attributes, by display name.
