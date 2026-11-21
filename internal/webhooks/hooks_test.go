@@ -3,6 +3,7 @@ package webhooks
 import (
 	"context"
 	"encoding/json"
+	"halo/internal/httpx"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -270,7 +271,7 @@ func TestRunHookRefusesPrivateAddresses(t *testing.T) {
 	srv := httptest.NewServer(hs)
 	defer srv.Close()
 	prev := HookClient
-	HookClient = GuardedClient()
+	HookClient = httpx.GuardedClient()
 	t.Cleanup(func() { HookClient = prev })
 	if err := st.SaveApplicationHook(ctx, store.ApplicationHook{AppID: app.ID, Host: "checks.example.com", URLSealed: st.Sealer.Seal([]byte(srv.URL)), SecretSealed: st.Sealer.Seal([]byte(hookSecret)), Claims: []string{}}); err != nil {
 		t.Fatal(err)
