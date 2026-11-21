@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"time"
 
 	"halo/internal/httpx"
+	"halo/internal/mail"
 	"halo/internal/store"
 )
 
@@ -74,6 +76,7 @@ func (h *handler) removeMethod(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	h.notify(r, u.ID, methodID, mail.MethodRemoved(u.Email, u.Name, u.Methods[i].Label, "", h.cfg.Issuer()+"/account/security", time.Now()))
 	return noContent(w)
 }
 
@@ -269,4 +272,53 @@ func (h *handler) signIns(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return httpx.JSON(w, http.StatusOK, events)
+}
+
+type securityEmail struct {
+	Kind       string `json:"kind"`
+	Label      string `json:"label"`
+	On         bool   `json:"on"`
+	CanTurnOff bool   `json:"canTurnOff"`
+}
+
+func (h *handler) securityEmails(w http.ResponseWriter, r *http.Request) error {
+	u, _, err := httpx.RequireUser(r)
+	if err != nil {
+		return err
+	}
+	settings, err := h.st.Settings(r.Context())
+	if err != nil {
+		return err
+	}
+	off, err := h.st.SecurityEmailOptOuts(r.Context(), u.ID)
+	if err != nil {
+		return err
+	}
+	list := []securityEmail{}
+	for _, t := range mail.Templates {
+		if t.Security && !slices.Contains(settings.SecurityEmailsOff, t.Kind) {
+			list = append(list, securityEmail{Kind: t.Kind, Label: t.Label, On: !slices.Contains(off, t.Kind), CanTurnOff: t.Kind == "new_sign_in"})
+		}
+	}
+	return httpx.JSON(w, http.StatusOK, list)
+}
+
+func (h *handler) setSecurityEmails(w http.ResponseWriter, r *http.Request) error {
+	u, _, err := httpx.RequireUser(r)
+	if err != nil {
+		return err
+	}
+	var in struct {
+		Off []string `json:"off"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	if slices.ContainsFunc(in.Off, func(kind string) bool { return kind != "new_sign_in" }) {
+		return httpx.Invalid("Only emails about new sign-ins can be turned off. Your organization decides which other security emails Halo sends.")
+	}
+	if err := h.st.SetSecurityEmailOptOuts(r.Context(), u.ID, in.Off); err != nil {
+		return err
+	}
+	return h.securityEmails(w, r)
 }

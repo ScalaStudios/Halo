@@ -267,6 +267,9 @@ func TestEmailCode(t *testing.T) {
 		enter("cy@example.com", wrong(code), http.StatusUnauthorized, "ERR_CODE_MISMATCH")
 	}
 	enter("cy@example.com", code, http.StatusTooManyRequests, "ERR_TOO_MANY_ATTEMPTS")
+	if locked, _ := box.match(t, regexp.MustCompile(`(locked your account)`)); locked.To != "cy@example.com" {
+		t.Fatalf("lockout email to %s", locked.To)
+	}
 
 	e.org(func(s *store.Settings) { s.EmailSignIn = "both" })
 	m, code = request(map[string]any{"email": "ada@example.com"})

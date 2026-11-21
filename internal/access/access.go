@@ -30,6 +30,7 @@ type Decision struct {
 	Risk    string
 	EventID string
 	Terms   []store.Terms
+	Signals []string
 }
 
 type Engine interface {

@@ -458,7 +458,7 @@ func (h *handlers) createAccessPass(w http.ResponseWriter, r *http.Request, acto
 	if err != nil {
 		return err
 	}
-	h.email(r, halomail.AccessPass(target.Email, target.Name, actor.Name, expires))
+	halomail.SendSecurity(r.Context(), h.mailer, h.st, target.ID, expires.Format(time.RFC3339), halomail.AccessPass(target.Email, target.Name, actor.Name, expires))
 	return httpx.JSON(w, http.StatusCreated, map[string]any{"pass": pass, "expiresAt": expires, "uses": in.Uses})
 }
 
@@ -484,6 +484,7 @@ func (h *handlers) deleteMethod(w http.ResponseWriter, r *http.Request, actor st
 	if err != nil {
 		return err
 	}
+	halomail.SendSecurity(r.Context(), h.mailer, h.st, target.ID, method.ID, halomail.MethodRemoved(target.Email, target.Name, method.Label, actor.Name, h.cfg.Issuer()+"/account/security", time.Now()))
 	return noContent(w)
 }
 
@@ -793,6 +794,9 @@ func (h *handlers) updateUser(w http.ResponseWriter, r *http.Request, actor stor
 	})
 	if err != nil {
 		return err
+	}
+	if next.Email != target.Email {
+		halomail.SendSecurity(r.Context(), h.mailer, h.st, target.ID, next.Email, halomail.EmailChanged(next.Name, target.Email, next.Email, actor.Name, h.cfg.Issuer()+"/account", time.Now())...)
 	}
 	return h.respondUser(w, r, target.ID)
 }

@@ -44,6 +44,8 @@ export type Settings = {
   signUp: "off" | "open" | "approval";
   signUpDomains: string[];
   signUpGroupIds: string[];
+  securityEmailsOff: string[];
+  lockoutEmailAdmins: boolean;
 };
 
 export type SignUp = { id: string; email: string; name: string; createdAt: string; verifiedAt: string };
@@ -56,6 +58,7 @@ export type EmailTemplate = {
   description: string;
   variables: { name: string; description: string; example: string }[];
   required?: string;
+  security?: boolean;
   default: EmailTemplateText;
   custom: EmailTemplateText | null;
 };

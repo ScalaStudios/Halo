@@ -10,7 +10,7 @@ import { CopyField } from "@/components/ui/copy-field";
 import { CheckList, FieldError } from "@/components/policy/policy-form";
 import { joinList } from "@/components/policy/shared";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
-import type { Domain, Settings } from "@/lib/settings-types";
+import type { Domain, EmailTemplate, Settings } from "@/lib/settings-types";
 import type { Group } from "@/lib/types";
 import { ReadOnlyNote, useSaveSettings } from "./shared";
 
@@ -647,7 +647,7 @@ export function ImpersonationForm({ settings, groups, canEdit }: { settings: Set
     <Card>
       <CardHeader
         title="Impersonation"
-        description="Lets helpdesk administrators see Halo as someone for 30 minutes to find out why their access fails. They can look but not change anything or open applications, the person gets an email, and both names go in the audit and sign-in logs. People who hold or are eligible for an administrator role can't be impersonated."
+        description="Lets helpdesk administrators see Halo as someone for 30 minutes to find out why their access fails. They can look but not change anything or open applications, the person gets an email unless it is turned off under Security emails, and both names go in the audit and sign-in logs. People who hold or are eligible for an administrator role can't be impersonated."
       />
       <CardBody>
         {canEdit ? (
@@ -681,6 +681,63 @@ export function ImpersonationForm({ settings, groups, canEdit }: { settings: Set
         ) : (
           <ReadOnlyNote>
             {chosen.length ? `Members of ${joinList(chosen)} can be impersonated.` : "Impersonation is off."} Only global administrators can change who can be impersonated.
+          </ReadOnlyNote>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+export function SecurityEmailsForm({ settings, templates, canEdit }: { settings: Settings; templates: EmailTemplate[]; canEdit: boolean }) {
+  const { saving, failure, save } = useSaveSettings();
+  const security = templates.filter((t) => t.security);
+  const [off, setOff] = useState(settings.securityEmailsOff);
+  const [admins, setAdmins] = useState(settings.lockoutEmailAdmins);
+  const dirty = admins !== settings.lockoutEmailAdmins || off.length !== settings.securityEmailsOff.length || off.some((kind) => !settings.securityEmailsOff.includes(kind));
+  const turnedOff = security.filter((t) => settings.securityEmailsOff.includes(t.kind)).map((t) => t.label);
+
+  return (
+    <Card>
+      <CardHeader
+        title="Security emails"
+        description="Emails Halo sends people about their own account, so they notice a takeover early. They link to the account portal, never to a sign-in page, and never contain a code. Halo sends one email of a kind about the same thing within 15 minutes, and one lockout email per lockout window. Change their text under Email templates."
+      />
+      <CardBody>
+        {canEdit ? (
+          <form
+            noValidate
+            className="flex max-w-xl flex-col gap-6"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void save({ securityEmailsOff: off, lockoutEmailAdmins: admins }, "Security emails saved", "Every Halo server follows the change within 30 seconds.");
+            }}
+          >
+            <CheckList
+              legend="Emails people get"
+              options={security.map((t) => ({ id: t.kind, name: t.label, detail: t.description }))}
+              selected={security.filter((t) => !off.includes(t.kind)).map((t) => t.kind)}
+              onToggle={(kind, on) => setOff((current) => (on ? current.filter((k) => k !== kind) : [...current, kind]))}
+              empty="Halo has no security emails to choose from."
+              scroll={false}
+            />
+            <label className="flex cursor-pointer items-start gap-3">
+              <Checkbox className="mt-0.5" checked={admins} onChange={(event) => setAdmins(event.target.checked)} />
+              <span className="flex flex-col">
+                <span className="text-body-sm text-fg">Also email global administrators when an account is locked</span>
+                <span className="text-caption text-fg-3">With the person&apos;s name and a link to their page in the console, once per lockout window.</span>
+              </span>
+            </label>
+            <div className="flex flex-wrap items-center gap-4">
+              <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>
+                Save security emails
+              </Button>
+              <ActionError message={failure} />
+            </div>
+          </form>
+        ) : (
+          <ReadOnlyNote>
+            {turnedOff.length ? `Halo doesn't send these emails: ${joinList(turnedOff)}.` : "Halo sends every security email."}
+            {settings.lockoutEmailAdmins ? " Global administrators are emailed when an account is locked." : ""} Only security and global administrators can change security emails.
           </ReadOnlyNote>
         )}
       </CardBody>

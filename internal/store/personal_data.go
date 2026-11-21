@@ -33,6 +33,8 @@ var PersonalDataSections = []ExportSection{
 	{"sshCertificates", "ssh_certificates", `select serial, key_id, principals, fingerprint, key_type, ip, valid_after, valid_before, created_at from ssh_certificates where user_id = $1 order by created_at`},
 	{"riskEvents", "risk_events", `select id, time, type, level, ip, detail, status, resolved_at from risk_events where user_id = $1 order by time`},
 	{"applicationPreferences", "app_preferences", `select app_id, position, favourite from app_preferences where user_id = $1 order by position`},
+	{"securityEmails", "security_email_sends", `select kind, subject, sent_at from security_email_sends where user_id = $1 order by sent_at`},
+	{"securityEmailOptOuts", "security_email_opt_outs", `select kind from security_email_opt_outs where user_id = $1 order by kind`},
 }
 
 func (s *Store) ActiveProvisionedAccounts(ctx context.Context, userID string) (int, error) {

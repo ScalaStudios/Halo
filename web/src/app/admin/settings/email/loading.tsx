@@ -5,7 +5,7 @@ export default function Loading() {
   return (
     <PageSkeleton
       title="Email templates"
-      description="The subject and text of the emails Halo sends for invitations, resets, sign-in and access requests. Every email ends with Halo and your organization name."
+      description="The subject and text of the emails Halo sends for invitations, resets, sign-in, access requests and security notices. Every email ends with Halo and your organization name."
       className="max-w-6xl"
     >
       <div className="flex flex-col gap-6">

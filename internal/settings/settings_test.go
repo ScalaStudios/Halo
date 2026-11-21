@@ -118,6 +118,7 @@ func TestSettingsValidationCacheAndRoles(t *testing.T) {
 	for _, body := range []map[string]any{
 		{"sessionHours": 0}, {"sessionHours": 73}, {"lockoutThreshold": 2}, {"lockoutMinutes": 4}, {"inviteDays": 31},
 		{"accessTokenMinutes": 1441}, {"refreshTokenHours": 0}, {"contactEmail": "IT <it@example.com>"}, {"signInMessage": strings.Repeat("x", 501)}, {"emailSignIn": "sms"},
+		{"securityEmailsOff": []string{"invite"}}, {"securityEmailsOff": []string{"account_locked_admin"}},
 	} {
 		e.expect(e.call(admin, "PATCH", "/api/v1/settings", body), 422)
 	}
@@ -180,6 +181,19 @@ func TestSessionLifetimeAppliesToSessionsAndCookies(t *testing.T) {
 	cookie := rec.Result().Cookies()[0]
 	if d := time.Until(cookie.Expires); d < 2*time.Hour-time.Minute || d > 2*time.Hour {
 		t.Fatalf("cookie expires in %s, want 2h", d)
+	}
+}
+
+func TestSecurityEmailSettings(t *testing.T) {
+	e := setup(t)
+	security := e.person("sam@example.com", "security_admin")
+	got := decode[settingsResponse](t, e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"securityEmailsOff": []string{"new_sign_in", "access_pass", "new_sign_in"}, "lockoutEmailAdmins": true}), 200))
+	if !slices.Equal(got.Settings.SecurityEmailsOff, []string{"access_pass", "new_sign_in"}) || !got.Settings.LockoutEmailAdmins || len(store.DefaultSettings.SecurityEmailsOff) != 0 {
+		t.Fatalf("security emails: %+v", got.Settings)
+	}
+	got = decode[settingsResponse](t, e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"securityEmailsOff": nil}), 200))
+	if got.Settings.SecurityEmailsOff == nil || len(got.Settings.SecurityEmailsOff) != 0 {
+		t.Fatalf("all security emails back on: %+v", got.Settings.SecurityEmailsOff)
 	}
 }
 

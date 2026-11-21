@@ -25,7 +25,7 @@ func TestEmailTemplates(t *testing.T) {
 		t.Fatal(err)
 	}
 	list := decode[[]emailTemplateResponse](t, e.expect(e.call(auditor, "GET", "/api/v1/email-templates", nil), 200))
-	if len(list) != 10 || list[0].Kind != "invite" || list[0].Default.Subject != "Set up your Halo account" || list[0].Custom != nil {
+	if len(list) != 18 || list[0].Kind != "invite" || list[0].Default.Subject != "Set up your Halo account" || list[0].Custom != nil {
 		t.Fatalf("list: %+v", list)
 	}
 

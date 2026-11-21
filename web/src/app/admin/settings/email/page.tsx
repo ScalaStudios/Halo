@@ -13,7 +13,7 @@ export default async function EmailTemplatesPage({ searchParams }: { searchParam
   const current = templates.find((t) => t.kind === template) ?? templates[0];
   return (
     <div className="flex max-w-6xl flex-col gap-8">
-      <PageHeader title="Email templates" description="The subject and text of the emails Halo sends for invitations, resets, sign-in and access requests. Every email ends with Halo and your organization name." />
+      <PageHeader title="Email templates" description="The subject and text of the emails Halo sends for invitations, resets, sign-in, access requests and security notices. Every email ends with Halo and your organization name." />
       <div className="flex flex-col gap-6">
         <TabNav label="Email templates" tabs={templates.map((t) => ({ id: t.kind, label: t.label }))} active={current.kind} hrefFor={(kind) => `/admin/settings/email?template=${kind}`} />
         <EmailTemplateEditor key={current.kind} template={current} canEdit={hasRole(me)} />

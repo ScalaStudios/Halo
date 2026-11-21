@@ -3,6 +3,7 @@ package policy_test
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -262,13 +263,19 @@ func TestRiskSignals(t *testing.T) {
 	eng := policy.NewEngine(st)
 
 	ada := member(t, st, "ada@example.com")
-	if d := evaluate(t, eng, ada, "passkey", "198.51.100.7", strings.Repeat("a", 43)); d.Risk != "none" {
+	if d := evaluate(t, eng, ada, "passkey", "198.51.100.7", strings.Repeat("a", 43)); d.Risk != "none" || len(d.Signals) != 0 {
 		t.Fatalf("first device is not a new-device risk: %s", d.Risk)
 	}
 	d := evaluate(t, eng, ada, "passkey", "198.51.100.7", strings.Repeat("b", 43))
 	events := riskEvents(t, st, ada.ID)
-	if d.Risk != "medium" || len(events) != 1 || events[0].Type != "new-device" || events[0].Level != "medium" || events[0].DeviceID == nil || events[0].Device != "Firefox on Linux computer" {
+	if d.Risk != "medium" || !slices.Equal(d.Signals, []string{"new-device"}) || len(events) != 1 || events[0].Type != "new-device" || events[0].Level != "medium" || events[0].DeviceID == nil || events[0].Device != "Firefox on Linux computer" {
 		t.Fatalf("new device: %s %+v", d.Risk, events)
+	}
+	if err := st.RecordSignIn(ctx, store.SignInEvent{UserID: &ada.ID, Email: ada.Email, Result: "success", Method: "passkey", IP: "198.51.100.7"}); err != nil {
+		t.Fatal(err)
+	}
+	if d := evaluate(t, eng, ada, "passkey", "203.0.113.5", strings.Repeat("b", 43)); !slices.Equal(d.Signals, []string{"new-network"}) {
+		t.Fatalf("new network signals: %v", d.Signals)
 	}
 
 	bea := member(t, st, "bea@example.com")
