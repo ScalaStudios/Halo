@@ -409,8 +409,11 @@ func TestEndSession(t *testing.T) {
 	if status, _ := h.get("/oauth2/logout?"+url.Values{"id_token_hint": {idToken}, "post_logout_redirect_uri": {"https://evil.example.com/"}}.Encode(), ""); status != http.StatusBadRequest {
 		t.Fatalf("unregistered post_logout_redirect_uri: %d", status)
 	}
-	if status, location := h.get("/oauth2/logout?client_id="+h.app.ClientID, ""); status != http.StatusFound || location.String() != "/signed-out" {
-		t.Fatalf("logout without a redirect: %d %s", status, location)
+	if status, location := h.get("/oauth2/logout?client_id="+h.app.ClientID, ""); status != http.StatusFound || location.String() != "/signed-out?confirm=1" {
+		t.Fatalf("logout without an id_token_hint must ask to confirm: %d %s", status, location)
+	}
+	if status, location := h.get("/oauth2/logout?"+url.Values{"id_token_hint": {idToken}}.Encode(), otherToken); status != http.StatusFound || location.String() != "/signed-out?confirm=1" {
+		t.Fatalf("logout with an id_token_hint from another session must ask to confirm: %d %s", status, location)
 	}
 
 	for next, want := range map[string]string{

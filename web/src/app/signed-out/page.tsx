@@ -8,10 +8,10 @@ export const metadata: Metadata = {
 };
 
 export default async function SignedOutPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { next } = await searchParams;
+  const { next, confirm } = await searchParams;
   return (
     <AuthFrame>
-      <SignedOut next={typeof next === "string" ? next : undefined} />
+      <SignedOut next={typeof next === "string" ? next : undefined} confirm={confirm === "1"} />
     </AuthFrame>
   );
 }

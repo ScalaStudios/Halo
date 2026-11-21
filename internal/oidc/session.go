@@ -92,17 +92,31 @@ func (s *storage) TerminateSessionFromRequest(ctx context.Context, req *op.EndSe
 	if err := s.TerminateSession(ctx, req.UserID, req.ClientID); err != nil {
 		return "", err
 	}
+	sid := ""
 	if req.IDTokenHintClaims != nil {
-		if sid, _ := req.IDTokenHintClaims.Claims["sid"].(string); sid != "" {
+		if sid, _ = req.IDTokenHintClaims.Claims["sid"].(string); sid != "" {
 			if err := s.st.RevokeSession(ctx, sid, req.UserID); err != nil && !errors.Is(err, store.ErrNotFound) {
 				return "", err
 			}
 		}
 	}
-	if strings.HasPrefix(req.RedirectURI, "/") {
+	q := url.Values{}
+	confirm := req.IDTokenHintClaims == nil
+	if r, ok := ctx.Value(requestKey{}).(*http.Request); ok {
+		if current, signedIn := httpx.CurrentSession(r); signedIn && current.ID != sid {
+			confirm = true
+		}
+	}
+	if confirm {
+		q.Set("confirm", "1")
+	}
+	if !strings.HasPrefix(req.RedirectURI, "/") {
+		q.Set("next", req.RedirectURI)
+	}
+	if len(q) == 0 {
 		return "/signed-out", nil
 	}
-	return "/signed-out?next=" + url.QueryEscape(req.RedirectURI), nil
+	return "/signed-out?" + q.Encode(), nil
 }
 
 func (s *storage) logoutReturn(w http.ResponseWriter, r *http.Request) {
