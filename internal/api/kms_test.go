@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto"
 	"crypto/x509"
+	"net/http"
+	"strings"
 	"testing"
 
 	"halo/internal/kms"
 	"halo/internal/kms/kmstest"
+	"halo/internal/store"
 )
 
 func TestExternalKeyRotation(t *testing.T) {
@@ -46,5 +49,33 @@ func TestExternalKeyRotation(t *testing.T) {
 	signer, err := st.Keys.Signer(ctx, active.ExternalKey)
 	if err != nil || cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature) != nil || !signer.Public().(interface{ Equal(crypto.PublicKey) bool }).Equal(cert.PublicKey) {
 		t.Fatalf("the SAML certificate must be self-signed by the Vault key: %v", err)
+	}
+}
+
+func TestAlgorithmsTheKeyManagerCantSign(t *testing.T) {
+	st, h := registrationStack(t, "open")
+	ctx := context.Background()
+	st.Keys = kms.FromConfig(kmstest.NewAzure(t).Config())
+	_, admin := person(t, st, "gia@example.com", "global_admin")
+	app, err := st.CreateApplication(ctx, store.NewApplication{Name: "Grafana", Protocol: "oidc", Type: "web", RedirectURIs: []string{"https://grafana.example.com/login"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/v1/applications/" + app.ID
+	rec := call(t, h, admin, "PATCH", path, map[string]any{"tokenPolicy": map[string]any{"idTokenAlg": "EdDSA"}})
+	if rec.Code != 422 || !strings.Contains(rec.Body.String(), "Azure Key Vault can't sign with EdDSA. Choose RS256 or ES256.") {
+		t.Fatalf("EdDSA ID tokens must be refused: %d %s", rec.Code, rec.Body)
+	}
+	expect(t, call(t, h, admin, "PATCH", path, map[string]any{"tokenPolicy": map[string]any{"idTokenAlg": "ES256"}}), 200)
+	oauthError(t, oauth(t, h, http.MethodPost, "/oauth2/register", "", map[string]any{"redirect_uris": []string{toolCallback}, "id_token_signed_response_alg": "EdDSA"}), http.StatusBadRequest, "invalid_client_metadata")
+	if err := st.CheckExternalKeys(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	st.Keys = nil
+	expect(t, call(t, h, admin, "PATCH", path, map[string]any{"tokenPolicy": map[string]any{"idTokenAlg": "EdDSA"}}), 200)
+	st.Keys = kms.FromConfig(kmstest.NewAzure(t).Config())
+	if err := st.CheckExternalKeys(ctx); err == nil || !strings.Contains(err.Error(), "signs tokens with EdDSA") {
+		t.Fatalf("Halo must not start while an application signs with an algorithm the key manager can't: %v", err)
 	}
 }

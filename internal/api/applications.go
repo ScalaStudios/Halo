@@ -790,6 +790,9 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 			if !slices.Contains(store.SigningAlgorithms, *p.IDTokenAlg) {
 				return httpx.Invalid("Sign ID tokens with RS256, ES256 or EdDSA.")
 			}
+			if err := h.st.Keys.Supports(*p.IDTokenAlg); err != nil {
+				return httpx.Invalid(err.Error() + ".")
+			}
 			next.TokenPolicy.IDTokenAlg = *p.IDTokenAlg
 			changed = append(changed, "ID token signing algorithm")
 		}

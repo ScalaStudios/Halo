@@ -93,7 +93,11 @@ func (h *handlers) ca(ctx context.Context, host bool) (store.SSHAuthority, error
 	var ref string
 	var public crypto.PublicKey
 	if h.st.Keys.External() {
-		if ref, err = h.st.Keys.CreateKey(ctx, "EdDSA"); err != nil {
+		algorithm := "EdDSA"
+		if h.st.Keys.Supports(algorithm) != nil {
+			algorithm = "ES256"
+		}
+		if ref, err = h.st.Keys.CreateKey(ctx, algorithm); err != nil {
 			return a, err
 		}
 		signer, err := h.st.Keys.Signer(ctx, ref)
