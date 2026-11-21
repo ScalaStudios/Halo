@@ -33,6 +33,9 @@ func scanSignUp(row rowScanner) (SignUp, error) {
 
 func (s *Store) RequestSignUp(ctx context.Context, email, name string) (string, time.Time, error) {
 	token, expires := secret.Token(32), time.Now().Add(SignUpLifetime)
+	if _, err := s.db.Exec(ctx, `delete from identity_proofs p using sign_ups s where p.sign_up_id = s.id and lower(s.email) = lower($1) and s.verified_at is null and s.name <> $2`, email, name); err != nil {
+		return "", time.Time{}, err
+	}
 	tag, err := s.db.Exec(ctx, `insert into sign_ups (id, user_id, email, name, token_hash, expires_at) values ($1, $2, $3, $4, $5, $6)
 		on conflict ((lower(email))) do update set email = excluded.email, name = excluded.name, token_hash = excluded.token_hash, expires_at = excluded.expires_at, created_at = now()
 		where sign_ups.verified_at is null`,

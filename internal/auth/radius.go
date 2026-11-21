@@ -108,14 +108,13 @@ func (x *RADIUS) finish(ctx context.Context, a attempt, in RADIUSRequest, settin
 		return RADIUSReply{}, x.reject(ctx, a, in, "The account is suspended.", nil)
 	case app.Status != "active":
 		return RADIUSReply{}, x.reject(ctx, a, in, "The application is disabled.", nil)
-	case u.Status == "invited" && settings.ProofingRequired(u.GroupIDs, false):
-		if missing, err := h.unproven(ctx, u); err != nil || missing {
-			return RADIUSReply{}, x.reject(ctx, a, in, "The account is waiting for an identity check.", err)
-		}
 	case !assigned(u, app):
 		return RADIUSReply{}, x.reject(ctx, a, in, notAssignedReason, nil)
 	case slices.Contains(settings.EmergencyAccessIDs, u.ID):
 		return RADIUSReply{}, x.reject(ctx, a, in, "Emergency access accounts sign in to Halo only, not over RADIUS.", nil)
+	}
+	if missing, err := h.unproven(ctx, u); err != nil || missing {
+		return RADIUSReply{}, x.reject(ctx, a, in, "The account is waiting for an identity check.", err)
 	}
 	decision, err := h.policy.Evaluate(ctx, access.Input{User: u, App: &app, Method: a.method, IP: in.IP})
 	if err != nil {

@@ -135,3 +135,31 @@ func TestSignUpApprovalNeedsIdentityCheck(t *testing.T) {
 	plain := pendingSignUp(t, st, "plain@example.com")
 	expect(t, call(t, h, admin, "POST", "/api/v1/sign-ups/"+plain.ID+"/approve", nil), 200)
 }
+
+func TestRenamedSignUpLosesItsIdentityCheck(t *testing.T) {
+	st, _ := setup(t)
+	ctx := context.Background()
+	token, _, err := st.RequestSignUp(ctx, "lin@example.com", "Lin Wu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	su, err := st.PeekSignUp(ctx, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateIdentityProof(ctx, store.NewIdentityProof{SignUpID: su.ID, Method: "provider", Provider: "generic", Reference: "ses_1", Status: "verified"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.RequestSignUp(ctx, "lin@example.com", "Lin Wu"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.IdentityCheck(ctx, "", su.ID); err != nil {
+		t.Fatalf("a new link for the same name must keep the check: %v", err)
+	}
+	if _, _, err := st.RequestSignUp(ctx, "LIN@example.com", "Someone Else"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.IdentityCheck(ctx, "", su.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a sign-up under another name must lose the check: %v", err)
+	}
+}

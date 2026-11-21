@@ -942,7 +942,7 @@ export function SignUpForm({ settings, groups, domains, canEdit }: { settings: S
 }
 
 const PROVIDERS: Record<Settings["identityProofingProvider"], { label: string; hint: string }> = {
-  "": { label: "In person only", hint: "A user or helpdesk administrator checks each person and records it on their page or in the sign-up queue." },
+  "": { label: "In person only", hint: "A user or helpdesk administrator checks each invited person and records it on their page. A user administrator checks sign-ups in the queue on the Users page." },
   stripe: { label: "Stripe Identity", hint: "People photograph an identity document and their face on Stripe's page. Administrators can still check people in person." },
   generic: { label: "Another provider", hint: "Any service that follows Halo's session and webhook contract, described in the API reference under the identity proofing webhook." },
 };

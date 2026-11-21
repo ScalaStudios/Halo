@@ -1330,7 +1330,7 @@ paths:
       tags: [Sign-in]
       operationId: startSignUpIdentityProof
       summary: Start an identity check for a sign-up
-      description: 'Works like `/auth/enroll/identity-proof` while `identityProofingSignUps` applies to the groups in `signUpGroupIds`. The provider sends the person back to `/sign-up?proofing=done`.'
+      description: 'Works like `/auth/enroll/identity-proof` while `identityProofingSignUps` applies to the groups in `signUpGroupIds`. The provider sends the person back to `/sign-up?proofing=done`. Asking `/auth/sign-up` for a new link under another name deletes the checks of the unconfirmed sign-up.'
       security: []
       requestBody:
         required: true
