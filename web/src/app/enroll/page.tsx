@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { AuthFrame } from "@/components/auth/auth-frame";
-import { EnrollFlow, type Enrollee } from "@/components/auth/enroll-flow";
+import { EnrollFlow, ResumeAfterCheck, type Enrollee } from "@/components/auth/enroll-flow";
 import { apiPeek } from "@/lib/api/server";
 
 export const metadata: Metadata = {
@@ -9,7 +9,14 @@ export const metadata: Metadata = {
 };
 
 export default async function EnrollPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { token } = await searchParams;
+  const { token, proofing } = await searchParams;
+  if (typeof token !== "string" && proofing === "done") {
+    return (
+      <AuthFrame>
+        <ResumeAfterCheck />
+      </AuthFrame>
+    );
+  }
   const value = typeof token === "string" ? token : "";
   const { data, problem } = await apiPeek<Enrollee>(`/auth/enroll?token=${encodeURIComponent(value)}`);
   return (

@@ -394,3 +394,51 @@ func TestRADIUSAppliesPoliciesAndRotatedSecrets(t *testing.T) {
 		}
 	}
 }
+
+func TestRADIUSWaitsForIdentityCheck(t *testing.T) {
+	r := setupRADIUS(t, false)
+	app, shared := r.client("127.0.0.0/8")
+	ctx := context.Background()
+	s, err := r.st.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.IdentityProofingInvites = true
+	if err := r.st.SaveSettings(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+	r.st.ForgetSettings()
+	const password = "correct horse battery staple"
+	invite := func(email string, groupIDs ...string) store.User {
+		u, err := r.st.CreateUser(ctx, store.NewUser{Email: email, Name: strings.Split(email, "@")[0], GroupIDs: groupIDs})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := r.st.SetPassword(ctx, u.ID, secret.HashPassword(password), false); err != nil {
+			t.Fatal(err)
+		}
+		return u
+	}
+	ada, grace := invite("ada@example.com", r.staff.ID), invite("grace@example.com")
+
+	if reply := r.send(signed(accessRequest(shared, "ada@example.com", password))); reply == nil || reply.Code != layeh.CodeAccessReject {
+		t.Fatalf("an invited person without an identity check must be rejected: %+v", reply)
+	}
+	if events := r.events(app.ID); len(events) != 1 || events[0].Reason != "The account is waiting for an identity check." {
+		t.Fatalf("the refusal must be logged: %+v", events)
+	}
+	for _, u := range []store.User{ada, grace} {
+		if _, err := r.st.CreateIdentityProof(ctx, store.NewIdentityProof{UserID: u.ID, Method: "in-person", Status: "verified", Document: "passport", Note: "Front desk"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if reply := r.send(signed(accessRequest(shared, "grace@example.com", password))); reply == nil || reply.Code != layeh.CodeAccessReject {
+		t.Fatalf("a checked person outside the assigned groups must still be rejected: %+v", reply)
+	}
+	if events := r.events(app.ID); events[0].Reason != "User is not assigned to this application." {
+		t.Fatalf("the refusal must name the assignment: %+v", events[0])
+	}
+	if reply := r.send(signed(accessRequest(shared, "ada@example.com", password))); reply == nil || reply.Code != layeh.CodeAccessAccept {
+		t.Fatalf("an assigned person with a successful identity check must be accepted: %+v", reply)
+	}
+}

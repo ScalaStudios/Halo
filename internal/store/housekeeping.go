@@ -28,6 +28,7 @@ func (s *Store) Purge(ctx context.Context) error {
 		`delete from dpop_proofs where expires_at < now()`,
 		`delete from radius_replies where created_at < now() - interval '1 minute'`,
 		`delete from kerberos_authenticators where expires_at < now()`,
+		`delete from identity_proofing_events where expires_at < now()`,
 		`delete from client_assertions where expires_at < now()`,
 	} {
 		if _, err := s.db.Exec(ctx, sql); err != nil {

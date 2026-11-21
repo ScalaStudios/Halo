@@ -127,6 +127,9 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		"POST /api/v1/auth/sign-up/begin":        h.signUpBegin,
 		"POST /api/v1/auth/sign-up/finish":       h.signUpFinish,
 
+		"POST /api/v1/auth/enroll/identity-proof":  h.enrollProof,
+		"POST /api/v1/auth/sign-up/identity-proof": h.signUpProof,
+
 		"GET /api/v1/auth/providers":                   h.providers,
 		"GET /api/v1/auth/federated/{id}/start":        h.browser(h.federatedStart),
 		"GET " + FederationCallbackPath:                h.browser(h.federatedCallback),
@@ -307,6 +310,11 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 	if a.method == "access-pass" {
 		return h.enrollWithPass(w, r, a, extra)
 	}
+	if missing, err := h.unproven(ctx, u); err != nil {
+		return err
+	} else if missing {
+		return h.reject(r, a, "The account is waiting for an identity check.", errProofRequired)
+	}
 	redirect, token, ceremony := "/account", "", ""
 	emergency := false
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
@@ -359,6 +367,9 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 	})
 	if errors.Is(err, store.ErrSessionLimit) {
 		return h.reject(r, a, store.SessionLimitReason, errSessionLimit)
+	}
+	if errors.Is(err, store.ErrProofRequired) {
+		return h.reject(r, a, "The account is waiting for an identity check.", errProofRequired)
 	}
 	if errors.Is(err, store.ErrNotFound) {
 		return errRequestExpired

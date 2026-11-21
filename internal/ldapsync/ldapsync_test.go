@@ -393,3 +393,52 @@ func TestDirectoryConnection(t *testing.T) {
 		t.Fatal("a directory must not sync again before its interval")
 	}
 }
+
+func TestDirectoryRetriesRestoreAfterIdentityCheck(t *testing.T) {
+	st, h := setup(t)
+	ctx := context.Background()
+	_, admin := person(t, st, "uma@example.com", "user_admin")
+	if _, err := st.CreateAttribute(ctx, store.Attribute{Name: "employeeNumber", Label: "Employee number", Type: "string"}); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := st.CurrentSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.IdentityProofingInvites = true
+	if err := st.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	f := serveLDAP(t, "ldaps")
+	dir := decode[store.LDAPDirectory](t, call(t, h, admin, "POST", "/api/v1/ldap-directories", directoryInput(f, "ldaps")), 201)
+	people := func(state string) {
+		f.set(personEntry("ada", "guid-ada", "ada@example.com", "Ada Lovelace", "Engineer", state))
+	}
+	people("512")
+	first := syncNow(t, h, admin, dir.ID, false)
+	if first.Counts.Created != 1 {
+		t.Fatalf("first sync: %+v", first)
+	}
+	u, err := st.GetUserByEmail(ctx, "ada@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetPassword(ctx, u.ID, "test-password-hash", false); err != nil {
+		t.Fatal(err)
+	}
+	people("514")
+	if out := syncNow(t, h, admin, dir.ID, false); out.Counts.Suspended != 1 {
+		t.Fatalf("suspension: %+v", out)
+	}
+	people("512")
+	blocked := syncNow(t, h, admin, dir.ID, false)
+	if blocked.Counts.Restored != 0 || !slices.ContainsFunc(blocked.Skipped, func(s string) bool { return strings.Contains(s, "identity check is still required") }) {
+		t.Fatalf("restore before identity check: %+v", blocked)
+	}
+	if _, err := st.CreateIdentityProof(ctx, store.NewIdentityProof{UserID: u.ID, Method: "in-person", Status: "verified"}); err != nil {
+		t.Fatal(err)
+	}
+	if out := syncNow(t, h, admin, dir.ID, false); out.Counts.Restored != 1 {
+		t.Fatalf("restore after identity check: %+v", out)
+	}
+}

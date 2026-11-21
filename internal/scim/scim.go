@@ -189,6 +189,8 @@ func (s *server) handle(fn handlerFunc) http.Handler {
 		case errors.As(err, &e):
 		case errors.Is(err, store.ErrNotFound):
 			e = fail(http.StatusNotFound, "", "This resource was not found. It may have been deleted.")
+		case errors.Is(err, store.ErrProofRequired):
+			e = fail(http.StatusConflict, "", "Confirm this person's identity in Halo before restoring access.")
 		case errors.Is(err, store.ErrConflict):
 			e = fail(http.StatusConflict, "uniqueness", "Another resource already uses this userName, displayName or externalId.")
 		default:
