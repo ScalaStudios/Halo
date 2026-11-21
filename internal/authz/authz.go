@@ -1,13 +1,16 @@
 package authz
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"halo/internal/httpx"
+	"halo/internal/oidc"
 	"halo/internal/store"
 )
 
@@ -16,11 +19,12 @@ const (
 	maxWrites = 100
 )
 
-var errClient = httpx.Fail(http.StatusUnauthorized, "ERR_UNAUTHENTICATED", "Authenticate as the application with HTTP Basic: its client ID as the user name and one of its client secrets as the password.")
+var errClient = httpx.Fail(http.StatusUnauthorized, "ERR_UNAUTHENTICATED", "Authenticate with the application’s configured method. Send its client ID and secret with HTTP Basic, or a signed client assertion with PrivateKeyJWT.")
 
 type handlers struct {
-	st   *store.Store
-	auth *httpx.Auth
+	st              *store.Store
+	auth            *httpx.Auth
+	verifyAssertion func(ctx context.Context, raw, path string) (store.Application, error)
 }
 
 type caller struct {
@@ -52,7 +56,7 @@ type answer struct {
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
-	h := &handlers{st: d.Store, auth: d.Auth}
+	h := &handlers{st: d.Store, auth: d.Auth, verifyAssertion: oidc.NewClientAssertionVerifier(d)}
 	readers, writers := []string{"security_admin", "user_admin", "helpdesk_admin", "app_admin", "auditor"}, []string{"app_admin"}
 	route := func(pattern string, roles []string, fn func(http.ResponseWriter, *http.Request, store.User) error) {
 		mux.Handle(pattern, httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
@@ -86,13 +90,26 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 }
 
 func (h *handlers) caller(w http.ResponseWriter, r *http.Request) (caller, error) {
-	clientID, secret, ok := r.BasicAuth()
-	if !ok {
-		w.Header().Set("WWW-Authenticate", `Basic realm="halo"`)
-		return caller{}, errClient
+	var app store.Application
+	var err error
+	scheme, credential, _ := strings.Cut(r.Header.Get("Authorization"), " ")
+	clientID, secret, basic := r.BasicAuth()
+	switch {
+	case len(r.Header.Values("Authorization")) != 1:
+		err = store.ErrNotFound
+	case strings.EqualFold(scheme, "PrivateKeyJWT"):
+		app, err = h.verifyAssertion(r.Context(), strings.TrimSpace(credential), r.URL.Path)
+	case basic:
+		app, err = h.st.VerifyClientSecret(r.Context(), clientID, secret)
+		if err == nil && app.TokenEndpointAuthMethod != oidc.ClientSecretBasic {
+			err = store.ErrNotFound
+		}
+	default:
+		err = store.ErrNotFound
 	}
-	app, err := h.st.VerifyClientSecret(r.Context(), clientID, secret)
 	if errors.Is(err, store.ErrNotFound) || err == nil && (app.Status != "active" || !modelled(app)) {
+		w.Header().Add("WWW-Authenticate", `Basic realm="halo"`)
+		w.Header().Add("WWW-Authenticate", `PrivateKeyJWT realm="halo"`)
 		return caller{}, errClient
 	}
 	if err != nil {
@@ -143,7 +160,7 @@ func (h *handlers) putModel(w http.ResponseWriter, r *http.Request, actor store.
 		return err
 	}
 	if !modelled(app) {
-		return httpx.Invalid(app.Name + " can't call the authorization API. Only web and service applications with a client secret can.")
+		return httpx.Invalid(app.Name + " can't call the authorization API. Only web and service applications can.")
 	}
 	var in struct {
 		Types store.AuthzTypes `json:"types"`

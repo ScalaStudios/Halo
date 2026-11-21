@@ -127,11 +127,15 @@ func (h *handler) pendingSignUp(r *http.Request, token string) (store.SignUp, st
 }
 
 func (h *handler) signUpInfo(w http.ResponseWriter, r *http.Request) error {
-	su, _, err := h.pendingSignUp(r, r.URL.Query().Get("token"))
+	su, settings, err := h.pendingSignUp(r, r.URL.Query().Get("token"))
 	if err != nil {
 		return err
 	}
-	return httpx.JSON(w, http.StatusOK, map[string]any{"user": map[string]string{"name": su.Name, "email": su.Email}, "purpose": "sign-up"})
+	proof, err := h.proofState(r.Context(), settings, settings.ProofingRequired(settings.SignUpGroupIDs, true), "", su.ID)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, map[string]any{"user": map[string]string{"name": su.Name, "email": su.Email}, "purpose": "sign-up", "identityProof": proof})
 }
 
 func (h *handler) signUpBegin(w http.ResponseWriter, r *http.Request) error {
@@ -168,6 +172,7 @@ func (h *handler) signUpFinish(w http.ResponseWriter, r *http.Request) error {
 	}
 	ctx := r.Context()
 	var u store.User
+	activated := false
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
 		verified, err := tx.VerifySignUp(ctx, in.Token, cred)
 		if errors.Is(err, store.ErrNotFound) {
@@ -178,20 +183,26 @@ func (h *handler) signUpFinish(w http.ResponseWriter, r *http.Request) error {
 		}
 		event := store.AuditEvent{Action: "user.sign_up", Summary: "Signed up as " + verified.Email + " and is waiting for approval", TargetType: "sign_up", TargetID: verified.ID, TargetLabel: verified.Name, IP: httpx.ClientIP(r)}
 		if settings.SignUp == "open" {
-			if u, err = tx.ActivateSignUp(ctx, verified.ID, settings.SignUpGroupIDs); errors.Is(err, store.ErrConflict) {
+			u, err = tx.ActivateSignUp(ctx, verified.ID, settings.SignUpGroupIDs, settings.ProofingRequired(settings.SignUpGroupIDs, true))
+			switch {
+			case errors.Is(err, store.ErrProofRequired):
+				event.Summary = "Signed up as " + verified.Email + " and is waiting for an identity check"
+			case errors.Is(err, store.ErrConflict):
 				return errSignUpTaken
-			} else if err != nil {
+			case err != nil:
 				return err
+			default:
+				activated = true
+				event.ActorID, event.Summary, event.TargetType, event.TargetID = &u.ID, "Signed up as "+u.Email+" with "+cred.Label, "user", u.ID
 			}
-			event.ActorID, event.Summary, event.TargetType, event.TargetID = &u.ID, "Signed up as "+u.Email+" with "+cred.Label, "user", u.ID
 		}
 		return tx.RecordAudit(ctx, event)
 	})
 	if err != nil {
 		return err
 	}
-	if settings.SignUp != "open" {
-		return httpx.JSON(w, http.StatusOK, map[string]bool{"pending": true})
+	if !activated {
+		return httpx.JSON(w, http.StatusOK, map[string]bool{"pending": true, "identityCheck": settings.SignUp == "open"})
 	}
 	return h.finish(w, r, attempt{method: cred.Kind, user: &u}, nil, nil)
 }

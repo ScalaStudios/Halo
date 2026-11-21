@@ -113,6 +113,9 @@ func (x *RADIUS) finish(ctx context.Context, a attempt, in RADIUSRequest, settin
 	case slices.Contains(settings.EmergencyAccessIDs, u.ID):
 		return RADIUSReply{}, x.reject(ctx, a, in, "Emergency access accounts sign in to Halo only, not over RADIUS.", nil)
 	}
+	if missing, err := h.unproven(ctx, u); err != nil || missing {
+		return RADIUSReply{}, x.reject(ctx, a, in, "The account is waiting for an identity check.", err)
+	}
 	decision, err := h.policy.Evaluate(ctx, access.Input{User: u, App: &app, Method: a.method, IP: in.IP})
 	if err != nil {
 		return RADIUSReply{}, err
@@ -136,6 +139,9 @@ func (x *RADIUS) finish(ctx context.Context, a attempt, in RADIUSRequest, settin
 		}
 		return tx.RecordSignIn(ctx, a.eventFrom(in.IP, in.Device, "success", ""))
 	})
+	if errors.Is(err, store.ErrProofRequired) {
+		return RADIUSReply{}, x.reject(ctx, a, in, "The account is waiting for an identity check.", nil)
+	}
 	timeout := settings.SessionLifetime()
 	if app.MaxAuthAge > 0 {
 		timeout = time.Duration(app.MaxAuthAge) * time.Second

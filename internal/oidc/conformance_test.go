@@ -25,7 +25,7 @@ func TestTokenResponsesForbidCaching(t *testing.T) {
 	}
 }
 
-func formPost(t *testing.T, h *harness, q url.Values, wantError, wantState string) {
+func formPost(t *testing.T, h *harness, q url.Values, wantError, wantState string) string {
 	t.Helper()
 	res, err := (&http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Get(h.srv.URL + "/oauth2/authorize?" + q.Encode())
 	if err != nil {
@@ -42,6 +42,7 @@ func formPost(t *testing.T, h *harness, q url.Values, wantError, wantState strin
 			t.Errorf("form post page lacks %s: %s", want, page)
 		}
 	}
+	return page
 }
 
 func TestFormPostErrorResponses(t *testing.T) {

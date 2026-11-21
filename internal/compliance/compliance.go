@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"net/url"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -383,25 +381,6 @@ func (h *handlers) intune(ctx context.Context, src store.ComplianceSource, clien
 	return records, nil
 }
 
-func verify(key []byte, header string, body []byte, now time.Time) bool {
-	var stamp, signature string
-	for part := range strings.SplitSeq(header, ",") {
-		k, v, _ := strings.Cut(strings.TrimSpace(part), "=")
-		switch k {
-		case "t":
-			stamp = v
-		case "v1":
-			signature = v
-		}
-	}
-	at, err := strconv.ParseInt(stamp, 10, 64)
-	mac, hexErr := hex.DecodeString(signature)
-	if err != nil || hexErr != nil || now.Sub(time.Unix(at, 0)).Abs() > 5*time.Minute {
-		return false
-	}
-	return secret.Equal(mac, secret.MAC(key, stamp+"."+string(body)))
-}
-
 func (h *handlers) report(w http.ResponseWriter, r *http.Request) error {
 	src, err := h.st.GetComplianceSource(r.Context(), r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) || err == nil && src.Kind != "agent" {
@@ -418,7 +397,7 @@ func (h *handlers) report(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if !verify(key, r.Header.Get("Halo-Signature"), body, time.Now()) {
+	if !secret.VerifySignature(key, r.Header.Get("Halo-Signature"), body, time.Now()) {
 		return errSignature
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))

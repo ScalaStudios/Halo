@@ -101,7 +101,6 @@ func New(d httpx.Deps) (http.Handler, error) {
 			}
 			c.ResponseTypesSupported = []string{string(oidc.ResponseTypeCode)}
 			c.GrantTypesSupported = slices.DeleteFunc(c.GrantTypesSupported, func(g oidc.GrantType) bool { return g == oidc.GrantTypeImplicit || g == oidc.GrantTypeBearer })
-			c.IntrospectionEndpointAuthSigningAlgValuesSupported, c.RevocationEndpointAuthSigningAlgValuesSupported = nil, nil
 			c.BackChannelLogoutSupported, c.BackChannelLogoutSessionSupported = true, true
 			if contexts, err := d.Store.ListAuthContexts(r.Context()); err == nil {
 				for _, ac := range contexts {
@@ -111,11 +110,20 @@ func New(d httpx.Deps) (http.Handler, error) {
 			if settings, err := d.Store.Settings(r.Context()); err == nil && settings.ClientRegistrationOn() {
 				c.RegistrationEndpoint = d.Config.Issuer() + "/oauth2/register"
 			}
+			methods := []oidc.AuthMethod{oidc.AuthMethodNone, oidc.AuthMethodBasic, oidc.AuthMethodPost, oidc.AuthMethodPrivateKeyJWT}
+			c.TokenEndpointAuthMethodsSupported, c.RevocationEndpointAuthMethodsSupported = methods, methods
+			c.IntrospectionEndpointAuthMethodsSupported = []oidc.AuthMethod{oidc.AuthMethodBasic, oidc.AuthMethodPrivateKeyJWT}
+			algs := []string{}
+			for _, alg := range assertionAlgorithms {
+				algs = append(algs, string(alg))
+			}
+			c.TokenEndpointAuthSigningAlgValuesSupported, c.IntrospectionEndpointAuthSigningAlgValuesSupported, c.RevocationEndpointAuthSigningAlgValuesSupported = algs, algs, algs
 			body, _ = json.Marshal(struct {
 				oidc.DiscoveryConfiguration
 				PushedAuthorizationRequestEndpoint string                    `json:"pushed_authorization_request_endpoint"`
 				DPoPSigningAlgValuesSupported      []jose.SignatureAlgorithm `json:"dpop_signing_alg_values_supported"`
-			}{c, d.Config.Issuer() + "/oauth2/par", dpopAlgorithms})
+				AuthorizationResponseIssSupported  bool                      `json:"authorization_response_iss_parameter_supported"`
+			}{c, d.Config.Issuer() + "/oauth2/par", dpopAlgorithms, true})
 			return body
 		})
 	})
@@ -130,15 +138,8 @@ func New(d httpx.Deps) (http.Handler, error) {
 		}
 		serve(w, r)
 	})
-	workload := &workloads{st: d.Store, dev: d.Config.Dev, issuers: map[string]*issuerKeys{}}
-	mux.HandleFunc("POST /oauth2/token", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Pragma", "no-cache")
-		_ = r.ParseForm()
-		if r.PostForm.Get("grant_type") == string(oidc.GrantTypeClientCredentials) && r.PostForm.Get("client_assertion_type") == oidc.ClientAssertionTypeJWTAssertion {
-			workload.ServeHTTP(w, r)
-			return
-		}
+	workload := &workloads{st: d.Store, dev: d.Config.Dev}
+	token := st.authenticateClient(func(w http.ResponseWriter, r *http.Request) {
 		if len(r.Header.Values(oidc.DPoPHeader)) == 0 {
 			serve(w, r)
 			return
@@ -158,6 +159,18 @@ func New(d httpx.Deps) (http.Handler, error) {
 			return body
 		})
 	})
+	mux.HandleFunc("POST /oauth2/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Pragma", "no-cache")
+		_ = r.ParseForm()
+		if r.PostForm.Get("grant_type") == string(oidc.GrantTypeClientCredentials) && r.PostForm.Get("client_assertion_type") == oidc.ClientAssertionTypeJWTAssertion && !st.application(r.Context(), r.PostForm.Get("client_id")) {
+			workload.ServeHTTP(w, r)
+			return
+		}
+		token(w, r)
+	})
+	mux.HandleFunc("POST /oauth2/introspect", st.authenticateClient(serve))
+	mux.HandleFunc("POST /oauth2/revoke", st.authenticateClient(serve))
 	mux.HandleFunc("/oauth2/userinfo", func(w http.ResponseWriter, r *http.Request) {
 		scheme, token, _ := strings.Cut(r.Header.Get("Authorization"), " ")
 		if !strings.EqualFold(scheme, dpopTokenType) {
@@ -181,7 +194,9 @@ func New(d httpx.Deps) (http.Handler, error) {
 	mux.HandleFunc("/oauth2/authorize", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		if r.Form.Has("request_uri") && !strings.HasPrefix(r.Form.Get("request_uri"), requestURIPrefix) {
-			formPostErrors(w, r, r.Form.Get("response_mode"), r.Form.Get("redirect_uri"), func(w http.ResponseWriter, r *http.Request) { requestURINotSupported(w, r, provider) })
+			formPostErrors(w, r, r.Form.Get("response_mode"), r.Form.Get("redirect_uri"), func(w http.ResponseWriter, r *http.Request) {
+				requestURINotSupported(withIssuer(w, st.issuer, r.Form.Get("redirect_uri")), r, provider)
+			})
 			return
 		}
 		if r.Form.Has("request_uri") {
@@ -194,9 +209,12 @@ func New(d httpx.Deps) (http.Handler, error) {
 		if r.Form.Has("request") {
 			requestObjectHints(r.Form)
 		}
-		formPostErrors(w, r, r.Form.Get("response_mode"), r.Form.Get("redirect_uri"), serve)
+		redirectURI := r.Form.Get("redirect_uri")
+		formPostErrors(w, r, r.Form.Get("response_mode"), redirectURI, func(w http.ResponseWriter, r *http.Request) {
+			serve(withIssuer(w, st.issuer, redirectURI), r)
+		})
 	})
-	mux.Handle("POST /oauth2/par", cors.New(*provider.CORSOptions()).Handler(st.pushAuthRequest(provider)))
+	mux.Handle("POST /oauth2/par", cors.New(*provider.CORSOptions()).Handler(http.MaxBytesHandler(st.authenticateClient(st.pushAuthRequest(provider)), 64<<10)))
 	logout := func(w http.ResponseWriter, r *http.Request) {
 		if r.ParseForm() == nil && r.Form.Get("post_logout_redirect_uri") != "" && r.Form.Get("id_token_hint") == "" && r.Form.Get("client_id") == "" {
 			op.RequestError(w, r, oidc.ErrInvalidRequest().WithDescription("A post-logout redirect requires an ID-token hint or client ID."), nil)
@@ -228,7 +246,13 @@ func New(d httpx.Deps) (http.Handler, error) {
 			return
 		}
 		formPostErrors(w, r, req.ResponseMode, req.RedirectURI, func(w http.ResponseWriter, r *http.Request) {
+			if err == nil {
+				w = withIssuer(w, st.issuer, req.RedirectURI)
+			}
 			if err == nil && req.Done && st.awaitConsent(w, r, req, provider) {
+				return
+			}
+			if err == nil && req.Done && req.ResponseMode == string(oidc.ResponseModeFormPost) && st.formPost(w, r, req, provider) {
 				return
 			}
 			provider.ServeHTTP(w, r)
@@ -236,8 +260,6 @@ func New(d httpx.Deps) (http.Handler, error) {
 	})
 	return mux, nil
 }
-
-var formPostPage = template.Must(template.New("form_post").Parse(`<!doctype html><html><head><meta charset="utf-8"></head><body onload="document.forms[0].submit()"><form method="post" action="{{.Action}}">{{range $name, $values := .Params}}{{range $values}}<input type="hidden" name="{{$name}}" value="{{.}}">{{end}}{{end}}<noscript><button type="submit">Continue</button></noscript></form></body></html>`))
 
 func requestURINotSupported(w http.ResponseWriter, r *http.Request, provider *op.Provider) {
 	req := &oidc.AuthRequest{ClientID: r.Form.Get("client_id"), RedirectURI: r.Form.Get("redirect_uri"), State: r.Form.Get("state"), ResponseType: oidc.ResponseType(r.Form.Get("response_type")), ResponseMode: oidc.ResponseMode(r.Form.Get("response_mode"))}

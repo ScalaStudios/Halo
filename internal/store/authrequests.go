@@ -31,16 +31,17 @@ type AuthRequest struct {
 	Consent             *string
 	CreatedAt           time.Time
 	ExpiresAt           time.Time
+	DPoPJKT             string
 }
 
 const AuthRequestLifetime = 15 * time.Minute
 
-const authRequestColumns = `id, client_id, redirect_uri, scopes, state, nonce, response_type, response_mode, code_challenge, code_challenge_method, prompt, max_age, login_hint, domain_hint, user_id, session_id, auth_time, amr, acr_values, acr, done, code, consent, created_at, expires_at`
+const authRequestColumns = `id, client_id, redirect_uri, scopes, state, nonce, response_type, response_mode, code_challenge, code_challenge_method, prompt, max_age, login_hint, domain_hint, user_id, session_id, auth_time, amr, acr_values, acr, done, code, consent, created_at, expires_at, dpop_jkt`
 
 func scanAuthRequest(row rowScanner) (AuthRequest, error) {
 	var a AuthRequest
 	err := row.Scan(&a.ID, &a.ClientID, &a.RedirectURI, &a.Scopes, &a.State, &a.Nonce, &a.ResponseType, &a.ResponseMode, &a.CodeChallenge, &a.CodeChallengeMethod,
-		&a.Prompt, &a.MaxAge, &a.LoginHint, &a.DomainHint, &a.UserID, &a.SessionID, &a.AuthTime, &a.AMR, &a.ACRValues, &a.ACR, &a.Done, &a.Code, &a.Consent, &a.CreatedAt, &a.ExpiresAt)
+		&a.Prompt, &a.MaxAge, &a.LoginHint, &a.DomainHint, &a.UserID, &a.SessionID, &a.AuthTime, &a.AMR, &a.ACRValues, &a.ACR, &a.Done, &a.Code, &a.Consent, &a.CreatedAt, &a.ExpiresAt, &a.DPoPJKT)
 	return a, err
 }
 
@@ -54,9 +55,9 @@ func (s *Store) CreateAuthRequest(ctx context.Context, a AuthRequest) (AuthReque
 	if a.AMR == nil {
 		a.AMR = []string{}
 	}
-	row := s.db.QueryRow(ctx, `insert into oidc_auth_requests (id, client_id, redirect_uri, scopes, state, nonce, response_type, response_mode, code_challenge, code_challenge_method, prompt, max_age, login_hint, domain_hint, user_id, session_id, auth_time, amr, acr_values, acr, done, expires_at)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22) returning `+authRequestColumns,
-		a.ID, a.ClientID, a.RedirectURI, a.Scopes, a.State, a.Nonce, a.ResponseType, a.ResponseMode, a.CodeChallenge, a.CodeChallengeMethod, a.Prompt, a.MaxAge, a.LoginHint, a.DomainHint, a.UserID, a.SessionID, a.AuthTime, a.AMR, nonNil(a.ACRValues), a.ACR, a.Done, a.ExpiresAt)
+	row := s.db.QueryRow(ctx, `insert into oidc_auth_requests (id, client_id, redirect_uri, scopes, state, nonce, response_type, response_mode, code_challenge, code_challenge_method, prompt, max_age, login_hint, domain_hint, user_id, session_id, auth_time, amr, acr_values, acr, done, expires_at, dpop_jkt)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23) returning `+authRequestColumns,
+		a.ID, a.ClientID, a.RedirectURI, a.Scopes, a.State, a.Nonce, a.ResponseType, a.ResponseMode, a.CodeChallenge, a.CodeChallengeMethod, a.Prompt, a.MaxAge, a.LoginHint, a.DomainHint, a.UserID, a.SessionID, a.AuthTime, a.AMR, nonNil(a.ACRValues), a.ACR, a.Done, a.ExpiresAt, a.DPoPJKT)
 	return scanAuthRequest(row)
 }
 
@@ -70,8 +71,8 @@ func (s *Store) GetAuthRequestByCode(ctx context.Context, code string) (AuthRequ
 	return a, notFound(err)
 }
 
-func (s *Store) SaveAuthCode(ctx context.Context, requestID, code string) error {
-	tag, err := s.db.Exec(ctx, `update oidc_auth_requests set code = $2 where id = $1`, requestID, code)
+func (s *Store) SaveAuthCode(ctx context.Context, requestID, code string, lifetime time.Duration) error {
+	tag, err := s.db.Exec(ctx, `update oidc_auth_requests set code = $2, expires_at = least(expires_at, $3) where id = $1`, requestID, code, time.Now().Add(lifetime))
 	if err != nil {
 		return err
 	}

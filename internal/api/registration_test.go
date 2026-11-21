@@ -207,7 +207,7 @@ func TestRegistrationRejectsUnsafeMetadata(t *testing.T) {
 		{"device code", valid(map[string]any{"grant_types": []string{"urn:ietf:params:oauth:grant-type:device_code"}}), "invalid_client_metadata"},
 		{"token response", valid(map[string]any{"response_types": []string{"token"}}), "invalid_client_metadata"},
 		{"native with secret", valid(map[string]any{"application_type": "native"}), "invalid_client_metadata"},
-		{"private key jwt", valid(map[string]any{"token_endpoint_auth_method": "private_key_jwt"}), "invalid_client_metadata"},
+		{"private key jwt without keys", valid(map[string]any{"token_endpoint_auth_method": "private_key_jwt"}), "invalid_client_metadata"},
 		{"javascript logout", valid(map[string]any{"post_logout_redirect_uris": []string{"javascript:alert(1)"}}), "invalid_client_metadata"},
 		{"javascript client uri", valid(map[string]any{"client_uri": "javascript:alert(1)"}), "invalid_client_metadata"},
 		{"multi-line name", valid(map[string]any{"client_name": "Tool\nPayroll"}), "invalid_client_metadata"},
@@ -389,4 +389,70 @@ func TestApprovalQueue(t *testing.T) {
 	st.ForgetSettings()
 	oauthError(t, oauth(t, h, http.MethodGet, path, reg.RegistrationAccessToken, nil), http.StatusNotFound, "invalid_request")
 	oauthError(t, oauth(t, h, http.MethodDelete, path, reg.RegistrationAccessToken, nil), http.StatusNotFound, "invalid_request")
+}
+
+func TestRegistrationPrivateKeyJWT(t *testing.T) {
+	st, h := registrationStack(t, "open")
+	ctx := context.Background()
+	keys := testKeys(t, false)
+	for name, body := range map[string]map[string]any{
+		"jwks and jwks_uri":         {"token_endpoint_auth_method": "private_key_jwt", "jwks": keys, "jwks_uri": "https://tool.example.com/jwks.json"},
+		"private key in jwks":       {"token_endpoint_auth_method": "private_key_jwt", "jwks": testKeys(t, true)},
+		"private jwks_uri":          {"token_endpoint_auth_method": "private_key_jwt", "jwks_uri": "https://127.0.0.1/jwks.json"},
+		"native private key jwt":    {"token_endpoint_auth_method": "private_key_jwt", "application_type": "native", "jwks": keys},
+		"jwks with a client secret": {"jwks": keys},
+	} {
+		body["redirect_uris"] = []string{toolCallback}
+		if rec := oauth(t, h, http.MethodPost, "/oauth2/register", "", body); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_client_metadata") {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body)
+		}
+	}
+	rec := oauth(t, h, http.MethodPost, "/oauth2/register", "", map[string]any{
+		"client_name":                           "Bank portal",
+		"redirect_uris":                         []string{toolCallback},
+		"token_endpoint_auth_method":            "private_key_jwt",
+		"jwks":                                  keys,
+		"dpop_bound_access_tokens":              true,
+		"require_pushed_authorization_requests": true,
+	})
+	expect(t, rec, http.StatusCreated)
+	var reg struct {
+		registration
+		JWKS                  json.RawMessage `json:"jwks"`
+		JWKSURI               string          `json:"jwks_uri"`
+		DPoPBoundAccessTokens bool            `json:"dpop_bound_access_tokens"`
+		RequirePushedRequests bool            `json:"require_pushed_authorization_requests"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &reg); err != nil {
+		t.Fatal(err)
+	}
+	if reg.ClientSecret != "" || reg.TokenEndpointAuthMethod != "private_key_jwt" || len(reg.JWKS) == 0 || !reg.DPoPBoundAccessTokens || !reg.RequirePushedRequests {
+		t.Fatalf("private_key_jwt registration: %s", rec.Body)
+	}
+	app, err := st.GetApplicationByClientID(ctx, reg.ClientID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.Type != "web" || app.TokenEndpointAuthMethod != "private_key_jwt" || len(app.Credentials) != 0 || !app.RequireDPoP || !app.RequirePAR || app.JWKSURI != "" {
+		t.Fatalf("registered application: %+v", app)
+	}
+
+	path := "/oauth2/register/" + reg.ClientID
+	update := map[string]any{"client_id": reg.ClientID, "client_name": "Bank portal", "redirect_uris": []string{toolCallback}, "token_endpoint_auth_method": "private_key_jwt", "jwks_uri": "https://bank.example.com/jwks.json"}
+	rec = oauth(t, h, http.MethodPut, path, reg.RegistrationAccessToken, update)
+	expect(t, rec, http.StatusOK)
+	if app, _ := st.GetApplicationByClientID(ctx, reg.ClientID); app.JWKSURI != "https://bank.example.com/jwks.json" || len(app.JWKS) != 0 || !app.RequireDPoP || !app.RequirePAR {
+		t.Fatalf("key rotation to jwks_uri, or the client lowered its own requirements: %+v", app)
+	}
+	if !strings.Contains(oauth(t, h, http.MethodGet, path, reg.RegistrationAccessToken, nil).Body.String(), `"jwks_uri":"https://bank.example.com/jwks.json"`) {
+		t.Fatal("read does not return jwks_uri")
+	}
+	for _, method := range []string{"client_secret_basic", "none"} {
+		update["token_endpoint_auth_method"] = method
+		delete(update, "jwks_uri")
+		oauthError(t, oauth(t, h, http.MethodPut, path, reg.RegistrationAccessToken, update), http.StatusBadRequest, "invalid_client_metadata")
+	}
+
+	secretClient := decode[registration](t, oauth(t, h, http.MethodPost, "/oauth2/register", "", map[string]any{"redirect_uris": []string{toolCallback}}))
+	oauthError(t, oauth(t, h, http.MethodPut, "/oauth2/register/"+secretClient.ClientID, secretClient.RegistrationAccessToken, map[string]any{"client_id": secretClient.ClientID, "redirect_uris": []string{toolCallback}, "token_endpoint_auth_method": "private_key_jwt", "jwks": keys}), http.StatusBadRequest, "invalid_client_metadata")
 }

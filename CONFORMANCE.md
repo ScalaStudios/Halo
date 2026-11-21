@@ -49,10 +49,10 @@ The suite skips these because Halo doesn't offer the feature, which certificatio
 ## Profiles Halo doesn't meet
 
 - **Implicit OP and Hybrid OP**, and their Form Post variants: Halo issues only the `code` response type.
-- **Dynamic OP** (`oidcc-dynamic-certification-test-plan[response_type=code]`): run once on 21 November 2026 with 1 module passed, 3 skipped, 2 failed and 17 stopped. The profile needs the implicit grant with the `id_token` and `id_token token` response types, and most of its modules register clients with `private_key_jwt`, which Halo doesn't offer to applications, so its registration refuses them. The pairwise subject modules are skipped because Halo uses public subject identifiers. `oidcc-server-rotate-keys` also waits for someone to rotate the signing keys by hand. `scripts/conformance/run.sh "oidcc-dynamic-certification-test-plan[response_type=code]" out/config/dynamic.json` runs it.
+- **Dynamic OP** (`oidcc-dynamic-certification-test-plan[response_type=code]`): run once on 21 November 2026 with 1 module passed, 3 skipped, 2 failed and 17 stopped. The profile needs the implicit grant with the `id_token` and `id_token token` response types, and most of its modules register clients with `private_key_jwt`, which the tested revision did not support for applications. The pairwise subject modules are skipped because Halo uses public subject identifiers. `oidcc-server-rotate-keys` also waits for someone to rotate the signing keys by hand. `scripts/conformance/run.sh "oidcc-dynamic-certification-test-plan[response_type=code]" out/config/dynamic.json` runs it.
 - **Front-Channel Logout OP and Session Management OP**: Halo implements neither.
 - **Third-Party Initiated Login**: not implemented.
-- **FAPI 2.0 Security Profile**: not run. FAPI 2.0 requires `private_key_jwt` or mutual TLS client authentication at the token endpoint, which Halo doesn't offer to applications. Halo's pushed authorization requests and DPoP are covered by its own tests in `internal/oidc/fapi_test.go`.
+- **FAPI 2.0 Security Profile**: not run. The tested revision predates the application-level `private_key_jwt` and FAPI profile settings. Halo's pushed authorization requests and DPoP are covered by its own tests in `internal/oidc/fapi_test.go`.
 
 ## Fixes from these runs
 

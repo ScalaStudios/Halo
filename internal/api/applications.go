@@ -708,6 +708,8 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		RequireDPoP *bool `json:"requireDpop"`
 
 		KerberosSignIn *bool `json:"kerberosSignIn"`
+
+		clientAuthChange
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -847,6 +849,16 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		if f.value != nil && *f.value != *f.field {
 			*f.field = *f.value
 			changed = append(changed, f.label)
+		}
+	}
+	more, err := in.clientAuthChange.apply(app, &next)
+	if err != nil {
+		return err
+	}
+	changed = append(changed, more...)
+	if next.FAPI2Profile {
+		if err := h.st.Keys.Supports(next.TokenPolicy.IDTokenAlg); err != nil {
+			return httpx.Invalid(err.Error() + ".")
 		}
 	}
 	if in.BackchannelLogoutSessionRequired != nil && *in.BackchannelLogoutSessionRequired != app.BackchannelLogoutSessionRequired {

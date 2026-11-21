@@ -3,6 +3,9 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +16,11 @@ import (
 	"testing"
 	"time"
 
+	jose "github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
+
+	"halo/internal/oidc"
+	"halo/internal/secret"
 	"halo/internal/store"
 )
 
@@ -89,6 +97,63 @@ var documentModel = map[string]any{"types": map[string]any{
 		"viewer": map[string]any{"subjects": []string{"user", "group", "document#viewer"}, "union": []string{"editor"}, "from": []map[string]string{{"via": "parent", "relation": "viewer"}}},
 	},
 }}
+
+func TestAuthorizationAPIUsesConfiguredClientAuthentication(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	app, err := e.st.CreateApplication(ctx, store.NewApplication{Name: "Documents", Protocol: "oauth", Type: "service"})
+	must(err)
+	_, clientSecret, err := e.st.AddClientSecret(ctx, app.ID, "Test", time.Hour)
+	must(err)
+	must(e.st.SaveAuthzModel(ctx, app.ID, store.AuthzTypes{"document": {"viewer": {Subjects: []string{"user"}}}}))
+	const path = "/api/v1/authz/tuples"
+	basic := authzApp{e, app.ClientID, clientSecret}
+	basic.expect("GET", path, nil, http.StatusOK, "")
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	must(err)
+	jwk := jose.JSONWebKey{Key: &key.PublicKey, KeyID: "authz", Use: "sig", Algorithm: string(jose.ES256)}
+	app.JWKS, err = json.Marshal(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{jwk}})
+	must(err)
+	app.TokenEndpointAuthMethod = oidc.PrivateKeyJWT
+	must(e.st.UpdateApplication(ctx, app))
+	basic.expect("GET", path, nil, http.StatusUnauthorized, "ERR_UNAUTHENTICATED")
+
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: key}, (&jose.SignerOptions{}).WithHeader("kid", jwk.KeyID))
+	must(err)
+	assertion := func(audience string) string {
+		now := time.Now()
+		token, err := jwt.Signed(signer).Claims(map[string]any{
+			"iss": app.ClientID, "sub": app.ClientID, "aud": audience, "jti": secret.Token(12),
+			"iat": now.Unix(), "exp": now.Add(time.Minute).Unix(),
+		}).Serialize()
+		must(err)
+		return token
+	}
+	signedRequest := func(token string, want int) {
+		t.Helper()
+		req := httptest.NewRequest("GET", path, nil)
+		req.Header.Set("Authorization", "PrivateKeyJWT "+token)
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Fatalf("assertion: want %d, got %d: %s", want, rec.Code, rec.Body)
+		}
+	}
+	const issuer = "http://localhost:3200"
+	signedRequest(assertion(issuer+path), http.StatusOK)
+	signedRequest(assertion(issuer+"/oauth2/token"), http.StatusUnauthorized)
+	app.FAPI2Profile = true
+	must(e.st.UpdateApplication(ctx, app))
+	signedRequest(assertion(issuer+path), http.StatusUnauthorized)
+	signedRequest(assertion(issuer), http.StatusOK)
+}
 
 func TestApplicationAuthorization(t *testing.T) {
 	e := setup(t)

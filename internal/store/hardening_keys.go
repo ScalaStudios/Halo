@@ -160,6 +160,8 @@ var sealedColumns = []struct{ table, key, column string }{
 	{"ssh_host_authority", "id", "private_key_sealed"},
 	{"approval_requests", "id", "body_sealed"},
 	{"bot_protection", "singleton", "secret_sealed"},
+	{"identity_proofing_secrets", "singleton", "api_key_sealed"},
+	{"identity_proofing_secrets", "singleton", "webhook_secret_sealed"},
 	{"log_export", "singleton", "headers_sealed"},
 	{"ldap_directories", "id", "password_sealed"},
 	{"ssf_streams", "id", "authorization_sealed"},

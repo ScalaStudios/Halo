@@ -106,7 +106,15 @@ func nonNil(values []string) []string {
 }
 
 func (s *Store) UseDPoPProof(ctx context.Context, jkt, jti string, expiresAt time.Time) error {
-	tag, err := s.db.Exec(ctx, `insert into dpop_proofs (jkt, jti, expires_at) values ($1, $2, $3) on conflict do nothing`, jkt, jti, expiresAt)
+	return s.useOnce(ctx, `insert into dpop_proofs (jkt, jti, expires_at) values ($1, $2, $3) on conflict do nothing`, jkt, jti, expiresAt)
+}
+
+func (s *Store) UseClientAssertion(ctx context.Context, clientID, jti string, expiresAt time.Time) error {
+	return s.useOnce(ctx, `insert into client_assertions (client_id, jti, expires_at) values ($1, $2, $3) on conflict do nothing`, clientID, jti, expiresAt)
+}
+
+func (s *Store) useOnce(ctx context.Context, sql string, args ...any) error {
+	tag, err := s.db.Exec(ctx, sql, args...)
 	if err != nil {
 		return err
 	}

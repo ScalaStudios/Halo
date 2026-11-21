@@ -1,4 +1,13 @@
-import { BotProtectionForm, ClientRegistrationForm, ImpersonationForm, SecurityEmailsForm, SecurityForm, SessionLimitForm, SignUpForm } from "@/components/settings/settings-forms";
+import {
+  BotProtectionForm,
+  ClientRegistrationForm,
+  IdentityProofingForm,
+  ImpersonationForm,
+  SecurityEmailsForm,
+  SecurityForm,
+  SessionLimitForm,
+  SignUpForm,
+} from "@/components/settings/settings-forms";
 import { hasRole } from "@/components/settings/roles";
 import { SigningKeys } from "@/components/settings/signing-keys";
 import { PageHeader } from "@/components/ui/page-header";
@@ -9,7 +18,7 @@ import type { Group, User } from "@/lib/types";
 export const metadata = { title: "Security defaults" };
 
 export default async function SecurityDefaultsPage() {
-  const [{ settings, issuer, botProtectionSecretSet }, me, keys, groups, domains, templates] = await Promise.all([
+  const [{ settings, issuer, botProtectionSecretSet, identityProofingKeySet, identityProofingWebhookSecretSet }, me, keys, groups, domains, templates] = await Promise.all([
     apiGet<SettingsResponse>("/settings"),
     apiGet<User>("/me"),
     apiGet<Keys>("/signing-keys"),
@@ -29,6 +38,14 @@ export default async function SecurityDefaultsPage() {
       <ImpersonationForm settings={settings} groups={groups} canEdit={hasRole(me)} />
       <ClientRegistrationForm settings={settings} issuer={issuer} canEdit={hasRole(me, "security_admin")} />
       <SignUpForm settings={settings} groups={groups} domains={domains} canEdit={hasRole(me, "security_admin")} />
+      <IdentityProofingForm
+        settings={settings}
+        groups={groups}
+        issuer={issuer}
+        keySet={identityProofingKeySet}
+        webhookSecretSet={identityProofingWebhookSecretSet}
+        canEdit={hasRole(me, "security_admin")}
+      />
       <BotProtectionForm settings={settings} secretSet={botProtectionSecretSet} canEdit={hasRole(me, "security_admin")} />
       <SigningKeys keys={keys} canRotate={hasRole(me)} />
     </div>

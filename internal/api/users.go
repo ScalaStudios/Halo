@@ -331,6 +331,9 @@ func (h *handlers) restore(r *http.Request, actor store.User, userID string) err
 	}
 	return h.st.Tx(r.Context(), func(tx *store.Store) error {
 		if err := tx.SetUserStatus(r.Context(), target.ID, status); err != nil {
+			if errors.Is(err, store.ErrProofRequired) {
+				return httpx.Fail(http.StatusConflict, "ERR_IDENTITY_CHECK_REQUIRED", "Confirm this person's identity before restoring access.")
+			}
 			return err
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "user.restore", Summary: "Restored access", TargetType: "user", TargetID: target.ID, TargetLabel: target.Name})

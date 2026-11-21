@@ -76,7 +76,18 @@ func TestDiscoveryAdvertisesOnlyServedFeatures(t *testing.T) {
 	if slices.Contains(claims, "phone_number") || slices.Contains(claims, "locale") || !slices.Contains(claims, "groups") || !slices.Contains(claims, "roles") || !slices.Contains(claims, "email_verified") {
 		t.Errorf("claims: %v", claims)
 	}
-	for _, field := range []string{"introspection_endpoint_auth_signing_alg_values_supported", "revocation_endpoint_auth_signing_alg_values_supported", "check_session_iframe", "registration_endpoint"} {
+	for _, field := range []string{"token_endpoint_auth_methods_supported", "introspection_endpoint_auth_methods_supported", "revocation_endpoint_auth_methods_supported"} {
+		if !slices.Contains(list(field), "private_key_jwt") || slices.Contains(list(field), "tls_client_auth") {
+			t.Errorf("%s: %v", field, list(field))
+		}
+	}
+	if algs := list("token_endpoint_auth_signing_alg_values_supported"); slices.Contains(algs, "none") || slices.Contains(algs, "HS256") || !slices.Contains(algs, "ES256") {
+		t.Errorf("client assertion algorithms: %v", algs)
+	}
+	if d.body["authorization_response_iss_parameter_supported"] != true {
+		t.Errorf("iss in authorization responses is not advertised: %v", d.body["authorization_response_iss_parameter_supported"])
+	}
+	for _, field := range []string{"check_session_iframe", "registration_endpoint", "tls_client_certificate_bound_access_tokens"} {
 		if _, ok := d.body[field]; ok {
 			t.Errorf("%s is advertised: %v", field, d.body[field])
 		}

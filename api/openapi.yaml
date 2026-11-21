@@ -43,9 +43,14 @@ tags:
   - name: Groups
     description: Assigned and rule-based groups and their members.
   - name: Applications
-    description: OpenID Connect, OAuth, SAML, forward-auth, RADIUS and LDAP applications, bookmarks, their secrets and group assignments, and the collections that group them in the account portal.
+    description: |
+      OpenID Connect, OAuth, SAML, forward-auth, RADIUS and LDAP applications, bookmarks, their secrets and group assignments, and the collections that group them in the account portal.
+
+      **private_key_jwt.** A web or service application with `tokenEndpointAuthMethod` `private_key_jwt` authenticates at `/oauth2/token`, `/oauth2/par`, `/oauth2/introspect` and `/oauth2/revoke` with `client_assertion_type` `urn:ietf:params:oauth:client-assertion-type:jwt-bearer` and a `client_assertion` (RFC 7523), never with a client secret, and never with both. The assertion is a JWT signed with one of `token_endpoint_auth_signing_alg_values_supported` from discovery (never `none` or HMAC) by a key in the application's `jwks`, or published at its `jwksUri`, which Halo fetches from public addresses only, caches for an hour and fetches again when an assertion names a key it doesn't know, at most once a minute. `iss` and `sub` are the client ID; `aud` is the issuer, `{issuer}/oauth2/token` or the URL of the endpoint called; `exp` is at most an hour away; `nbf` and `iat`, if present, are not in the future, with a minute of clock skew; and `jti` is new. Halo keeps each `jti` until the assertion expires, shared by every Halo instance, and refuses it a second time.
+
+      **FAPI 2.0 security profile.** `fapi2Profile` makes a web or service application follow the FAPI 2.0 Security Profile: private_key_jwt with `aud` the issuer as a single string and PS256, ES256 or EdDSA signatures (5.3.2.1, 5.4.1), pushed authorization requests, PKCE with S256 and https redirect URIs (5.3.2.2), DPoP-bound tokens (5.3.2.1), ES256 or EdDSA ID tokens (5.4.1), and authorization codes that expire a minute after they are issued (5.3.2.1). Turning it on also turns on `requirePar`, `requirePkce` and `requireDpop` and moves RS256 ID tokens to ES256; while it is on, Halo enforces these even if those fields say otherwise, and refuses a change that loosens them. The authorization code flow is the only one Halo offers, and every authorization response carries `iss` (RFC 9207), in the query, the fragment or the `form_post` form. A code is bound to a DPoP key when the pushed request carries a DPoP proof or the authorization request carries `dpop_jkt`, and the token request must then prove that key.
   - name: Authorization
-    description: 'Relationship-based permissions for applications, in the style of Zanzibar. An application administrator gives a web or service application a model of types and relations. The application then writes tuples such as `document:readme#viewer@user:usr_…` and asks whether a person has a relation on an object. Groups expand to their members, relations combine other relations, application roles and relations of a parent object, and suspended or deprovisioned people are always denied. Tuples can name only the people and groups assigned to the application, the same ones who can sign in to it, and a person or group that is later unassigned is ignored until assigned again, so an application never learns about anyone outside it. Routes under `/authz` authenticate as the application with HTTP Basic, its client ID and a client secret, and only ever see that application''s tuples. Tuples that name a person or group are deleted with them. Model changes are in the audit log; tuple writes are not.'
+    description: 'Relationship-based permissions for applications, in the style of Zanzibar. An application administrator gives a web or service application a model of types and relations. The application then writes tuples such as `document:readme#viewer@user:usr_…` and asks whether a person has a relation on an object. Groups expand to their members, relations combine other relations, application roles and relations of a parent object, and suspended or deprovisioned people are always denied. Tuples can name only the people and groups assigned to the application, the same ones who can sign in to it, and a person or group that is later unassigned is ignored until assigned again, so an application never learns about anyone outside it. Routes under `/authz` use the application''s configured client authentication method and only see that application''s tuples. Tuples that name a person or group are deleted with them. Model changes are in the audit log; tuple writes are not.'
   - name: Forward auth
     description: 'The check that Traefik `forwardAuth`, nginx `auth_request` and Caddy `forward_auth` run before every request to a forward-auth application, outside `/api/v1`, and the sign-in it sends people to.'
   - name: Activity
@@ -162,7 +167,7 @@ paths:
       tags: [Client registration]
       operationId: updateClientRegistration
       summary: Replace a client's metadata
-      description: 'Send every field, with `client_id`; omitted fields are cleared. The client keeps its `token_endpoint_auth_method` and `application_type`, and its scopes can only narrow to `openid`, `profile`, `email` and those an administrator added. When `clientRegistration` is `approval` or the client is assigned to groups, a change disables the client and sets `awaitingApproval` until an application administrator approves it again. Recorded as `application.registration.update`.'
+      description: 'Send every field, with `client_id`; omitted fields are cleared. The client keeps its `token_endpoint_auth_method` and `application_type` but can replace `jwks` or `jwks_uri`, and its scopes can only narrow to `openid`, `profile`, `email` and those an administrator added. When `clientRegistration` is `approval` or the client is assigned to groups, a change disables the client and sets `awaitingApproval` until an application administrator approves it again. Recorded as `application.registration.update`.'
       security:
         - registrationAccessToken: []
       requestBody:
@@ -204,7 +209,7 @@ paths:
       tags: [Service accounts]
       operationId: exchangeWorkloadToken
       summary: Exchange a workload's token for a short-lived API key
-      description: 'The client credentials grant at `/oauth2/token` with a JWT client assertion (RFC 7523) from an issuer that one of the service account''s federated credentials trusts, as in Microsoft Entra workload identity federation. The assertion''s `sub` is the workload, not the client. Halo reads the issuer''s signing keys from its discovery document, caches them for an hour and fetches them again when a token names a key it doesn''t know, at most once a minute. The token must be signed with RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384 or ES512, have `exp` and `iat`, be valid within one minute of clock skew, and match the credential''s issuer, subject, audience and claim conditions exactly. The API key acts with the service account''s current roles, carries the credential''s scopes, expires after one hour, counts toward one rate limit with the other keys of the same credential, and stops working when the credential is removed or the account is disabled. Each exchange is recorded as `federated_credential.exchange` and in the sign-in log with the method `federated`, and so are refusals of tokens whose signature and subject checked out.'
+      description: 'The client credentials grant at `/oauth2/token` with a JWT client assertion (RFC 7523) from an issuer that one of the service account''s federated credentials trusts, as in Microsoft Entra workload identity federation. When `client_id` is an application''s client ID or is left out, the assertion is that application''s private_key_jwt authentication instead (see Applications). The assertion''s `sub` is the workload, not the client. Halo reads the issuer''s signing keys from its discovery document, caches them for an hour and fetches them again when a token names a key it doesn''t know, at most once a minute. The token must be signed with RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384 or ES512, have `exp` and `iat`, be valid within one minute of clock skew, and match the credential''s issuer, subject, audience and claim conditions exactly. The API key acts with the service account''s current roles, carries the credential''s scopes, expires after one hour, counts toward one rate limit with the other keys of the same credential, and stops working when the credential is removed or the account is disabled. Each exchange is recorded as `federated_credential.exchange` and in the sign-in log with the method `federated`, and so are refusals of tokens whose signature and subject checked out.'
       security:
         - {}
       requestBody:
@@ -254,7 +259,7 @@ paths:
       tags: [Applications]
       operationId: pushAuthorizationRequest
       summary: Push an authorization request
-      description: 'Pushed authorization requests (RFC 9126). The application posts the parameters it would send to `/oauth2/authorize`, authenticated like at the token endpoint, and Halo checks them as the authorization endpoint does. It then sends the person to `/oauth2/authorize?client_id=…&request_uri=…`. Halo uses only the pushed parameters, ignores any others in that URL, and accepts each `request_uri` once, within 60 seconds. A used, expired or unknown `request_uri`, or one sent with another `client_id`, ends with a `400` page and no redirect. Discovery lists the endpoint in `pushed_authorization_request_endpoint`.'
+      description: 'Pushed authorization requests (RFC 9126). The application posts the parameters it would send to `/oauth2/authorize`, authenticated like at the token endpoint, optionally with a `DPoP` proof for `POST {issuer}/oauth2/par` that binds the code to its key, and Halo checks them as the authorization endpoint does. It then sends the person to `/oauth2/authorize?client_id=…&request_uri=…`. Halo uses only the pushed parameters, ignores any others in that URL, and accepts each `request_uri` once, within 60 seconds. A used, expired or unknown `request_uri`, or one sent with another `client_id`, ends with a `400` page and no redirect. Discovery lists the endpoint in `pushed_authorization_request_endpoint`.'
       security:
         - {}
       requestBody:
@@ -265,8 +270,11 @@ paths:
               type: object
               required: [response_type, redirect_uri, scope]
               properties:
-                client_id: {type: string, description: Required unless the application authenticates with HTTP Basic.}
+                client_id: {type: string, description: Required unless the application authenticates with HTTP Basic or a client assertion.}
                 client_secret: {type: string, description: 'Web applications authenticate with this or with HTTP Basic. Single-page and native applications send only `client_id`.'}
+                client_assertion_type: {type: string, enum: ['urn:ietf:params:oauth:client-assertion-type:jwt-bearer'], description: 'With `client_assertion`, for applications using `private_key_jwt`.'}
+                client_assertion: {type: string, description: 'A JWT signed by the application''s key. Its `aud` may also be `{issuer}/oauth2/par`, except under the FAPI 2.0 profile.'}
+                dpop_jkt: {type: string, description: 'The JWK SHA-256 thumbprint of the DPoP key the code will be bound to (RFC 9449). A `DPoP` header on this request binds the code to its key instead, and `dpop_jkt` must then match it.'}
                 response_type: {type: string, enum: [code]}
                 redirect_uri: {type: string}
                 scope: {type: string, examples: [openid email offline_access]}
@@ -287,12 +295,12 @@ paths:
                   request_uri: {type: string, examples: ['urn:ietf:params:oauth:request_uri:…']}
                   expires_in: {type: integer, examples: [60]}
         '400':
-          description: '`invalid_request`: a parameter would fail at `/oauth2/authorize`, such as an unregistered `redirect_uri` or missing PKCE, the body has `request_uri` or a `client_id` other than the authenticated one. `unauthorized_client`: the HTTP Basic secret is wrong.'
+          description: '`invalid_request`: a parameter would fail at `/oauth2/authorize`, such as an unregistered `redirect_uri`, missing PKCE or a malformed `dpop_jkt`, the body has `request_uri` or a `client_id` other than the authenticated one, or the client sent a client assertion together with a secret. `invalid_dpop_proof`: the `DPoP` proof is invalid or names another key than `dpop_jkt`. `unauthorized_client`: the HTTP Basic secret is wrong, or the application uses `private_key_jwt`.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OAuthError'}
         '401':
-          description: '`invalid_client`: a web or service application did not authenticate, or its `client_secret` is wrong.'
+          description: '`invalid_client`: a web or service application did not authenticate, its `client_secret` is wrong or not accepted, or its client assertion is invalid, expired, replayed, or signed with another algorithm or key.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OAuthError'}
@@ -1206,6 +1214,7 @@ paths:
                       name: {type: string}
                       email: {type: string}
                   purpose: {type: string, enum: [invite, reset, access-pass], description: '`access-pass` for a link from `/auth/access-pass`.'}
+                  identityProof: {$ref: '#/components/schemas/IdentityProofState'}
         '403': {$ref: '#/components/responses/Suspended'}
         '404': {$ref: '#/components/responses/LinkExpired'}
   /auth/enroll/begin:
@@ -1213,6 +1222,7 @@ paths:
       tags: [Sign-in]
       operationId: beginEnrollment
       summary: Start registering the first passkey or security key
+      description: 'Refused with `403 ERR_IDENTITY_CHECK_REQUIRED` while the person is invited, `identityProofingInvites` applies to them and they have no successful identity check.'
       security: []
       requestBody:
         required: true
@@ -1226,8 +1236,36 @@ paths:
       responses:
         '200': {$ref: '#/components/responses/Ceremony'}
         '400': {$ref: '#/components/responses/BadJSON'}
+        '403': {$ref: '#/components/responses/SignInRefused'}
+        '404': {$ref: '#/components/responses/LinkExpired'}
+  /auth/enroll/identity-proof:
+    post:
+      tags: [Sign-in]
+      operationId: startEnrollmentIdentityProof
+      summary: Start an identity check with the verification provider
+      description: 'Works while the person is invited, `identityProofingInvites` applies to them and they have no successful check yet. Halo creates a verification session at the provider set in `identityProofingProvider` and answers with the address to send the person to; the provider sends them back to `/enroll?proofing=done`, without the setup link''s token. The result arrives by `POST /identity-proofing/webhook` or when Halo asks the provider, on `GET /auth/enroll` and every 10 minutes for 2 days. Halo stores only the provider''s session id, the result and the dates, never what the person showed the provider. At most 5 checks per person an hour. Recorded as `user.identity_proof.start`.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: {type: string}
+      responses:
+        '200': {$ref: '#/components/responses/IdentityProofStarted'}
+        '400': {$ref: '#/components/responses/BadJSON'}
         '403': {$ref: '#/components/responses/Suspended'}
         '404': {$ref: '#/components/responses/LinkExpired'}
+        '409':
+          description: '`ERR_NO_IDENTITY_PROVIDER`: no provider is connected, so an administrator checks identities in person. `ERR_CONFLICT`: the link needs no check, or the person already has a successful one.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '429': {$ref: '#/components/responses/IdentityProofLimit'}
+        '502': {$ref: '#/components/responses/IdentityProviderUnavailable'}
   /auth/enroll/finish:
     post:
       tags: [Sign-in]
@@ -1313,6 +1351,7 @@ paths:
                       name: {type: string}
                       email: {type: string}
                   purpose: {type: string, enum: [sign-up]}
+                  identityProof: {$ref: '#/components/schemas/IdentityProofState'}
         '403': {$ref: '#/components/responses/SignUpRefused'}
         '404': {$ref: '#/components/responses/SignUpOff'}
   /auth/sign-up/begin:
@@ -1335,12 +1374,40 @@ paths:
         '400': {$ref: '#/components/responses/BadJSON'}
         '403': {$ref: '#/components/responses/SignUpRefused'}
         '404': {$ref: '#/components/responses/SignUpOff'}
+  /auth/sign-up/identity-proof:
+    post:
+      tags: [Sign-in]
+      operationId: startSignUpIdentityProof
+      summary: Start an identity check for a sign-up
+      description: 'Works like `/auth/enroll/identity-proof` while `identityProofingSignUps` applies to the groups in `signUpGroupIds`. The provider sends the person back to `/sign-up?proofing=done`. Asking `/auth/sign-up` for a new link under another name deletes the checks of the unconfirmed sign-up.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: {type: string}
+      responses:
+        '200': {$ref: '#/components/responses/IdentityProofStarted'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '403': {$ref: '#/components/responses/SignUpRefused'}
+        '404': {$ref: '#/components/responses/SignUpOff'}
+        '409':
+          description: '`ERR_NO_IDENTITY_PROVIDER` or `ERR_CONFLICT`, as for `/auth/enroll/identity-proof`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '429': {$ref: '#/components/responses/IdentityProofLimit'}
+        '502': {$ref: '#/components/responses/IdentityProviderUnavailable'}
   /auth/sign-up/finish:
     post:
       tags: [Sign-in]
       operationId: finishSignUp
       summary: Save the passkey and confirm the email address
-      description: 'Uses up the link in the same transaction that confirms the address and keeps the passkey, and records `user.sign_up` in the audit log. When `signUp` is `open`, creates an active account with a confirmed address, adds it to the assigned groups in `signUpGroupIds` and no others, gives it no roles, and signs in like `/auth/enroll/finish`. When it is `approval`, no account or session exists yet: the sign-up waits under `/sign-ups` and the response is `{"pending": true}`. The passkey rules of the groups in `signUpGroupIds` apply, and a key that breaks them is refused with `403 ERR_AUTHENTICATOR_NOT_ALLOWED`.'
+      description: 'Uses up the link in the same transaction that confirms the address and keeps the passkey, and records `user.sign_up` in the audit log. When `signUp` is `open`, creates an active account with a confirmed address, adds it to the assigned groups in `signUpGroupIds` and no others, gives it no roles, and signs in like `/auth/enroll/finish`. When it is `approval`, no account or session exists yet: the sign-up waits under `/sign-ups` and the response is `{"pending": true}`. The passkey rules of the groups in `signUpGroupIds` apply, and a key that breaks them is refused with `403 ERR_AUTHENTICATOR_NOT_ALLOWED`. While `identityProofingSignUps` applies and the sign-up has no successful identity check, no account is created even when `signUp` is `open`: the sign-up waits under `/sign-ups` for an in-person check and the response is `{"pending": true, "identityCheck": true}`.'
       security: []
       requestBody:
         required: true
@@ -1365,6 +1432,7 @@ paths:
                   redirect: {type: string}
                   terms: {type: string}
                   pending: {type: boolean}
+                  identityCheck: {type: boolean, description: The sign-up waits for an identity check rather than for approval.}
         '400': {$ref: '#/components/responses/RegistrationFailed'}
         '403': {$ref: '#/components/responses/SignUpRefused'}
         '404': {$ref: '#/components/responses/SignUpOff'}
@@ -3148,6 +3216,43 @@ paths:
         '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /users/{id}/identity-proofs:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Users]
+      operationId: listIdentityProofs
+      summary: List a person's identity checks
+      description: 'Roles: any administrator. Newest first. Limited roles apply. The same records are in the `identityProofs` section of `GET /users/{id}/export`, and permanent deletion deletes them.'
+      responses:
+        '200':
+          description: The identity checks.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/IdentityProof'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      tags: [Users]
+      operationId: checkIdentity
+      summary: Record an in-person identity check
+      description: 'Roles: user or helpdesk administrator, with a recent sign-in; only a global administrator can check someone who holds or is eligible for an administrator role, and nobody can check themselves. Limited roles apply. For invited, active and suspended people. While `identityProofingInvites` applies to an invitation, Halo requires a successful check before the person can become active. Recorded as `user.identity_proof`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InPersonCheck'}
+      responses:
+        '201': {$ref: '#/components/responses/IdentityProofResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /users/{id}/access-pass:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -3329,7 +3434,7 @@ paths:
       tags: [Users]
       operationId: approveSignUp
       summary: Approve a sign-up
-      description: 'Roles: user administrator. Creates an active account with the confirmed address and the passkey from the sign-up, in the assigned groups in `signUpGroupIds` at the time of approval and no others, with no roles. Recorded as `user.sign_up.approve`.'
+      description: 'Roles: user administrator. Creates an active account with the confirmed address and the passkey from the sign-up, in the assigned groups in `signUpGroupIds` at the time of approval and no others, with no roles. Identity checks of the sign-up move to the account. While `identityProofingSignUps` applies and the sign-up has no successful identity check, answers `409 ERR_IDENTITY_CHECK_REQUIRED`. Recorded as `user.sign_up.approve`.'
       responses:
         '200': {$ref: '#/components/responses/UserResponse'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -3349,6 +3454,26 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /sign-ups/{id}/identity-proofs:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Users]
+      operationId: checkSignUpIdentity
+      summary: Record an in-person identity check for a sign-up
+      description: 'Roles: user administrator, with a recent sign-in. Records that you checked the person''s identity in person or on a video call, with the kind of document you saw. The check moves to the account when the sign-up is approved, and is deleted with the sign-up when it is rejected. Recorded as `user.identity_proof`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InPersonCheck'}
+      responses:
+        '201': {$ref: '#/components/responses/IdentityProofResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /attributes:
     get:
       tags: [Users]
@@ -3818,6 +3943,10 @@ paths:
                 requirePkce: {type: boolean, description: 'Only for OpenID Connect and OAuth applications other than the Halo CLI, and not for service applications.'}
                 requireDpop: {type: boolean, description: Only for OpenID Connect and OAuth applications other than the Halo CLI.}
                 kerberosSignIn: {type: boolean, description: 'Not for bookmarks, RADIUS, LDAP or service applications.'}
+                tokenEndpointAuthMethod: {type: string, enum: [client_secret_basic, private_key_jwt], description: 'Only for web and service applications. `private_key_jwt` needs `jwks` or `jwksUri`, not both. Recorded as `application.update` with a diff.'}
+                jwks: {type: [object, 'null'], description: 'A JSON Web Key Set of 1 to 20 public signing keys: RSA of 2048 bits or more, EC on P-256, P-384 or P-521, or Ed25519. `null` removes it.'}
+                jwksUri: {type: string, description: 'An https:// URL on a public address that serves the application''s JSON Web Key Set, or an empty string.'}
+                fapi2Profile: {type: boolean, description: 'Only for web and service applications using `private_key_jwt`, with only https redirect URIs. See the FAPI 2.0 security profile in Applications.'}
       responses:
         '200': {$ref: '#/components/responses/ApplicationResponse'}
         '400': {$ref: '#/components/responses/BadJSON'}
@@ -4120,6 +4249,7 @@ paths:
       description: 'The calling application''s model and tuples answer. People who don''t exist, are suspended or deprovisioned, or aren''t assigned to the application are denied, and tuples naming groups the application isn''t assigned are ignored. `path` shows the relations that granted it, ending with the person, group or role, such as `["document:readme#viewer", "folder:eng#viewer", "group:grp_…"]`.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       requestBody:
         required: true
         content:
@@ -4143,6 +4273,7 @@ paths:
       description: 'For debugging. Each node lists the people, groups and roles that hold the relation directly, and children for the usersets, unions and parents it follows. A node already shown elsewhere in the tree appears again without children. People and groups no longer assigned to the application are left out.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       requestBody:
         required: true
         content:
@@ -4166,6 +4297,7 @@ paths:
       description: 'Groups and roles expand to their current members and holders. Suspended and deprovisioned people and people not assigned to the application are left out, and groups the application isn''t assigned don''t expand. Up to 1,000 people; `truncated` says whether there were more.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       requestBody:
         required: true
         content:
@@ -4196,6 +4328,7 @@ paths:
       description: 'Halo checks the first 1,000 objects of the type that appear in the application''s tuples, in order of their ids; `truncated` says whether there were more.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       requestBody:
         required: true
         content:
@@ -4232,6 +4365,7 @@ paths:
       description: 'Up to 1,000 tuples in order of object, relation and subject; `truncated` says whether there were more. Every filter is optional.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       parameters:
         - {name: object, in: query, schema: {type: string, examples: [document, 'document:readme']}, description: A type, or an object as `type:id`.}
         - {name: relation, in: query, schema: {type: string}}
@@ -4259,6 +4393,7 @@ paths:
       description: 'Up to 100 writes and deletes together. Deletes run first. Writing a tuple that exists does nothing, and neither does deleting one that doesn''t. Each written tuple must fit the model: its relation takes the kind of subject, such as `user`, `group`, `folder` or `team#member`. People and groups are named by their Halo ids and must be assigned to the application: one of its groups or a member of one. Others are refused with `422`. Deletes don''t check the model, so tuples a changed model no longer takes can still be removed.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       requestBody:
         required: true
         content:
@@ -5768,6 +5903,43 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /identity-proofing/webhook:
+    post:
+      tags: [Users]
+      operationId: receiveIdentityProofResult
+      summary: Receive an identity check result from the verification provider
+      description: |-
+        Without a session or API key. Register this address at the provider and save its signing secret as `identityProofingWebhookSecret`; without one, every event is refused and Halo asks the provider for results instead.
+
+        With `identityProofingProvider` set to `stripe`, send Stripe Identity events with the `Stripe-Signature` header Stripe adds. Halo reads `identity.verification_session.verified` as a success, and `identity.verification_session.requires_input` and `identity.verification_session.canceled` as a failure, and answers other events without acting on them.
+
+        With `generic`, the provider signs the raw body like Halo signs webhooks: `Halo-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>" with the signing secret>`, and sends `{"id": "<unique event id>", "session": "<session id>", "status": "verified" | "failed"}`. Halo creates sessions with `POST <identityProofingEndpoint>`, `Authorization: Bearer <identityProofingApiKey>` and `{"returnUrl": "…"}`, and expects `{"id": "…", "url": "https://…"}` back; it asks for a result with `GET <identityProofingEndpoint>/<id>` and reads `status` as `pending`, `verified` or `failed`.
+
+        The signature must be within 5 minutes of Halo's clock, and each event id is used once, so a replayed event is answered `200` without acting on it again. Only the first result of a session counts. Halo reads only the event id, the session id and the result, never the person's details. Each result is recorded as `user.identity_proof.result`.
+      security: []
+      parameters:
+        - {name: Halo-Signature, in: header, schema: {type: string, examples: ['t=1763640000,v1=5f2b…']}}
+        - {name: Stripe-Signature, in: header, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        '200':
+          description: The event was received.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received: {type: boolean}
+        '401':
+          description: '`ERR_SIGNATURE`: the signature header is missing, older than 5 minutes or does not match, or no provider or signing secret is saved.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /compliance-sources/{id}/reports:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -7753,6 +7925,11 @@ components:
       type: http
       scheme: basic
       description: The application's client ID as the user name and one of its client secrets as the password. Accepted only on routes under `/authz`, for active web and service applications with an authorization model.
+    applicationAssertion:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 'For applications using private_key_jwt, send `Authorization: PrivateKeyJWT <assertion>`. The audience is the issuer or the requested endpoint URL. FAPI 2.0 applications send only the issuer as a string. Use a new assertion ID for each request.'
     receiverAccessToken:
       type: http
       scheme: bearer
@@ -8239,7 +8416,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     ApplicationUnauthenticated:
-      description: '`ERR_UNAUTHENTICATED`: no client ID and secret, a wrong or expired secret, or a disabled application.'
+      description: '`ERR_UNAUTHENTICATED`: the configured client credentials are missing or invalid, or the application is disabled.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -8289,7 +8466,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     SignInRefused:
-      description: '`ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED` (not in a group assigned to the application), `ERR_BLOCKED_BY_POLICY`, `ERR_BLOCKED_BY_HOOK` (the application''s hook denied the sign-in or failed and fails closed; `message` holds its reason), `ERR_STRONGER_AUTH_REQUIRED` (a policy requires a passkey or security key), `ERR_STEP_UP_REQUIRED` (the method does not meet an authentication context the application asked for or a policy requires; `message` names the methods that do), `ERR_SESSION_LIMIT` (the person holds as many sessions as the session limit allows), `ERR_CHALLENGE_REQUIRED` or `ERR_CHALLENGE_FAILED` (see `ChallengeToken`), or `ERR_CROSS_SITE`. Refused sign-ins are recorded in the sign-in log.'
+      description: '`ERR_ACCOUNT_SUSPENDED`, `ERR_IDENTITY_CHECK_REQUIRED` (the person is invited, `identityProofingInvites` applies to them and they have no successful identity check, so the account stays inactive), `ERR_NOT_ASSIGNED` (not in a group assigned to the application), `ERR_BLOCKED_BY_POLICY`, `ERR_BLOCKED_BY_HOOK` (the application''s hook denied the sign-in or failed and fails closed; `message` holds its reason), `ERR_STRONGER_AUTH_REQUIRED` (a policy requires a passkey or security key), `ERR_STEP_UP_REQUIRED` (the method does not meet an authentication context the application asked for or a policy requires; `message` names the methods that do), `ERR_SESSION_LIMIT` (the person holds as many sessions as the session limit allows), `ERR_CHALLENGE_REQUIRED` or `ERR_CHALLENGE_FAILED` (see `ChallengeToken`), or `ERR_CROSS_SITE`. Refused sign-ins are recorded in the sign-in log.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -8501,6 +8678,30 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/IdentityProvider'}
+    IdentityProofStarted:
+      description: The address at the provider to send the person to.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [url]
+            properties:
+              url: {type: string, format: uri}
+    IdentityProofResponse:
+      description: The identity check.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/IdentityProof'}
+    IdentityProofLimit:
+      description: '`ERR_RATE_LIMITED`: the person started 5 identity checks in the last hour.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    IdentityProviderUnavailable:
+      description: '`ERR_IDENTITY_PROVIDER_UNAVAILABLE`: the provider could not be reached or refused the API key. The details are in Halo''s log.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     SettingsResponse:
       description: The settings, the organization name from `HALO_ORGANIZATION` and the issuer.
       content:
@@ -8514,6 +8715,8 @@ components:
               issuer: {type: string, format: uri}
               customCssDisabled: {type: boolean, description: '`HALO_DISABLE_CUSTOM_CSS=1` is set, so no page uses `customCss`.'}
               botProtectionSecretSet: {type: boolean, description: A secret key for `botProtection` is stored.}
+              identityProofingKeySet: {type: boolean, description: An `identityProofingApiKey` is stored.}
+              identityProofingWebhookSecretSet: {type: boolean, description: An `identityProofingWebhookSecret` is stored.}
               bucketConfigured: {type: boolean, description: '`HALO_S3_ENDPOINT` and the related variables are set, so `exportSchedule` can be turned on.'}
     ApiResourceResponse:
       description: The API resource.
@@ -9043,8 +9246,7 @@ components:
           items: {type: string}
     Application:
       type: object
-      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent, backchannelLogoutUri, backchannelLogoutSessionRequired, requirePar, requirePkce, requireDpop, kerberosSignIn]
-      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, roles, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent]
+      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent, backchannelLogoutUri, backchannelLogoutSessionRequired, requirePar, requirePkce, requireDpop, kerberosSignIn, tokenEndpointAuthMethod, jwksUri, fapi2Profile, roles]
       properties:
         id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
@@ -9101,6 +9303,10 @@ components:
         requirePkce: {type: boolean, description: 'Every authorization request must send `code_challenge` with `code_challenge_method=S256`. Single-page and native applications always must, whatever this says.'}
         requireDpop: {type: boolean, description: 'Every token request must carry a DPoP proof (RFC 9449), so its access and refresh tokens only work with the key that signed the proof. A token request without one ends with `invalid_dpop_proof`. Refresh tokens issued without a proof stop working once this is on, and access tokens already issued last until they expire.'}
         kerberosSignIn: {type: boolean, description: 'Whether people can reach this application with Windows sign-in (Kerberos). On by default. When off, a Kerberos sign-in to it, or single sign-on from a session that started with one, is blocked like an access policy block, and the sign-in page doesn''t offer or try Windows sign-in for it.'}
+        tokenEndpointAuthMethod: {type: string, enum: [client_secret_basic, private_key_jwt], description: '`client_secret_basic` accepts the application''s client secrets with HTTP Basic or `client_secret_post`. `private_key_jwt` accepts only client assertions signed by its `jwks` or `jwksUri` keys. Single-page and native applications have no client authentication, whatever this says.'}
+        jwks: {type: object, description: 'The JSON Web Key Set that signs the application''s client assertions. Absent when it has none.'}
+        jwksUri: {type: string, description: 'Where Halo fetches the keys that sign the application''s client assertions. Empty when it has none.'}
+        fapi2Profile: {type: boolean, description: 'The application follows the FAPI 2.0 security profile. See Applications.'}
         saml: {$ref: '#/components/schemas/SAMLView'}
         ldap:
           type: object
@@ -9495,6 +9701,7 @@ components:
         applicationPreferences: {type: array, items: {type: object}}
         securityEmails: {type: array, items: {type: object}, description: 'Security emails Halo sent, with what each was about: the IP address of a new sign-in, a sign-in method, a new email address or a temporary access pass expiry.'}
         securityEmailOptOuts: {type: array, items: {type: object}, description: Security emails the person turned off.}
+        identityProofs: {type: array, items: {type: object}, description: 'Identity checks: the method, provider, provider session id, result, document kind and note, who checked the person in person, and the dates.'}
     ApprovalRequest:
       type: object
       required: [id, action, summary, targetType, targetId, targetLabel, requester, createdAt, expiresAt, status, decidedBy, decidedAt, outcome, canDecide]
@@ -10169,6 +10376,14 @@ components:
         signUp: {type: string, enum: ['off', open, approval], default: 'off', description: 'Who can create an account at `/auth/sign-up`: nobody, anyone at an allowed domain once they confirm their address and create a passkey, or the same people after a user administrator approves them under `/sign-ups`. Turning it on with an empty `signUpDomains` needs a verified domain.'}
         signUpDomains: {type: array, default: [], maxItems: 100, items: {type: string, examples: [example.com]}, description: 'Email domains people can sign up with, matched exactly and without case. Empty allows the verified domains under `/domains`.'}
         signUpGroupIds: {type: array, default: [], items: {type: string}, description: 'Assigned groups that new accounts from sign-up join. Dynamic groups are skipped.'}
+        identityProofingInvites: {type: boolean, default: false, description: 'Invited people need a successful identity check before their account is activated: an in-person check through `POST /users/{id}/identity-proofs`, or a check with the provider from their setup page. Until then their setup link and every sign-in are refused with `ERR_IDENTITY_CHECK_REQUIRED`.'}
+        identityProofingSignUps: {type: boolean, default: false, description: 'People who sign up need a successful identity check before their sign-up becomes an account, also when `signUp` is `open`.'}
+        identityProofingGroupIds: {type: array, default: [], maxItems: 100, items: {type: string}, description: 'Limit identity checks to people in these groups, or to sign-ups whose `signUpGroupIds` include one. Empty applies them to everyone. A listed group can''t be deleted.'}
+        identityProofingProvider: {type: string, enum: ['', generic, stripe], default: '', description: 'The identity verification service people can use from their setup page. Empty means administrators check identities in person only. Connecting one needs `identityProofingApiKey`. Halo calls it only at public addresses.'}
+        identityProofingName: {type: string, maxLength: 60, description: 'The name people see on their setup page, for `generic` only.'}
+        identityProofingEndpoint: {type: string, format: uri, maxLength: 500, description: 'The https address where Halo creates verification sessions, for `generic` only. See `POST /identity-proofing/webhook` for what Halo sends and expects.'}
+        identityProofingApiKey: {type: string, maxLength: 500, writeOnly: true, description: 'The provider''s API key, sent as a bearer token. For Stripe, a secret or restricted key starting with `sk_` or `rk_`. Stored encrypted and never returned. Omit it to keep the stored one.'}
+        identityProofingWebhookSecret: {type: string, maxLength: 500, writeOnly: true, description: 'The secret the provider signs result webhooks with. For Stripe, the endpoint''s signing secret starting with `whsec_`. Stored encrypted and never returned. Omit it to keep the stored one.'}
         securityEmailsOff:
           type: array
           default: []
@@ -10269,7 +10484,11 @@ components:
         response_types:
           type: array
           items: {type: string, enum: [code]}
-        token_endpoint_auth_method: {type: string, enum: [client_secret_basic, client_secret_post, none], default: client_secret_basic, description: '`none` registers a public client that must use PKCE.'}
+        token_endpoint_auth_method: {type: string, enum: [client_secret_basic, client_secret_post, private_key_jwt, none], default: client_secret_basic, description: '`none` registers a public client that must use PKCE. `private_key_jwt` registers a web client without a client secret that authenticates with client assertions signed by `jwks` or `jwks_uri`.'}
+        jwks: {type: object, description: 'Only with `private_key_jwt`, instead of `jwks_uri`. 1 to 20 public signing keys.'}
+        jwks_uri: {type: string, format: uri, description: 'Only with `private_key_jwt`, instead of `jwks`. An https:// URL on a public address.'}
+        dpop_bound_access_tokens: {type: boolean, description: 'RFC 9449. Every token request must carry a DPoP proof. A client can turn this on in an update but not off.'}
+        require_pushed_authorization_requests: {type: boolean, description: 'RFC 9126. Every authorization request must be pushed to `/oauth2/par`. A client can turn this on in an update but not off.'}
         application_type: {type: string, enum: [web, native], default: web, description: '`native` needs `token_endpoint_auth_method` `none`.'}
         scope: {type: string, description: 'Space-separated. Halo keeps only `openid`, `profile` and `email` and always includes `openid`.', examples: [openid profile email]}
         id_token_signed_response_alg: {type: string, enum: [RS256, ES256, EdDSA], default: RS256, description: 'Any other value is refused with `invalid_client_metadata`.'}
@@ -10305,6 +10524,36 @@ components:
         name: {type: string}
         createdAt: {type: string, format: date-time, description: When the person last asked for the sign-up link.}
         verifiedAt: {type: string, format: date-time, description: When the person confirmed the address and created the passkey.}
+        identityProof: {type: string, enum: ['', pending, verified, failed], description: 'The best identity check result: `verified` when any check succeeded, otherwise the newest one. Empty when there is none.'}
+    IdentityProofState:
+      type: object
+      required: [required, status, provider]
+      properties:
+        required: {type: boolean, description: The person needs a successful identity check before the account is activated.}
+        status: {type: string, enum: ['', pending, verified, failed], description: 'The best result, as for `SignUp.identityProof`. A pending check with the provider is refreshed first.'}
+        provider: {type: string, description: 'The name of the connected verification provider, or empty when only in-person checks are possible.'}
+    IdentityProof:
+      type: object
+      required: [id, method, provider, reference, status, document, note, checkedBy, createdAt, completedAt]
+      properties:
+        id: {type: string, examples: [idp_01JD6Z4Q8M2X3Y4Z5A6B7C8D9E]}
+        method: {type: string, enum: [in-person, provider]}
+        provider: {type: string, enum: ['', generic, stripe]}
+        reference: {type: string, description: 'The provider''s session id. Empty for in-person checks.'}
+        status: {type: string, enum: [pending, verified, failed]}
+        document: {type: string, enum: ['', passport, national-id, driving-licence, residence-permit, other], description: The kind of document an administrator checked in person.}
+        note: {type: string, description: How the administrator checked the person.}
+        checkedBy:
+          oneOf: [{$ref: '#/components/schemas/NamedRef'}, {type: 'null'}]
+          description: The administrator who checked the person in person.
+        createdAt: {type: string, format: date-time}
+        completedAt: {type: [string, 'null'], format: date-time}
+    InPersonCheck:
+      type: object
+      required: [document, note]
+      properties:
+        document: {type: string, enum: [passport, national-id, driving-licence, residence-permit, other]}
+        note: {type: string, minLength: 1, maxLength: 500, description: 'How you checked the person, such as where you met and what you compared. Leave out the document number: a note with five or more digits in a row is refused.', examples: [Met at the Lisbon office and compared the photo]}
     Domain:
       type: object
       required: [id, name, token, createdAt, verifiedAt]

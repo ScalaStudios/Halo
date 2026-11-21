@@ -38,6 +38,7 @@ var PersonalDataSections = []ExportSection{
 	{"applicationPreferences", "app_preferences", `select app_id, position, favourite from app_preferences where user_id = $1 order by position`},
 	{"securityEmails", "security_email_sends", `select kind, subject, sent_at from security_email_sends where user_id = $1 order by sent_at`},
 	{"securityEmailOptOuts", "security_email_opt_outs", `select kind from security_email_opt_outs where user_id = $1 order by kind`},
+	{"identityProofs", "identity_proofs", `select id, method, provider, reference, status, document, note, checked_by, created_at, completed_at from identity_proofs where user_id = $1 order by created_at`},
 }
 
 func (s *Store) ActiveProvisionedAccounts(ctx context.Context, userID string) (int, error) {

@@ -28,6 +28,7 @@ import (
 	"halo/internal/metrics"
 	"halo/internal/oidc"
 	"halo/internal/policy"
+	"halo/internal/proofing"
 	"halo/internal/provisioning"
 	"halo/internal/radius"
 	"halo/internal/saml"
@@ -61,6 +62,8 @@ var sensitiveRoutes = []string{
 	"PATCH /api/v1/settings",
 	"POST /api/v1/users/{id}/reset-authentication",
 	"POST /api/v1/users/{id}/access-pass",
+	"POST /api/v1/users/{id}/identity-proofs",
+	"POST /api/v1/sign-ups/{id}/identity-proofs",
 	"PUT /api/v1/users/{id}/password",
 	"DELETE /api/v1/users/{id}/methods/{methodId}",
 	"POST /api/v1/identity-providers",
@@ -159,7 +162,7 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 	})
 
 	apiMux := http.NewServeMux()
-	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, authz.Register, governance.Register, policy.Register, compliance.Register, apikeys.Register, provisioning.Register, ldapsync.Register, settings.Register, webhooks.Register, logexport.Register, oidc.Register, sshca.Register, avatars.Register, approval.Register, features.Register} {
+	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, authz.Register, governance.Register, policy.Register, compliance.Register, proofing.Register, apikeys.Register, provisioning.Register, ldapsync.Register, settings.Register, webhooks.Register, logexport.Register, oidc.Register, sshca.Register, avatars.Register, approval.Register, features.Register} {
 		if err := register(apiMux, deps); err != nil {
 			return nil, err
 		}
