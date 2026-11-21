@@ -2,6 +2,7 @@ package policy_test
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"io"
@@ -121,11 +122,12 @@ func TestPolicyLifecycle(t *testing.T) {
 	expect(t, call(t, h, token, "POST", "/api/v1/policies", missing), 422)
 	unknown := body("Admins", "report", access.RequirePhishingResistant, store.PolicyConditions{GroupIDs: []string{"grp_missing"}, AllApps: true})
 	expect(t, call(t, h, token, "POST", "/api/v1/policies", unknown), 422)
+	expect(t, call(t, h, token, "POST", "/api/v1/policies", body("Managed", "report", access.Block, store.PolicyConditions{AllUsers: true, AllApps: true, Compliance: "managed"})), 422)
 
 	rec := call(t, h, token, "POST", "/api/v1/policies", body("Admins need passkeys", "report", access.RequirePhishingResistant, store.PolicyConditions{GroupIDs: []string{admins.ID, admins.ID}, AllApps: true, AppIDs: []string{"halo"}}))
 	expect(t, rec, 201)
 	first := decode[store.AccessPolicy](t, rec)
-	if first.Priority != 1 || !slices.Equal(first.Conditions.GroupIDs, []string{admins.ID}) || len(first.Conditions.AppIDs) != 0 || first.Conditions.Network != "any" || first.Conditions.Device != "any" {
+	if first.Priority != 1 || !slices.Equal(first.Conditions.GroupIDs, []string{admins.ID}) || len(first.Conditions.AppIDs) != 0 || first.Conditions.Network != "any" || first.Conditions.Device != "any" || first.Conditions.Compliance != "any" {
 		t.Fatalf("created policy was not normalized: %+v", first)
 	}
 	expect(t, call(t, h, token, "POST", "/api/v1/policies", body("admins need PASSKEYS", "report", access.Block, everyone)), 409)
@@ -247,6 +249,14 @@ func TestSimulate(t *testing.T) {
 		t.Fatalf("blocked device simulation: %+v", blocked)
 	}
 
+	rule(t, st, "Compliant devices only", "enforce", access.Block, store.PolicyConditions{AllUsers: true, AllApps: true, Compliance: "not-compliant"})
+	for compliance, effect := range map[string]string{"": access.Block, "unknown": access.Block, "non-compliant": access.Block, "compliant": access.Allow} {
+		got := decode[simulated](t, call(t, h, token, "POST", "/api/v1/policies/simulate", map[string]any{"userId": ada.ID, "appId": "halo", "ip": "198.51.100.7", "method": "passkey", "deviceTrust": "trusted", "deviceCompliance": compliance}))
+		if got.Effect != effect || effect == access.Block && got.Reason != "Blocks sign-ins on devices that aren't compliant. The simulated device is "+cmp.Or(compliance, "unknown")+"." {
+			t.Fatalf("simulated %q device: %+v", compliance, got)
+		}
+	}
+	expect(t, call(t, h, token, "POST", "/api/v1/policies/simulate", map[string]any{"userId": ada.ID, "appId": "halo", "ip": "198.51.100.7", "method": "passkey", "deviceTrust": "trusted", "deviceCompliance": "managed"}), 422)
 	expect(t, call(t, h, token, "POST", "/api/v1/policies/simulate", map[string]any{"userId": ada.ID, "appId": "halo", "ip": "nope", "method": "passkey", "deviceTrust": "trusted"}), 422)
 	expect(t, call(t, h, token, "POST", "/api/v1/policies/simulate", map[string]any{"userId": ada.ID, "appId": "app_missing", "ip": "198.51.100.7", "method": "passkey", "deviceTrust": "trusted"}), 422)
 }

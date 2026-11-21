@@ -22,6 +22,7 @@ type PolicyConditions struct {
 	Network         string   `json:"network"`
 	ZoneIDs         []string `json:"zoneIds"`
 	Device          string   `json:"device"`
+	Compliance      string   `json:"compliance"`
 	Risk            []string `json:"risk"`
 	Methods         []string `json:"methods"`
 }
@@ -50,6 +51,9 @@ func (c PolicyConditions) normalized() PolicyConditions {
 	}
 	if c.Device == "" {
 		c.Device = "any"
+	}
+	if c.Compliance == "" {
+		c.Compliance = "any"
 	}
 	return c
 }

@@ -13,8 +13,8 @@ import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input"
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
 import { METHOD, RISK } from "@/lib/labels";
-import type { AccessPolicy, DeviceCondition, NetworkCondition, PolicyConditions, PolicyEffect, PolicyMode } from "@/lib/policy-types";
-import { DEVICE_CONDITION, EFFECT, HALO_APP, MODE, NETWORK_CONDITION, POLICY_METHODS, RISK_LEVELS, describePolicy, policyState, type Names } from "./shared";
+import type { AccessPolicy, ComplianceCondition, DeviceCondition, NetworkCondition, PolicyConditions, PolicyEffect, PolicyMode } from "@/lib/policy-types";
+import { COMPLIANCE_CONDITION, DEVICE_CONDITION, EFFECT, HALO_APP, MODE, NETWORK_CONDITION, POLICY_METHODS, RISK_LEVELS, describePolicy, policyState, type Names } from "./shared";
 
 export type Option = { id: string; name: string; detail?: string };
 
@@ -31,6 +31,7 @@ const BLANK: PolicyConditions = {
   network: "any",
   zoneIds: [],
   device: "any",
+  compliance: "any",
   risk: [],
   methods: [],
 };
@@ -311,6 +312,20 @@ export function PolicyForm({
                   {(Object.keys(DEVICE_CONDITION) as DeviceCondition[]).map((value) => (
                     <option key={value} value={value}>
                       {DEVICE_CONDITION[value]}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            <Field
+              label="Device compliance"
+              hint="Set by the compliance sources on the Devices page. A device no source reports on, or whose last report is older than the source allows, isn't compliant."
+            >
+              {(props) => (
+                <Select {...props} value={c.compliance} onChange={(event) => set("compliance", event.target.value as ComplianceCondition)}>
+                  {(Object.keys(COMPLIANCE_CONDITION) as ComplianceCondition[]).map((value) => (
+                    <option key={value} value={value}>
+                      {COMPLIANCE_CONDITION[value]}
                     </option>
                   ))}
                 </Select>

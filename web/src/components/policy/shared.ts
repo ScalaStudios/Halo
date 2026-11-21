@@ -4,6 +4,8 @@ import { pluralize } from "@/lib/format";
 import { METHOD } from "@/lib/labels";
 import type {
   AccessPolicy,
+  ComplianceCondition,
+  ComplianceState,
   DeviceCondition,
   DeviceTrust,
   NetworkCondition,
@@ -44,6 +46,18 @@ export const DEVICE_CONDITION: Record<DeviceCondition, string> = {
   any: "Any device",
   trusted: "Trusted devices only",
   untrusted: "Devices that aren't trusted",
+};
+
+export const COMPLIANCE_CONDITION: Record<ComplianceCondition, string> = {
+  any: "Any compliance state",
+  compliant: "Compliant devices only",
+  "not-compliant": "Devices that aren't compliant",
+};
+
+export const COMPLIANCE: Record<ComplianceState, { label: string; tone: Tone }> = {
+  compliant: { label: "Compliant", tone: "success" },
+  "non-compliant": { label: "Non-compliant", tone: "danger" },
+  unknown: { label: "Unknown", tone: "neutral" },
 };
 
 export const TRUST: Record<DeviceTrust, { label: string; tone: Tone }> = {
@@ -108,6 +122,8 @@ export function describePolicy(p: Pick<AccessPolicy, "effect" | "termsId" | "con
   if (c.network === "not-in") parts.push(`from outside ${zones || "the selected networks"}`);
   if (c.device === "trusted") parts.push("on trusted devices");
   if (c.device === "untrusted") parts.push("on devices that aren't trusted");
+  if (c.compliance === "compliant") parts.push("on compliant devices");
+  if (c.compliance === "not-compliant") parts.push("on devices that aren't compliant");
   if (c.risk.length) parts.push(`with ${joinList(RISK_LEVELS.filter((level) => c.risk.includes(level)))} risk`);
   if (c.methods.length) parts.push(`using ${joinList(c.methods.map((m) => METHOD_PLURAL[m]))}`);
   const verb = p.effect === "require-terms" ? `Require accepting “${(p.termsId && names.terms[p.termsId]) || "terms of use"}” for` : EFFECT[p.effect].verb;

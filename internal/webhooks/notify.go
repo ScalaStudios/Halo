@@ -24,7 +24,7 @@ var (
 	riskLevels   = []string{"none", "low", "medium", "high"}
 	destinations = map[string]string{"webhook": "a webhook", "slack": "Slack", "discord": "Discord"}
 	sharedSpace  = netip.MustParsePrefix("100.64.0.0/10")
-	errPrivate   = errors.New("the address is private, loopback or link-local, and notification rules only call public addresses")
+	errPrivate   = errors.New("the address is private, loopback or link-local, and Halo only calls public addresses")
 	slackEscape  = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 )
 
@@ -33,7 +33,7 @@ func public(ip netip.Addr) bool {
 	return ip.IsGlobalUnicast() && !ip.IsPrivate() && !sharedSpace.Contains(ip)
 }
 
-func guardedClient() *http.Client {
+func GuardedClient() *http.Client {
 	dialer := &net.Dialer{Timeout: 10 * time.Second, Control: func(_, address string, _ syscall.RawConn) error {
 		host, _, err := net.SplitHostPort(address)
 		if ip, parseErr := netip.ParseAddr(host); err != nil || parseErr != nil || !public(ip) {

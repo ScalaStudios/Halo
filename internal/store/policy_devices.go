@@ -10,18 +10,19 @@ import (
 )
 
 type Device struct {
-	ID          string    `json:"id"`
-	UserID      string    `json:"userId"`
-	Name        string    `json:"name"`
-	OS          string    `json:"os"`
-	Browser     string    `json:"browser"`
-	Trust       string    `json:"trust"`
-	FirstSeenAt time.Time `json:"firstSeenAt"`
-	LastSeenAt  time.Time `json:"lastSeenAt"`
-	LastIP      string    `json:"lastIp"`
-	SignIns     int       `json:"signIns"`
-	Current     bool      `json:"current,omitempty"`
-	TokenHash   []byte    `json:"-"`
+	ID          string            `json:"id"`
+	UserID      string            `json:"userId"`
+	Name        string            `json:"name"`
+	OS          string            `json:"os"`
+	Browser     string            `json:"browser"`
+	Trust       string            `json:"trust"`
+	FirstSeenAt time.Time         `json:"firstSeenAt"`
+	LastSeenAt  time.Time         `json:"lastSeenAt"`
+	LastIP      string            `json:"lastIp"`
+	SignIns     int               `json:"signIns"`
+	Compliance  *DeviceCompliance `json:"compliance"`
+	Current     bool              `json:"current,omitempty"`
+	TokenHash   []byte            `json:"-"`
 }
 
 func DeviceName(userAgent string) string {
@@ -32,19 +33,31 @@ func DeviceName(userAgent string) string {
 	return strings.Fields(browser)[0] + " on " + device
 }
 
-const deviceColumns = `id, user_id, token_hash, user_agent, trust, first_seen_at, last_seen_at, last_ip, sign_in_count`
+const deviceQuery = `select d.id, d.user_id, d.token_hash, d.user_agent, d.trust, d.first_seen_at, d.last_seen_at, d.last_ip, d.sign_in_count,
+	s.id, s.name, r.external_id, r.name, r.state, r.reported_at, r.reported_at < now() - make_interval(mins => s.max_age_minutes)
+	from devices d left join compliance_records r on r.source_id = d.compliance_source_id and r.external_id = d.compliance_external_id
+	left join compliance_sources s on s.id = r.source_id`
 
 func scanDevice(row rowScanner) (Device, error) {
 	var d Device
 	var ua string
-	err := row.Scan(&d.ID, &d.UserID, &d.TokenHash, &ua, &d.Trust, &d.FirstSeenAt, &d.LastSeenAt, &d.LastIP, &d.SignIns)
+	var sourceID, source, externalID, record, state *string
+	var reportedAt *time.Time
+	var stale *bool
+	err := row.Scan(&d.ID, &d.UserID, &d.TokenHash, &ua, &d.Trust, &d.FirstSeenAt, &d.LastSeenAt, &d.LastIP, &d.SignIns, &sourceID, &source, &externalID, &record, &state, &reportedAt, &stale)
 	d.Name = DeviceName(ua)
 	_, d.OS, d.Browser = ParseUserAgent(ua)
+	if err == nil && sourceID != nil {
+		d.Compliance = &DeviceCompliance{State: *state, SourceID: *sourceID, Source: *source, ExternalID: *externalID, Record: *record, ReportedAt: *reportedAt, Stale: *stale}
+		if *stale {
+			d.Compliance.State = "unknown"
+		}
+	}
 	return d, err
 }
 
 func (s *Store) FindDevice(ctx context.Context, userID string, tokenHash []byte) (*Device, int, error) {
-	rows, err := s.db.Query(ctx, `select `+deviceColumns+` from devices where user_id = $1`, userID)
+	rows, err := s.db.Query(ctx, deviceQuery+` where d.user_id = $1`, userID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -78,7 +91,7 @@ func (s *Store) TouchDevice(ctx context.Context, userID string, tokenHash []byte
 }
 
 func (s *Store) ListDevices(ctx context.Context, userID string) ([]Device, error) {
-	rows, err := s.db.Query(ctx, `select `+deviceColumns+` from devices where $1 = '' or user_id = $1 order by last_seen_at desc`, userID)
+	rows, err := s.db.Query(ctx, deviceQuery+` where $1 = '' or d.user_id = $1 order by d.last_seen_at desc`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +108,7 @@ func (s *Store) ListDevices(ctx context.Context, userID string) ([]Device, error
 }
 
 func (s *Store) GetDevice(ctx context.Context, deviceID string) (Device, error) {
-	d, err := scanDevice(s.db.QueryRow(ctx, `select `+deviceColumns+` from devices where id = $1`, deviceID))
+	d, err := scanDevice(s.db.QueryRow(ctx, deviceQuery+` where d.id = $1`, deviceID))
 	return d, notFound(err)
 }
 

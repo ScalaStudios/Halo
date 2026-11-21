@@ -28,7 +28,7 @@ import { joinList } from "@/components/policy/shared";
 import { apiGet } from "@/lib/api/server";
 import { formatDate, formatDateTime, formatRelative } from "@/lib/format";
 import { METHOD, STATUS, STRENGTH } from "@/lib/labels";
-import type { Device } from "@/lib/policy-types";
+import type { ComplianceSource, Device } from "@/lib/policy-types";
 import type { SettingsResponse } from "@/lib/settings-types";
 import type { Application, AuditEvent, Group, Impersonation, Session, SignInEvent, User } from "@/lib/types";
 
@@ -44,7 +44,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
   const { id } = await params;
   const { tab = "overview" } = await searchParams;
   const path = `/users/${encodeURIComponent(id)}`;
-  const [user, userSessions, userSignIns, groups, applications, audit, userDevices, directory, me, enabled, response, impersonations] = await Promise.all([
+  const [user, userSessions, userSignIns, groups, applications, audit, userDevices, directory, me, enabled, response, impersonations, sources] = await Promise.all([
     apiGet<User>(path),
     apiGet<Session[]>(`${path}/sessions`),
     apiGet<SignInEvent[]>(`${path}/sign-ins`),
@@ -57,6 +57,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
     apiGet<{ methods: string[] } | null>("/auth/methods", null),
     apiGet<SettingsResponse | null>("/settings", null),
     apiGet<Impersonation[]>(`/impersonations?user=${encodeURIComponent(id)}`, []),
+    apiGet<ComplianceSource[]>("/compliance-sources", []),
   ]);
   const settings = response?.settings;
   const limited = limitedOnly(me);
@@ -229,7 +230,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
             {userDevices.length === 0 ? (
               <EmptyState icon={Laptop} title="No devices yet" description="A device appears here after its first sign-in to Halo." />
             ) : (
-              <DevicesTable devices={userDevices} owners={{ [user.id]: { name: user.name, email: user.email } }} />
+              <DevicesTable devices={userDevices} sources={sources} owners={{ [user.id]: { name: user.name, email: user.email } }} />
             )}
           </div>
         ) : null}

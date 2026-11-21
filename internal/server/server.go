@@ -10,6 +10,7 @@ import (
 	"halo/internal/approval"
 	"halo/internal/auth"
 	"halo/internal/avatars"
+	"halo/internal/compliance"
 	"halo/internal/config"
 	"halo/internal/governance"
 	"halo/internal/httpx"
@@ -65,6 +66,9 @@ var sensitiveRoutes = []string{
 	"POST /api/v1/notification-rules",
 	"PUT /api/v1/notification-rules/{id}",
 	"DELETE /api/v1/notification-rules/{id}",
+	"POST /api/v1/compliance-sources",
+	"PUT /api/v1/compliance-sources/{id}",
+	"DELETE /api/v1/compliance-sources/{id}",
 }
 
 var ownMethodRoutes = []string{
@@ -92,7 +96,7 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 	})
 
 	apiMux := http.NewServeMux()
-	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, governance.Register, policy.Register, apikeys.Register, provisioning.Register, settings.Register, webhooks.Register, oidc.Register, sshca.Register, avatars.Register, approval.Register} {
+	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, governance.Register, policy.Register, compliance.Register, apikeys.Register, provisioning.Register, settings.Register, webhooks.Register, oidc.Register, sshca.Register, avatars.Register, approval.Register} {
 		if err := register(apiMux, deps); err != nil {
 			return nil, err
 		}
