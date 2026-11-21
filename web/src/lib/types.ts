@@ -119,6 +119,23 @@ export type ApplicationHook = {
   failOpen: boolean;
 };
 
+export type SubjectFormat = "iss_sub" | "email" | "opaque";
+
+export type SignalStream = {
+  id: string;
+  appId: string;
+  description: string;
+  eventsRequested: string[];
+  deliveryMethod: "urn:ietf:rfc:8935" | "urn:ietf:rfc:8936";
+  endpointUrl: string;
+  status: "enabled" | "paused" | "disabled";
+  reason: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SignalReceiver = { appId: string; subjectFormat: SubjectFormat; createdAt: string; stream: SignalStream | null };
+
 export type Application = {
   id: string;
   name: string;

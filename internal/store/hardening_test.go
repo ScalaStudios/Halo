@@ -51,6 +51,11 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	directoryID, err := st.CreateLDAPDirectory(ctx, store.LDAPDirectory{Name: "Corp", URL: "ldaps://dc1.example.com", Security: "ldaps", BindDN: "cn=halo", UserBaseDN: "dc=example", UserFilter: "(mail=*)", IntervalMinutes: 60}, "bind-password")
 	must(err)
+	receiver, err := st.CreateApplication(ctx, store.NewApplication{Name: "Signals", Protocol: "oauth", Type: "service"})
+	must(err)
+	must(st.SaveSignalReceiver(ctx, receiver.ID, "iss_sub"))
+	_, err = st.CreateSignalStream(ctx, store.SignalStream{AppID: receiver.ID, DeliveryMethod: store.PushDelivery, EndpointURL: "https://receiver.example.com/events", AuthorizationSealed: st.Sealer.Seal([]byte("Bearer receiver"))})
+	must(err)
 
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)

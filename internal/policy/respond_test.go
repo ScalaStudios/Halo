@@ -83,6 +83,11 @@ func TestRiskResponses(t *testing.T) {
 	want(t, evaluate(t, eng, ada, "passkey", "198.51.100.7", ""), access.Allow, "")
 	want(t, evaluate(t, eng, ada, "totp", "198.51.100.7", ""), access.Allow, "")
 
+	receiver, err := st.CreateApplication(ctx, store.NewApplication{Name: "SIEM", Protocol: "oauth", Type: "service"})
+	must(err)
+	must(st.SaveSignalReceiver(ctx, receiver.ID, "iss_sub"))
+	_, err = st.CreateSignalStream(ctx, store.SignalStream{AppID: receiver.ID, EventsRequested: store.SignalEvents, DeliveryMethod: store.PollDelivery})
+	must(err)
 	evaluate(t, eng, ada, "totp", "185.220.101.47", "")
 	evaluate(t, eng, erin, "totp", "185.220.101.47", "")
 	respond(store.RiskResponse{Level: "high", Action: "suspend"})
@@ -94,5 +99,8 @@ func TestRiskResponses(t *testing.T) {
 	}
 	if events := audited(); len(events) != 2 || events[0].Summary != "Sign-in from a risky network: Suspended the account and ended 0 sessions" {
 		t.Fatalf("each risk event must get one response: %+v", events)
+	}
+	if signals, err := st.PendingSignals(ctx, receiver.ID, 10); err != nil || len(signals) != 1 || !strings.HasSuffix(signals[0].EventType, "/account-disabled") {
+		t.Fatalf("the suspension must be sent to shared signals receivers once: %+v %v", signals, err)
 	}
 }

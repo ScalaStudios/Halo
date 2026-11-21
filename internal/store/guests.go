@@ -31,8 +31,16 @@ func (s *Store) ClaimGuestExpiryNotices(ctx context.Context, now, before time.Ti
 }
 
 func (s *Store) ClaimExpiredGuests(ctx context.Context, now time.Time) ([]GuestExpiry, error) {
-	return s.guestExpiries(ctx, `update users set status = 'suspended', updated_at = $1 where guest and expires_at <= $1 and status in ('active', 'invited')
+	expired, err := s.guestExpiries(ctx, `update users set status = 'suspended', updated_at = $1 where guest and expires_at <= $1 and status in ('active', 'invited')
 		returning id, name, email, sponsor_id, expires_at`, now)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(expired))
+	for i, g := range expired {
+		ids[i] = g.Guest.ID
+	}
+	return expired, s.signal(ctx, accountDisabled, nil, `select id, '', '', '' from users where id = any($1)`, ids)
 }
 
 func (s *Store) guestExpiries(ctx context.Context, query string, args ...any) ([]GuestExpiry, error) {

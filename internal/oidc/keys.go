@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -145,6 +146,26 @@ func (s *storage) SigningKey(ctx context.Context) (op.SigningKey, error) {
 		return nil, err
 	}
 	return keys[slices.IndexFunc(keys, func(k signingKey) bool { return k.alg == alg })], nil
+}
+
+func (s *storage) sign(ctx context.Context, typ jose.ContentType, claims map[string]any) (string, error) {
+	key, err := s.SigningKey(ctx)
+	if err != nil {
+		return "", err
+	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: key.SignatureAlgorithm(), Key: jose.JSONWebKey{Key: key.Key(), KeyID: key.ID()}}, (&jose.SignerOptions{}).WithType(typ))
+	if err != nil {
+		return "", err
+	}
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		return "", err
+	}
+	signed, err := signer.Sign(payload)
+	if err != nil {
+		return "", err
+	}
+	return signed.CompactSerialize()
 }
 
 func (s *storage) SignatureAlgorithms(context.Context) ([]jose.SignatureAlgorithm, error) {

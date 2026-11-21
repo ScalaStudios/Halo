@@ -207,12 +207,16 @@ func (s *Store) CreateUser(ctx context.Context, in NewUser) (User, error) {
 }
 
 func (s *Store) SetUserStatus(ctx context.Context, userID, status string) error {
-	tag, err := s.db.Exec(ctx, `update users set status = $2, updated_at = now() where id = $1`, userID, status)
-	if err != nil {
-		return err
+	var previous string
+	if err := s.db.QueryRow(ctx, `with old as (select status from users where id = $1) update users set status = $2, updated_at = now() where id = $1 returning (select status from old)`, userID, status).Scan(&previous); err != nil {
+		return notFound(err)
 	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
+	disabled := func(status string) bool { return status == "suspended" || status == "deprovisioned" }
+	switch {
+	case disabled(status) && !disabled(previous):
+		return s.signal(ctx, accountDisabled, nil, signalUser, userID)
+	case disabled(previous) && !disabled(status):
+		return s.signal(ctx, accountEnabled, nil, signalUser, userID)
 	}
 	return nil
 }
@@ -242,12 +246,31 @@ func (s *Store) SetUserRoles(ctx context.Context, userID string, roles []string,
 func (s *Store) DeleteAuthenticationMethods(ctx context.Context, userID string) error {
 	return s.Tx(ctx, func(tx *Store) error {
 		for _, table := range []string{"webauthn_credentials", "totp_secrets", "recovery_codes", "passwords"} {
-			if _, err := tx.db.Exec(ctx, `delete from `+table+` where user_id = $1`, userID); err != nil {
+			if _, err := tx.deleteCredentials(ctx, table, "revoke", `user_id = $1`, userID); err != nil {
 				return err
 			}
 		}
 		return tx.deleteAccessPass(ctx, userID)
 	})
+}
+
+var credentialColumns = map[string]string{"webauthn_credentials": "kind, label", "totp_secrets": "case when confirmed then 'totp' else '' end, label", "passwords": "'password', ''", "recovery_codes": "'', ''"}
+
+func (s *Store) deleteCredentials(ctx context.Context, table, change, where string, args ...any) (bool, error) {
+	rows, err := s.db.Query(ctx, `delete from `+table+` where `+where+` returning user_id, `+credentialColumns[table], args...)
+	if err != nil {
+		return false, err
+	}
+	deleted, err := pgx.CollectRows(rows, pgx.RowToStructByPos[struct{ UserID, Kind, Label string }])
+	if err != nil {
+		return false, err
+	}
+	for _, d := range deleted {
+		if err := s.credentialChanged(ctx, d.UserID, d.Kind, change, d.Label); err != nil {
+			return false, err
+		}
+	}
+	return len(deleted) > 0, nil
 }
 
 func (s *Store) deleteAccessPass(ctx context.Context, userID string) error {
@@ -262,12 +285,9 @@ func (s *Store) deleteAccessPass(ctx context.Context, userID string) error {
 
 func (s *Store) DeleteMethod(ctx context.Context, userID, methodID string) error {
 	for _, table := range []string{"webauthn_credentials", "totp_secrets"} {
-		tag, err := s.db.Exec(ctx, `delete from `+table+` where user_id = $1 and id = $2`, userID, methodID)
-		if err != nil {
+		deleted, err := s.deleteCredentials(ctx, table, "delete", `user_id = $1 and id = $2`, userID, methodID)
+		if err != nil || deleted {
 			return err
-		}
-		if tag.RowsAffected() > 0 {
-			return nil
 		}
 	}
 	if methodID == "access-pass" {
@@ -277,7 +297,7 @@ func (s *Store) DeleteMethod(ctx context.Context, userID, methodID string) error
 	if table == "" {
 		return ErrNotFound
 	}
-	_, err := s.db.Exec(ctx, `delete from `+table+` where user_id = $1`, userID)
+	_, err := s.deleteCredentials(ctx, table, "delete", `user_id = $1`, userID)
 	return err
 }
 

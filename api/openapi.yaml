@@ -85,6 +85,15 @@ tags:
     description: The SSH certificate authorities for people and hosts, principal mappings, issued certificates and registered hosts.
   - name: Development
     description: Routes that exist only with HALO_DEV=1.
+  - name: Shared signals
+    description: |
+      Security events sent as signed Security Event Tokens (RFC 8417) under the OpenID Shared Signals Framework 1.0, outside `/api/v1`. A receiver is a service application that a security administrator turned on with `PUT /applications/{id}/shared-signals`. It authenticates every call with a client credentials access token from `/oauth2/token` addressed to itself, finds the endpoints at `/.well-known/ssf-configuration` and creates one stream. Errors are `{"error": {"code", "message"}}`.
+
+      **Events.** CAEP `session-revoked` when a Halo session ends before it expires (not impersonations), `credential-change` when a password, passkey (`fido2-platform`), security key (`fido2-roaming`) or authenticator app (`app`) is added, changed, removed (`delete`) or reset by an administrator (`revoke`), and `device-compliance-change` when a compliance source moves a linked device between compliant and not compliant. RISC `account-disabled` and `account-enabled` when a person is suspended or deprovisioned and restored, whether by an administrator, SCIM, LDAP sync, a lifecycle rule, a risk response or guest expiry, `account-purged` when a person is deleted, and `identifier-changed` when their email address changes, for streams with `email` subjects only. Service accounts send no events. Every SET carries `iss`, `aud` (the receiver's client ID), `jti`, `iat` and `sub_id`, never `sub` or `exp`, and has the header `typ: secevent+jwt`; CAEP and RISC SETs also carry `txn`, and their event carries `event_timestamp`. Verify it against `/oauth2/keys`.
+
+      **Subjects.** The receiver's `subjectFormat` sets `sub_id`: `iss_sub` (Halo's issuer and the person's ID, the `sub` of their ID tokens), `email`, or `opaque` (the person's ID). `session-revoked` and `device-compliance-change` use a `complex` subject with `user` and an opaque `session` (the ID token's `sid`) or `device`. Verification events use an opaque subject holding the stream ID.
+
+      **Delivery.** Push (`urn:ietf:rfc:8935`) posts each SET to the receiver's public `https://` endpoint with `Content-Type: application/secevent+jwt` and its `authorization_header`, and retries any answer other than 2xx after 30 seconds, then 1, 2, 4, 8, 16 and 32 minutes, like webhooks. Private, loopback and link-local addresses are refused when the stream is saved and again when Halo connects. Poll (`urn:ietf:rfc:8936`) keeps each SET until the receiver acknowledges its `jti`, and serves unacknowledged SETs again. Halo keeps SETs, delivered or not, for 30 days.
   - name: Client registration
     description: 'OAuth dynamic client registration (RFC 7591) and management (RFC 7592) at `/oauth2/register`, outside `/api/v1`. Off unless `clientRegistration` allows it. Errors are `{"error": "…", "error_description": "…"}`. Registered clients use the authorization code flow with the `openid`, `profile` and `email` scopes, get no groups, API grants or token exchange, and sign nobody in until an application administrator assigns groups.'
 paths:
@@ -318,6 +327,267 @@ paths:
                       properties:
                         jti: {type: string, examples: [atk_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
                         exp: {type: integer, description: The token's `exp`, in seconds since the Unix epoch., examples: [1767225600]}
+  /.well-known/ssf-configuration:
+    servers:
+      - url: /
+    get:
+      tags: [Shared signals]
+      operationId: getTransmitterConfiguration
+      summary: Get the Shared Signals transmitter configuration
+      description: No authentication. `issuer` is Halo's issuer, the `iss` of every SET.
+      security:
+        - {}
+      responses:
+        '200':
+          description: The transmitter configuration.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [spec_version, issuer, jwks_uri, delivery_methods_supported, configuration_endpoint, status_endpoint, verification_endpoint, authorization_schemes, default_subjects]
+                properties:
+                  spec_version: {type: string, enum: ['1_0']}
+                  issuer: {type: string, examples: ['https://halo.example.com']}
+                  jwks_uri: {type: string, examples: ['https://halo.example.com/oauth2/keys']}
+                  delivery_methods_supported:
+                    type: array
+                    items: {type: string, enum: ['urn:ietf:rfc:8935', 'urn:ietf:rfc:8936']}
+                  configuration_endpoint: {type: string, examples: ['https://halo.example.com/oauth2/ssf/stream']}
+                  status_endpoint: {type: string, examples: ['https://halo.example.com/oauth2/ssf/status']}
+                  verification_endpoint: {type: string, examples: ['https://halo.example.com/oauth2/ssf/verify']}
+                  authorization_schemes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        spec_urn: {type: string, enum: ['urn:ietf:rfc:6749']}
+                  default_subjects: {type: string, enum: [ALL]}
+  /oauth2/ssf/stream:
+    servers:
+      - url: /
+    get:
+      tags: [Shared signals]
+      operationId: readSignalStream
+      summary: Read the receiver's stream
+      description: With `stream_id`, the stream; without it, a list holding the receiver's stream or nothing.
+      security:
+        - receiverAccessToken: []
+      parameters:
+        - {name: stream_id, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: The stream, or a list of streams without `stream_id`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - {$ref: '#/components/schemas/SignalStreamConfiguration'}
+                  - {type: array, maxItems: 1, items: {$ref: '#/components/schemas/SignalStreamConfiguration'}}
+        '401': {$ref: '#/components/responses/ReceiverUnauthenticated'}
+        '403': {$ref: '#/components/responses/ReceiverForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      tags: [Shared signals]
+      operationId: createSignalStream
+      summary: Create the receiver's stream
+      description: Halo keeps one stream per receiver. Without `delivery`, the receiver polls. Event types Halo does not send are kept in `events_requested` and left out of `events_delivered`. Recorded as `ssf_stream.create`.
+      security:
+        - receiverAccessToken: []
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SignalStreamInput'}
+      responses:
+        '201':
+          description: The stream.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SignalStreamConfiguration'}
+        '400': {$ref: '#/components/responses/SignalInvalid'}
+        '401': {$ref: '#/components/responses/ReceiverUnauthenticated'}
+        '403': {$ref: '#/components/responses/ReceiverForbidden'}
+        '409': {description: '`ERR_CONFLICT`: the receiver already has a stream.', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    patch:
+      tags: [Shared signals]
+      operationId: updateSignalStream
+      summary: Change the receiver's stream
+      description: Changes the receiver-supplied properties that are present and keeps the others. `delivery` is replaced as a whole, including `authorization_header`. Transmitter-supplied properties may be sent but must match. Recorded as `ssf_stream.update`.
+      security:
+        - receiverAccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SignalStreamInput'}
+      responses:
+        '200':
+          description: The stream.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SignalStreamConfiguration'}
+        '400': {$ref: '#/components/responses/SignalInvalid'}
+        '401': {$ref: '#/components/responses/ReceiverUnauthenticated'}
+        '403': {$ref: '#/components/responses/ReceiverForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Shared signals]
+      operationId: replaceSignalStream
+      summary: Replace the receiver's stream
+      description: Like `PATCH`, but receiver-supplied properties that are left out are cleared, and a missing `delivery` means poll. Recorded as `ssf_stream.update`.
+      security:
+        - receiverAccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SignalStreamInput'}
+      responses:
+        '200':
+          description: The stream.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SignalStreamConfiguration'}
+        '400': {$ref: '#/components/responses/SignalInvalid'}
+        '401': {$ref: '#/components/responses/ReceiverUnauthenticated'}
+        '403': {$ref: '#/components/responses/ReceiverForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Shared signals]
+      operationId: deleteSignalStream
+      summary: Delete the receiver's stream
+      description: Deletes the stream with its SETs, delivered or not. Recorded as `ssf_stream.delete`.
+      security:
+        - receiverAccessToken: []
+      parameters:
+        - {name: stream_id, in: query, required: true, schema: {type: string}}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/ReceiverUnauthenticated'}
+        '403': {$ref: '#/components/responses/ReceiverForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /oauth2/ssf/status:
+    servers:
+      - url: /
+    get:
+      tags: [Shared signals]
+      operationId: getSignalStreamStatus
+      summary: Get the stream's status
+      security:
+        - receiverAccessToken: []
+      parameters:
+        - {name: stream_id, in: query, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The status.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SignalStreamStatus'}
+        '401': {$ref: '#/components/responses/ReceiverUnauthenticated'}
+        '403': {$ref: '#/components/responses/ReceiverForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      tags: [Shared signals]
+      operationId: setSignalStreamStatus
+      summary: Enable, pause or disable the stream
+      description: A paused stream keeps its events and sends them once enabled again. A disabled stream drops its undelivered events and queues no new ones. Recorded as `ssf_stream.status`.
+      security:
+        - receiverAccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SignalStreamStatus'}
+      responses:
+        '200':
+          description: The status.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SignalStreamStatus'}
+        '400': {$ref: '#/components/responses/SignalInvalid'}
+        '401': {$ref: '#/components/responses/ReceiverUnauthenticated'}
+        '403': {$ref: '#/components/responses/ReceiverForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /oauth2/ssf/verify:
+    servers:
+      - url: /
+    post:
+      tags: [Shared signals]
+      operationId: requestSignalVerification
+      summary: Ask for a verification event
+      description: Queues a `https://schemas.openid.net/secevent/ssf/event-type/verification` SET carrying `state`, delivered like the stream's other events. At most one request every `min_verification_interval` seconds.
+      security:
+        - receiverAccessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stream_id]
+              properties:
+                stream_id: {type: string}
+                state: {type: string, maxLength: 1024}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '400': {$ref: '#/components/responses/SignalInvalid'}
+        '401': {$ref: '#/components/responses/ReceiverUnauthenticated'}
+        '403': {$ref: '#/components/responses/ReceiverForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429':
+          description: '`ERR_RATE_LIMITED`: the last verification request was too recent.'
+          headers:
+            Retry-After:
+              schema: {type: integer}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /oauth2/ssf/poll/{id}:
+    servers:
+      - url: /
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Shared signals]
+      operationId: pollSignals
+      summary: Poll for SETs and acknowledge received ones
+      description: 'RFC 8936 poll delivery for a stream with `urn:ietf:rfc:8936`, at the `endpoint_url` Halo returned. Acknowledges `ack` and records `setErrs` as failed first, then returns up to `maxEvents` (at most 100) unacknowledged SETs, oldest first. With `returnImmediately` false or left out, Halo waits up to 20 seconds for a SET. A paused stream returns none.'
+      security:
+        - receiverAccessToken: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                maxEvents: {type: integer, minimum: 0}
+                returnImmediately: {type: boolean, default: false}
+                ack:
+                  type: array
+                  items: {type: string}
+                setErrs:
+                  type: object
+                  additionalProperties:
+                    type: object
+                    properties:
+                      err: {type: string}
+                      description: {type: string}
+      responses:
+        '200':
+          description: The SETs, by `jti`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sets, moreAvailable]
+                properties:
+                  sets:
+                    type: object
+                    additionalProperties: {type: string, description: A signed SET.}
+                  moreAvailable: {type: boolean}
+        '400': {$ref: '#/components/responses/SignalInvalid'}
+        '401': {$ref: '#/components/responses/ReceiverUnauthenticated'}
+        '403': {$ref: '#/components/responses/ReceiverForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /organization:
     get:
       tags: [Organization]
@@ -4112,6 +4382,69 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /applications/{id}/shared-signals:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Shared signals]
+      operationId: getSharedSignals
+      summary: Get a service application's shared signals and its 50 most recent SETs
+      description: 'Roles: any administrator. `receiver` is null while shared signals are off. Each delivery''s `eventId` is the SET''s `jti` and `body` holds the person and event Halo signs a SET from on every attempt.'
+      responses:
+        '200':
+          description: The receiver and its deliveries, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [receiver, deliveries]
+                properties:
+                  receiver:
+                    oneOf:
+                      - {$ref: '#/components/schemas/SignalReceiver'}
+                      - {type: 'null'}
+                  deliveries:
+                    type: array
+                    items: {$ref: '#/components/schemas/WebhookDelivery'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Shared signals]
+      operationId: setSharedSignals
+      summary: Turn on shared signals for a service application, or change its subject format
+      description: 'Roles: security administrator, with a recent sign-in. The application can then create a stream that receives events about every person. Recorded as `application.shared_signals.update`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectFormat]
+              properties:
+                subjectFormat: {type: string, enum: [iss_sub, email, opaque]}
+      responses:
+        '200':
+          description: The receiver and its deliveries, as `GET` returns them.
+          content:
+            application/json:
+              schema:
+                type: object
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Shared signals]
+      operationId: deleteSharedSignals
+      summary: Turn off shared signals for a service application
+      description: 'Roles: security administrator, with a recent sign-in. Deletes the stream with its SETs. Recorded as `application.shared_signals.delete`.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /collections:
     get:
       tags: [Applications]
@@ -7139,6 +7472,11 @@ components:
       type: http
       scheme: basic
       description: The application's client ID as the user name and one of its client secrets as the password. Accepted only on routes under `/authz`, for active web and service applications with an authorization model.
+    receiverAccessToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: An access token a shared signals receiver obtained with the client credentials grant at `/oauth2/token`, addressed to itself rather than to an API.
   parameters:
     Id:
       name: id
@@ -7545,6 +7883,21 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/OAuthError'}
+    ReceiverUnauthenticated:
+      description: '`ERR_UNAUTHENTICATED`: no valid client credentials access token of a service application. Comes with `WWW-Authenticate: Bearer error="invalid_token"`.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ReceiverForbidden:
+      description: '`ERR_FORBIDDEN`: shared signals are not turned on for the application, or it is disabled.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    SignalInvalid:
+      description: '`ERR_INVALID`: the body is not JSON, a property is invalid, or a transmitter-supplied property does not match. The message names it.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
     Unauthenticated:
       description: '`ERR_UNAUTHENTICATED`: no valid session or key.'
       content:
@@ -9695,7 +10048,7 @@ components:
         id: {type: string, examples: [whd_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         endpointId: {type: string, description: Set for deliveries to a webhook endpoint.}
         ruleId: {type: string, description: Set for messages sent by a notification rule.}
-        appId: {type: string, description: Set for back-channel logouts sent to an application.}
+        appId: {type: string, description: Set for back-channel logouts and shared signals sent to an application.}
         eventId: {type: string}
         eventType: {type: string}
         body: {type: string, description: 'The exact JSON body Halo sends, or for a back-channel logout the session the logout token is made for.'}
@@ -9706,6 +10059,77 @@ components:
         responseStatus: {type: [integer, 'null']}
         error: {type: string}
         createdAt: {type: string, format: date-time}
+    SignalReceiver:
+      type: object
+      required: [appId, subjectFormat, createdAt, stream]
+      properties:
+        appId: {type: string}
+        subjectFormat: {type: string, enum: [iss_sub, email, opaque]}
+        createdAt: {type: string, format: date-time}
+        stream:
+          oneOf:
+            - type: object
+              required: [id, appId, description, eventsRequested, deliveryMethod, endpointUrl, status, reason, createdAt, updatedAt]
+              properties:
+                id: {type: string, examples: [sst_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+                appId: {type: string}
+                description: {type: string}
+                eventsRequested:
+                  type: array
+                  items: {type: string}
+                deliveryMethod: {type: string, enum: ['urn:ietf:rfc:8935', 'urn:ietf:rfc:8936']}
+                endpointUrl: {type: string, description: The push endpoint. Empty for poll.}
+                status: {type: string, enum: [enabled, paused, disabled]}
+                reason: {type: string}
+                createdAt: {type: string, format: date-time}
+                updatedAt: {type: string, format: date-time}
+            - {type: 'null'}
+    SignalStreamConfiguration:
+      type: object
+      required: [stream_id, iss, aud, events_supported, events_delivered, delivery, min_verification_interval]
+      properties:
+        stream_id: {type: string, examples: [sst_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        iss: {type: string}
+        aud: {type: string, description: The receiver's client ID.}
+        events_supported:
+          type: array
+          items: {type: string}
+        events_requested:
+          type: array
+          items: {type: string}
+        events_delivered:
+          type: array
+          items: {type: string}
+        delivery:
+          type: object
+          required: [method, endpoint_url]
+          properties:
+            method: {type: string, enum: ['urn:ietf:rfc:8935', 'urn:ietf:rfc:8936']}
+            endpoint_url: {type: string, description: The receiver's push endpoint, or the poll endpoint Halo assigned.}
+        min_verification_interval: {type: integer, examples: [30]}
+        description: {type: string}
+    SignalStreamInput:
+      type: object
+      properties:
+        stream_id: {type: string, description: Required for PATCH and PUT.}
+        events_requested:
+          type: array
+          maxItems: 50
+          items: {type: string}
+        delivery:
+          type: object
+          properties:
+            method: {type: string, enum: ['urn:ietf:rfc:8935', 'urn:ietf:rfc:8936'], default: 'urn:ietf:rfc:8936'}
+            endpoint_url: {type: string, description: 'For push, a public `https://` URL under 2,048 characters.'}
+            authorization_header: {type: string, maxLength: 1024, description: For push, sent as the `Authorization` header of every request. Sealed and never returned.}
+        description: {type: string, maxLength: 200}
+    SignalStreamStatus:
+      type: object
+      required: [stream_id, status]
+      properties:
+        stream_id: {type: string}
+        status: {type: string, enum: [enabled, paused, disabled]}
+        reason: {type: string, maxLength: 200}
     ConsentScope:
       type: object
       required: [name, description]

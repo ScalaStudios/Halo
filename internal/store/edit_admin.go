@@ -9,15 +9,14 @@ import (
 )
 
 func (s *Store) UpdateUserProfile(ctx context.Context, u User) error {
-	tag, err := s.db.Exec(ctx, `update users set email = $2, email_verified = email_verified and lower(email) = lower($2), name = $3, title = $4, department = $5, location = $6, manager_id = $7, updated_at = now() where id = $1`,
-		u.ID, u.Email, u.Name, u.Title, u.Department, u.Location, u.ManagerID)
+	var previous string
+	err := s.db.QueryRow(ctx, `with old as (select email from users where id = $1)
+		update users set email = $2, email_verified = email_verified and lower(email) = lower($2), name = $3, title = $4, department = $5, location = $6, manager_id = $7, updated_at = now() where id = $1 returning (select email from old)`,
+		u.ID, u.Email, u.Name, u.Title, u.Department, u.Location, u.ManagerID).Scan(&previous)
 	if err != nil {
-		return conflict(err)
+		return conflict(notFound(err))
 	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return s.emailChanged(ctx, u.ID, previous, u.Email)
 }
 
 func (s *Store) SetUserAttributes(ctx context.Context, userID string, values map[string]any) error {

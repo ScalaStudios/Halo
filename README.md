@@ -54,6 +54,7 @@ Halo works in the same space as hosted services such as Microsoft Entra ID, Okta
 | Pushed Authorization Requests (RFC 9126) | Implemented | `/oauth2/par`, with a `request_uri` that works once within 60 seconds, and an option per application to require it |
 | DPoP (RFC 9449) | Partial | Access and refresh tokens bound to the client's key with `cnf.jkt`, proofs checked at the token and userinfo endpoints, and an option per application to require it; no server-provided nonces or `dpop_jkt` |
 | SAML 2.0 | Implemented | Web browser single sign-on as an identity provider: SP- and IdP-initiated, HTTP-Redirect and HTTP-POST bindings, signed assertions and metadata, and assertions encrypted with AES-256-GCM or AES-256-CBC per service provider. No single logout |
+| Shared Signals Framework 1.0, CAEP and RISC | Partial | Security Event Tokens (RFC 8417) for ended sessions, credential and device compliance changes, suspensions, restores, deletions and email changes, pushed (RFC 8935) or polled (RFC 8936) by service applications a security administrator turns on. One stream per receiver, every person as subject, no subject management |
 | SCIM 2.0 (RFC 7643 and RFC 7644) | Implemented | A server for users and groups with the full filter grammar and bulk operations, and a client that provisions users into applications |
 | WebAuthn and FIDO2 | Implemented | Passkeys and security keys as discoverable credentials, for sign-in without a username |
 | TOTP (RFC 6238) | Implemented | Six-digit codes from authenticator apps |

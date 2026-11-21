@@ -98,7 +98,7 @@ type WebhookDelivery struct {
 const deliveryColumns = `id, coalesce(endpoint_id, ''), coalesce(rule_id, ''), coalesce(app_id, ''), event_id, event_type, body, status, attempts, next_attempt_at, last_attempt_at, response_status, error, created_at`
 
 func (s *Store) ListWebhookDeliveries(ctx context.Context, webhookID string, limit int) ([]WebhookDelivery, error) {
-	rows, err := s.db.Query(ctx, `select `+deliveryColumns+` from webhook_deliveries where endpoint_id = $1 or rule_id = $1 or app_id = $1 order by created_at desc, id desc limit $2`, webhookID, limit)
+	rows, err := s.db.Query(ctx, `select `+deliveryColumns+` from webhook_deliveries where endpoint_id = $1 or rule_id = $1 or app_id = $1 and event_type = 'backchannel_logout' order by created_at desc, id desc limit $2`, webhookID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +194,7 @@ func (s *Store) ClaimWebhookDeliveries(ctx context.Context, now time.Time, lease
 }
 
 func (s *Store) ClaimLogoutDeliveries(ctx context.Context, now time.Time, lease time.Duration, limit int) ([]WebhookDelivery, error) {
-	return s.claimDeliveries(ctx, `app_id in (select id from applications where backchannel_logout_uri <> '')`, now, lease, limit)
+	return s.claimDeliveries(ctx, `event_type = 'backchannel_logout' and app_id in (select id from applications where backchannel_logout_uri <> '')`, now, lease, limit)
 }
 
 func (s *Store) claimDeliveries(ctx context.Context, target string, now time.Time, lease time.Duration, limit int) ([]WebhookDelivery, error) {

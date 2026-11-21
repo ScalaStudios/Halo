@@ -121,11 +121,11 @@ func (s *Store) ReportCompliance(ctx context.Context, src ComplianceSource, reco
 		if previous == "" || previous == r.State {
 			continue
 		}
-		rows, err := s.db.Query(ctx, `select d.user_agent, u.id, u.name from devices d join users u on u.id = d.user_id where d.compliance_source_id = $1 and d.compliance_external_id = $2`, src.ID, r.ExternalID)
+		rows, err := s.db.Query(ctx, `select d.id, d.user_agent, u.id, u.name from devices d join users u on u.id = d.user_id where d.compliance_source_id = $1 and d.compliance_external_id = $2`, src.ID, r.ExternalID)
 		if err != nil {
 			return err
 		}
-		type linked struct{ UserAgent, UserID, UserName string }
+		type linked struct{ ID, UserAgent, UserID, UserName string }
 		devices, err := pgx.CollectRows(rows, pgx.RowToStructByPos[linked])
 		if err != nil {
 			return err
@@ -135,6 +135,12 @@ func (s *Store) ReportCompliance(ctx context.Context, src ComplianceSource, reco
 				TargetType: "user", TargetID: d.UserID, TargetLabel: d.UserName})
 			if err != nil {
 				return err
+			}
+			if status := map[string]string{"compliant": "compliant", "non-compliant": "not-compliant"}; status[previous] != "" && status[r.State] != "" {
+				err := s.signal(ctx, deviceComplianceChange, map[string]any{"previous_status": status[previous], "current_status": status[r.State]}, `select $1::text, '', $2::text, ''`, d.UserID, d.ID)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}

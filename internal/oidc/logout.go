@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	jose "github.com/go-jose/go-jose/v4"
-
 	"halo/internal/httpx"
 	"halo/internal/id"
 	"halo/internal/store"
@@ -57,22 +55,6 @@ func (s *storage) logoutToken(ctx context.Context, app store.Application, body s
 	if err := choose(ctx, app.TokenPolicy.IDTokenAlg, nil, nil); err != nil {
 		return "", err
 	}
-	key, err := s.SigningKey(ctx)
-	if err != nil {
-		return "", err
-	}
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: key.SignatureAlgorithm(), Key: jose.JSONWebKey{Key: key.Key(), KeyID: key.ID()}}, (&jose.SignerOptions{}).WithType("logout+jwt"))
-	if err != nil {
-		return "", err
-	}
-	claims, err := json.Marshal(map[string]any{"iss": s.issuer, "aud": app.ClientID, "iat": now.Unix(), "exp": now.Add(2 * time.Minute).Unix(), "jti": id.New("lgt"),
+	return s.sign(ctx, "logout+jwt", map[string]any{"iss": s.issuer, "aud": app.ClientID, "iat": now.Unix(), "exp": now.Add(2 * time.Minute).Unix(), "jti": id.New("lgt"),
 		"sub": session.Sub, "sid": session.Sid, "events": map[string]any{logoutEvent: map[string]any{}}})
-	if err != nil {
-		return "", err
-	}
-	signed, err := signer.Sign(claims)
-	if err != nil {
-		return "", err
-	}
-	return signed.CompactSerialize()
 }
