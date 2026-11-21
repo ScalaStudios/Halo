@@ -1,79 +1,45 @@
-<h1><img src=".github/assets/banner.png" alt="Halo: open-source identity and access management" width="100%"></h1>
+<h1 align="center"><img src=".github/assets/banner.png" alt="Halo — open-source identity and access management" width="100%"></h1>
 
-[![CI](https://img.shields.io/github/actions/workflow/status/ScalaStudios/Halo/ci.yml?branch=main&style=flat&label=ci&labelColor=2a2724)](https://github.com/ScalaStudios/Halo/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/ScalaStudios/Halo?style=flat&label=release&labelColor=2a2724)](https://github.com/ScalaStudios/Halo/releases/latest)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-57534d?style=flat&labelColor=2a2724)](LICENSE)
+<p align="center">
+  <a href="https://github.com/ScalaStudios/Halo/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/ScalaStudios/Halo/ci.yml?branch=main&amp;style=flat&amp;label=ci&amp;labelColor=2a2724" alt="CI status"></a>
+  <a href="https://github.com/ScalaStudios/Halo/releases/latest"><img src="https://img.shields.io/github/v/release/ScalaStudios/Halo?style=flat&amp;label=release&amp;labelColor=2a2724" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-57534d?style=flat&amp;labelColor=2a2724" alt="Apache 2.0 license"></a>
+</p>
 
-**Halo is an open-source identity and access management (IAM) platform from Scala Studios.** It gives your organization one place to manage who can sign in to which applications, how they prove who they are, and when their access ends. Self-host Halo or use Scala Studios' managed Halo Cloud.
+<p align="center">
+  <a href="https://halo.scala.gg">Website</a> ·
+  <a href="https://halo.scala.gg/docs">Documentation</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#screenshots">Screenshots</a> ·
+  <a href="https://github.com/ScalaStudios/Halo/releases">Releases</a>
+</p>
 
-Halo provides single sign-on over OpenID Connect (OIDC) and SAML 2.0, passkey sign-in, SCIM 2.0 provisioning, conditional access, and identity governance. It includes a directory, an admin console, and an account portal.
+## Identity and access for apps and infrastructure
 
-[Halo Cloud](https://halo.scala.gg/cloud) · [Self-host](#quick-start) · [Documentation](https://halo.scala.gg/docs) · [Releases](https://github.com/ScalaStudios/Halo/releases) · [Security](SECURITY.md)
+Halo is an open-source identity and access management platform from Scala Studios. People sign in to their apps with one account. Administrators manage access from a shared directory and review who still needs it.
+
+Use passkeys and security keys, connect apps over OpenID Connect or SAML, and manage provisioning and access policies from the admin console. Run Halo on your own infrastructure or use invite-only Halo Cloud.
 
 > [!NOTE]
-> Halo is in active development. The API and configuration may change before 1.0. See the [latest release](https://github.com/ScalaStudios/Halo/releases/latest) for release notes and container image versions.
-
-![The Fernway Systems console overview, showing directory totals, administrator shortcuts, an open risk event, and security posture](.github/assets/console-overview.png)
-
-## Halo Cloud
-
-Scala Studios runs Halo Cloud as a managed service. We operate your Halo installation, PostgreSQL database, backups, and upgrades. You manage your directory, applications, and access policies. Cloud organization and billing accounts are separate from the identity directory in your tenant.
-
-Halo Cloud is currently invite-only. [See plans and sign in](https://halo.scala.gg/cloud). You can also [self-host Halo](#quick-start) under Apache-2.0.
+> Halo is in active development. The API and configuration may change before 1.0. See the [latest release](https://github.com/ScalaStudios/Halo/releases/latest) for release notes and image versions.
 
 ## Why Halo
 
-Halo works in the same space as hosted services such as Microsoft Entra ID, Okta and Auth0, and open-source projects such as Keycloak, authentik and ZITADEL. It is built around a few choices:
-
-- **No passwords by default.** People sign in with passkeys and security keys, which are phishing-resistant. Authenticator apps, recovery codes and emailed sign-in links are fallbacks that you can turn off. Passwords stay off until you turn them on, for example for the groups you are moving from another identity provider.
-- **Access that ends.** Access packages with approvers and time limits, access reviews, and joiner, mover, leaver, date and inactivity rules are part of the core product.
-- **Policies you can test before they apply.** Report-only mode shows what a policy would have done to the last 24 hours of sign-ins, and the simulator shows how your policies would treat a given sign-in.
-- **Small to run.** A Go server, a Next.js web interface and PostgreSQL. No Redis, no message queue and no license key.
-- **Open source.** Every feature is in this repository, licensed under Apache-2.0, and users, groups, applications and policies export as JSON.
-
-## Features
-
-| Area | What Halo includes |
-| --- | --- |
-| **Sign-in** | Passkeys and security keys (WebAuthn), authenticator apps (TOTP), single-use recovery codes, and magic links or one-time codes by email. Sign-in through Google, Microsoft Entra ID, GitHub or any OpenID Connect provider, with account linking and accounts created on first sign-in, and Windows sign-in with the Kerberos ticket of a computer joined to Active Directory. |
-| **Single sign-on** | An OpenID Connect provider and OAuth 2.0 authorization server for web, single-page, native and machine-to-machine applications. A SAML 2.0 identity provider with service provider metadata import and IdP-initiated sign-in. Forward auth for Traefik, nginx and Caddy in front of applications that support neither, and a read-only LDAP directory for applications that only speak LDAP. |
-| **Directory** | People with profiles and managers, assigned and rule-based groups, service accounts, devices, and scoped administrative roles. Organizations can require an identity check before an invitation or self-service sign-up becomes active. |
-| **Provisioning** | A SCIM 2.0 server, tested with the request formats of Okta and Microsoft Entra ID, so either of them or an HR system can provision people into Halo; LDAP directory sync that reads people and groups from Active Directory or OpenLDAP on a schedule and suspends people who leave; and outbound SCIM that creates, updates and deactivates accounts in your applications and keeps the groups you choose in step. |
-| **Access policies** | Conditional access by person, group, application, network zone, device trust, device compliance from Microsoft Intune or a device agent, sign-in risk and sign-in method, with effects that allow, block, require a passkey or security key, or require accepting versioned terms of use, report-only mode and a simulator. |
-| **Governance** | Access packages that people request, with approvers, justifications and time limits; access reviews that can remove access automatically when they complete; administrator roles that eligible people activate for a few hours with a reason; guest accounts with a sponsor and an end date; and joiner, mover and leaver rules, plus rules that run on a date such as a contract end date or after a number of days without signing in. |
-| **Infrastructure access** | An SSH certificate authority that issues short-lived certificates to people in mapped groups, through `halo login` and `halo ssh-cert`, and a host certificate authority that signs registered servers' host keys with `halo ssh-host`, so people connect without the first-connection prompt; Linux accounts and sudo rules from Halo groups on your servers through `halo-hostd`; and a RADIUS server that signs people in to VPNs and network devices with their Halo password. |
-| **Monitoring** | A sign-in log, an audit log of every administrative change, risk events for risky networks, repeated failures, new devices and new networks, signed webhooks for audit and sign-in events, and streaming of both to syslog or OpenTelemetry. |
-| **Administration** | An admin console whose home page shows the directory, which features are on, your roles, open risk events and shortcuts, a self-service account portal with profile pictures, organization branding, sign-in methods you can switch off, optional areas you can switch off with their routes and background jobs (SAML, SCIM in either direction, SSH certificates, governance, webhooks, forward auth, RADIUS, the LDAP server, Kerberos sign-in and log streaming), email over SMTP with retries, JSON export with scheduled exports to an S3-compatible bucket, import of configuration from an export with a dry run, and rotation of client secrets, signing keys and `HALO_SECRET_KEY`. |
-| **Developers** | An OpenAPI 3.1 REST API, service accounts and API keys, scoped API resources and JWT access tokens, a relationship-based authorization API, and setup guides for common applications. |
-
-## Supported standards
-
-| Standard | Status | How Halo uses it |
-| --- | --- | --- |
-| OpenID Connect Core 1.0 and Discovery 1.0 | Implemented | ID tokens signed with RS256, ES256 or EdDSA, userinfo, `prompt` and `max_age`, discovery at `/.well-known/openid-configuration`, RP-initiated logout, and back-channel logout with signed logout tokens |
-| OAuth 2.0 (RFC 6749) | Implemented | Authorization code, refresh token and client credentials grants; refresh tokens rotate by default, and a used one is rejected |
-| PKCE (RFC 7636) | Implemented | `S256`, required for single-page and native applications and for any application set to require it |
-| Device Authorization Grant (RFC 8628) | Implemented | Used by `halo login` to sign people in on the command line |
-| Token Introspection (RFC 7662) and Revocation (RFC 7009) | Implemented | Introspection for APIs that check opaque tokens, and revocation for applications that sign people out |
-| Resource Indicators (RFC 8707) | Partial | The `resource` parameter selects an API resource on authorization, device, client credentials and token exchange requests, and its JWT access tokens carry it in `aud` |
-| Token Exchange (RFC 8693) | Partial | Web and service applications with token exchange turned on trade a person's access token for one to an API they have scopes on, with the application in the `act` claim. Access tokens only, and no `actor_token` |
-| Pushed Authorization Requests (RFC 9126) | Implemented | `/oauth2/par`, with a `request_uri` that works once within 60 seconds, and an option per application to require it |
-| DPoP (RFC 9449) | Partial | Access and refresh tokens bound to the client's key with `cnf.jkt`, proofs checked at the token and userinfo endpoints, authorization codes bound with `dpop_jkt` or a proof at `/oauth2/par`, and an option per application to require it; no server-provided nonces |
-| JWT client authentication (RFC 7523) | Implemented | `private_key_jwt` for web and service applications, with keys from a registered JWKS or `jwks_uri`, an algorithm allowlist without `none` or HMAC, and each `jti` refused a second time across instances |
-| Authorization Server Issuer Identification (RFC 9207) | Implemented | `iss` in every authorization response, in the query, the fragment or the `form_post` form |
-| FAPI 2.0 Security Profile | Partial | An option per application that requires private_key_jwt with PS256, ES256 or EdDSA assertions, pushed requests, PKCE with S256, DPoP, https redirect URIs, ES256 or EdDSA ID tokens and one-minute authorization codes. No mutual TLS, and refresh token rotation is left to the application's token policy |
-| SAML 2.0 | Implemented | Web browser single sign-on as an identity provider: SP- and IdP-initiated, HTTP-Redirect and HTTP-POST bindings, signed assertions and metadata, and assertions encrypted with AES-256-GCM or AES-256-CBC per service provider. No single logout |
-| Shared Signals Framework 1.0, CAEP and RISC | Partial | Security Event Tokens (RFC 8417) for ended sessions, credential and device compliance changes, suspensions, restores, deletions and email changes, pushed (RFC 8935) or polled (RFC 8936) by service applications a security administrator turns on. One stream per receiver, every person as subject, no subject management |
-| SCIM 2.0 (RFC 7643 and RFC 7644) | Implemented | A server for users and groups with the full filter grammar and bulk operations, and a client that provisions users into applications |
-| WebAuthn and FIDO2 | Implemented | Passkeys and security keys as discoverable credentials, for sign-in without a username |
-| TOTP (RFC 6238) | Implemented | Six-digit codes from authenticator apps |
-| RADIUS (RFC 2865 and RFC 2866) | Partial | PAP sign-in, Access-Challenge for authenticator codes, Message-Authenticator (RFC 3579) required on every Access-Request and sent first in every reply, and accounting stops in the sign-in log. No EAP, CHAP or RADIUS over TLS |
-| SPNEGO (RFC 4559) and Kerberos V5 (RFC 4120) | Partial | Windows sign-in on the sign-in page: Kerberos tickets for Halo's service principal, checked with a keytab, with a replay cache shared by every Halo server and 5 minutes of clock skew. No NTLM, mutual authentication, delegation or PAC |
-| LDAP (RFC 4511 and RFC 4513) | Partial | A client that syncs people and groups from a directory over LDAPS or StartTLS with the simple paged results control (RFC 2696), and a read-only server for applications that only speak LDAP: simple binds over LDAPS or StartTLS, search with and, or, not, equality, substring and presence filters and paged results, and no writes or SASL |
-
-"Implemented" means the feature works in the current release. Halo is not OpenID Certified or certified in any other way. [CONFORMANCE.md](CONFORMANCE.md) records which OpenID Foundation conformance suite test plans pass when we run the suite against Halo, with the date, the Halo version and every known warning.
+- **Passkeys by default.** Sign in with passkeys or security keys. Enable passwords and other fallback methods where your rollout needs them.
+- **Policies you can preview.** Check how a rule would have affected recent sign-ins in report-only mode, or test a specific sign-in in the simulator.
+- **Access with an end date.** Use approvals, time-limited access packages, periodic reviews, and lifecycle rules to grant and remove access.
+- **One directory for apps and servers.** Sync people and groups over SCIM or LDAP, issue short-lived SSH certificates, and manage Linux accounts and sudo rules.
+- **A small self-hosted stack.** Run a Go server, a Next.js web interface, and PostgreSQL. Add server replicas on the shared database when you need them.
 
 ## Quick start
+
+Choose the setup that fits how you want to run Halo.
+
+| Option | Start here |
+| --- | --- |
+| **Managed** | [Halo Cloud](#halo-cloud) runs Halo for you. |
+| **Self-hosted** | [Install on a Linux server](#install-on-a-server) with Docker Compose, or deploy with the [Helm chart](deploy/helm/halo/README.md). |
+| **Local development** | [Run from source](#run-from-source) and load the Fernway demo. |
 
 ### Install on a server
 
@@ -100,6 +66,10 @@ docker compose pull halo-server halo-web
 docker compose up -d --no-deps halo-server halo-web
 ```
 
+### Halo Cloud
+
+Scala Studios manages the installation, database, backups, and upgrades. You manage your directory, applications, and access policies. Halo Cloud is invite-only. [See plans and sign in](https://halo.scala.gg/cloud).
+
 ### Run from source
 
 To work on Halo or try it on your own computer, you need Go 1.27, [Bun](https://bun.sh) 1.3 or Node.js 22, and Docker.
@@ -125,6 +95,143 @@ cd web && bun install && bun run dev
 ```
 
 Open the setup link that `bootstrap` printed to register your passkey. Halo runs at http://localhost:3200. To explore a populated organization instead, `go run ./cmd/halo seed-demo` loads Fernway Systems, a demo company with 68 people; [Get started](https://halo.scala.gg/docs/getting-started#explore-with-demo-data) explains how to sign in to it.
+
+## Screenshots
+
+The screenshots show Fernway Systems, a fictional organization with 68 people, 14 groups, 13 applications, and sample activity. The demo includes generated profile photos and example integrations. [Load the built-in demo data](https://halo.scala.gg/docs/getting-started#explore-with-demo-data) to explore Halo locally.
+
+[![The Fernway Systems overview with the administrator's profile photo, directory counts, open sign-in risk, and security posture](.github/assets/fernway-overview.png)](.github/assets/fernway-overview.png)
+
+<table>
+  <tr>
+    <td width="50%"><a href=".github/assets/sign-in.png"><img src=".github/assets/sign-in.png" alt="Halo sign-in with Continue with passkey as the main action"></a><br>Passkey-first sign-in</td>
+    <td width="50%"><a href=".github/assets/app-launcher.png"><img src=".github/assets/app-launcher.png" alt="The account portal showing assigned applications with Grafana, Forgejo, and Nextcloud logos"></a><br>Account app launcher</td>
+  </tr>
+  <tr>
+    <td width="50%"><a href=".github/assets/directory.png"><img src=".github/assets/directory.png" alt="The Fernway Systems directory showing profile photos, user status, and authentication strength"></a><br>User directory</td>
+    <td width="50%"><a href=".github/assets/identity-checks.png"><img src=".github/assets/identity-checks.png" alt="Priya Raman's profile photo, registered sign-in methods, and verified in-person identity check"></a><br>Authentication methods and identity checks</td>
+  </tr>
+  <tr>
+    <td width="50%"><a href=".github/assets/policies.png"><img src=".github/assets/policies.png" alt="An enforced policy and two report-only policies with impact estimates from recent sign-ins"></a><br>Conditional access</td>
+    <td width="50%"><a href=".github/assets/access-review.png"><img src=".github/assets/access-review.png" alt="An overdue review of the production access group with keep and remove decisions for individual members"></a><br>Access review</td>
+  </tr>
+</table>
+
+<details>
+<summary>Applications and integrations</summary>
+
+<table>
+  <tr>
+    <td width="50%"><a href=".github/assets/application.png"><img src=".github/assets/application.png" alt="Grafana's OpenID Connect connection details and grafana.ini setup example"></a><br>OpenID Connect setup</td>
+    <td width="50%"><a href=".github/assets/saml.png"><img src=".github/assets/saml.png" alt="Slack's SAML metadata, sign-in endpoint, certificate, and setup guide"></a><br>SAML setup</td>
+  </tr>
+  <tr>
+    <td width="50%"><a href=".github/assets/client-security.png"><img src=".github/assets/client-security.png" alt="Billing API configured with private key JWT, the FAPI 2.0 security profile, and required DPoP"></a><br>OAuth client security</td>
+    <td width="50%"><a href=".github/assets/federation.png"><img src=".github/assets/federation.png" alt="The enabled Fernway Partner SSO provider with automatic account provisioning"></a><br>Federated sign-in</td>
+  </tr>
+  <tr>
+    <td width="50%"><a href=".github/assets/provisioning.png"><img src=".github/assets/provisioning.png" alt="A Workday connector and recent SCIM changes to the directory"></a><br>Inbound SCIM</td>
+    <td width="50%"><a href=".github/assets/outbound-scim.png"><img src=".github/assets/outbound-scim.png" alt="Slack provisioning settings with sample account and group sync totals"></a><br>Outbound SCIM</td>
+  </tr>
+  <tr>
+    <td width="50%"><a href=".github/assets/directory-sync.png"><img src=".github/assets/directory-sync.png" alt="Two successful example runs in the Fernway Workforce Directory sync history"></a><br>LDAP directory sync</td>
+    <td width="50%"><a href=".github/assets/webhooks.png"><img src=".github/assets/webhooks.png" alt="The sample security events webhook with successful delivery history"></a><br>Webhook deliveries</td>
+  </tr>
+</table>
+
+</details>
+
+<details>
+<summary>Governance and infrastructure</summary>
+
+<table>
+  <tr>
+    <td width="50%"><a href=".github/assets/groups.png"><img src=".github/assets/groups.png" alt="Fernway groups including Engineering, Contractors, and Production access"></a><br>Groups and membership</td>
+    <td width="50%"><a href=".github/assets/access-packages.png"><img src=".github/assets/access-packages.png" alt="Requestable access packages for Grafana, Kubernetes, and production systems"></a><br>Access packages</td>
+  </tr>
+  <tr>
+    <td width="50%"><a href=".github/assets/access-requests.png"><img src=".github/assets/access-requests.png" alt="Pending approval requests and recent decisions for temporary access"></a><br>Access requests</td>
+    <td width="50%"><a href=".github/assets/lifecycle.png"><img src=".github/assets/lifecycle.png" alt="Enabled joiner and leaver rules with recent run history"></a><br>Lifecycle automation</td>
+  </tr>
+  <tr>
+    <td width="50%"><a href=".github/assets/ssh-certificates.png"><img src=".github/assets/ssh-certificates.png" alt="Group-to-principal mappings and an example short-lived SSH certificate"></a><br>SSH certificates</td>
+    <td width="50%"><a href=".github/assets/infrastructure.png"><img src=".github/assets/infrastructure.png" alt="Fernway bastions and CI runners with Linux account and sudo rules by host group"></a><br>Linux host access</td>
+  </tr>
+</table>
+
+</details>
+
+<details>
+<summary>Monitoring and reporting</summary>
+
+<table>
+  <tr>
+    <td width="50%"><a href=".github/assets/sign-in-logs.png"><img src=".github/assets/sign-in-logs.png" alt="Successful and failed demo sign-ins with methods, applications, and risk levels"></a><br>Sign-in logs</td>
+    <td width="50%"><a href=".github/assets/risk.png"><img src=".github/assets/risk.png" alt="An open sign-in risk event with the reason and actions to investigate it"></a><br>Risk events</td>
+  </tr>
+  <tr>
+    <td width="50%"><a href=".github/assets/audit-log.png"><img src=".github/assets/audit-log.png" alt="Administrator and service account actions in the sample audit history"></a><br>Audit log</td>
+    <td width="50%"><a href=".github/assets/reports.png"><img src=".github/assets/reports.png" alt="Sign-in method enrollment counts and a per-person breakdown"></a><br>Authentication reports</td>
+  </tr>
+</table>
+
+</details>
+
+## Features
+
+Halo covers sign-in, directory sync, access governance, infrastructure access, and audit logging. [Explore the documentation](https://halo.scala.gg/docs) for setup guides.
+
+<details>
+<summary>Full feature list</summary>
+
+| Area | What Halo includes |
+| --- | --- |
+| **Sign-in** | Passkeys and security keys (WebAuthn), authenticator apps (TOTP), single-use recovery codes, and magic links or one-time codes by email. Sign-in through Google, Microsoft Entra ID, GitHub or any OpenID Connect provider, with account linking and accounts created on first sign-in, and Windows sign-in with the Kerberos ticket of a computer joined to Active Directory. |
+| **Single sign-on** | An OpenID Connect provider and OAuth 2.0 authorization server for web, single-page, native and machine-to-machine applications. A SAML 2.0 identity provider with service provider metadata import and IdP-initiated sign-in. Forward auth for Traefik, nginx and Caddy in front of applications that support neither, and a read-only LDAP directory for applications that only speak LDAP. |
+| **Directory** | People with profiles and managers, assigned and rule-based groups, service accounts, devices, and scoped administrative roles. Organizations can require an identity check before an invitation or self-service sign-up becomes active. |
+| **Provisioning** | A SCIM 2.0 server, tested with the request formats of Okta and Microsoft Entra ID, so either of them or an HR system can provision people into Halo; LDAP directory sync that reads people and groups from Active Directory or OpenLDAP on a schedule and suspends people who leave; and outbound SCIM that creates, updates and deactivates accounts in your applications and keeps the groups you choose in step. |
+| **Access policies** | Conditional access by person, group, application, network zone, device trust, device compliance from Microsoft Intune or a device agent, sign-in risk and sign-in method, with effects that allow, block, require a passkey or security key, or require accepting versioned terms of use, report-only mode and a simulator. |
+| **Governance** | Access packages that people request, with approvers, justifications and time limits; access reviews that can remove access automatically when they complete; administrator roles that eligible people activate for a few hours with a reason; guest accounts with a sponsor and an end date; and joiner, mover and leaver rules, plus rules that run on a date such as a contract end date or after a number of days without signing in. |
+| **Infrastructure access** | An SSH certificate authority that issues short-lived certificates to people in mapped groups, through `halo login` and `halo ssh-cert`, and a host certificate authority that signs registered servers' host keys with `halo ssh-host`, so people connect without the first-connection prompt; Linux accounts and sudo rules from Halo groups on your servers through `halo-hostd`; and a RADIUS server that signs people in to VPNs and network devices with their Halo password. |
+| **Monitoring** | A sign-in log, an audit log of every administrative change, risk events for risky networks, repeated failures, new devices and new networks, signed webhooks for audit and sign-in events, and streaming of both to syslog or OpenTelemetry. |
+| **Administration** | An admin console whose home page shows the directory, which features are on, your roles, open risk events and shortcuts, a self-service account portal with profile pictures, organization branding, sign-in methods you can switch off, optional areas you can switch off with their routes and background jobs (SAML, SCIM in either direction, SSH certificates, governance, webhooks, forward auth, RADIUS, the LDAP server, Kerberos sign-in and log streaming), email over SMTP with retries, JSON export with scheduled exports to an S3-compatible bucket, import of configuration from an export with a dry run, and rotation of client secrets, signing keys and `HALO_SECRET_KEY`. |
+| **Developers** | An OpenAPI 3.1 REST API, service accounts and API keys, scoped API resources and JWT access tokens, a relationship-based authorization API, and setup guides for common applications. |
+
+</details>
+
+## Supported standards
+
+Halo supports OpenID Connect, OAuth 2.0, SAML 2.0, SCIM 2.0, WebAuthn, and other standards. See the [conformance report](CONFORMANCE.md) for test results and known gaps.
+
+<details>
+<summary>Protocol support and limitations</summary>
+
+| Standard | Status | How Halo uses it |
+| --- | --- | --- |
+| OpenID Connect Core 1.0 and Discovery 1.0 | Implemented | ID tokens signed with RS256, ES256 or EdDSA, userinfo, `prompt` and `max_age`, discovery at `/.well-known/openid-configuration`, RP-initiated logout, and back-channel logout with signed logout tokens |
+| OAuth 2.0 (RFC 6749) | Implemented | Authorization code, refresh token and client credentials grants; refresh tokens rotate by default, and a used one is rejected |
+| PKCE (RFC 7636) | Implemented | `S256`, required for single-page and native applications and for any application set to require it |
+| Device Authorization Grant (RFC 8628) | Implemented | Used by `halo login` to sign people in on the command line |
+| Token Introspection (RFC 7662) and Revocation (RFC 7009) | Implemented | Introspection for APIs that check opaque tokens, and revocation for applications that sign people out |
+| Resource Indicators (RFC 8707) | Partial | The `resource` parameter selects an API resource on authorization, device, client credentials and token exchange requests, and its JWT access tokens carry it in `aud` |
+| Token Exchange (RFC 8693) | Partial | Web and service applications with token exchange turned on trade a person's access token for one to an API they have scopes on, with the application in the `act` claim. Access tokens only, and no `actor_token` |
+| Pushed Authorization Requests (RFC 9126) | Implemented | `/oauth2/par`, with a `request_uri` that works once within 60 seconds, and an option per application to require it |
+| DPoP (RFC 9449) | Partial | Access and refresh tokens bound to the client's key with `cnf.jkt`, proofs checked at the token and userinfo endpoints, authorization codes bound with `dpop_jkt` or a proof at `/oauth2/par`, and an option per application to require it; no server-provided nonces |
+| JWT client authentication (RFC 7523) | Implemented | `private_key_jwt` for web and service applications, with keys from a registered JWKS or `jwks_uri`, an algorithm allowlist without `none` or HMAC, and each `jti` refused a second time across instances |
+| Authorization Server Issuer Identification (RFC 9207) | Implemented | `iss` in every authorization response, in the query, the fragment or the `form_post` form |
+| FAPI 2.0 Security Profile | Partial | An option per application that requires private_key_jwt with PS256, ES256 or EdDSA assertions, pushed requests, PKCE with S256, DPoP, https redirect URIs, ES256 or EdDSA ID tokens and one-minute authorization codes. No mutual TLS, and refresh token rotation is left to the application's token policy |
+| SAML 2.0 | Implemented | Web browser single sign-on as an identity provider: SP- and IdP-initiated, HTTP-Redirect and HTTP-POST bindings, signed assertions and metadata, and assertions encrypted with AES-256-GCM or AES-256-CBC per service provider. No single logout |
+| Shared Signals Framework 1.0, CAEP and RISC | Partial | Security Event Tokens (RFC 8417) for ended sessions, credential and device compliance changes, suspensions, restores, deletions and email changes, pushed (RFC 8935) or polled (RFC 8936) by service applications a security administrator turns on. One stream per receiver, every person as subject, no subject management |
+| SCIM 2.0 (RFC 7643 and RFC 7644) | Implemented | A server for users and groups with the full filter grammar and bulk operations, and a client that provisions users into applications |
+| WebAuthn and FIDO2 | Implemented | Passkeys and security keys as discoverable credentials, for sign-in without a username |
+| TOTP (RFC 6238) | Implemented | Six-digit codes from authenticator apps |
+| RADIUS (RFC 2865 and RFC 2866) | Partial | PAP sign-in, Access-Challenge for authenticator codes, Message-Authenticator (RFC 3579) required on every Access-Request and sent first in every reply, and accounting stops in the sign-in log. No EAP, CHAP or RADIUS over TLS |
+| SPNEGO (RFC 4559) and Kerberos V5 (RFC 4120) | Partial | Windows sign-in on the sign-in page: Kerberos tickets for Halo's service principal, checked with a keytab, with a replay cache shared by every Halo server and 5 minutes of clock skew. No NTLM, mutual authentication, delegation or PAC |
+| LDAP (RFC 4511 and RFC 4513) | Partial | A client that syncs people and groups from a directory over LDAPS or StartTLS with the simple paged results control (RFC 2696), and a read-only server for applications that only speak LDAP: simple binds over LDAPS or StartTLS, search with and, or, not, equality, substring and presence filters and paged results, and no writes or SASL |
+
+"Implemented" means the feature works in the current release. Halo is not OpenID Certified or certified in any other way. [CONFORMANCE.md](CONFORMANCE.md) records which OpenID Foundation conformance suite test plans pass when we run the suite against Halo, with the date, the Halo version and every known warning.
+
+</details>
 
 ## Connect your first application
 
@@ -258,85 +365,6 @@ systemctl enable --now halo-hostd && systemctl reload ssh
 - Accounts and groups in the local `/etc/passwd` and `/etc/group` always win: `halo-hostd` leaves out any person or group whose name or number is already there, and never names a principal for a local account. People get `*` as their password, so password logins fail.
 - Sudo rules name the person by number, such as `#1000001 ALL=(root) NOPASSWD: ALL`, without a password prompt, because nobody has a password to type. Halo accepts `ALL` or absolute paths with plain arguments, and `halo-hostd` checks them again and installs the file only when `visudo -c` accepts it; otherwise it removes Halo's sudo rules until the next good refresh.
 - The systemd unit runs with no capabilities and can write only its cache, `/var/lib/extrausers` and `/etc/sudoers.d`. On distributions without libnss-extrausers, point `--nss` at the directory of another files-based NSS module, such as nss-altfiles.
-
-## Screenshots
-
-The screenshots show Fernway Systems, a fictional organization with 68 people, 14 groups, 13 applications, and sample activity. The demo includes generated profile photos and example integrations. [Load the built-in demo data](https://halo.scala.gg/docs/getting-started#explore-with-demo-data) to explore Halo locally.
-
-<table>
-  <tr>
-    <td width="50%"><a href=".github/assets/sign-in.png"><img src=".github/assets/sign-in.png" alt="Halo sign-in with Continue with passkey as the main action"></a><br>Passkey-first sign-in</td>
-    <td width="50%"><a href=".github/assets/app-launcher.png"><img src=".github/assets/app-launcher.png" alt="The account portal showing assigned applications with Grafana, Forgejo, and Nextcloud logos"></a><br>Account app launcher</td>
-  </tr>
-  <tr>
-    <td width="50%"><a href=".github/assets/directory.png"><img src=".github/assets/directory.png" alt="The Fernway Systems directory showing profile photos, user status, and authentication strength"></a><br>User directory</td>
-    <td width="50%"><a href=".github/assets/identity-checks.png"><img src=".github/assets/identity-checks.png" alt="Priya Raman's profile photo, registered sign-in methods, and verified in-person identity check"></a><br>Authentication methods and identity checks</td>
-  </tr>
-  <tr>
-    <td width="50%"><a href=".github/assets/policies.png"><img src=".github/assets/policies.png" alt="An enforced policy and two report-only policies with impact estimates from recent sign-ins"></a><br>Conditional access</td>
-    <td width="50%"><a href=".github/assets/access-review.png"><img src=".github/assets/access-review.png" alt="An overdue review of the production access group with keep and remove decisions for individual members"></a><br>Access review</td>
-  </tr>
-</table>
-
-<details>
-<summary>Applications and integrations</summary>
-
-<table>
-  <tr>
-    <td width="50%"><a href=".github/assets/application.png"><img src=".github/assets/application.png" alt="Grafana's OpenID Connect connection details and grafana.ini setup example"></a><br>OpenID Connect setup</td>
-    <td width="50%"><a href=".github/assets/saml.png"><img src=".github/assets/saml.png" alt="Slack's SAML metadata, sign-in endpoint, certificate, and setup guide"></a><br>SAML setup</td>
-  </tr>
-  <tr>
-    <td width="50%"><a href=".github/assets/client-security.png"><img src=".github/assets/client-security.png" alt="Billing API configured with private key JWT, the FAPI 2.0 security profile, and required DPoP"></a><br>OAuth client security</td>
-    <td width="50%"><a href=".github/assets/federation.png"><img src=".github/assets/federation.png" alt="The enabled Fernway Partner SSO provider with automatic account provisioning"></a><br>Federated sign-in</td>
-  </tr>
-  <tr>
-    <td width="50%"><a href=".github/assets/provisioning.png"><img src=".github/assets/provisioning.png" alt="A Workday connector and recent SCIM changes to the directory"></a><br>Inbound SCIM</td>
-    <td width="50%"><a href=".github/assets/outbound-scim.png"><img src=".github/assets/outbound-scim.png" alt="Slack provisioning settings with sample account and group sync totals"></a><br>Outbound SCIM</td>
-  </tr>
-  <tr>
-    <td width="50%"><a href=".github/assets/directory-sync.png"><img src=".github/assets/directory-sync.png" alt="Two successful example runs in the Fernway Workforce Directory sync history"></a><br>LDAP directory sync</td>
-    <td width="50%"><a href=".github/assets/webhooks.png"><img src=".github/assets/webhooks.png" alt="The sample security events webhook with successful delivery history"></a><br>Webhook deliveries</td>
-  </tr>
-</table>
-
-</details>
-
-<details>
-<summary>Governance and infrastructure</summary>
-
-<table>
-  <tr>
-    <td width="50%"><a href=".github/assets/groups.png"><img src=".github/assets/groups.png" alt="Fernway groups including Engineering, Contractors, and Production access"></a><br>Groups and membership</td>
-    <td width="50%"><a href=".github/assets/access-packages.png"><img src=".github/assets/access-packages.png" alt="Requestable access packages for Grafana, Kubernetes, and production systems"></a><br>Access packages</td>
-  </tr>
-  <tr>
-    <td width="50%"><a href=".github/assets/access-requests.png"><img src=".github/assets/access-requests.png" alt="Pending approval requests and recent decisions for temporary access"></a><br>Access requests</td>
-    <td width="50%"><a href=".github/assets/lifecycle.png"><img src=".github/assets/lifecycle.png" alt="Enabled joiner and leaver rules with recent run history"></a><br>Lifecycle automation</td>
-  </tr>
-  <tr>
-    <td width="50%"><a href=".github/assets/ssh-certificates.png"><img src=".github/assets/ssh-certificates.png" alt="Group-to-principal mappings and an example short-lived SSH certificate"></a><br>SSH certificates</td>
-    <td width="50%"><a href=".github/assets/infrastructure.png"><img src=".github/assets/infrastructure.png" alt="Fernway bastions and CI runners with Linux account and sudo rules by host group"></a><br>Linux host access</td>
-  </tr>
-</table>
-
-</details>
-
-<details>
-<summary>Monitoring and reporting</summary>
-
-<table>
-  <tr>
-    <td width="50%"><a href=".github/assets/sign-in-logs.png"><img src=".github/assets/sign-in-logs.png" alt="Successful and failed demo sign-ins with methods, applications, and risk levels"></a><br>Sign-in logs</td>
-    <td width="50%"><a href=".github/assets/risk.png"><img src=".github/assets/risk.png" alt="An open sign-in risk event with the reason and actions to investigate it"></a><br>Risk events</td>
-  </tr>
-  <tr>
-    <td width="50%"><a href=".github/assets/audit-log.png"><img src=".github/assets/audit-log.png" alt="Administrator and service account actions in the sample audit history"></a><br>Audit log</td>
-    <td width="50%"><a href=".github/assets/reports.png"><img src=".github/assets/reports.png" alt="Sign-in method enrollment counts and a per-person breakdown"></a><br>Authentication reports</td>
-  </tr>
-</table>
-
-</details>
 
 ## Architecture
 
