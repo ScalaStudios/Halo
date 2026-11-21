@@ -6,12 +6,13 @@ import { PeoplePicker } from "@/components/governance/people-picker";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
+import { AttributeFields, draftsOf, parseDrafts } from "@/components/directory/attribute-fields";
 import { api } from "@/lib/api/client";
-import type { User } from "@/lib/types";
+import type { Attribute, User } from "@/lib/types";
 
 export type ProfileAccess = "all" | "org";
 export type Org = { title: string; department: string; location: string; managerId: string };
-export type ProfileEdit = { user: User; directory: User[]; access: ProfileAccess };
+export type ProfileEdit = { user: User; directory: User[]; access: ProfileAccess; attributes: Attribute[] };
 
 export const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -64,11 +65,11 @@ export function OrgFields({
   );
 }
 
-export function EditProfileDialog({ user, directory, access, open, onOpenChange }: ProfileEdit & { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function EditProfileDialog({ user, directory, access, attributes, open, onOpenChange }: ProfileEdit & { open: boolean; onOpenChange: (open: boolean) => void }) {
   const formId = useId();
   const { pending, run, errorFor, clearError, toast } = useMutation();
 
-  function save(body: Record<string, string>) {
+  function save(body: Record<string, unknown>) {
     void run(
       "profile",
       () => api(`/users/${user.id}`, { method: "PATCH", body }),
@@ -105,16 +106,18 @@ export function EditProfileDialog({ user, directory, access, open, onOpenChange 
         </>
       }
     >
-      <ProfileForm id={formId} user={user} directory={directory} access={access} onSave={save} />
+      <ProfileForm id={formId} user={user} directory={directory} access={access} attributes={attributes} onSave={save} />
     </Dialog>
   );
 }
 
-function ProfileForm({ id, user, directory, access, onSave }: ProfileEdit & { id: string; onSave: (body: Record<string, string>) => void }) {
+function ProfileForm({ id, user, directory, access, attributes, onSave }: ProfileEdit & { id: string; onSave: (body: Record<string, unknown>) => void }) {
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
   const [org, setOrg] = useState<Org>({ title: user.title, department: user.department, location: user.location, managerId: user.managerId ?? "" });
   const [errors, setErrors] = useState<{ name?: string; email?: string }>({});
+  const [drafts, setDrafts] = useState(() => draftsOf(attributes, user.attributes));
+  const [attributeErrors, setAttributeErrors] = useState<Record<string, string>>({});
   const locked = access === "org";
 
   function submit(event: FormEvent) {
@@ -123,10 +126,13 @@ function ProfileForm({ id, user, directory, access, onSave }: ProfileEdit & { id
       name: name.trim() ? undefined : "Enter their name so other administrators can recognise them.",
       email: EMAIL.test(email.trim()) ? undefined : "Enter a full email address, like sam@example.com.",
     };
+    const parsed = parseDrafts(attributes, drafts);
     setErrors(next);
-    if (next.name || next.email) return;
+    setAttributeErrors(parsed.errors);
+    if (next.name || next.email || Object.keys(parsed.errors).length > 0) return;
     const { managerId, ...profile } = org;
-    onSave(locked ? profile : { name: name.trim(), email: email.trim(), managerId, ...profile });
+    const extra = attributes.length > 0 ? { attributes: parsed.values } : {};
+    onSave(locked ? { ...profile, ...extra } : { name: name.trim(), email: email.trim(), managerId, ...profile, ...extra });
   }
 
   return (
@@ -138,6 +144,7 @@ function ProfileForm({ id, user, directory, access, onSave }: ProfileEdit & { id
         {(props) => <Input {...props} type="email" autoComplete="off" disabled={locked} value={email} onChange={(event) => setEmail(event.target.value)} />}
       </Field>
       <OrgFields value={org} onChange={setOrg} directory={directory} self={user.id} managerLocked={locked} />
+      <AttributeFields attributes={attributes} drafts={drafts} errors={attributeErrors} onChange={setDrafts} />
     </form>
   );
 }

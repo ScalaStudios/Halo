@@ -26,11 +26,11 @@ import { SessionList } from "@/components/identity/session-list";
 import { DevicesTable } from "@/components/policy/devices-table";
 import { joinList } from "@/components/policy/shared";
 import { apiGet } from "@/lib/api/server";
-import { formatDate, formatDateTime, formatRelative } from "@/lib/format";
+import { formatAttribute, formatDate, formatDateTime, formatRelative } from "@/lib/format";
 import { METHOD, STATUS, STRENGTH } from "@/lib/labels";
 import type { ComplianceSource, Device } from "@/lib/policy-types";
 import type { SettingsResponse } from "@/lib/settings-types";
-import type { Application, AuditEvent, Group, Impersonation, Session, SignInEvent, User } from "@/lib/types";
+import type { Application, Attribute, AuditEvent, Group, Impersonation, Session, SignInEvent, User } from "@/lib/types";
 
 const strengthIcon = { "phishing-resistant": ShieldCheck, "multi-factor": ShieldAlert, "single-factor": ShieldX } as const;
 const strengthColor = { "phishing-resistant": "text-success", "multi-factor": "text-warning", "single-factor": "text-danger" } as const;
@@ -44,7 +44,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
   const { id } = await params;
   const { tab = "overview" } = await searchParams;
   const path = `/users/${encodeURIComponent(id)}`;
-  const [user, userSessions, userSignIns, groups, applications, audit, userDevices, directory, me, enabled, response, impersonations, sources] = await Promise.all([
+  const [user, userSessions, userSignIns, groups, applications, audit, userDevices, directory, me, enabled, response, impersonations, sources, attributes] = await Promise.all([
     apiGet<User>(path),
     apiGet<Session[]>(`${path}/sessions`),
     apiGet<SignInEvent[]>(`${path}/sign-ins`),
@@ -58,6 +58,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
     apiGet<SettingsResponse | null>("/settings", null),
     apiGet<Impersonation[]>(`/impersonations?user=${encodeURIComponent(id)}`, []),
     apiGet<ComplianceSource[]>("/compliance-sources", []),
+    apiGet<Attribute[]>("/attributes", []),
   ]);
   const settings = response?.settings;
   const limited = limitedOnly(me);
@@ -70,7 +71,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
   const signInMethods = user.methods.filter((m) => m.kind !== "recovery-codes");
   const global = me.roles.includes("Global administrator");
   const access = user.roles.length + user.eligibleRoles.length > 0 && !global ? null : global || me.roles.includes("User administrator") ? "all" : me.roles.includes("Helpdesk administrator") ? "org" : null;
-  const edit: ProfileEdit | undefined = access ? { user, directory, access } : undefined;
+  const edit: ProfileEdit | undefined = access ? { user, directory, access, attributes } : undefined;
   const impersonate =
     (global || me.roles.includes("Helpdesk administrator")) &&
     user.id !== me.id &&
@@ -269,6 +270,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
                     "—"
                   ),
                 },
+                ...attributes.map((a) => ({ label: a.label, value: formatAttribute(a, user.attributes[a.name]) })),
                 { label: "User ID", value: user.id, mono: true },
               ]}
             />

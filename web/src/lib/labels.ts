@@ -1,7 +1,15 @@
 import { Fingerprint, IdCard, KeyRound, ListOrdered, Mail, Network, RectangleEllipsis, Smartphone, TicketCheck, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/badge";
 import type { NotificationDestination } from "./settings-types";
-import type { AuthStrength, Group, JoinPolicy, MethodKind, RiskLevel, Scope, SignInEvent, SignInResult, UserStatus } from "./types";
+import type { AttributeType, AuthStrength, Group, JoinPolicy, MethodKind, RiskLevel, Scope, SignInEvent, SignInResult, UserStatus } from "./types";
+
+export const ATTRIBUTE_TYPE: Record<AttributeType, string> = {
+  string: "Text",
+  number: "Number",
+  boolean: "Yes or no",
+  date: "Date",
+  list: "List",
+};
 
 export const STATUS: Record<UserStatus, { label: string; tone: Tone }> = {
   active: { label: "Active", tone: "success" },

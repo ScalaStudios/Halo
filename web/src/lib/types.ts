@@ -40,7 +40,21 @@ export type User = {
   guest: boolean;
   sponsor: NamedRef | null;
   expiresAt: string | null;
+  attributes: Record<string, AttributeValue>;
   impersonation?: Impersonation;
+};
+
+export type AttributeType = "string" | "number" | "boolean" | "date" | "list";
+export type AttributeValue = string | number | boolean | string[];
+
+export type Attribute = {
+  id: string;
+  name: string;
+  label: string;
+  type: AttributeType;
+  selfService: boolean;
+  createdAt: string;
+  people: number;
 };
 
 export type Impersonation = {
@@ -116,7 +130,8 @@ export type Application = {
   redirectUris: string[];
   postLogoutUris: string[];
   scopes: string[];
-  claims: { name: string; source: string }[];
+  claims: Claim[];
+  claimMappings: Claim[];
   groupIds: string[];
   userCount: number;
   credentials: Credential[];
@@ -132,6 +147,8 @@ export type Application = {
   awaitingApproval: boolean;
   requiresConsent: boolean;
 };
+
+export type Claim = { name: string; source: string };
 
 export type Scope = { name: string; description: string };
 
