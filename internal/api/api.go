@@ -79,6 +79,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	scoped("GET /api/v1/users/{id}", readers, h.getUser)
 	scoped("GET /api/v1/users/{id}/sessions", readers, h.userSessions)
 	scoped("GET /api/v1/users/{id}/sign-ins", readers, h.userSignIns)
+	scoped("GET /api/v1/users/{id}/relationships", readers, h.userRelationships)
 	route("GET /api/v1/users/{id}/export", nil, h.exportUser)
 	signedIn("GET /api/v1/me/export", h.exportMe)
 	scoped("POST /api/v1/users", []string{"user_admin"}, h.inviteUser)

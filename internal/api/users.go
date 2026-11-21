@@ -110,6 +110,18 @@ func (h *handlers) userSignIns(w http.ResponseWriter, r *http.Request, _ store.U
 	return httpx.JSON(w, http.StatusOK, events)
 }
 
+func (h *handlers) userRelationships(w http.ResponseWriter, r *http.Request, _ store.User) error {
+	u, err := h.user(r)
+	if err != nil {
+		return err
+	}
+	tuples, err := h.st.PersonTuples(r.Context(), u.ID, u.GroupIDs, 1000)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, nonNil(tuples))
+}
+
 func (h *handlers) inviteUser(w http.ResponseWriter, r *http.Request, actor store.User) error {
 	var in struct {
 		Email      string     `json:"email"`

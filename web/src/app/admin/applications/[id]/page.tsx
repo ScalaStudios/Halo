@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowLeft, MonitorSmartphone, ScrollText, UsersRound } from "lucide-react";
 import { AvatarEditor } from "@/components/account/avatar-editor";
 import { AppActions, DangerZone } from "@/components/applications/app-actions";
+import { AuthorizationCheckForm, AuthorizationModelForm } from "@/components/applications/authorization";
 import { ClaimMappingsForm } from "@/components/applications/claim-mappings";
 import { CredentialList } from "@/components/applications/credentials";
 import { AuthenticationForm, BackchannelLogoutForm, ProtectedAddressesForm, ScopesForm, SenderConstraintForm, SignInFrequencyForm } from "@/components/applications/edit-application";
@@ -27,7 +28,7 @@ import type { ApiResource } from "@/lib/infra-types";
 import type { SamlApplication } from "@/lib/saml-types";
 import type { WebhookDelivery } from "@/lib/settings-types";
 import { endpoints, proxyGuides, setupGuide } from "@/lib/setup-guides";
-import type { Application, ApplicationHook, Attribute, Group, Organization, Session, SignInEvent, User } from "@/lib/types";
+import type { Application, ApplicationHook, Attribute, AuthorizationModel, Group, Organization, Session, SignInEvent, User } from "@/lib/types";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -37,7 +38,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function ApplicationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { id } = await params;
   const { tab = "overview" } = await searchParams;
-  const [app, groups, users, sessions, appSignIns, org, resources, hook, attributes, logouts] = await Promise.all([
+  const [app, groups, users, sessions, appSignIns, org, resources, hook, attributes, logouts, model] = await Promise.all([
     apiGet<SamlApplication>(`/applications/${encodeURIComponent(id)}`),
     apiGet<Group[]>("/groups"),
     apiGet<User[]>("/users"),
@@ -48,6 +49,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
     tab === "authentication" ? apiGet<ApplicationHook | null>(`/applications/${encodeURIComponent(id)}/hook`) : null,
     tab === "claims" ? apiGet<Attribute[]>("/attributes") : [],
     tab === "authentication" ? apiGet<WebhookDelivery[]>(`/applications/${encodeURIComponent(id)}/logout-deliveries`) : [],
+    tab === "authorization" ? apiGet<AuthorizationModel>(`/applications/${encodeURIComponent(id)}/authorization`) : null,
   ]);
 
   const saml = app.protocol === "saml";
@@ -56,6 +58,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const service = app.type === "service";
   const hookable = !saml && !bookmark && !forward && !service && app.clientId !== "halo-cli";
   const roleable = !bookmark && !service && app.clientId !== "halo-cli";
+  const modelled = (app.protocol === "oidc" || app.protocol === "oauth") && (app.type === "web" || service) && app.clientId !== "halo-cli";
   const constrainable = (app.protocol === "oidc" || app.protocol === "oauth") && app.clientId !== "halo-cli";
   const owner = users.find((u) => u.id === app.owner);
   const appGroups = groups.filter((g) => app.groupIds.includes(g.id));
@@ -84,6 +87,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         { id: "claims", label: saml ? "Attributes" : "Claims", count: app.claims.length },
         { id: "users", label: "Users & groups", count: appGroups.length },
         ...(roleable ? [{ id: "roles", label: "Roles", count: app.roles.length }] : []),
+        ...(modelled ? [{ id: "authorization", label: "Authorization" }] : []),
         { id: "credentials", label: "Credentials", count: app.credentials.length },
         { id: "sessions", label: "Sessions", count: appSessions.length },
         { id: "logs", label: "Logs", count: appSignIns.length },
@@ -317,6 +321,19 @@ export default async function ApplicationPage({ params, searchParams }: { params
               groups={groups}
               people={users.filter((u) => u.status !== "deprovisioned").map(({ id, name, email }) => ({ id, name, email }))}
             />
+          </div>
+        ) : null}
+        {tab === "authorization" && modelled && model ? (
+          <div className="flex flex-col gap-6">
+            <SectionTitle
+              title="Authorization"
+              description={`${app.name} writes relationships such as document:readme#viewer@user:usr_… and asks Halo whether a person has a relation on an object. It calls the routes under this address with HTTP Basic: its client ID and one of its client secrets. Groups expand to their members, and deleting a person or group deletes the relationships that name them.`}
+            />
+            <CopyField label="Authorization API" value={`${org.issuer}/api/v1/authz`} />
+            <AuthorizationModelForm appId={app.id} appName={app.name} model={model} />
+            {model.updatedAt ? (
+              <AuthorizationCheckForm appId={app.id} people={users.filter((u) => u.status !== "deprovisioned").map(({ id, name, email }) => ({ id, name, email }))} />
+            ) : null}
           </div>
         ) : null}
         {tab === "credentials" ? (

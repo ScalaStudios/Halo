@@ -21,7 +21,7 @@ info:
 
     **Errors.** Every error is `{"error": {"code": "ERR_…", "message": "…"}}`. Match on `code`; show `message` to people. Besides the codes listed per operation, any request can fail with `500` and `ERR_INTERNAL`, requests over the rate limit get `429` with `ERR_RATE_LIMITED`, and unknown routes answer `404` with `ERR_NO_ROUTE`. Requests with a method other than GET, HEAD or OPTIONS that come from another website get `403` with `ERR_CROSS_SITE`.
 
-    **Rate limits.** Requests with an API key or a session are counted in one-minute windows that start on the minute: up to 600 per API key by default, set per service account with `rateLimit`, and up to 1,200 per session. SCIM requests under `/scim/v2` are counted apart, up to 3,000 per API key. Imports and bulk actions, `/users/import`, `/users/bulk/*` and `/groups/{id}/members/bulk/*`, are also counted apart under `bulk`, up to 20 requests per session or API key. Counted responses carry the `RateLimit-Policy` and `RateLimit` fields of draft-ietf-httpapi-ratelimit-headers, such as `RateLimit-Policy: "api";q=600;w=60` and `RateLimit: "api";r=598;t=42`. Over the limit, the response is `429` with `ERR_RATE_LIMITED` and `Retry-After` in seconds.
+    **Rate limits.** Requests with an API key or a session are counted in one-minute windows that start on the minute: up to 600 per API key by default, set per service account with `rateLimit`, and up to 1,200 per session. SCIM requests under `/scim/v2` are counted apart, up to 3,000 per API key. Authorization requests under `/authz` are counted per application under `authz`, up to 6,000. Imports and bulk actions, `/users/import`, `/users/bulk/*` and `/groups/{id}/members/bulk/*`, are also counted apart under `bulk`, up to 20 requests per session or API key. Counted responses carry the `RateLimit-Policy` and `RateLimit` fields of draft-ietf-httpapi-ratelimit-headers, such as `RateLimit-Policy: "api";q=600;w=60` and `RateLimit: "api";r=598;t=42`. Over the limit, the response is `429` with `ERR_RATE_LIMITED` and `Retry-After` in seconds.
 
     **Conventions.** Bodies are JSON with camelCase names, at most 1 MiB, and unknown fields are rejected. Times are RFC 3339. Ids are a prefix and a 26-character ULID, such as `usr_01J9Z…`.
 servers:
@@ -44,6 +44,8 @@ tags:
     description: Assigned and rule-based groups and their members.
   - name: Applications
     description: OpenID Connect, OAuth, SAML and forward-auth applications, bookmarks, their secrets and group assignments, and the collections that group them in the account portal.
+  - name: Authorization
+    description: 'Relationship-based permissions for applications, in the style of Zanzibar. An application administrator gives a web or service application a model of types and relations. The application then writes tuples such as `document:readme#viewer@user:usr_…` and asks whether a person has a relation on an object. Groups expand to their members, relations combine other relations, application roles and relations of a parent object, and suspended or deprovisioned people are always denied. Routes under `/authz` authenticate as the application with HTTP Basic, its client ID and a client secret, and only ever see that application''s tuples. Tuples that name a person or group are deleted with them. Model changes are in the audit log; tuple writes are not.'
   - name: Forward auth
     description: 'The check that Traefik `forwardAuth`, nginx `auth_request` and Caddy `forward_auth` run before every request to a forward-auth application, outside `/api/v1`, and the sign-in it sends people to.'
   - name: Activity
@@ -2626,6 +2628,25 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /users/{id}/relationships:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Users]
+      operationId: listUserRelationships
+      summary: List the authorization tuples that name a person or one of their groups
+      description: 'Roles: any administrator. Limited roles apply. Up to 1,000, across every application, so access reviews and offboarding see application permissions. `groupId` is set when the tuple names one of the person''s groups rather than the person.'
+      responses:
+        '200':
+          description: The tuples.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/PersonRelationship'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /users/{id}/suspend:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -3651,6 +3672,248 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /applications/{id}/authorization:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Authorization]
+      operationId: getAuthorizationModel
+      summary: Get an application's authorization model
+      description: 'Roles: any administrator. An application without a model answers with empty `types` and a null `updatedAt`.'
+      responses:
+        '200':
+          description: The model.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthorizationModel'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Authorization]
+      operationId: saveAuthorizationModel
+      summary: Replace an application's authorization model
+      description: 'Roles: application administrator. Only web and service applications with OpenID Connect or OAuth. Type and relation names start with a lowercase letter and hold up to 64 lowercase letters, digits, dashes and underscores; `user` and `group` are Halo''s. Up to 50 types and 500 relations. Every relation needs `subjects`, `union`, `roles` or `from`, and each must point at something in the model or at a role of the application. Existing tuples stay; tuples whose subjects a relation no longer takes are ignored. Writes an `application.authorization.update` audit event with the old and new model.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [types]
+              properties:
+                types: {$ref: '#/components/schemas/AuthorizationTypes'}
+      responses:
+        '200':
+          description: The saved model.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthorizationModel'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Authorization]
+      operationId: deleteAuthorizationModel
+      summary: Remove an application's authorization model and all its tuples
+      description: 'Roles: application administrator. The application''s `/authz` requests answer `403` with `ERR_NO_MODEL` from then on. Writes an `application.authorization.delete` audit event with the number of tuples removed.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /applications/{id}/authorization/check:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Authorization]
+      operationId: inspectAuthorizationCheck
+      summary: Run a check for an application from the console
+      description: 'Roles: any administrator. The same answer the application gets from `POST /authz/check`, for checking a model and its tuples.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AuthorizationCheck'}
+      responses:
+        '200':
+          description: The answer.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthorizationAnswer'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/AuthorizationInvalid'}
+  /authz/check:
+    post:
+      tags: [Authorization]
+      operationId: checkPermission
+      summary: Ask whether a person has a relation on an object
+      description: 'The calling application''s model and tuples answer. People who don''t exist, are suspended or deprovisioned are denied. `path` shows the relations that granted it, ending with the person, group or role, such as `["document:readme#viewer", "folder:eng#viewer", "group:grp_…"]`.'
+      security:
+        - applicationClient: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AuthorizationCheck'}
+      responses:
+        '200':
+          description: The answer.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthorizationAnswer'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ApplicationUnauthenticated'}
+        '403': {$ref: '#/components/responses/NoModel'}
+        '422': {$ref: '#/components/responses/AuthorizationInvalid'}
+  /authz/expand:
+    post:
+      tags: [Authorization]
+      operationId: expandRelation
+      summary: Show the tree of who has a relation on an object
+      description: 'For debugging. Each node lists the people, groups and roles that hold the relation directly, and children for the usersets, unions and parents it follows. A node already shown elsewhere in the tree appears again without children.'
+      security:
+        - applicationClient: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AuthorizationTarget'}
+      responses:
+        '200':
+          description: The tree.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthorizationNode'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ApplicationUnauthenticated'}
+        '403': {$ref: '#/components/responses/NoModel'}
+        '422': {$ref: '#/components/responses/AuthorizationInvalid'}
+  /authz/list-subjects:
+    post:
+      tags: [Authorization]
+      operationId: listSubjects
+      summary: List the people who have a relation on an object
+      description: 'Groups and roles expand to their current members and holders. Suspended and deprovisioned people are left out. Up to 1,000 people; `truncated` says whether there were more.'
+      security:
+        - applicationClient: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AuthorizationTarget'}
+      responses:
+        '200':
+          description: The people, as `user:id`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [subjects, truncated]
+                properties:
+                  subjects:
+                    type: array
+                    items: {type: string, examples: ['user:usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9']}
+                  truncated: {type: boolean}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ApplicationUnauthenticated'}
+        '403': {$ref: '#/components/responses/NoModel'}
+        '422': {$ref: '#/components/responses/AuthorizationInvalid'}
+  /authz/list-objects:
+    post:
+      tags: [Authorization]
+      operationId: listObjects
+      summary: List the objects of a type on which a person has a relation
+      description: 'Halo checks the first 1,000 objects of the type that appear in the application''s tuples, in order of their ids; `truncated` says whether there were more.'
+      security:
+        - applicationClient: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, relation, subject]
+              properties:
+                type: {type: string, examples: [document]}
+                relation: {type: string, examples: [viewer]}
+                subject: {type: string, examples: ['user:usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9']}
+      responses:
+        '200':
+          description: The objects, as `type:id`.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [objects, truncated]
+                properties:
+                  objects:
+                    type: array
+                    items: {type: string, examples: ['document:readme']}
+                  truncated: {type: boolean}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ApplicationUnauthenticated'}
+        '403': {$ref: '#/components/responses/NoModel'}
+        '422': {$ref: '#/components/responses/AuthorizationInvalid'}
+  /authz/tuples:
+    get:
+      tags: [Authorization]
+      operationId: readTuples
+      summary: Read the application's tuples
+      description: 'Up to 1,000 tuples in order of object, relation and subject; `truncated` says whether there were more. Every filter is optional.'
+      security:
+        - applicationClient: []
+      parameters:
+        - {name: object, in: query, schema: {type: string, examples: [document, 'document:readme']}, description: A type, or an object as `type:id`.}
+        - {name: relation, in: query, schema: {type: string}}
+        - {name: subject, in: query, schema: {type: string, examples: ['user:usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9', 'team:design#member']}}
+      responses:
+        '200':
+          description: The tuples.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tuples, truncated]
+                properties:
+                  tuples:
+                    type: array
+                    items: {$ref: '#/components/schemas/Tuple'}
+                  truncated: {type: boolean}
+        '401': {$ref: '#/components/responses/ApplicationUnauthenticated'}
+        '403': {$ref: '#/components/responses/NoModel'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    post:
+      tags: [Authorization]
+      operationId: writeTuples
+      summary: Write and delete tuples in one transaction
+      description: 'Up to 100 writes and deletes together. Deletes run first. Writing a tuple that exists does nothing, and neither does deleting one that doesn''t. Each written tuple must fit the model: its relation takes the kind of subject, such as `user`, `group`, `folder` or `team#member`. People and groups are named by their Halo ids and must exist. Deletes don''t check the model, so tuples a changed model no longer takes can still be removed.'
+      security:
+        - applicationClient: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                writes:
+                  type: array
+                  items: {$ref: '#/components/schemas/TupleKey'}
+                deletes:
+                  type: array
+                  items: {$ref: '#/components/schemas/TupleKey'}
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ApplicationUnauthenticated'}
+        '403': {$ref: '#/components/responses/NoModel'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /applications/{id}/logo:
     parameters:
       - {$ref: '#/components/parameters/Id'}
@@ -6847,6 +7110,10 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: An access token that `halo login` obtained for the built-in Halo CLI application. Accepted only on routes under `/me/`.
+    applicationClient:
+      type: http
+      scheme: basic
+      description: The application's client ID as the user name and one of its client secrets as the password. Accepted only on routes under `/authz`, for active web and service applications with an authorization model.
   parameters:
     Id:
       name: id
@@ -7284,6 +7551,21 @@ components:
           schema: {$ref: '#/components/schemas/Error'}
     Invalid:
       description: '`ERR_INVALID`: a field is missing or invalid. The message names it.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    ApplicationUnauthenticated:
+      description: '`ERR_UNAUTHENTICATED`: no client ID and secret, a wrong or expired secret, or a disabled application.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    NoModel:
+      description: '`ERR_NO_MODEL`: the application has no authorization model.'
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    AuthorizationInvalid:
+      description: '`ERR_INVALID`: the object, relation or subject is malformed or not in the model. `ERR_AUTHZ_DEPTH`: answering followed more than 25 relations in a row. `ERR_AUTHZ_WIDTH`: answering needed more tuples than Halo reads for one request, 1,000 reads or 1,000 subjects of one relation, and 10,000 reads to list objects.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -7939,6 +8221,114 @@ components:
           type: string
           description: '`user.id`, `user.email`, `user.emailVerified`, `user.name`, `user.givenName`, `user.familyName`, `user.title`, `user.department`, `user.location`, `user.groups` (group names), `user.roles` (keys of the application roles the person holds), `attribute.<name>` for a custom attribute, or `none` to leave out a claim Halo would otherwise send under this name.'
           examples: [attribute.employeeNumber]
+    AuthorizationRelation:
+      type: object
+      description: Who holds the relation. Each list adds to the others.
+      properties:
+        subjects:
+          type: array
+          description: 'The subjects tuples may name directly: `user`, `group` (its members), a type for parents read with `from`, or `type#relation` for everyone with that relation on an object.'
+          items: {type: string, examples: [user, group, folder, 'team#member']}
+        union:
+          type: array
+          description: Other relations on the same object whose holders hold this one too.
+          items: {type: string, examples: [owner]}
+        roles:
+          type: array
+          description: Keys of the application's roles whose holders have this relation on every object of the type.
+          items: {type: string, examples: [editor]}
+        from:
+          type: array
+          description: Relations read from parent objects. `via` is a relation on this type whose subjects are the parents, and `relation` is the relation to hold on them.
+          items:
+            type: object
+            required: [via, relation]
+            properties:
+              via: {type: string, examples: [parent]}
+              relation: {type: string, examples: [viewer]}
+    AuthorizationTypes:
+      type: object
+      description: Types by name, each holding its relations by name.
+      additionalProperties:
+        type: object
+        additionalProperties: {$ref: '#/components/schemas/AuthorizationRelation'}
+      examples:
+        - folder: {viewer: {subjects: [user, group]}}
+          document:
+            parent: {subjects: [folder]}
+            owner: {subjects: [user]}
+            editor: {subjects: [user, group], union: [owner], roles: [editor]}
+            viewer: {subjects: [user, group], union: [editor], from: [{via: parent, relation: viewer}]}
+    AuthorizationModel:
+      type: object
+      required: [types, updatedAt]
+      properties:
+        types: {$ref: '#/components/schemas/AuthorizationTypes'}
+        updatedAt: {type: [string, 'null'], format: date-time}
+    AuthorizationTarget:
+      type: object
+      required: [object, relation]
+      properties:
+        object: {type: string, examples: ['document:readme']}
+        relation: {type: string, examples: [viewer]}
+    AuthorizationCheck:
+      type: object
+      required: [object, relation, subject]
+      properties:
+        object: {type: string, examples: ['document:readme']}
+        relation: {type: string, examples: [viewer]}
+        subject: {type: string, description: 'The person as `user:id`, with the Halo user ID that is the `sub` claim of their tokens.', examples: ['user:usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9']}
+    AuthorizationAnswer:
+      type: object
+      required: [allowed, path]
+      properties:
+        allowed: {type: boolean}
+        path:
+          type: array
+          description: Empty when denied.
+          items: {type: string}
+    AuthorizationNode:
+      type: object
+      required: [object, relation, users, groups, roles, children]
+      properties:
+        object: {type: string}
+        relation: {type: string}
+        users:
+          type: array
+          items: {type: string}
+        groups:
+          type: array
+          items: {type: string}
+        roles:
+          type: array
+          items: {type: string}
+        children:
+          type: array
+          items: {$ref: '#/components/schemas/AuthorizationNode'}
+    TupleKey:
+      type: object
+      required: [object, relation, subject]
+      properties:
+        object: {type: string, pattern: '^[a-z][a-z0-9_-]{0,63}:[A-Za-z0-9_.:@|/+=-]{1,256}$', examples: ['document:readme']}
+        relation: {type: string, pattern: '^[a-z][a-z0-9_-]{0,63}$', examples: [viewer]}
+        subject: {type: string, description: '`user:id`, `group:id`, `type:id` or `type:id#relation`.', examples: ['user:usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9', 'team:design#member']}
+    Tuple:
+      allOf:
+        - {$ref: '#/components/schemas/TupleKey'}
+        - type: object
+          required: [createdAt]
+          properties:
+            createdAt: {type: string, format: date-time}
+    PersonRelationship:
+      type: object
+      required: [applicationId, application, object, relation, createdAt]
+      properties:
+        applicationId: {type: string}
+        application: {type: string}
+        object: {type: string, examples: ['document:readme']}
+        relation: {type: string, examples: [owner]}
+        groupId: {type: string, description: Set when the tuple names one of the person's groups.}
+        createdAt: {type: string, format: date-time}
     ApplicationRole:
       type: object
       required: [id, key, name, description, groupIds, userIds]

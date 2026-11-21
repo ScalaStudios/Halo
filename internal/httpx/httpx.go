@@ -293,6 +293,10 @@ func (a *Auth) Throttle(w http.ResponseWriter, r *http.Request, scope string) *E
 	if scope == "bulk" {
 		limit = bulkRateLimit
 	}
+	return a.Limit(w, r, subject, scope, limit, who)
+}
+
+func (a *Auth) Limit(w http.ResponseWriter, r *http.Request, subject, scope string, limit int, who string) *Error {
 	n, reset, err := a.Store.CountRequest(r.Context(), subject, scope, limit, time.Minute)
 	if err != nil {
 		return nil
