@@ -65,6 +65,7 @@ var catalog = []eventType{
 	{"domain.verify", "A domain was verified with a DNS TXT record"},
 	{"email_template.reset", "An email went back to Halo's default subject and body"},
 	{"email_template.update", "An email's custom subject and body were saved"},
+	{"emergency_access.sign_in", "An emergency access account signed in, which is also emailed to the other global administrators"},
 	{"federated_credential.create", "A federated credential was added to a service account"},
 	{"federated_credential.delete", "A federated credential was removed from a service account, which ended the tokens issued through it"},
 	{"federated_credential.exchange", "A workload exchanged a token from a trusted issuer for a short-lived token of a service account"},

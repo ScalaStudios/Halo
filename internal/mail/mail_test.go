@@ -219,7 +219,7 @@ func TestWeeklyDigestGoesToSecurityAdminsOncePerWeek(t *testing.T) {
 		}
 	}
 	reported, err := st.SwapDigestRecommendations(ctx, nil)
-	if err != nil || !slices.Equal(reported, []string{"admin-sign-in", "password-everyone", "bot-protection"}) {
+	if err != nil || !slices.Equal(reported, []string{"admin-sign-in", "emergency-access", "password-everyone", "bot-protection"}) {
 		t.Fatalf("reported: %v %v", reported, err)
 	}
 }

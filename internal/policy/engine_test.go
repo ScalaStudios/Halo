@@ -2,6 +2,7 @@ package policy_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -95,6 +96,29 @@ func TestMostRestrictiveEnforcedPolicyWins(t *testing.T) {
 	want(t, evaluate(t, eng, ada, "totp", "198.51.100.7", ""), access.Allow, allow.Name)
 	setEnabled(t, st, allow, false)
 	want(t, evaluate(t, eng, ada, "totp", "198.51.100.7", ""), access.Allow, "")
+}
+
+func emergency(t *testing.T, st *store.Store, userIDs ...string) {
+	t.Helper()
+	ids, _ := json.Marshal(userIDs)
+	if err := st.SaveSettingValues(context.Background(), map[string]json.RawMessage{"emergencyAccessIds": ids}); err != nil {
+		t.Fatal(err)
+	}
+	st.ForgetSettings()
+}
+
+func TestEmergencyAccessAccountsAreNeverBlocked(t *testing.T) {
+	st := testdb.New(t)
+	eng := policy.NewEngine(st)
+	ada := member(t, st, "ada@example.com")
+	erin := member(t, st, "erin@example.com")
+	emergency(t, st, erin.ID)
+	block := rule(t, st, "Block everyone", "enforce", access.Block, everyone)
+
+	want(t, evaluate(t, eng, ada, "passkey", "198.51.100.7", ""), access.Block, block.Name)
+	want(t, evaluate(t, eng, erin, "passkey", "198.51.100.7", ""), access.Allow, "")
+	require := rule(t, st, "Require passkeys", "enforce", access.RequirePhishingResistant, everyone)
+	want(t, evaluate(t, eng, erin, "totp", "198.51.100.7", ""), access.RequirePhishingResistant, require.Name)
 }
 
 func TestReportOnlyRecordsButNeverBlocks(t *testing.T) {

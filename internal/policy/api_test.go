@@ -19,6 +19,7 @@ import (
 	"halo/internal/auth"
 	"halo/internal/config"
 	"halo/internal/httpx"
+	"halo/internal/mail"
 	"halo/internal/policy"
 	"halo/internal/store"
 	"halo/internal/testdb"
@@ -171,11 +172,41 @@ func TestNetworkZoneValidation(t *testing.T) {
 	}
 	expect(t, call(t, h, token, "POST", "/api/v1/network-zones", map[string]any{"name": "office", "kind": "risky", "cidrs": []string{"192.0.2.0/24"}}), 409)
 
-	expect(t, call(t, h, token, "POST", "/api/v1/policies", body("Office only", "enforce", access.Block, store.PolicyConditions{AllUsers: true, AllApps: true, Network: "not-in", ZoneIDs: []string{office.ID}})), 201)
+	expect(t, call(t, h, token, "POST", "/api/v1/policies", body("Office only", "report", access.Block, store.PolicyConditions{AllUsers: true, AllApps: true, Network: "not-in", ZoneIDs: []string{office.ID}})), 201)
 	inUse := call(t, h, token, "DELETE", "/api/v1/network-zones/"+office.ID, nil)
 	expect(t, inUse, 409)
 	if !strings.Contains(inUse.Body.String(), "Office only") {
 		t.Fatalf("conflict should name the policy: %s", inUse.Body)
+	}
+}
+
+func TestLockoutGuard(t *testing.T) {
+	st, h := server(t)
+	_, token := admin(t, st, "sec@example.com", "security_admin")
+	admin(t, st, "gia@example.com", "global_admin")
+	blockAll := body("Block everyone", "enforce", access.Block, everyone)
+
+	refused := call(t, h, token, "POST", "/api/v1/policies", blockAll)
+	expect(t, refused, 409)
+	if !strings.Contains(refused.Body.String(), "ERR_LOCKOUT") {
+		t.Fatalf("a policy that blocks every global administrator must be refused: %s", refused.Body)
+	}
+	if saved, _ := st.ListAccessPolicies(context.Background()); len(saved) != 0 {
+		t.Fatalf("a refused policy must not be saved: %+v", saved)
+	}
+	rec := call(t, h, token, "POST", "/api/v1/policies", body("Block everyone", "report", access.Block, everyone))
+	expect(t, rec, 201)
+	trial := decode[store.AccessPolicy](t, rec)
+	expect(t, call(t, h, token, "PUT", "/api/v1/policies/"+trial.ID, blockAll), 409)
+	expect(t, call(t, h, token, "PUT", "/api/v1/policies/order", map[string]any{"ids": []string{trial.ID}}), 204)
+
+	erin := member(t, st, "erin@example.com")
+	emergency(t, st, erin.ID)
+	expect(t, call(t, h, token, "PUT", "/api/v1/policies/"+trial.ID, blockAll), 200)
+	passkeys := call(t, h, token, "POST", "/api/v1/policies", body("Passkeys everywhere", "enforce", access.RequirePhishingResistant, everyone))
+	expect(t, passkeys, 409)
+	if !strings.Contains(passkeys.Body.String(), "ERR_LOCKOUT") {
+		t.Fatalf("an emergency access account without a passkey can't get past a passkey policy: %s", passkeys.Body)
 	}
 }
 
@@ -331,8 +362,9 @@ func TestAuthSignInThroughEngine(t *testing.T) {
 	ctx := context.Background()
 	public, _ := url.Parse("http://localhost:3200")
 	authn := &httpx.Auth{Store: st, Public: public, Dev: true}
+	box := &outbox{}
 	mux := http.NewServeMux()
-	if err := auth.Register(mux, httpx.Deps{Config: config.Config{PublicURL: public, Dev: true}, Store: st, Auth: authn, Policy: policy.NewEngine(st)}); err != nil {
+	if err := auth.Register(mux, httpx.Deps{Config: config.Config{PublicURL: public, Dev: true}, Store: st, Auth: authn, Policy: policy.NewEngine(st), Mailer: box}); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(authn.Resolve(mux))
@@ -391,4 +423,32 @@ func TestAuthSignInThroughEngine(t *testing.T) {
 	if len(devices) != 3 {
 		t.Fatalf("each sign-in should register its device: %+v", devices)
 	}
+
+	gia, _ := admin(t, st, "gia@example.com", "global_admin")
+	erinSecret := totpUser(t, st, "erin@example.com", contractors.ID)
+	erin, _ := st.GetUserByEmail(ctx, "erin@example.com")
+	emergency(t, st, erin.ID)
+	if status, code := signIn("erin@example.com", erinSecret); status != http.StatusOK {
+		t.Fatalf("an emergency access account must get past a blocking policy: %d %s", status, code)
+	}
+	audit, _ := st.ListAudit(ctx, 100)
+	if !slices.ContainsFunc(audit, func(e store.AuditEvent) bool { return e.Action == "emergency_access.sign_in" && e.TargetID == erin.ID }) {
+		t.Fatalf("an emergency sign-in must be audited: %+v", audit)
+	}
+	if len(box.sent) != 1 || box.sent[0].To != gia.Email || !strings.Contains(box.sent[0].Subject, "signed in with an emergency access account") {
+		t.Fatalf("the other global administrators must be emailed: %+v", box.sent)
+	}
+	hooks, err := st.PollWebhookEvents(ctx, time.Now().Add(time.Second), 100)
+	if err != nil || !slices.ContainsFunc(hooks, func(e store.WebhookEvent) bool { return e.Type == "emergency_access.sign_in" }) {
+		t.Fatalf("an emergency sign-in must reach webhooks and notification rules: %+v %v", hooks, err)
+	}
 }
+
+type outbox struct{ sent []mail.Message }
+
+func (o *outbox) Send(_ context.Context, m mail.Message) error {
+	o.sent = append(o.sent, m)
+	return nil
+}
+
+func (o *outbox) Configured() bool { return true }

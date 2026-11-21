@@ -120,18 +120,21 @@ func (g *Gate) bypass(r *http.Request, actor store.User, c Change) error {
 	if err != nil {
 		return err
 	}
+	g.Alert(ctx, actor, actor.Name+" skipped approval with an emergency access account", actor.Name+" ("+actor.Email+") used an emergency access account to make a change that normally needs approval from a second global administrator:\n\n"+
+		c.Summary+" ("+c.TargetLabel+")\n\nIf you did not expect this, check the audit log now: "+g.issuer+"/admin/audit")
+	return nil
+}
+
+func (g *Gate) Alert(ctx context.Context, actor store.User, subject, text string) {
 	emails, err := g.st.GlobalAdminEmails(ctx, actor.ID)
 	if err != nil {
 		slog.WarnContext(ctx, "could not look up global administrators to alert", "error", err)
 	}
 	for _, to := range emails {
-		m := mail.Message{To: to, Subject: actor.Name + " skipped approval with an emergency access account", Text: actor.Name + " (" + actor.Email + ") used an emergency access account to make a change that normally needs approval from a second global administrator:\n\n" +
-			c.Summary + " (" + c.TargetLabel + ")\n\nIf you did not expect this, check the audit log now: " + g.issuer + "/admin/audit"}
-		if err := g.mailer.Send(ctx, m); err != nil {
+		if err := g.mailer.Send(ctx, mail.Message{To: to, Subject: subject, Text: text}); err != nil {
 			slog.WarnContext(ctx, "emergency access alert not delivered", "to", to, "error", err)
 		}
 	}
-	return nil
 }
 
 type handler struct {

@@ -285,7 +285,7 @@ export function ApprovalSettingsForm({ settings, people, canEdit }: { settings: 
             ))}
           </fieldset>
           {canEdit ? (
-            <Field label="Emergency access accounts" hint="Up to five people whose changes skip approval, such as a break-glass account. Each use is recorded in the audit log and emailed to the other global administrators.">
+            <Field label="Emergency access accounts" hint="Up to five people kept for break-glass access. Blocking policies never apply to them and their changes skip approval. Each sign-in and skipped approval is recorded in the audit log and emailed to the other global administrators.">
               {(props) => <PeoplePicker {...props} people={people} value={emergency} onChange={setEmergency} />}
             </Field>
           ) : (
