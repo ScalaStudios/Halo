@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - Dynamic registration accepts requests that include unused public-key metadata alongside shared-secret authentication.
+- `halo.sh update` checks the published release and pulls its matching images before replacing the installed files. It refuses to downgrade an installation.
 - The OpenID conformance harness can use another subnet when the default Docker network overlaps an existing one.
 
 [Compare v0.2.0 with v0.3.0](https://github.com/ScalaStudios/Halo/compare/v0.2.0...v0.3.0)

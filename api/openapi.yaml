@@ -10386,8 +10386,8 @@ components:
                 type: array
                 description: 'An empty list allows any method. The client_secret_basic setting includes both Basic and form-body shared-secret authentication. Use none for public clients.'
                 items: {type: string, enum: [none, client_secret_basic, private_key_jwt]}
-              maxAccessTokenTtl: {type: integer, maximum: 86400, description: 'Maximum configured lifetime in seconds. Use 0 for no cap.'}
-              maxIdTokenTtl: {type: integer, maximum: 86400, description: 'Maximum configured lifetime in seconds. Use 0 for no cap.'}
+              maxAccessTokenTtl: {type: integer, anyOf: [{const: 0}, {minimum: 60, maximum: 86400}], description: 'Maximum configured lifetime in seconds. Use 0 for no cap.'}
+              maxIdTokenTtl: {type: integer, anyOf: [{const: 0}, {minimum: 60, maximum: 86400}], description: 'Maximum configured lifetime in seconds. Use 0 for no cap.'}
               maxRefreshTokenTtl: {type: integer, minimum: 0, maximum: 7776000, description: 'Maximum configured lifetime in seconds. Use 0 for no cap.'}
         emailTemplates:
           type: object
