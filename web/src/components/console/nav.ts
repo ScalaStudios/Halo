@@ -90,7 +90,7 @@ export const nav: NavGroup[] = [
       { label: "Access packages", href: `${BASE}/access-packages`, icon: Package, summary: "Bundles of groups and app roles that people can request, with approvers and expiry." },
       { label: "Requests", href: `${BASE}/requests`, icon: Inbox, summary: "Access requests waiting on you or your team." },
       { label: "Access reviews", href: `${BASE}/access-reviews`, icon: ClipboardCheck, summary: "Periodic certification of who still needs what." },
-      { label: "Lifecycle", href: `${BASE}/lifecycle`, icon: Workflow, summary: "Joiner, mover and leaver workflows driven by your HR source." },
+      { label: "Lifecycle", href: `${BASE}/lifecycle`, icon: Workflow, summary: "Joiner, mover and leaver workflows driven by your HR source, plus date and inactivity rules." },
     ],
   },
   {

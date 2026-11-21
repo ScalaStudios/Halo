@@ -41,6 +41,8 @@ export const TRIGGER: Record<LifecycleTrigger, { label: string; description: str
   joiner: { label: "Joiner", description: "When someone is created in Halo" },
   mover: { label: "Mover", description: "When someone's department, title or location changes" },
   leaver: { label: "Leaver", description: "When someone is suspended or deprovisioned" },
+  date: { label: "Date", description: "On, before or after a date attribute, such as a contract end date" },
+  inactivity: { label: "Inactivity", description: "When someone hasn't signed in for a number of days" },
 };
 
 export const ACTION: Record<LifecycleActionType, string> = {

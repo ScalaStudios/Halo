@@ -4346,6 +4346,36 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+  /lifecycle/preview:
+    post:
+      tags: [Lifecycle]
+      operationId: previewLifecycleRule
+      summary: Preview who a date or inactivity rule would run for
+      description: 'Roles: user administrator. Takes the same body as creating a rule and lists the people the rule would run for if Halo checked now. Writes nothing: no runs, no audit events, no changes to anyone.'
+      parameters:
+        - name: rule
+          in: query
+          required: false
+          description: The ID of a saved rule, to leave out people it already ran for.
+          schema: {type: string}
+      requestBody: {$ref: '#/components/requestBodies/LifecycleRuleInput'}
+      responses:
+        '200':
+          description: The people the rule would run for.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [user, change]
+                  properties:
+                    user: {$ref: '#/components/schemas/NamedRef'}
+                    change: {type: string, examples: ['Last signed in 2026-08-13, 100 days ago']}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /lifecycle/runs:
     get:
       tags: [Lifecycle]
@@ -6370,11 +6400,22 @@ components:
             required: [name, trigger, actions]
             properties:
               name: {type: string, maxLength: 200}
-              trigger: {type: string, enum: [joiner, mover, leaver]}
+              trigger:
+                type: string
+                enum: [joiner, mover, leaver, date, inactivity]
+                description: '`joiner`, `mover` and `leaver` run within a minute of the change. `date` and `inactivity` are checked every hour and run once per person per occurrence: once per value of the date attribute, and once per last sign-in. Both catch up on dates and sign-ins already past, so preview a rule before enabling it.'
               condition:
                 type: [string, 'null']
                 description: A group rule the person must match. Empty or null matches everyone.
                 examples: ['user.department == "Engineering"']
+              attribute:
+                type: [string, 'null']
+                description: 'Required for `date`: the name of a date user attribute that only administrators can change, such as an end date.'
+                examples: [endDate]
+              days:
+                type: [integer, 'null']
+                description: 'For `date`, days from the date, from -3650 to 3650: negative runs before the date, positive after it, and 0 on it (UTC). For `inactivity`, days without a sign-in, from 1 to 3650; people who never signed in count from when they were created. Inactivity rules leave out guests, who have their own end date, service accounts, emergency access accounts, and anyone not active.'
+                examples: [-7, 90]
               actions:
                 type: array
                 minItems: 1
@@ -7653,16 +7694,18 @@ components:
       type: object
       required: [type]
       properties:
-        type: {type: string, enum: [add-to-group, remove-from-group, revoke-sessions, suspend]}
+        type: {type: string, enum: [add-to-group, remove-from-group, revoke-sessions, suspend], description: '`suspend` also ends every session, and never suspends an emergency access account or the last active global administrator; the run records a failed step instead.'}
         groupId: {type: string, description: Required for add-to-group and remove-from-group. Assigned groups only.}
     LifecycleRule:
       type: object
-      required: [id, name, trigger, condition, actions, enabled, runs, lastRunAt, createdAt]
+      required: [id, name, trigger, condition, attribute, days, actions, enabled, runs, lastRunAt, createdAt]
       properties:
         id: {type: string}
         name: {type: string}
-        trigger: {type: string, enum: [joiner, mover, leaver]}
+        trigger: {type: string, enum: [joiner, mover, leaver, date, inactivity]}
         condition: {type: [string, 'null']}
+        attribute: {type: [string, 'null']}
+        days: {type: [integer, 'null']}
         actions:
           type: array
           items: {$ref: '#/components/schemas/LifecycleAction'}
@@ -7677,7 +7720,7 @@ components:
         id: {type: string}
         rule: {$ref: '#/components/schemas/NamedRef'}
         user: {$ref: '#/components/schemas/NamedRef'}
-        trigger: {type: string, enum: [joiner, mover, leaver]}
+        trigger: {type: string, enum: [joiner, mover, leaver, date, inactivity]}
         change: {type: string, examples: [Department changed from Sales to Engineering]}
         steps:
           type: array

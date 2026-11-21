@@ -71,7 +71,7 @@ export type AccessReview = {
   canComplete: boolean;
 };
 
-export type LifecycleTrigger = "joiner" | "mover" | "leaver";
+export type LifecycleTrigger = "joiner" | "mover" | "leaver" | "date" | "inactivity";
 export type LifecycleActionType = "add-to-group" | "remove-from-group" | "revoke-sessions" | "suspend";
 export type LifecycleAction = { type: LifecycleActionType; groupId?: string };
 
@@ -80,6 +80,8 @@ export type LifecycleRule = {
   name: string;
   trigger: LifecycleTrigger;
   condition: string | null;
+  attribute: string | null;
+  days: number | null;
   actions: LifecycleAction[];
   enabled: boolean;
   runs: number;

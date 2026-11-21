@@ -66,6 +66,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	handle("POST /api/v1/lifecycle/rules", managers, h.createRule)
 	handle("PUT /api/v1/lifecycle/rules/{id}", managers, h.updateRule)
 	handle("DELETE /api/v1/lifecycle/rules/{id}", managers, h.deleteRule)
+	handle("POST /api/v1/lifecycle/preview", managers, h.previewRule)
 	handle("GET /api/v1/lifecycle/runs", readers, h.listRuns)
 
 	handle("GET /api/v1/me/access-packages", nil, h.myPackages)
@@ -83,6 +84,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		d.Jobs.Every("expire role activations", time.Minute, func(ctx context.Context) error { return expireActivations(ctx, d.Store, time.Now()) })
 		d.Jobs.Every("mark overdue access reviews", time.Minute, func(ctx context.Context) error { return markOverdueReviews(ctx, d.Store, time.Now()) })
 		d.Jobs.Every("run lifecycle rules", time.Minute, func(ctx context.Context) error { return runLifecycle(ctx, d.Store) })
+		d.Jobs.Every("run date and inactivity lifecycle rules", time.Hour, func(ctx context.Context) error { return runScheduledLifecycle(ctx, d.Store, time.Now()) })
 		d.Jobs.Every("expire guest accounts", time.Minute, func(ctx context.Context) error { return expireGuests(ctx, d.Store, time.Now()) })
 		d.Jobs.Every("tell sponsors about ending guest access", time.Hour, func(ctx context.Context) error { return h.noticeGuestExpiry(ctx, time.Now()) })
 	}

@@ -14,16 +14,26 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Spinner } from "@/components/ui/spinner";
-import { api } from "@/lib/api/client";
+import { ApiError, api } from "@/lib/api/client";
 import { formatDateTime, pluralize } from "@/lib/format";
-import type { LifecycleAction, LifecycleActionType, LifecycleRule, LifecycleRun, LifecycleTrigger } from "@/lib/governance-types";
-import type { Group } from "@/lib/types";
+import type { LifecycleAction, LifecycleActionType, LifecycleRule, LifecycleRun, LifecycleTrigger, NamedRef } from "@/lib/governance-types";
+import type { Attribute, Group } from "@/lib/types";
 import { ACTION, TRIGGER } from "./shared";
 
 const groupAction = (type: LifecycleActionType) => type === "add-to-group" || type === "remove-from-group";
 
+const scheduled = (trigger: LifecycleTrigger) => trigger === "date" || trigger === "inactivity";
+
 function bodyFor(rule: LifecycleRule, enabled = rule.enabled) {
-  return { name: rule.name, trigger: rule.trigger, condition: rule.condition, actions: rule.actions, enabled };
+  return { name: rule.name, trigger: rule.trigger, condition: rule.condition, attribute: rule.attribute, days: rule.days, actions: rule.actions, enabled };
+}
+
+function describeTrigger(rule: Pick<LifecycleRule, "trigger" | "attribute" | "days">, attributes: Attribute[]) {
+  const days = rule.days ?? 0;
+  if (rule.trigger === "inactivity") return `No sign-in for ${pluralize(days, "day")}`;
+  if (rule.trigger !== "date") return TRIGGER[rule.trigger].label;
+  const label = attributes.find((a) => a.name === rule.attribute)?.label ?? "a deleted attribute";
+  return days === 0 ? `On ${label}` : `${pluralize(Math.abs(days), "day")} ${days < 0 ? "before" : "after"} ${label}`;
 }
 
 function RuleToggle({ rule }: { rule: LifecycleRule }) {
@@ -43,8 +53,13 @@ function RuleToggle({ rule }: { rule: LifecycleRule }) {
               () =>
                 toast(
                   rule.enabled
-                    ? { title: `${rule.name} disabled`, description: "Changes that happen while it's disabled won't run it later." }
-                    : { title: `${rule.name} enabled`, description: "It runs on the next change Halo detects, within a minute." },
+                    ? { title: `${rule.name} disabled`, description: scheduled(rule.trigger) ? "It won't run until you enable it again." : "Changes that happen while it's disabled won't run it later." }
+                    : {
+                        title: `${rule.name} enabled`,
+                        description: scheduled(rule.trigger)
+                          ? "Halo checks it within the hour, including dates and sign-ins already past."
+                          : "It runs on the next change Halo detects, within a minute.",
+                      },
                 ),
             )
           }
@@ -55,7 +70,7 @@ function RuleToggle({ rule }: { rule: LifecycleRule }) {
   );
 }
 
-export function RulesTable({ rules, groups }: { rules: LifecycleRule[]; groups: Group[] }) {
+export function RulesTable({ rules, groups, attributes }: { rules: LifecycleRule[]; groups: Group[]; attributes: Attribute[] }) {
   const [editing, setEditing] = useState<LifecycleRule | "new" | null>(null);
   const [deleting, setDeleting] = useState<LifecycleRule | null>(null);
   const { pending, run, errorFor, clearError, toast } = useMutation();
@@ -80,7 +95,7 @@ export function RulesTable({ rules, groups }: { rules: LifecycleRule[]; groups: 
         header: "Trigger",
         filterFn: facetFilter,
         meta: { label: "Trigger" },
-        cell: ({ row }) => <span className="whitespace-nowrap">{TRIGGER[row.original.trigger].label}</span>,
+        cell: ({ row }) => <span className="whitespace-nowrap">{describeTrigger(row.original, attributes)}</span>,
       },
       {
         id: "condition",
@@ -121,7 +136,7 @@ export function RulesTable({ rules, groups }: { rules: LifecycleRule[]; groups: 
         ),
       },
     ],
-    [describe],
+    [describe, attributes],
   );
 
   const create = (
@@ -138,7 +153,7 @@ export function RulesTable({ rules, groups }: { rules: LifecycleRule[]; groups: 
           <EmptyState
             icon={Workflow}
             title="No lifecycle rules yet"
-            description="Create a rule to add or remove groups, end sessions or suspend accounts when people join, move or leave."
+            description="Create a rule to add or remove groups, end sessions or suspend accounts when people join, move or leave, when a date such as a contract end date comes, or when they stop signing in."
             action={create}
           />
         </Card>
@@ -150,7 +165,7 @@ export function RulesTable({ rules, groups }: { rules: LifecycleRule[]; groups: 
           label="Lifecycle rules"
           noun={["rule", "rules"]}
           storageKey="lifecycle-rules"
-          searchText={(r) => `${r.name} ${r.condition ?? ""} ${r.actions.map(describe).join(" ")}`}
+          searchText={(r) => `${r.name} ${describeTrigger(r, attributes)} ${r.condition ?? ""} ${r.actions.map(describe).join(" ")}`}
           searchPlaceholder="Search rules, conditions or actions"
           facets={[
             {
@@ -175,7 +190,14 @@ export function RulesTable({ rules, groups }: { rules: LifecycleRule[]; groups: 
           toolbarEnd={create}
         />
       )}
-      {editing ? <RuleDialog rule={editing === "new" ? null : editing} groups={groups} onClose={() => setEditing(null)} /> : null}
+      {editing ? (
+        <RuleDialog
+          rule={editing === "new" ? null : editing}
+          groups={groups}
+          attributes={attributes.filter((a) => !a.selfService)}
+          onClose={() => setEditing(null)}
+        />
+      ) : null}
       <Dialog
         open={deleting !== null}
         onOpenChange={(open) => {
@@ -220,33 +242,65 @@ export function RulesTable({ rules, groups }: { rules: LifecycleRule[]; groups: 
   );
 }
 
-function RuleDialog({ rule, groups, onClose }: { rule: LifecycleRule | null; groups: Group[]; onClose: () => void }) {
+function RuleDialog({ rule, groups, attributes, onClose }: { rule: LifecycleRule | null; groups: Group[]; attributes: Attribute[]; onClose: () => void }) {
   const [name, setName] = useState(rule?.name ?? "");
   const [trigger, setTrigger] = useState<LifecycleTrigger>(rule?.trigger ?? "joiner");
   const [condition, setCondition] = useState(rule?.condition ?? "");
+  const [attribute, setAttribute] = useState(rule?.attribute ?? attributes[0]?.name ?? "");
+  const [days, setDays] = useState(rule?.days != null ? String(Math.abs(rule.days)) : "");
+  const [direction, setDirection] = useState<"before" | "after">((rule?.days ?? 0) < 0 ? "before" : "after");
   const [actions, setActions] = useState<LifecycleAction[]>(rule?.actions ?? [{ type: "add-to-group" }]);
   const [enabled, setEnabled] = useState(rule?.enabled ?? true);
-  const [errors, setErrors] = useState<{ name?: string; actions?: string }>({});
+  const [errors, setErrors] = useState<{ name?: string; days?: string; actions?: string }>({});
+  const [preview, setPreview] = useState<{ key: string; people: { user: NamedRef; change: string }[] } | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string>();
   const { pending, run, errorFor, toast } = useMutation();
+  const isScheduled = scheduled(trigger);
+  const count = Number(days);
+  const body = {
+    name: name.trim(),
+    trigger,
+    condition: condition.trim() || null,
+    attribute: trigger === "date" ? attribute : null,
+    days: trigger === "date" ? (direction === "before" ? -count : count) : trigger === "inactivity" ? count : null,
+    actions: actions.map((a) => (groupAction(a.type) ? a : { type: a.type })),
+    enabled,
+  };
+  const key = JSON.stringify(body);
+  const shown = preview?.key === key ? preview.people : null;
 
   function update(index: number, next: LifecycleAction) {
     setActions((current) => current.map((a, i) => (i === index ? next : a)));
   }
 
-  function submit() {
+  function validate() {
     const next = {
       name: name.trim() ? undefined : "Enter a rule name.",
+      days: isScheduled && (days.trim() === "" || !Number.isInteger(count) || count < 0) ? "Enter a whole number of days." : undefined,
       actions: actions.some((a) => groupAction(a.type) && !a.groupId) ? "Choose a group for every add or remove action." : undefined,
     };
     setErrors(next);
-    if (next.name || next.actions) return;
-    const body = {
-      name: name.trim(),
-      trigger,
-      condition: condition.trim() || null,
-      actions: actions.map((a) => (groupAction(a.type) ? a : { type: a.type })),
-      enabled,
-    };
+    return !next.name && !next.days && !next.actions;
+  }
+
+  async function previewRule() {
+    if (!validate()) return;
+    setPreviewing(true);
+    setPreviewError(undefined);
+    try {
+      const people = await api<{ user: NamedRef; change: string }[]>(`/lifecycle/preview${rule ? `?rule=${rule.id}` : ""}`, { body });
+      setPreview({ key, people });
+    } catch (error) {
+      setPreview(null);
+      setPreviewError(error instanceof ApiError ? error.message : "Halo could not reach the server. Try again.");
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
+  function submit() {
+    if (!validate()) return;
     void run(
       "save",
       () => api<LifecycleRule>(rule ? `/lifecycle/rules/${rule.id}` : "/lifecycle/rules", { method: rule ? "PUT" : "POST", body }),
@@ -254,7 +308,9 @@ function RuleDialog({ rule, groups, onClose }: { rule: LifecycleRule | null; gro
         onClose();
         toast({
           title: rule ? `${saved.name} saved` : `${saved.name} created`,
-          description: "It applies to changes Halo detects from now on, checked every minute.",
+          description: isScheduled
+            ? "Halo checks it within the hour, including dates and sign-ins already past."
+            : "It applies to changes Halo detects from now on, checked every minute.",
         });
       },
       "inline",
@@ -267,7 +323,7 @@ function RuleDialog({ rule, groups, onClose }: { rule: LifecycleRule | null; gro
       onOpenChange={(open) => (open ? undefined : onClose())}
       error={errorFor("save")}
       title={rule ? `Edit ${rule.name}` : "Create lifecycle rule"}
-      description="Halo compares every account with what it saw last time, every minute, and runs each matching rule once per change."
+      description="Joiner, mover and leaver rules run within a minute of a change. Date and inactivity rules are checked every hour. Each rule runs once per person for each change, date or stretch without signing in."
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -302,6 +358,61 @@ function RuleDialog({ rule, groups, onClose }: { rule: LifecycleRule | null; gro
             </Select>
           )}
         </Field>
+        {trigger === "date" ? (
+          <>
+            <Field
+              label="Date attribute"
+              hint={
+                attributes.length ? (
+                  "Only attributes that administrators change are listed, so nobody can move their own date."
+                ) : (
+                  <>
+                    Create a date attribute that only administrators change, such as an end date, under{" "}
+                    <Link href="/admin/settings/attributes" className="text-fg-2 underline">
+                      User attributes
+                    </Link>
+                    .
+                  </>
+                )
+              }
+            >
+              {(props) => (
+                <Select {...props} value={attribute} disabled={!attributes.length} onChange={(event) => setAttribute(event.target.value)}>
+                  {attributes.length ? null : <option value="">No date attributes</option>}
+                  {attributes.map((a) => (
+                    <option key={a.name} value={a.name}>
+                      {a.label}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            <Field label="When" hint="Up to 3650 days. Enter 0 to run on the date itself, in UTC." error={errors.days}>
+              {(props) => (
+                <div className="flex gap-2">
+                  <Input {...props} type="number" min={0} max={3650} step={1} inputMode="numeric" className="tnum" value={days} onChange={(event) => setDays(event.target.value)} placeholder="7" />
+                  <div className="w-40 shrink-0">
+                    <Select aria-label="Before or after the date" value={direction} onChange={(event) => setDirection(event.target.value as "before" | "after")}>
+                      <option value="before">days before</option>
+                      <option value="after">days after</option>
+                    </Select>
+                  </div>
+                </div>
+              )}
+            </Field>
+          </>
+        ) : null}
+        {trigger === "inactivity" ? (
+          <Field
+            label="Days without signing in"
+            hint="People who never signed in count from when they were created. Guests, service accounts and emergency access accounts are left out."
+            error={errors.days}
+          >
+            {(props) => (
+              <Input {...props} type="number" min={1} max={3650} step={1} inputMode="numeric" className="tnum" value={days} onChange={(event) => setDays(event.target.value)} placeholder="90" />
+            )}
+          </Field>
+        ) : null}
         <Field
           label="Condition"
           hint={
@@ -378,14 +489,42 @@ function RuleDialog({ rule, groups, onClose }: { rule: LifecycleRule | null; gro
           {errors.actions ? (
             <p className="text-caption text-danger">{errors.actions}</p>
           ) : (
-            <p className="text-caption text-fg-3">Group actions work on assigned groups only. Suspending also ends every session.</p>
+            <p className="text-caption text-fg-3">
+              Group actions work on assigned groups only. Suspending also ends every session, and never applies to emergency access accounts or the last global
+              administrator.
+            </p>
           )}
         </fieldset>
+        {isScheduled ? (
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button size="sm" variant="secondary" loading={previewing} onClick={previewRule}>
+                Preview who it runs for
+              </Button>
+              {shown ? (
+                <p className="animate-enter text-body-sm text-fg-2" aria-live="polite">
+                  {shown.length === 0
+                    ? "Nobody right now."
+                    : `${pluralize(shown.length, "person", "people")} now: ${shown
+                        .slice(0, 5)
+                        .map((p) => p.user.name)
+                        .join(", ")}${shown.length > 5 ? ` and ${shown.length - 5} more` : ""}.`}
+                </p>
+              ) : null}
+            </div>
+            {previewError ? <p className="text-caption text-danger">{previewError}</p> : null}
+            <p className="text-caption text-fg-3">The preview changes nothing. Saved rules also run for dates and sign-ins already past.</p>
+          </div>
+        ) : null}
         <label className="flex cursor-pointer items-start gap-3">
           <Checkbox className="mt-0.5" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
           <span className="flex flex-col">
             <span className="text-body-sm text-fg">Enabled</span>
-            <span className="text-caption text-fg-3">Disabled rules don&apos;t run, and changes made while a rule is disabled aren&apos;t replayed later.</span>
+            <span className="text-caption text-fg-3">
+              {isScheduled
+                ? "Disabled rules don't run. When you enable it again, it runs for everyone it matches by then."
+                : "Disabled rules don't run, and changes made while a rule is disabled aren't replayed later."}
+            </span>
           </span>
         </label>
         <button type="submit" hidden />
