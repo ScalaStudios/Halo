@@ -61,7 +61,7 @@ func TestSponsorExtendsGuestUntilItExpires(t *testing.T) {
 		t.Fatal(err)
 	}
 	guest.Attributes = map[string]any{"contractId": "C-7"}
-	if err := st.UpdateUserProfile(ctx, guest); err != nil {
+	if err := st.SetUserAttributes(ctx, guest.ID, guest.Attributes); err != nil {
 		t.Fatal(err)
 	}
 	path := "/api/v1/users/" + guest.ID + "/guest"

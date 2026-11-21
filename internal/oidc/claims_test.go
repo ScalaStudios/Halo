@@ -23,7 +23,7 @@ func TestClaimMappings(t *testing.T) {
 		}
 	}
 	h.user.Attributes = map[string]any{"employeeNumber": 1042, "teams": []string{"Platform", "Security"}}
-	must(h.st.UpdateUserProfile(ctx, h.user))
+	must(h.st.SetUserAttributes(ctx, h.user.ID, h.user.Attributes))
 	h.app.ClaimMappings = []store.Claim{
 		{Name: "employee_id", Source: "attribute.employeeNumber"},
 		{Name: "teams", Source: "attribute.teams"},

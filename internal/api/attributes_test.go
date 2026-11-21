@@ -200,3 +200,29 @@ func TestClaimMappingValidation(t *testing.T) {
 	expect(t, call(t, h, appAdmin, "PATCH", "/api/v1/applications/"+samlApp.ID, map[string]any{"claimMappings": []store.Claim{}}), 200)
 	expect(t, call(t, h, global, "DELETE", "/api/v1/attributes/"+attribute.ID, nil), 204)
 }
+
+func TestScopedAdminSetsAttributesInScope(t *testing.T) {
+	st, h := setup(t)
+	ctx := context.Background()
+	support, _ := st.CreateGroup(ctx, store.NewGroup{Name: "Support", Kind: "assigned"})
+	sales, _ := st.CreateGroup(ctx, store.NewGroup{Name: "Sales", Kind: "assigned"})
+	sam := member(t, st, "sam@example.com", support.ID)
+	otto := member(t, st, "otto@example.com", sales.ID)
+	_, sue := scopedAdmin(t, st, "sue@example.com", "user_admin", support.ID)
+	if _, err := st.CreateAttribute(ctx, store.Attribute{Name: "employeeNumber", Label: "Employee number", Type: "number"}); err != nil {
+		t.Fatal(err)
+	}
+
+	list := decode[[]store.Attribute](t, expect200(t, call(t, h, sue, "GET", "/api/v1/attributes", nil)))
+	if len(list) != 1 || list[0].Name != "employeeNumber" || list[0].People != 0 {
+		t.Fatalf("scoped administrators see every definition without counts: %+v", list)
+	}
+	body := map[string]any{"attributes": map[string]any{"employeeNumber": 7}}
+	if got := decode[store.User](t, expect200(t, call(t, h, sue, "PATCH", "/api/v1/users/"+sam.ID, body))); got.Attributes["employeeNumber"] != float64(7) {
+		t.Fatalf("in scope: %#v", got.Attributes)
+	}
+	expect(t, call(t, h, sue, "PATCH", "/api/v1/users/"+otto.ID, body), 403)
+	if got, _ := st.GetUser(ctx, otto.ID); len(got.Attributes) != 0 {
+		t.Fatalf("out of scope changed: %#v", got.Attributes)
+	}
+}
