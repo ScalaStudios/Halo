@@ -560,7 +560,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
         '403':
-          description: '`ERR_SECOND_FACTOR_MISSING`: a second factor is required and the account has no authenticator app. Also `ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED`, `ERR_SESSION_LIMIT`, `ERR_CHALLENGE_REQUIRED`, `ERR_CHALLENGE_FAILED` and `ERR_CROSS_SITE`, as for other sign-in methods.'
+          description: '`ERR_SECOND_FACTOR_MISSING`: a second factor is required and the account has no authenticator app. Also `ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED`, `ERR_BLOCKED_BY_POLICY`, `ERR_BLOCKED_BY_HOOK`, `ERR_STRONGER_AUTH_REQUIRED`, `ERR_SESSION_LIMIT`, `ERR_CHALLENGE_REQUIRED`, `ERR_CHALLENGE_FAILED` and `ERR_CROSS_SITE`, as for other sign-in methods.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -3325,6 +3325,64 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /applications/{id}/hook:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Applications]
+      operationId: getApplicationHook
+      summary: Get an application's sign-in hook
+      description: 'Roles: any administrator. The hook''s URL and signing secret are never returned.'
+      responses:
+        '200':
+          description: The hook, or null when the application has none.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - {$ref: '#/components/schemas/ApplicationHook'}
+                  - {type: 'null'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [Applications]
+      operationId: setApplicationHook
+      summary: Add or change an application's sign-in hook
+      description: |
+        Roles: application administrator, with a recent sign-in. Only OpenID Connect applications that people sign in to can have a hook; service applications, SAML applications, bookmarks and the Halo CLI can't.
+
+        Halo calls the hook when a person finishes signing in to the application (`type` is `sign_in`) and before every ID or access token it issues to them, including refreshes and token exchanges (`type` is `token`, with `grantType`). It sends `POST` with `{"type", "time", "user": {"id", "email", "name"}, "application": {"id", "clientId", "name"}, "scopes", "grantType"}` and a `Halo-Signature: t=<unix time>,v1=<hex HMAC-SHA256 of "<t>.<body>">` header made with the signing secret, the same scheme as webhooks.
+
+        The hook answers `200` within 3 seconds with `{"decision": "allow" | "deny", "reason": "…", "claims": {…}}`, signed the same way in its own `Halo-Signature` header and no older than 5 minutes. `deny` blocks the sign-in or the token request and shows `reason`, up to 200 characters, to the person or in the token error's `error_description`. On `allow`, Halo adds to the ID token and to JWT access tokens only the claims named in `claims` of the hook's settings, and never `sub`, `iss`, `aud`, `exp`, `roles` or another claim Halo sets itself. A timeout, an unreachable or private address, another status, a missing or wrong signature, or an unreadable answer is a failure: the sign-in is blocked when `failOpen` is false and allowed without extra claims when it is true. Every call is recorded in the sign-in log with its decision in `hook`.
+
+        Leave `url` or `secret` empty to keep the current value.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ApplicationHookInput'}
+      responses:
+        '200':
+          description: The hook.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApplicationHook'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Applications]
+      operationId: deleteApplicationHook
+      summary: Remove an application's sign-in hook
+      description: 'Roles: application administrator, with a recent sign-in.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /collections:
     get:
       tags: [Applications]
@@ -6209,7 +6267,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     SignInRefused:
-      description: '`ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED` (not in a group assigned to the application), `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED` (a policy requires a passkey or security key), `ERR_SESSION_LIMIT` (the person holds as many sessions as the session limit allows), `ERR_CHALLENGE_REQUIRED` or `ERR_CHALLENGE_FAILED` (see `ChallengeToken`), or `ERR_CROSS_SITE`. Refused sign-ins are recorded in the sign-in log.'
+      description: '`ERR_ACCOUNT_SUSPENDED`, `ERR_NOT_ASSIGNED` (not in a group assigned to the application), `ERR_BLOCKED_BY_POLICY`, `ERR_BLOCKED_BY_HOOK` (the application''s hook denied the sign-in or failed and fails closed; `message` holds its reason), `ERR_STRONGER_AUTH_REQUIRED` (a policy requires a passkey or security key), `ERR_SESSION_LIMIT` (the person holds as many sessions as the session limit allows), `ERR_CHALLENGE_REQUIRED` or `ERR_CHALLENGE_FAILED` (see `ChallengeToken`), or `ERR_CROSS_SITE`. Refused sign-ins are recorded in the sign-in log.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -6876,13 +6934,14 @@ components:
         email: {type: string}
         appId: {type: [string, 'null'], description: Null for sign-ins to Halo itself.}
         result: {type: string, enum: [success, failure, interrupted, ended], description: '`ended` records a session that Halo ended to stay within the session limit.'}
-        method: {type: string}
+        method: {type: string, description: '`token` records a token request that called the application''s hook. `device` then holds the grant type.'}
         ip: {type: string}
         location: {type: string}
         device: {type: string, examples: [Chrome 130 · macOS]}
         risk: {type: string, enum: [none, low, medium, high]}
         reason: {type: string, description: Why the sign-in failed or the session ended.}
         challenge: {type: string, enum: [passed, failed, unavailable], description: The result of the bot protection check. Absent when no check was asked for.}
+        hook: {type: string, enum: [allowed, denied, failed_open, failed_closed], description: The decision of the application's hook. Absent when the application has no hook.}
         impersonatorId: {type: string, description: 'Present when an administrator started an impersonation session as this person. `reason` then names them and says why.'}
     AuditEvent:
       type: object
@@ -7746,6 +7805,27 @@ components:
         updatedAt: {type: string, format: date-time}
         lastStatus: {type: [string, 'null'], enum: [pending, delivered, failed, null]}
         lastDeliveryAt: {type: [string, 'null'], format: date-time}
+    ApplicationHook:
+      type: object
+      required: [appId, host, claims, failOpen]
+      properties:
+        appId: {type: string}
+        host: {type: string, examples: [checks.example.com], description: The host of the hook URL. The URL and the signing secret are never returned.}
+        claims:
+          type: array
+          items: {type: string}
+          description: The claims the hook may add to tokens.
+        failOpen: {type: boolean, description: Allow the sign-in when the hook fails, instead of blocking it.}
+    ApplicationHookInput:
+      type: object
+      properties:
+        url: {type: string, format: uri, maxLength: 2048, description: 'An https:// URL at a public address. Required when adding the hook.'}
+        secret: {type: string, minLength: 32, maxLength: 256, description: The signing secret for requests and answers. Required when adding the hook, never returned.}
+        claims:
+          type: array
+          maxItems: 20
+          items: {type: string, pattern: '^[A-Za-z][A-Za-z0-9_.:/-]{0,99}$'}
+        failOpen: {type: boolean, default: false}
     NotificationRule:
       type: object
       required: [id, name, destination, host, events, minRisk, role, threshold, windowMinutes, quietMinutes, enabled, createdAt, updatedAt, lastSentAt, lastStatus]

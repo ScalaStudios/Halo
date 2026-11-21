@@ -1,6 +1,6 @@
 import { Badge, StatusDot } from "@/components/ui/badge";
 import { RelativeTime } from "@/components/ui/relative-time";
-import { METHOD, RESULT, signInApp } from "@/lib/labels";
+import { RESULT, SIGN_IN_METHOD, signInApp } from "@/lib/labels";
 import type { SignInEvent } from "@/lib/types";
 
 export function SignInRows({ events, appNames = {} }: { events: SignInEvent[]; appNames?: Record<string, string> }) {
@@ -30,7 +30,7 @@ export function SignInRows({ events, appNames = {} }: { events: SignInEvent[]; a
               </td>
               <td className="px-3 text-fg-2">
                 <span className="inline-flex items-center gap-2 whitespace-nowrap" title={event.impersonatorId ? event.reason : undefined}>
-                  {METHOD[event.method].label}
+                  {SIGN_IN_METHOD[event.method].label}
                   {event.impersonatorId ? <Badge tone="warning">Impersonation</Badge> : null}
                 </span>
               </td>

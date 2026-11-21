@@ -250,6 +250,9 @@ func (s *storage) SetUserinfoFromRequest(ctx context.Context, info *oidc.UserInf
 	if err != nil {
 		return err
 	}
+	for name, value := range hookClaims(ctx) {
+		info.AppendClaims(name, value)
+	}
 	var sessionID *string
 	switch r := req.(type) {
 	case *authRequest:
@@ -314,7 +317,9 @@ func (s *storage) SetIntrospectionFromToken(ctx context.Context, resp *oidc.Intr
 
 func (s *storage) GetPrivateClaimsFromScopes(ctx context.Context, _, _ string, scopes []string) (map[string]any, error) {
 	signingAccessToken(ctx)
-	return map[string]any{"scope": strings.Join(scopes, " ")}, nil
+	claims := hookClaims(ctx)
+	claims["scope"] = strings.Join(scopes, " ")
+	return claims, nil
 }
 
 func (s *storage) GetKeyByIDAndClientID(context.Context, string, string) (*jose.JSONWebKey, error) {

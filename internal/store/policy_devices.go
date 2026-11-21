@@ -124,7 +124,7 @@ func (s *Store) SetDeviceTrust(ctx context.Context, deviceID, trust string) erro
 }
 
 func (s *Store) RecentSignInIPs(ctx context.Context, userID string) ([]string, error) {
-	rows, err := s.db.Query(ctx, `select distinct ip from (select ip from sign_in_events where user_id = $1 and result = 'success' and impersonator_id is null order by time desc limit 200) recent`, userID)
+	rows, err := s.db.Query(ctx, `select distinct ip from (select ip from sign_in_events where user_id = $1 and result = 'success' and method <> 'token' and impersonator_id is null order by time desc limit 200) recent`, userID)
 	if err != nil {
 		return nil, err
 	}

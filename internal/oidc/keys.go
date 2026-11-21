@@ -11,6 +11,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -44,6 +45,7 @@ type algorithmsKey struct{}
 type algorithms struct {
 	id, access jose.SignatureAlgorithm
 	signAccess bool
+	claims     map[string]any
 }
 
 func withAlgorithms(ctx context.Context) context.Context {
@@ -72,6 +74,14 @@ func signingAccessToken(ctx context.Context) {
 	if a, ok := ctx.Value(algorithmsKey{}).(*algorithms); ok {
 		a.signAccess = true
 	}
+}
+
+func hookClaims(ctx context.Context) map[string]any {
+	claims := map[string]any{}
+	if a, ok := ctx.Value(algorithmsKey{}).(*algorithms); ok {
+		maps.Copy(claims, a.claims)
+	}
+	return claims
 }
 
 func (s *storage) signingKeys(ctx context.Context, need jose.SignatureAlgorithm) ([]signingKey, error) {

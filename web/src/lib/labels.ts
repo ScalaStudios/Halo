@@ -28,6 +28,8 @@ export const METHOD: Record<MethodKind, { label: string; icon: LucideIcon; phish
   certificate: { label: "Client certificate", icon: IdCard, phishingResistant: false },
 };
 
+export const SIGN_IN_METHOD: Record<SignInEvent["method"], { label: string }> = { ...METHOD, token: { label: "Token request" } };
+
 export const RESULT: Record<SignInResult, { label: string; tone: Tone }> = {
   success: { label: "Success", tone: "success" },
   failure: { label: "Failed", tone: "danger" },

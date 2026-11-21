@@ -97,6 +97,13 @@ export type Credential = {
   lastUsedAt: string | null;
 };
 
+export type ApplicationHook = {
+  appId: string;
+  host: string;
+  claims: string[];
+  failOpen: boolean;
+};
+
 export type Application = {
   id: string;
   name: string;
@@ -164,13 +171,14 @@ export type SignInEvent = {
   email: string;
   appId: string | null;
   result: SignInResult;
-  method: MethodKind;
+  method: MethodKind | "token";
   ip: string;
   location: string;
   device: string;
   risk: RiskLevel;
   reason?: string;
   challenge?: "passed" | "failed" | "unavailable";
+  hook?: "allowed" | "denied" | "failed_open" | "failed_closed";
   impersonatorId?: string;
 };
 

@@ -69,6 +69,9 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("PUT /api/v1/notification-rules/{id}", writers, h.updateRule)
 	route("DELETE /api/v1/notification-rules/{id}", writers, h.deleteRule)
 	route("POST /api/v1/notification-rules/{id}/test", writers, h.testRule)
+	route("GET /api/v1/applications/{id}/hook", readers, h.getHook)
+	route("PUT /api/v1/applications/{id}/hook", []string{"app_admin"}, h.putHook)
+	route("DELETE /api/v1/applications/{id}/hook", []string{"app_admin"}, h.deleteHook)
 	return nil
 }
 

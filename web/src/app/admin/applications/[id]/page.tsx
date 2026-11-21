@@ -4,6 +4,7 @@ import { AvatarEditor } from "@/components/account/avatar-editor";
 import { AppActions, DangerZone } from "@/components/applications/app-actions";
 import { CredentialList } from "@/components/applications/credentials";
 import { AuthenticationForm, ScopesForm, SignInFrequencyForm } from "@/components/applications/edit-application";
+import { HookForm } from "@/components/applications/hook-form";
 import { SamlAttributesForm, SamlConnectionFields, SamlSettingsForm } from "@/components/applications/saml";
 import { APP_STATUS, PROTOCOL_LABEL, SetupGuideCard, statusKey, TYPE_LABEL } from "@/components/applications/shared";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
@@ -22,7 +23,7 @@ import { formatDuration, pluralize } from "@/lib/format";
 import type { ApiResource } from "@/lib/infra-types";
 import type { SamlApplication } from "@/lib/saml-types";
 import { endpoints, setupGuide } from "@/lib/setup-guides";
-import type { Application, Group, Organization, Session, SignInEvent, User } from "@/lib/types";
+import type { Application, ApplicationHook, Group, Organization, Session, SignInEvent, User } from "@/lib/types";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -32,7 +33,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function ApplicationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { id } = await params;
   const { tab = "overview" } = await searchParams;
-  const [app, groups, users, sessions, appSignIns, org, resources] = await Promise.all([
+  const [app, groups, users, sessions, appSignIns, org, resources, hook] = await Promise.all([
     apiGet<SamlApplication>(`/applications/${encodeURIComponent(id)}`),
     apiGet<Group[]>("/groups"),
     apiGet<User[]>("/users"),
@@ -40,11 +41,13 @@ export default async function ApplicationPage({ params, searchParams }: { params
     apiGet<SignInEvent[]>(`/sign-ins?app=${encodeURIComponent(id)}`),
     apiGet<Organization>("/organization"),
     tab === "authentication" ? apiGet<ApiResource[]>("/api-resources") : [],
+    tab === "authentication" ? apiGet<ApplicationHook | null>(`/applications/${encodeURIComponent(id)}/hook`) : null,
   ]);
 
   const saml = app.protocol === "saml";
   const bookmark = app.protocol === "bookmark";
   const service = app.type === "service";
+  const hookable = !saml && !bookmark && !service && app.clientId !== "halo-cli";
   const owner = users.find((u) => u.id === app.owner);
   const appGroups = groups.filter((g) => app.groupIds.includes(g.id));
   const assigned = new Set(users.filter((u) => u.appIds.includes(app.id)).map((u) => u.id));
@@ -157,6 +160,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
           <div className="flex flex-col gap-6">
             <AuthenticationTab app={app} resources={resources} />
             {service ? null : <SignInFrequencyForm key={app.maxAuthAge} app={app} />}
+            {hookable ? <HookForm key={JSON.stringify(hook)} appId={app.id} appName={app.name} hook={hook} /> : null}
           </div>
         ) : null}
         {tab === "permissions" ? (

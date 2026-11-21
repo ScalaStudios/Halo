@@ -69,6 +69,8 @@ var sensitiveRoutes = []string{
 	"POST /api/v1/compliance-sources",
 	"PUT /api/v1/compliance-sources/{id}",
 	"DELETE /api/v1/compliance-sources/{id}",
+	"PUT /api/v1/applications/{id}/hook",
+	"DELETE /api/v1/applications/{id}/hook",
 }
 
 var ownMethodRoutes = []string{
