@@ -28,6 +28,8 @@ type handlers struct {
 
 type handler func(http.ResponseWriter, *http.Request, store.User) error
 
+type scopeKey struct{}
+
 func Register(mux *http.ServeMux, d httpx.Deps) error {
 	mailer := d.Mailer
 	if mailer == nil {
@@ -47,6 +49,22 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 			return fn(w, r, actor)
 		}))
 	}
+	scoped := func(pattern string, roles []string, fn handler) {
+		mux.Handle(pattern, httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
+			actor, _, err := httpx.RequireUser(r)
+			if err != nil {
+				return err
+			}
+			groups, ok := actor.Scope(roles...)
+			if !ok {
+				return httpx.ErrForbidden
+			}
+			if groups != nil {
+				r = r.WithContext(context.WithValue(r.Context(), scopeKey{}, groups))
+			}
+			return fn(w, r, actor)
+		}))
+	}
 	signedIn := func(pattern string, fn handler) {
 		mux.Handle(pattern, httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
 			actor, _, err := httpx.RequireUser(r)
@@ -57,27 +75,27 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		}))
 	}
 
-	route("GET /api/v1/users", readers, h.listUsers)
-	route("GET /api/v1/users/{id}", readers, h.getUser)
-	route("GET /api/v1/users/{id}/sessions", readers, h.userSessions)
-	route("GET /api/v1/users/{id}/sign-ins", readers, h.userSignIns)
+	scoped("GET /api/v1/users", readers, h.listUsers)
+	scoped("GET /api/v1/users/{id}", readers, h.getUser)
+	scoped("GET /api/v1/users/{id}/sessions", readers, h.userSessions)
+	scoped("GET /api/v1/users/{id}/sign-ins", readers, h.userSignIns)
 	route("GET /api/v1/users/{id}/export", nil, h.exportUser)
 	signedIn("GET /api/v1/me/export", h.exportMe)
-	route("POST /api/v1/users", []string{"user_admin"}, h.inviteUser)
-	route("POST /api/v1/users/import", []string{"user_admin"}, h.importUsers)
-	route("POST /api/v1/users/{id}/suspend", []string{"user_admin", "security_admin"}, h.suspendUser)
-	route("POST /api/v1/users/bulk/suspend", []string{"user_admin", "security_admin"}, h.bulkUsers(h.suspend))
-	route("POST /api/v1/users/{id}/restore", []string{"user_admin"}, h.restoreUser)
-	route("POST /api/v1/users/bulk/restore", []string{"user_admin"}, h.bulkUsers(h.restore))
-	route("POST /api/v1/users/{id}/revoke-sessions", []string{"user_admin", "helpdesk_admin", "security_admin"}, h.revokeUserSessions)
-	route("POST /api/v1/users/bulk/revoke-sessions", []string{"user_admin", "helpdesk_admin", "security_admin"}, h.bulkUsers(h.bulkRevokeSessions))
-	route("POST /api/v1/users/{id}/reset-authentication", []string{"user_admin", "helpdesk_admin"}, h.resetAuthentication)
-	route("DELETE /api/v1/users/{id}/methods/{methodId}", []string{"user_admin", "helpdesk_admin"}, h.deleteMethod)
-	route("PUT /api/v1/users/{id}/password", []string{"user_admin", "helpdesk_admin"}, h.setTemporaryPassword)
-	route("POST /api/v1/users/{id}/access-pass", []string{"user_admin", "helpdesk_admin"}, h.createAccessPass)
+	scoped("POST /api/v1/users", []string{"user_admin"}, h.inviteUser)
+	scoped("POST /api/v1/users/import", []string{"user_admin"}, h.importUsers)
+	scoped("POST /api/v1/users/{id}/suspend", []string{"user_admin", "security_admin"}, h.suspendUser)
+	scoped("POST /api/v1/users/bulk/suspend", []string{"user_admin", "security_admin"}, h.bulkUsers(h.suspend))
+	scoped("POST /api/v1/users/{id}/restore", []string{"user_admin"}, h.restoreUser)
+	scoped("POST /api/v1/users/bulk/restore", []string{"user_admin"}, h.bulkUsers(h.restore))
+	scoped("POST /api/v1/users/{id}/revoke-sessions", []string{"user_admin", "helpdesk_admin", "security_admin"}, h.revokeUserSessions)
+	scoped("POST /api/v1/users/bulk/revoke-sessions", []string{"user_admin", "helpdesk_admin", "security_admin"}, h.bulkUsers(h.bulkRevokeSessions))
+	scoped("POST /api/v1/users/{id}/reset-authentication", []string{"user_admin", "helpdesk_admin"}, h.resetAuthentication)
+	scoped("DELETE /api/v1/users/{id}/methods/{methodId}", []string{"user_admin", "helpdesk_admin"}, h.deleteMethod)
+	scoped("PUT /api/v1/users/{id}/password", []string{"user_admin", "helpdesk_admin"}, h.setTemporaryPassword)
+	scoped("POST /api/v1/users/{id}/access-pass", []string{"user_admin", "helpdesk_admin"}, h.createAccessPass)
 	route("PUT /api/v1/users/{id}/roles", nil, h.setRoles)
 	route("PUT /api/v1/users/{id}/eligible-roles", nil, h.setEligibleRoles)
-	route("PATCH /api/v1/users/{id}", []string{"user_admin", "helpdesk_admin"}, h.updateUser)
+	scoped("PATCH /api/v1/users/{id}", []string{"user_admin", "helpdesk_admin"}, h.updateUser)
 	signedIn("PUT /api/v1/users/{id}/guest", h.updateGuest)
 	signedIn("GET /api/v1/me/guests", h.mySponsoredGuests)
 	route("POST /api/v1/users/{id}/impersonations", []string{"helpdesk_admin"}, h.requestImpersonation)
@@ -89,7 +107,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("POST /api/v1/sign-ups/{id}/approve", []string{"user_admin"}, h.approveSignUp)
 	route("DELETE /api/v1/sign-ups/{id}", []string{"user_admin"}, h.rejectSignUp)
 
-	route("GET /api/v1/groups", readers, h.listGroups)
+	scoped("GET /api/v1/groups", readers, h.listGroups)
 	route("POST /api/v1/groups", []string{"user_admin"}, h.createGroup)
 	signedIn("POST /api/v1/groups/{id}/members", h.addMember)
 	signedIn("DELETE /api/v1/groups/{id}/members/{userId}", h.removeMember)
@@ -102,8 +120,8 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	signedIn("GET /api/v1/me/owned-groups", h.myOwnedGroups)
 	signedIn("GET /api/v1/me/owned-groups/{id}", h.myOwnedGroup)
 	signedIn("GET /api/v1/me/joinable-groups", h.myJoinableGroups)
-	route("GET /api/v1/groups/{id}", readers, h.getGroup)
-	route("GET /api/v1/groups/{id}/members", readers, h.groupMembers)
+	scoped("GET /api/v1/groups/{id}", readers, h.getGroup)
+	scoped("GET /api/v1/groups/{id}/members", readers, h.groupMembers)
 	route("PATCH /api/v1/groups/{id}", []string{"user_admin"}, h.updateGroup)
 	route("DELETE /api/v1/groups/{id}", []string{"user_admin"}, h.deleteGroup)
 
@@ -125,7 +143,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("DELETE /api/v1/collections/{id}", []string{"app_admin"}, h.deleteCollection)
 
 	route("GET /api/v1/sessions", readers, h.listSessions)
-	route("DELETE /api/v1/sessions/{id}", []string{"security_admin", "user_admin"}, h.revokeSession)
+	scoped("DELETE /api/v1/sessions/{id}", []string{"security_admin", "user_admin"}, h.revokeSession)
 	route("GET /api/v1/sign-ins", readers, h.listSignIns)
 	route("GET /api/v1/audit", readers, h.listAudit)
 	route("GET /api/v1/overview", readers, h.overview)
@@ -138,6 +156,11 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("POST /api/v1/saml/certificate/rotate", nil, h.rotateSAMLCertificate)
 	route("DELETE /api/v1/saml/certificates/{id}", nil, h.deleteSAMLCertificate)
 	return nil
+}
+
+func inScope(r *http.Request, groupIDs ...string) bool {
+	scope, limited := r.Context().Value(scopeKey{}).([]string)
+	return !limited || slices.ContainsFunc(groupIDs, func(id string) bool { return slices.Contains(scope, id) })
 }
 
 func record(r *http.Request, st *store.Store, actor store.User, e store.AuditEvent) error {

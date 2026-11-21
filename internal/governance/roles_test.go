@@ -28,7 +28,7 @@ func TestRoleActivation(t *testing.T) {
 	activate := map[string]any{"role": "user_admin", "durationHours": 2, "justification": "Onboarding the new support team"}
 	expect(t, e.call(token, "POST", "/api/v1/me/role-activations", activate), 403)
 
-	if _, err := e.st.SetEligibleRoles(ctx, alex.ID, []string{"user_admin"}); err != nil {
+	if _, err := e.st.SetEligibleRoles(ctx, alex.ID, []string{"user_admin"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	expect(t, e.call(token, "GET", "/api/v1/access-requests", nil), 403)
@@ -68,7 +68,7 @@ func TestExpiredActivationLosesAccessOnNextRequest(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()
 	alex, token := e.person("alex@example.com")
-	if _, err := e.st.SetEligibleRoles(ctx, alex.ID, []string{"auditor"}); err != nil {
+	if _, err := e.st.SetEligibleRoles(ctx, alex.ID, []string{"auditor"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	ends := time.Now().Add(time.Second)

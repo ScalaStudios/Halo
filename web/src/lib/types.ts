@@ -28,6 +28,8 @@ export type User = {
   roles: string[];
   eligibleRoles: RoleKey[];
   activations: RoleActivation[];
+  roleScopes: RoleScopes;
+  eligibleScopes: RoleScopes;
   groupIds: string[];
   appIds: string[];
   managerId: string | null;
@@ -51,6 +53,8 @@ export type Impersonation = {
   startedAt: string | null;
   expiresAt: string;
 };
+
+export type RoleScopes = Partial<Record<RoleKey, string[]>>;
 
 export type RoleActivation = {
   id: string;

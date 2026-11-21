@@ -40,8 +40,10 @@ type User struct {
 	Sponsor       *NamedRef  `json:"sponsor"`
 	ExpiresAt     *time.Time `json:"expiresAt"`
 
-	EligibleRoles []string         `json:"eligibleRoles"`
-	Activations   []RoleActivation `json:"activations"`
+	EligibleRoles  []string            `json:"eligibleRoles"`
+	Activations    []RoleActivation    `json:"activations"`
+	RoleScopes     map[string][]string `json:"roleScopes"`
+	EligibleScopes map[string][]string `json:"eligibleScopes"`
 }
 
 type Group struct {

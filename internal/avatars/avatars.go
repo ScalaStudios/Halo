@@ -162,9 +162,12 @@ func (h *handler) self(fn action) httpx.HandlerFunc {
 
 func (h *handler) admin(fn action) httpx.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		actor, err := httpx.RequireRole(r, "user_admin", "helpdesk_admin")
+		actor, _, err := httpx.RequireUser(r)
 		if err != nil {
 			return err
+		}
+		if _, ok := actor.Scope("user_admin", "helpdesk_admin"); !ok {
+			return httpx.ErrForbidden
 		}
 		target, err := h.st.GetUser(r.Context(), r.PathValue("id"))
 		if errors.Is(err, store.ErrNotFound) {
@@ -172,6 +175,9 @@ func (h *handler) admin(fn action) httpx.HandlerFunc {
 		}
 		if err != nil {
 			return err
+		}
+		if !actor.Manages(target, "user_admin", "helpdesk_admin") {
+			return httpx.ErrForbidden
 		}
 		if len(target.RoleKeys)+len(target.EligibleRoles) > 0 && !actor.HasRole("global_admin") {
 			return httpx.Fail(http.StatusForbidden, "ERR_FORBIDDEN", target.Name+" holds or is eligible for an administrator role, so only a global administrator can change their account.")

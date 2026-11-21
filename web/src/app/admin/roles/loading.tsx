@@ -6,7 +6,7 @@ import { PageSkeleton, Skeleton } from "@/components/ui/skeleton";
 
 export default function Loading() {
   return (
-    <PageSkeleton title="Roles" description={129}>
+    <PageSkeleton title="Roles" description={214}>
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         {ROLE_ORDER.map((role) => (
           <Card key={role} className="flex flex-col">

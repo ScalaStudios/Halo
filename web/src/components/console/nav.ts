@@ -132,6 +132,10 @@ export const nav: NavGroup[] = [
   },
 ];
 
+export function navFor(limited: boolean) {
+  return limited ? nav.map((group) => ({ ...group, items: group.items.filter((item) => item.href === `${BASE}/users`) })).filter((group) => group.items.length) : nav;
+}
+
 export const allItems = nav.flatMap((group) => group.items.map((item) => ({ ...item, group: group.label })));
 
 export function findItem(pathname: string) {

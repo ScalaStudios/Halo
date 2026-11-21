@@ -49,7 +49,7 @@ func (h *handlers) revokeSession(w http.ResponseWriter, r *http.Request, actor s
 	if current, ok := httpx.CurrentSession(r); ok && current.ID == sess.ID {
 		return httpx.Invalid("This is the session you are using right now. Sign out from the account menu instead.")
 	}
-	owner, err := h.st.GetUser(r.Context(), sess.UserID)
+	owner, err := h.target(r, sess.UserID)
 	if err != nil {
 		return err
 	}

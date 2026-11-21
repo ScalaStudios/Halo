@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { BrandStyle } from "@/components/brand-style";
 import { ConsoleShell } from "@/components/console/shell";
+import { limitedOnly } from "@/components/settings/roles";
 import { apiGet } from "@/lib/api/server";
 import type { OrganizationProfile } from "@/lib/settings-types";
 import type { User } from "@/lib/types";
@@ -17,7 +18,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   return (
     <>
       {org.consoleBranding ? <BrandStyle org={org} /> : null}
-      <ConsoleShell user={{ name: me.name, email: me.email, avatarUrl: me.avatarUrl }} orgName={org.name}>
+      <ConsoleShell user={{ name: me.name, email: me.email, avatarUrl: me.avatarUrl }} orgName={org.name} limited={limitedOnly(me)}>
         {children}
       </ConsoleShell>
     </>

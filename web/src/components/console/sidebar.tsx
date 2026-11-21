@@ -8,7 +8,7 @@ import { HaloMark } from "@/components/halo-mark";
 import { Kbd } from "@/components/ui/kbd";
 import { LinkProgress } from "@/components/ui/navigation-progress";
 import { cn } from "@/lib/cn";
-import { BASE, findItem, nav } from "./nav";
+import { BASE, findItem, nav, navFor } from "./nav";
 
 const REPO = "https://github.com/ScalaStudios/Halo";
 const VERSION = process.env.NEXT_PUBLIC_HALO_VERSION || "dev";
@@ -16,7 +16,7 @@ const COMMIT = process.env.NEXT_PUBLIC_HALO_COMMIT;
 
 const STORAGE_KEY = "halo.sidebar.collapsed";
 
-export function Sidebar({ orgName, onSearch, onNavigate }: { orgName: string; onSearch: () => void; onNavigate?: (href: string) => void }) {
+export function Sidebar({ orgName, limited, onSearch, onNavigate }: { orgName: string; limited: boolean; onSearch: () => void; onNavigate?: (href: string) => void }) {
   const pathname = usePathname();
   const activeHref = findItem(pathname)?.href;
   const activeGroup = nav.find((group) => group.items.some((item) => item.href === activeHref))?.id;
@@ -74,7 +74,7 @@ export function Sidebar({ orgName, onSearch, onNavigate }: { orgName: string; on
       </div>
 
       <nav aria-label="Administration" className="flex-1 overflow-y-auto px-3 pt-2 pb-4">
-        {nav.map((group) => {
+        {navFor(limited).map((group) => {
           const isCollapsed = group.label !== null && collapsed.includes(group.id) && group.id !== activeGroup;
           return (
             <div key={group.id} className="pt-2">

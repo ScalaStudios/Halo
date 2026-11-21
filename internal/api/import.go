@@ -211,11 +211,15 @@ func (h *handlers) checkImport(r *http.Request, rows []importRow) ([]int, error)
 	if err != nil {
 		return nil, err
 	}
+	groups = slices.DeleteFunc(groups, func(g store.Group) bool { return !inScope(r, g.ID) })
 	byEmail := map[string]int{}
 	for i := range rows {
 		row := &rows[i]
 		row.manager = -1
 		err := checkImportRow(row, existing, groups)
+		if err == nil && !inScope(r) && len(row.groupIDs) == 0 {
+			err = httpx.Fail(http.StatusForbidden, "ERR_OUT_OF_SCOPE", "Add "+row.Name+" to at least one group you manage in the groups column.")
+		}
 		key := strings.ToLower(row.Email)
 		if j, dup := byEmail[key]; dup && err == nil {
 			err = httpx.Invalid(fmt.Sprintf("Row %d already has the email %s. Each person needs their own address, so remove one of the rows.", rows[j].Row, row.Email))
@@ -232,6 +236,7 @@ func (h *handlers) checkImport(r *http.Request, rows []importRow) ([]int, error)
 			continue
 		}
 		manager, inHalo := existing[strings.ToLower(row.ManagerEmail)]
+		inHalo = inHalo && inScope(r, manager.GroupIDs...)
 		j, inFile := byEmail[strings.ToLower(row.ManagerEmail)]
 		switch {
 		case inHalo && manager.Kind != "person":

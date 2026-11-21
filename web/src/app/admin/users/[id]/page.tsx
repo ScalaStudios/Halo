@@ -14,6 +14,7 @@ import { ImpersonationNotices } from "@/components/directory/impersonation";
 import { PersonalData } from "@/components/directory/personal-data";
 import { EditProfileButton, type ProfileEdit } from "@/components/directory/edit-profile";
 import { EditRolesButton, PasskeyWarning } from "@/components/directory/edit-roles";
+import { limitedOnly, roleNames } from "@/components/settings/roles";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
 import { GuestAccessButton } from "@/components/directory/guest-access";
 import { PROTOCOL_LABEL } from "@/components/applications/shared";
@@ -43,20 +44,22 @@ export default async function UserPage({ params, searchParams }: { params: Promi
   const { id } = await params;
   const { tab = "overview" } = await searchParams;
   const path = `/users/${encodeURIComponent(id)}`;
-  const [user, userSessions, userSignIns, groups, applications, audit, userDevices, directory, me, enabled, { settings }, impersonations] = await Promise.all([
+  const [user, userSessions, userSignIns, groups, applications, audit, userDevices, directory, me, enabled, response, impersonations] = await Promise.all([
     apiGet<User>(path),
     apiGet<Session[]>(`${path}/sessions`),
     apiGet<SignInEvent[]>(`${path}/sign-ins`),
     apiGet<Group[]>("/groups"),
-    apiGet<Application[]>("/applications"),
-    apiGet<AuditEvent[]>("/audit"),
-    apiGet<Device[]>(`/devices?user=${encodeURIComponent(id)}`),
+    apiGet<Application[]>("/applications", []),
+    apiGet<AuditEvent[]>("/audit", []),
+    apiGet<Device[]>(`/devices?user=${encodeURIComponent(id)}`, []),
     apiGet<User[]>("/users"),
     apiGet<User>("/me"),
-    apiGet<{ methods: string[] }>("/auth/methods"),
-    apiGet<SettingsResponse>("/settings"),
-    apiGet<Impersonation[]>(`/impersonations?user=${encodeURIComponent(id)}`),
+    apiGet<{ methods: string[] } | null>("/auth/methods", null),
+    apiGet<SettingsResponse | null>("/settings", null),
+    apiGet<Impersonation[]>(`/impersonations?user=${encodeURIComponent(id)}`, []),
   ]);
+  const settings = response?.settings;
+  const limited = limitedOnly(me);
   const manager = user.managerId ? await apiGet<User>(`/users/${encodeURIComponent(user.managerId)}`) : undefined;
 
   const userGroups = groups.filter((g) => user.groupIds.includes(g.id));
@@ -72,15 +75,18 @@ export default async function UserPage({ params, searchParams }: { params: Promi
     user.id !== me.id &&
     user.status === "active" &&
     user.roles.length + user.eligibleRoles.length === 0 &&
-    settings.impersonationGroupIds.some((g) => user.groupIds.includes(g));
-  const passwordGroups = settings.passwordGroupIds.map((id) => groups.find((g) => g.id === id)?.name ?? "a deleted group");
-  const passwordWarning = !enabled.methods.includes("password")
-    ? `Passwords are turned off, so ${user.name} can't use this until a security administrator turns them on under Methods.`
-    : passwordGroups.length > 0 && !settings.passwordGroupIds.some((id) => user.groupIds.includes(id))
-      ? `Passwords are limited to members of ${joinList(passwordGroups)}, so ${user.name} can't use this until you add them to one of those groups.`
-      : settings.passwordSecondFactor && !user.methods.some((m) => m.kind === "totp")
-        ? `Password sign-ins also need a code from an authenticator app, and ${user.name} doesn't have one, so they can't finish signing in with a password yet.`
-        : undefined;
+    Boolean(settings?.impersonationGroupIds.some((g) => user.groupIds.includes(g)));
+  const passwordGroups = settings?.passwordGroupIds.map((id) => groups.find((g) => g.id === id)?.name ?? "a deleted group") ?? [];
+  const passwordWarning =
+    !settings || !enabled
+      ? undefined
+      : !enabled.methods.includes("password")
+        ? `Passwords are turned off, so ${user.name} can't use this until a security administrator turns them on under Methods.`
+        : passwordGroups.length > 0 && !settings.passwordGroupIds.some((id) => user.groupIds.includes(id))
+          ? `Passwords are limited to members of ${joinList(passwordGroups)}, so ${user.name} can't use this until you add them to one of those groups.`
+          : settings.passwordSecondFactor && !user.methods.some((m) => m.kind === "totp")
+            ? `Password sign-ins also need a code from an authenticator app, and ${user.name} doesn't have one, so they can't finish signing in with a password yet.`
+            : undefined;
 
   const tabs = [
     { id: "overview", label: "Overview" },
@@ -128,7 +134,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
             </span>
           </Fact>
           <Fact label="Admin role" action={global && !user.guest ? <EditRolesButton user={user} /> : undefined}>
-            {user.roles.join(", ") || "None"}
+            {(limited ? user.roles : roleNames(user, groups)).join(", ") || "None"}
           </Fact>
           <Fact label="Last sign-in">{user.lastSignInAt ? formatRelative(user.lastSignInAt) : "Never"}</Fact>
           <Fact label="Source">{user.source}</Fact>

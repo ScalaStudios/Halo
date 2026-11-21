@@ -21,6 +21,9 @@ func ruleError(err error) error {
 
 func (h *handlers) group(r *http.Request) (store.Group, error) {
 	g, err := h.st.GetGroup(r.Context(), r.PathValue("id"))
+	if err == nil && !inScope(r, g.ID) {
+		err = store.ErrNotFound
+	}
 	return g, found(err, "This group")
 }
 
@@ -43,6 +46,7 @@ func (h *handlers) listGroups(w http.ResponseWriter, r *http.Request, _ store.Us
 	if err != nil {
 		return err
 	}
+	groups = slices.DeleteFunc(groups, func(g store.Group) bool { return !inScope(r, g.ID) })
 	return httpx.JSON(w, http.StatusOK, nonNil(groups))
 }
 
@@ -198,7 +202,7 @@ func (h *handlers) groupMembers(w http.ResponseWriter, r *http.Request, _ store.
 	}
 	members := []store.User{}
 	for _, u := range users {
-		if u.Status != "deprovisioned" && (matched[u.ID] || !preview && slices.Contains(u.GroupIDs, g.ID)) {
+		if u.Status != "deprovisioned" && inScope(r, u.GroupIDs...) && (matched[u.ID] || !preview && slices.Contains(u.GroupIDs, g.ID)) {
 			members = append(members, u)
 		}
 	}

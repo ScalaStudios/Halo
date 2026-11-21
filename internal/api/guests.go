@@ -40,7 +40,7 @@ func (h *handlers) updateGuest(w http.ResponseWriter, r *http.Request, actor sto
 	if err != nil {
 		return err
 	}
-	admin := actor.HasRole("global_admin", "user_admin")
+	admin := actor.Manages(guest, "user_admin")
 	if !guest.Guest || !admin && (guest.Sponsor == nil || guest.Sponsor.ID != actor.ID) {
 		return httpx.NotFound("This guest")
 	}

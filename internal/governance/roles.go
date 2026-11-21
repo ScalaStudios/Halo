@@ -33,7 +33,7 @@ func (h *handler) activateRole(w http.ResponseWriter, r *http.Request, u store.U
 	if !slices.Contains(u.EligibleRoles, in.Role) {
 		return errNotEligible
 	}
-	if u.HasRole(in.Role) {
+	if slices.Contains(u.RoleKeys, in.Role) {
 		return conflict("You already hold " + label + ". Refresh the page to see your roles.")
 	}
 	if in.DurationHours < 1 || in.DurationHours > maxActivationHours {
