@@ -15,6 +15,8 @@ info:
 
     **Roles.** Each operation states the roles it requires. A global administrator passes every role check. "Any administrator" means security, user, helpdesk or application administrator, or auditor.
 
+    **Limited roles.** A global administrator can limit a user or helpdesk administrator role, held or eligible, to a set of assigned or rule-based groups with `scopes` on `PUT /users/{id}/roles` and `PUT /users/{id}/eligible-roles`. A limited role counts only on the operations marked "Limited roles apply"; everywhere else it counts as not held. There, people outside the role's groups are left out of lists, answer `404` on reads and `403` with `ERR_OUT_OF_SCOPE` on changes. An activated role keeps the groups of its eligibility. Only a global administrator assigns roles, so a limited administrator cannot grant a role or widen their own groups.
+
     **Errors.** Every error is `{"error": {"code": "ERR_…", "message": "…"}}`. Match on `code`; show `message` to people. Besides the codes listed per operation, any request can fail with `500` and `ERR_INTERNAL`, requests over the rate limit get `429` with `ERR_RATE_LIMITED`, and unknown routes answer `404` with `ERR_NO_ROUTE`. Requests with a method other than GET, HEAD or OPTIONS that come from another website get `403` with `ERR_CROSS_SITE`.
 
     **Rate limits.** Requests with an API key or a session are counted in one-minute windows that start on the minute: up to 600 per API key by default, set per service account with `rateLimit`, and up to 1,200 per session. SCIM requests under `/scim/v2` are counted apart, up to 3,000 per API key. Imports and bulk actions, `/users/import`, `/users/bulk/*` and `/groups/{id}/members/bulk/*`, are also counted apart under `bulk`, up to 20 requests per session or API key. Counted responses carry the `RateLimit-Policy` and `RateLimit` fields of draft-ietf-httpapi-ratelimit-headers, such as `RateLimit-Policy: "api";q=600;w=60` and `RateLimit: "api";r=598;t=42`. Over the limit, the response is `429` with `ERR_RATE_LIMITED` and `Retry-After` in seconds.
@@ -1982,7 +1984,7 @@ paths:
       tags: [Users]
       operationId: listUsers
       summary: List every person
-      description: 'Roles: any administrator. Service accounts are not included.'
+      description: 'Roles: any administrator. Service accounts are not included. Limited roles apply.'
       responses:
         '200':
           description: Every person, sorted by name.
@@ -1997,7 +1999,7 @@ paths:
       tags: [Users]
       operationId: inviteUser
       summary: Invite a person
-      description: 'Roles: user administrator; including `roles` requires global administrator and a recent strong sign-in, and `global_admin` is refused while granting it needs approval. Creates the account with status `invited` and a setup link, and emails the link when SMTP is configured. With `guest`, the account is a guest: any email address works, `sponsorId` and `expiresAt` are required, and `roles` must be empty.'
+      description: 'Roles: user administrator; including `roles` requires global administrator and a recent strong sign-in, and `global_admin` is refused while granting it needs approval. Creates the account with status `invited` and a setup link, and emails the link when SMTP is configured. With `guest`, the account is a guest: any email address works, `sponsorId` and `expiresAt` are required, and `roles` must be empty. Limited roles apply.'
       requestBody:
         required: true
         content:
@@ -2045,7 +2047,7 @@ paths:
       tags: [Users]
       operationId: importUsers
       summary: Import people from a CSV file or JSON
-      description: 'Roles: user administrator. Creates each valid row as an invited person with a setup link, exactly like `POST /users`, in one transaction, and records `user.invite` for each person and one `user.import` summary. Rows with a problem are skipped and reported. Imports never grant administrator roles: a `roles` column is refused and a `roles` field is an unknown field. Send `dryRun=true` first to validate every row without writing anything. Up to 500 rows and 1 MiB per request. Counted under the `bulk` rate limit.'
+      description: 'Roles: user administrator. Creates each valid row as an invited person with a setup link, exactly like `POST /users`, in one transaction, and records `user.invite` for each person and one `user.import` summary. Rows with a problem are skipped and reported. Imports never grant administrator roles: a `roles` column is refused and a `roles` field is an unknown field. Send `dryRun=true` first to validate every row without writing anything. Up to 500 rows and 1 MiB per request. Counted under the `bulk` rate limit. Limited roles apply.'
       parameters:
         - name: dryRun
           in: query
@@ -2113,7 +2115,7 @@ paths:
       tags: [Users]
       operationId: bulkSuspendUsers
       summary: Suspend many people
-      description: 'Roles: user or security administrator. Runs the checks of `POST /users/{id}/suspend` for each person, in its own transaction with its own `user.suspend` audit event, so one refusal does not stop the rest. Counted under the `bulk` rate limit.'
+      description: 'Roles: user or security administrator. Runs the checks of `POST /users/{id}/suspend` for each person, in its own transaction with its own `user.suspend` audit event, so one refusal does not stop the rest. Counted under the `bulk` rate limit. Limited roles apply.'
       requestBody: {$ref: '#/components/requestBodies/BulkUserIds'}
       responses:
         '200': {$ref: '#/components/responses/BulkResults'}
@@ -2125,7 +2127,7 @@ paths:
       tags: [Users]
       operationId: bulkRestoreUsers
       summary: Restore many suspended people
-      description: 'Roles: user administrator. Runs `POST /users/{id}/restore` for each person, with a result per person. Counted under the `bulk` rate limit.'
+      description: 'Roles: user administrator. Runs `POST /users/{id}/restore` for each person, with a result per person. Counted under the `bulk` rate limit. Limited roles apply.'
       requestBody: {$ref: '#/components/requestBodies/BulkUserIds'}
       responses:
         '200': {$ref: '#/components/responses/BulkResults'}
@@ -2137,7 +2139,7 @@ paths:
       tags: [Users]
       operationId: bulkRevokeUserSessions
       summary: End many people's sessions
-      description: 'Roles: user, helpdesk or security administrator. Runs `POST /users/{id}/revoke-sessions` for each person, with a result per person. Counted under the `bulk` rate limit.'
+      description: 'Roles: user, helpdesk or security administrator. Runs `POST /users/{id}/revoke-sessions` for each person, with a result per person. Counted under the `bulk` rate limit. Limited roles apply.'
       requestBody: {$ref: '#/components/requestBodies/BulkUserIds'}
       responses:
         '200': {$ref: '#/components/responses/BulkResults'}
@@ -2151,7 +2153,7 @@ paths:
       tags: [Users]
       operationId: getUser
       summary: Get one person
-      description: 'Roles: any administrator.'
+      description: 'Roles: any administrator. Limited roles apply.'
       responses:
         '200':
           description: The person.
@@ -2165,7 +2167,7 @@ paths:
       tags: [Users]
       operationId: updateUser
       summary: Change a person's profile
-      description: 'Roles: user or helpdesk administrator. Helpdesk administrators can change title, department and location only. Only a global administrator can change a person who holds an administrator role. Send only the fields to change; an empty `managerId` removes the manager.'
+      description: 'Roles: user or helpdesk administrator. Helpdesk administrators can change title, department and location only. Only a global administrator can change a person who holds an administrator role. Send only the fields to change; an empty `managerId` removes the manager. Limited roles apply.'
       requestBody:
         required: true
         content:
@@ -2253,7 +2255,7 @@ paths:
       tags: [Users]
       operationId: uploadUserAvatar
       summary: Set a person's profile picture
-      description: 'Roles: user or helpdesk administrator. Only a global administrator can change the picture of a person who holds an administrator role. Send the image bytes as the body: PNG, JPEG or WebP, at most 512 KB.'
+      description: 'Roles: user or helpdesk administrator. Only a global administrator can change the picture of a person who holds an administrator role. Send the image bytes as the body: PNG, JPEG or WebP, at most 512 KB. Limited roles apply.'
       requestBody:
         required: true
         content:
@@ -2286,7 +2288,7 @@ paths:
       tags: [Users]
       operationId: removeUserAvatar
       summary: Remove a person's profile picture
-      description: 'Roles: user or helpdesk administrator. Only a global administrator can remove the picture of a person who holds an administrator role.'
+      description: 'Roles: user or helpdesk administrator. Only a global administrator can remove the picture of a person who holds an administrator role. Limited roles apply.'
       responses:
         '200':
           description: The picture was removed.
@@ -2307,7 +2309,7 @@ paths:
       tags: [Users]
       operationId: listUserSessions
       summary: List a person's active sessions
-      description: 'Roles: any administrator.'
+      description: 'Roles: any administrator. Limited roles apply.'
       responses:
         '200':
           description: The sessions.
@@ -2326,7 +2328,7 @@ paths:
       tags: [Users]
       operationId: listUserSignIns
       summary: List a person's sign-in events
-      description: 'Roles: any administrator. The 500 most recent.'
+      description: 'Roles: any administrator. The 500 most recent. Limited roles apply.'
       responses:
         '200':
           description: The events, newest first.
@@ -2345,7 +2347,7 @@ paths:
       tags: [Users]
       operationId: suspendUser
       summary: Suspend a person and end their sessions
-      description: 'Roles: user or security administrator. Refused for your own account and for the last active global administrator.'
+      description: 'Roles: user or security administrator. Refused for your own account and for the last active global administrator. Limited roles apply.'
       responses:
         '200': {$ref: '#/components/responses/UserResponse'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -2359,7 +2361,7 @@ paths:
       tags: [Users]
       operationId: restoreUser
       summary: Restore a suspended person
-      description: 'Roles: user administrator. The person becomes `active`, or `invited` when they never signed in and have no sign-in method. A guest whose access ended answers `409`; change `expiresAt` with `PUT /users/{id}/guest` first.'
+      description: 'Roles: user administrator. The person becomes `active`, or `invited` when they never signed in and have no sign-in method. A guest whose access ended answers `409`; change `expiresAt` with `PUT /users/{id}/guest` first. Limited roles apply.'
       responses:
         '200': {$ref: '#/components/responses/UserResponse'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -2373,7 +2375,7 @@ paths:
       tags: [Users]
       operationId: revokeUserSessions
       summary: End a person's sessions
-      description: 'Roles: user, helpdesk or security administrator. When you target yourself, your current session stays.'
+      description: 'Roles: user, helpdesk or security administrator. When you target yourself, your current session stays. Limited roles apply.'
       responses:
         '200': {$ref: '#/components/responses/Revoked'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -2470,7 +2472,7 @@ paths:
       tags: [Users]
       operationId: resetAuthentication
       summary: Remove every sign-in method and create a new setup link
-      description: 'Roles: user or helpdesk administrator. Also ends every session and emails the link when SMTP is configured.'
+      description: 'Roles: user or helpdesk administrator. Also ends every session and emails the link when SMTP is configured. Limited roles apply.'
       responses:
         '200':
           description: The new setup link.
@@ -2497,7 +2499,7 @@ paths:
       tags: [Users]
       operationId: deleteUserMethod
       summary: Remove one of a person's sign-in methods
-      description: 'Roles: user or helpdesk administrator; only a global administrator can remove one from an administrator. The id `access-pass` revokes the person''s temporary access pass.'
+      description: 'Roles: user or helpdesk administrator; only a global administrator can remove one from an administrator. The id `access-pass` revokes the person''s temporary access pass. Limited roles apply.'
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
         '401': {$ref: '#/components/responses/ReauthRequired'}
@@ -2510,7 +2512,7 @@ paths:
       tags: [Users]
       operationId: createAccessPass
       summary: Create a temporary access pass
-      description: 'Roles: user or helpdesk administrator; only a global administrator can create one for an administrator, and nobody can create one for themselves. The person signs in with it at `/auth/access-pass` to set up a new passkey. A new pass replaces the person''s active one. Halo stores only a hash, so the pass is shown once in this response; give it to the person in person or by phone after checking who they are. Halo emails the person that a pass was created, without the pass. Revoke it with `DELETE /users/{id}/methods/access-pass`.'
+      description: 'Roles: user or helpdesk administrator; only a global administrator can create one for an administrator, and nobody can create one for themselves. The person signs in with it at `/auth/access-pass` to set up a new passkey. A new pass replaces the person''s active one. Halo stores only a hash, so the pass is shown once in this response; give it to the person in person or by phone after checking who they are. Halo emails the person that a pass was created, without the pass. Revoke it with `DELETE /users/{id}/methods/access-pass`. Limited roles apply.'
       requestBody:
         required: true
         content:
@@ -2544,7 +2546,7 @@ paths:
       tags: [Users]
       operationId: setTemporaryPassword
       summary: Set a temporary password
-      description: 'Roles: user or helpdesk administrator; only a global administrator can set one for an administrator. The person must choose a new password at their next sign-in. The same length and breach rules apply as for `PUT /me/password`.'
+      description: 'Roles: user or helpdesk administrator; only a global administrator can set one for an administrator. The person must choose a new password at their next sign-in. The same length and breach rules apply as for `PUT /me/password`. Limited roles apply.'
       requestBody: {$ref: '#/components/requestBodies/Password'}
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
@@ -2560,7 +2562,7 @@ paths:
       tags: [Users]
       operationId: setUserRoles
       summary: Replace a person's administrator roles
-      description: 'Roles: global administrator. Send the complete list; an empty list removes every role. You cannot remove your own global administrator role or give yourself a role, including one you activated. Guests cannot hold roles. While `global-admin` is in `approvalActions`, granting `global_admin` to someone who does not hold it, or holds it only through an activation, waits for another global administrator.'
+      description: 'Roles: global administrator. Send the complete list; an empty list removes every role. You cannot remove your own global administrator role or give yourself a role or widen its groups, including one you activated. A role left out of `scopes` keeps the groups it has. Guests cannot hold roles. While `global-admin` is in `approvalActions`, granting `global_admin` to someone who does not hold it, or holds it only through an activation, waits for another global administrator.'
       requestBody:
         required: true
         content:
@@ -2572,6 +2574,7 @@ paths:
                 roles:
                   type: array
                   items: {$ref: '#/components/schemas/RoleKey'}
+                scopes: {$ref: '#/components/schemas/RoleScopes'}
       responses:
         '200': {$ref: '#/components/responses/UserResponse'}
         '202': {$ref: '#/components/responses/ApprovalPending'}
@@ -2587,7 +2590,7 @@ paths:
       tags: [Users]
       operationId: setUserEligibleRoles
       summary: Replace the roles a person can activate
-      description: 'Roles: global administrator. Send the complete list; an empty list removes every eligibility and ends any activation of a role that is no longer listed. You cannot change your own eligible roles. Guests cannot be eligible for roles. While `global-admin` is in `approvalActions`, making someone eligible for `global_admin` waits for another global administrator, because they could then activate it themselves.'
+      description: 'Roles: global administrator. Send the complete list; an empty list removes every eligibility and ends any activation of a role that is no longer listed. You cannot change your own eligible roles. Guests cannot be eligible for roles. A role left out of `scopes` keeps the groups it has, and an open activation follows a change to them. While `global-admin` is in `approvalActions`, making someone eligible for `global_admin` waits for another global administrator, because they could then activate it themselves.'
       requestBody:
         required: true
         content:
@@ -2599,6 +2602,7 @@ paths:
                 roles:
                   type: array
                   items: {$ref: '#/components/schemas/RoleKey'}
+                scopes: {$ref: '#/components/schemas/RoleScopes'}
       responses:
         '200': {$ref: '#/components/responses/UserResponse'}
         '202': {$ref: '#/components/responses/ApprovalPending'}
@@ -2614,7 +2618,7 @@ paths:
       tags: [Users]
       operationId: updateGuest
       summary: Extend a guest's access or change their sponsor
-      description: 'Roles: user administrator, or the guest''s sponsor. Anyone else gets `404`. The sponsor can change `expiresAt` only, and only until access ends; after that a user administrator extends it and restores the account. `expiresAt` must be within 365 days. Recorded as `guest.extend` and `guest.sponsor.change`.'
+      description: 'Roles: user administrator, or the guest''s sponsor. Anyone else gets `404`. The sponsor can change `expiresAt` only, and only until access ends; after that a user administrator extends it and restores the account. `expiresAt` must be within 365 days. Recorded as `guest.extend` and `guest.sponsor.change`. Limited roles apply.'
       requestBody:
         required: true
         content:
@@ -2680,7 +2684,7 @@ paths:
       tags: [Groups]
       operationId: listGroups
       summary: List every group with its member count
-      description: 'Roles: any administrator.'
+      description: 'Roles: any administrator. Limited roles apply.'
       responses:
         '200':
           description: The groups.
@@ -2726,7 +2730,7 @@ paths:
       tags: [Groups]
       operationId: getGroup
       summary: Get one group
-      description: 'Roles: any administrator.'
+      description: 'Roles: any administrator. Limited roles apply.'
       responses:
         '200':
           description: The group.
@@ -2769,7 +2773,7 @@ paths:
       tags: [Groups]
       operationId: deleteGroup
       summary: Delete a group
-      description: 'Roles: user administrator. Refused with `409`, naming each one, while an application, access package, policy, identity provider (for accounts created on first sign-in), open access review or lifecycle rule still uses the group. Completed access reviews are kept with the group''s name.'
+      description: 'Roles: user administrator. Refused with `409`, naming each one, while an application, access package, policy, identity provider (for accounts created on first sign-in), open access review or lifecycle rule still uses the group, or while an administrator role is limited to it. Completed access reviews are kept with the group''s name.'
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -2783,7 +2787,7 @@ paths:
       tags: [Groups]
       operationId: listGroupMembers
       summary: List a group's members, or preview a rule
-      description: 'Roles: any administrator. Deprovisioned people are left out.'
+      description: 'Roles: any administrator. Deprovisioned people are left out. Limited roles apply.'
       parameters:
         - name: rule
           in: query
@@ -3357,7 +3361,7 @@ paths:
       tags: [Activity]
       operationId: revokeSession
       summary: End a session
-      description: 'Roles: security or user administrator. Refused for the session making the request.'
+      description: 'Roles: security or user administrator. Refused for the session making the request. Limited roles apply.'
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -5731,7 +5735,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     Forbidden:
-      description: '`ERR_FORBIDDEN`: your roles do not allow this. `ERR_CROSS_SITE` on changes from another website. `ERR_APPROVAL_REQUIRED`: the change needs approval, and an API key cannot ask for it. `ERR_IMPERSONATING`: the session is an impersonation, which can only read the account portal.'
+      description: '`ERR_FORBIDDEN`: your roles do not allow this. `ERR_OUT_OF_SCOPE`: the person is outside the groups your limited role covers. `ERR_CROSS_SITE` on changes from another website. `ERR_APPROVAL_REQUIRED`: the change needs approval, and an API key cannot ask for it. `ERR_IMPERSONATING`: the session is an impersonation, which can only read the account portal.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -6125,9 +6129,17 @@ components:
         addedAt: {type: string, format: date-time}
         lastUsedAt: {type: [string, 'null'], format: date-time}
         detail: {type: string, examples: [8 of 10 remaining]}
+    RoleScopes:
+      type: object
+      description: 'Group ids per role key. Only `user_admin` and `helpdesk_admin` can be limited, to assigned or rule-based groups. An empty list makes the role apply to the whole organization.'
+      propertyNames: {$ref: '#/components/schemas/RoleKey'}
+      additionalProperties:
+        type: array
+        items: {type: string}
+      examples: [{helpdesk_admin: [grp_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}]
     User:
       type: object
-      required: [id, email, emailVerified, name, title, department, location, status, strength, methods, roles, eligibleRoles, activations, groupIds, appIds, managerId, source, createdAt, lastSignInAt]
+      required: [id, email, emailVerified, name, title, department, location, status, strength, methods, roles, eligibleRoles, activations, roleScopes, eligibleScopes, groupIds, appIds, managerId, source, createdAt, lastSignInAt]
       properties:
         id: {type: string, examples: [usr_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         email: {type: string, format: email}
@@ -6153,6 +6165,12 @@ components:
           type: array
           description: Eligible roles that are active now. They are also listed in `roles`.
           items: {$ref: '#/components/schemas/RoleActivation'}
+        roleScopes:
+          allOf: [{$ref: '#/components/schemas/RoleScopes'}]
+          description: Roles in `roles` that are limited to groups, with the group ids. An activated role has the groups of its eligibility.
+        eligibleScopes:
+          allOf: [{$ref: '#/components/schemas/RoleScopes'}]
+          description: Roles in `eligibleRoles` that are limited to groups, with the group ids.
         groupIds:
           type: array
           description: Assigned and rule-based groups.

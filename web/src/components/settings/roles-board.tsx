@@ -9,25 +9,25 @@ import { Badge, StatusDot } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Select } from "@/components/ui/input";
+import { Checkbox, Field, Select } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
 import { formatTime, pluralize } from "@/lib/format";
 import type { RoleKey } from "@/lib/provisioning-types";
-import type { User } from "@/lib/types";
-import { CAPABILITIES, keysOf, ROLE_ORDER } from "./roles";
+import type { Group, RoleScopes, User } from "@/lib/types";
+import { CAPABILITIES, keysOf, ROLE_ORDER, SCOPED_ROLES, scopeNames } from "./roles";
 
-type Person = Pick<User, "id" | "name" | "email" | "roles" | "status" | "eligibleRoles" | "activations">;
+type Person = Pick<User, "id" | "name" | "email" | "roles" | "status" | "eligibleRoles" | "activations" | "roleScopes" | "eligibleScopes">;
 
 type Adding = { role: RoleKey; eligible: boolean };
 
-export function RolesBoard({ people, meId, canEdit }: { people: Person[]; meId: string; canEdit: boolean }) {
+export function RolesBoard({ people, groups, meId, canEdit }: { people: Person[]; groups: Group[]; meId: string; canEdit: boolean }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [adding, setAdding] = useState<Adding | null>(null);
 
-  function setRoles(person: Person, roles: RoleKey[], title: string, eligible = false) {
+  function setRoles(person: Person, roles: RoleKey[], title: string, eligible = false, scopes?: RoleScopes) {
     void run(
       adding ? "add" : `${eligible ? "eligible" : "member"}-${person.id}`,
-      () => api(`/users/${person.id}/${eligible ? "eligible-roles" : "roles"}`, { method: "PUT", body: { roles } }),
+      () => api(`/users/${person.id}/${eligible ? "eligible-roles" : "roles"}`, { method: "PUT", body: { roles, ...(scopes ? { scopes } : {}) } }),
       () => {
         setAdding(null);
         toast({ title, description: "Takes effect on their next request. Recorded in the audit log." });
@@ -67,7 +67,7 @@ export function RolesBoard({ people, meId, canEdit }: { people: Person[]; meId: 
                   {members.length ? (
                     <ul className="flex flex-col rounded-md border border-border">
                       {members.map((person) => (
-                        <PersonRow key={person.id} person={person}>
+                        <PersonRow key={person.id} person={person} note={<ScopeNote scope={person.roleScopes[role]} groups={groups} />}>
                           {canEdit && !(role === "global_admin" && person.id === meId) ? (
                             <Button
                               size="icon-sm"
@@ -105,12 +105,15 @@ export function RolesBoard({ people, meId, canEdit }: { people: Person[]; meId: 
                             key={person.id}
                             person={person}
                             note={
-                              active ? (
-                                <span className="flex items-center gap-2 text-caption text-fg-2">
-                                  <StatusDot tone="success" />
-                                  Active until {formatTime(active.expiresAt)}
-                                </span>
-                              ) : null
+                              <>
+                                <ScopeNote scope={person.eligibleScopes[role]} groups={groups} />
+                                {active ? (
+                                  <span className="flex items-center gap-2 text-caption text-fg-2">
+                                    <StatusDot tone="success" />
+                                    Active until {formatTime(active.expiresAt)}
+                                  </span>
+                                ) : null}
+                              </>
                             }
                           >
                             {canEdit && person.id !== meId ? (
@@ -159,13 +162,14 @@ export function RolesBoard({ people, meId, canEdit }: { people: Person[]; meId: 
           candidates={people.filter(
             (p) => p.status === "active" && p.id !== meId && !(adding.eligible ? p.eligibleRoles : keysOf(p)).includes(adding.role),
           )}
+          groups={SCOPED_ROLES.includes(adding.role) ? groups : []}
           saving={pending === "add"}
           failure={errorFor("add")}
-          onAdd={(person) =>
-            adding.eligible
-              ? setRoles(person, [...person.eligibleRoles, adding.role], `${person.name} can now activate ${ROLES[adding.role].label.toLowerCase()}`, true)
-              : setRoles(person, [...keysOf(person), adding.role], `${person.name} is now a ${ROLES[adding.role].label.toLowerCase()}`)
-          }
+          onAdd={(person, scope) => {
+            const scopes = scope.length ? { [adding.role]: scope } : undefined;
+            if (adding.eligible) setRoles(person, [...person.eligibleRoles, adding.role], `${person.name} can now activate ${ROLES[adding.role].label.toLowerCase()}`, true, scopes);
+            else setRoles(person, [...keysOf(person), adding.role], `${person.name} is now a ${ROLES[adding.role].label.toLowerCase()}`, false, scopes);
+          }}
           onClose={() => {
             clearError();
             setAdding(null);
@@ -174,6 +178,10 @@ export function RolesBoard({ people, meId, canEdit }: { people: Person[]; meId: 
       ) : null}
     </>
   );
+}
+
+function ScopeNote({ scope, groups }: { scope?: string[]; groups: Group[] }) {
+  return scope ? <span className="truncate text-caption text-fg-2">Limited to {scopeNames(scope, groups)}</span> : null;
 }
 
 function PersonRow({ person, note, children }: { person: Person; note?: ReactNode; children: ReactNode }) {
@@ -194,6 +202,7 @@ function AddMemberDialog({
   role,
   eligible,
   candidates,
+  groups,
   saving,
   failure,
   onAdd,
@@ -202,12 +211,14 @@ function AddMemberDialog({
   role: RoleKey;
   eligible: boolean;
   candidates: Person[];
+  groups: Group[];
   saving: boolean;
   failure?: string;
-  onAdd: (person: Person) => void;
+  onAdd: (person: Person, scope: string[]) => void;
   onClose: () => void;
 }) {
   const [personId, setPersonId] = useState("");
+  const [scope, setScope] = useState<string[]>([]);
   const [error, setError] = useState<string>();
   const person = candidates.find((p) => p.id === personId);
   const label = ROLES[role].label.toLowerCase();
@@ -247,7 +258,7 @@ function AddMemberDialog({
             variant="primary"
             loading={saving}
             onClick={() => {
-              if (person) onAdd(person);
+              if (person) onAdd(person, scope);
               else setError(copy.missing);
             }}
           >
@@ -256,18 +267,45 @@ function AddMemberDialog({
         </>
       }
     >
-      <Field label="Person" error={error} hint={candidates.length ? copy.hint : undefined}>
-        {(props) => (
-          <Select {...props} autoFocus value={personId} disabled={!candidates.length} onChange={(event) => setPersonId(event.target.value)}>
-            <option value="">{candidates.length ? "Choose a person" : copy.none}</option>
-            {candidates.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} · {p.email}
-              </option>
-            ))}
-          </Select>
-        )}
-      </Field>
+      <div className="flex flex-col gap-6">
+        <Field label="Person" error={error} hint={candidates.length ? copy.hint : undefined}>
+          {(props) => (
+            <Select {...props} autoFocus value={personId} disabled={!candidates.length} onChange={(event) => setPersonId(event.target.value)}>
+              <option value="">{candidates.length ? "Choose a person" : copy.none}</option>
+              {candidates.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} · {p.email}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        {groups.length ? (
+          <fieldset className="flex flex-col gap-3">
+            <legend className="mb-3 text-label text-fg">Limit to groups</legend>
+            <div className="flex max-h-56 flex-col gap-3 overflow-y-auto rounded-md border border-border p-4">
+              {groups.map((group) => (
+                <label key={group.id} className="flex cursor-pointer items-start gap-3">
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={scope.includes(group.id)}
+                    onChange={(event) => setScope((current) => (event.target.checked ? [...current, group.id] : current.filter((id) => id !== group.id)))}
+                  />
+                  <span className="flex flex-col">
+                    <span className="text-body-sm text-fg">{group.name}</span>
+                    <span className="text-caption text-fg-3">{group.kind === "dynamic" ? `Rule: ${group.rule}` : group.description}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="text-caption text-fg-3">
+              {scope.length
+                ? "They see and change only members of the chosen groups. Other administration pages stay closed to them."
+                : "Leave every group unticked to cover the whole organization."}
+            </p>
+          </fieldset>
+        ) : null}
+      </div>
     </Dialog>
   );
 }

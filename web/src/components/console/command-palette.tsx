@@ -19,7 +19,7 @@ const fixed: Entry[] = [
   ...allItems.map((item) => ({ id: item.href, group: "Go to", label: item.label, detail: item.group ?? undefined, search: `${item.group ?? ""} ${item.label}`, href: item.href, icon: item.icon })),
 ];
 
-export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function CommandPalette({ open, limited, onOpenChange }: { open: boolean; limited: boolean; onOpenChange: (open: boolean) => void }) {
   const router = useRouter();
   const [results, setResults] = useState<{ users: User[]; applications: Application[] } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -27,7 +27,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const [navigating, startNavigation] = useTransition();
   const list = useRef<HTMLDivElement>(null);
   const entries: Entry[] = [
-    ...fixed,
+    ...(limited ? fixed.filter((entry) => entry.href.startsWith(`${BASE}/users`)) : fixed),
     ...(results?.users ?? []).map((user) => ({
       id: user.id,
       group: "Users",
@@ -47,11 +47,11 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   useEffect(() => {
     if (!open || results) return;
     setLoading(true);
-    Promise.all([api<User[]>("/users"), api<Application[]>("/applications")])
+    Promise.all([api<User[]>("/users"), limited ? [] : api<Application[]>("/applications")])
       .then(([users, applications]) => setResults({ users, applications }))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [open, results]);
+  }, [open, results, limited]);
 
   function close() {
     onOpenChange(false);

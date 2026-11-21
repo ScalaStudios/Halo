@@ -63,6 +63,10 @@ func (s *Store) GroupUses(ctx context.Context, groupID string) ([]GroupUse, erro
 		select 'access review', v.id, v.name from access_reviews v where v.group_id = $1 and v.status <> 'completed'
 		union all
 		select 'lifecycle rule', l.id, l.name from lifecycle_rules l where l.actions @> jsonb_build_array(jsonb_build_object('groupId', $1::text))
+		union all
+		select distinct 'administrator role of', u.id, u.name from users u
+			left join user_roles r on r.user_id = u.id left join role_eligibilities e on e.user_id = u.id
+			where $1 = any(r.scope) or $1 = any(e.scope)
 		order by 1, 3`, groupID)
 	if err != nil {
 		return nil, err

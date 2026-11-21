@@ -304,7 +304,7 @@ func (h *handlers) setRoles(w http.ResponseWriter, r *http.Request, actor store.
 		return err
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
-		if err := tx.SetUserRoles(r.Context(), account.ID, roles); err != nil {
+		if err := tx.SetUserRoles(r.Context(), account.ID, roles, nil); err != nil {
 			return err
 		}
 		return record(r, tx, actor, account, "service_account.roles.update", summary)

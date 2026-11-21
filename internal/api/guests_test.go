@@ -44,7 +44,7 @@ func TestInviteGuestNeedsAnActiveInternalSponsorAndNoRoles(t *testing.T) {
 	expect(t, call(t, h, admin, "POST", "/api/v1/users", map[string]any{"email": "lee@partner.example", "name": "Lee", "guest": true, "sponsorId": guest.ID, "expiresAt": until}), 422)
 	expect(t, call(t, h, admin, "PUT", "/api/v1/users/"+guest.ID+"/roles", map[string]any{"roles": []string{"auditor"}}), 422)
 	expect(t, call(t, h, admin, "PUT", "/api/v1/users/"+guest.ID+"/eligible-roles", map[string]any{"roles": []string{"security_admin"}}), 422)
-	if err := st.SetUserRoles(ctx, guest.ID, []string{"auditor"}); err == nil {
+	if err := st.SetUserRoles(ctx, guest.ID, []string{"auditor"}, nil); err == nil {
 		t.Fatal("the database let a guest hold a role")
 	}
 }

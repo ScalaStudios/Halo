@@ -144,7 +144,7 @@ func TestImpersonationRefusesForbiddenTargets(t *testing.T) {
 	pat, _ := e.person("pat@example.com", true)
 	ada, _ := e.person("ada@example.com", true, "auditor")
 	eli, _ := e.person("eli@example.com", true)
-	if _, err := e.st.SetEligibleRoles(ctx, eli.ID, []string{"user_admin"}); err != nil {
+	if _, err := e.st.SetEligibleRoles(ctx, eli.ID, []string{"user_admin"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	otto, _ := e.person("otto@example.com", false)
@@ -272,7 +272,7 @@ func TestImpersonationEndsWhenThePersonBecomesProtected(t *testing.T) {
 	pat, _ := e.person("pat@example.com", true)
 	_, token := e.start(helpdesk, pat)
 	expect(t, e.call(token, "GET", "/api/v1/me", nil), 200)
-	if _, err := e.st.SetEligibleRoles(context.Background(), pat.ID, []string{"auditor"}); err != nil {
+	if _, err := e.st.SetEligibleRoles(context.Background(), pat.ID, []string{"auditor"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	expect(t, e.call(token, "GET", "/api/v1/me", nil), 401)

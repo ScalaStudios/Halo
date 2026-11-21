@@ -332,7 +332,7 @@ func TestApprovalWaitsForAConcurrentChangeAndFailsAsStale(t *testing.T) {
 
 	done := make(chan *httptest.ResponseRecorder, 1)
 	err := e.st.Tx(ctx, func(tx *store.Store) error {
-		if err := tx.SetUserRoles(ctx, cara.ID, []string{"user_admin"}); err != nil {
+		if err := tx.SetUserRoles(ctx, cara.ID, []string{"user_admin"}, nil); err != nil {
 			return err
 		}
 		go func() { done <- e.call(ben, "POST", "/api/v1/approvals/"+held.ID+"/approve", nil) }()

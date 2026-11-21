@@ -4,13 +4,14 @@ import { toApiError } from "./error";
 
 const API = process.env.HALO_API_URL ?? "http://localhost:8080";
 
-export async function apiGet<T>(path: string): Promise<T> {
+export async function apiGet<T>(path: string, forbidden?: T): Promise<T> {
   const session = (await cookies()).get("halo_session")?.value;
   const res = await fetch(`${API}/api/v1${path}`, {
     headers: session ? { cookie: `halo_session=${session}` } : undefined,
     cache: "no-store",
   });
   if (res.status === 401) redirect("/sign-in");
+  if (res.status === 403 && forbidden !== undefined) return forbidden;
   if (res.status === 403) redirect("/account");
   if (res.status === 404) notFound();
   if (!res.ok) throw await toApiError(res, "Halo could not load this page. Check that the Halo server is running.");

@@ -1,7 +1,10 @@
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
+import { limitedOnly } from "@/components/settings/roles";
 import { PageHeader } from "@/components/ui/page-header";
 import { apiGet } from "@/lib/api/server";
 import type { OrganizationProfile } from "@/lib/settings-types";
+import type { User } from "@/lib/types";
 import {
   ApplicationHealth,
   ApplicationHealthSkeleton,
@@ -27,7 +30,8 @@ import {
 export const metadata = { title: { absolute: "Halo administration" } };
 
 export default async function OverviewPage() {
-  const org = await apiGet<OrganizationProfile>("/organization");
+  const [org, me] = await Promise.all([apiGet<OrganizationProfile>("/organization"), apiGet<User>("/me")]);
+  if (limitedOnly(me)) redirect("/admin/users");
   return (
     <div className="flex flex-col gap-8">
       <PageHeader title="Overview" description={`What needs attention in ${org.name} right now.`} />

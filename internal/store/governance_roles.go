@@ -23,14 +23,16 @@ type ExpiredActivation struct {
 	Role     string
 }
 
-func (s *Store) SetEligibleRoles(ctx context.Context, userID string, roles []string) ([]string, error) {
+func (s *Store) SetEligibleRoles(ctx context.Context, userID string, roles []string, scopes map[string][]string) ([]string, error) {
 	var ended []string
 	err := s.Tx(ctx, func(tx *Store) error {
 		if _, err := tx.db.Exec(ctx, `delete from role_eligibilities where user_id = $1 and role <> all($2)`, userID, roles); err != nil {
 			return err
 		}
-		if _, err := tx.db.Exec(ctx, `insert into role_eligibilities (user_id, role) select $1, unnest($2::text[]) on conflict do nothing`, userID, roles); err != nil {
-			return err
+		for _, role := range roles {
+			if _, err := tx.db.Exec(ctx, `insert into role_eligibilities (user_id, role, scope) values ($1, $2, $3) on conflict (user_id, role) do update set scope = excluded.scope`, userID, role, scopes[role]); err != nil {
+				return err
+			}
 		}
 		rows, err := tx.db.Query(ctx, `update role_activations set ended_at = now(), end_reason = 'revoked'
 			where user_id = $1 and ended_at is null and expires_at > now() and role <> all($2) returning role`, userID, roles)

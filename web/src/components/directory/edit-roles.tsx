@@ -53,7 +53,7 @@ export function EditRolesButton({ user }: { user: User }) {
         onOpenChange={setOpen}
         error={errorFor("roles")}
         title={`Edit ${user.name}'s roles`}
-        description="Every role can read every administration page. Changes take effect on their next request."
+        description={`Every role can read every administration page. Changes take effect on their next request.${Object.keys(user.roleScopes).length ? " Roles limited to groups keep their groups; change those on the Roles page." : ""}`}
         footer={
           <>
             <Button variant="secondary" onClick={() => setOpen(false)}>

@@ -16,7 +16,7 @@ func TestApprovalTargetLockHoldsOffEveryWriter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.SetEligibleRoles(ctx, u.ID, []string{"auditor"}); err != nil {
+	if _, err := st.SetEligibleRoles(ctx, u.ID, []string{"auditor"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	p, err := st.CreateAccessPolicy(ctx, store.AccessPolicy{Name: "Everyone", Enabled: true, Mode: "enforce", Effect: "require-phishing-resistant", Conditions: store.PolicyConditions{AllUsers: true, AllApps: true}})
@@ -31,8 +31,8 @@ func TestApprovalTargetLockHoldsOffEveryWriter(t *testing.T) {
 		target, id string
 		write      func(context.Context) error
 	}{
-		{"user", u.ID, func(ctx context.Context) error { return st.SetUserRoles(ctx, u.ID, nil) }},
-		{"user", u.ID, func(ctx context.Context) error { _, err := st.SetEligibleRoles(ctx, u.ID, nil); return err }},
+		{"user", u.ID, func(ctx context.Context) error { return st.SetUserRoles(ctx, u.ID, nil, nil) }},
+		{"user", u.ID, func(ctx context.Context) error { _, err := st.SetEligibleRoles(ctx, u.ID, nil, nil); return err }},
 		{"user", u.ID, func(ctx context.Context) error {
 			_, err := st.ActivateRole(ctx, u.ID, "auditor", "incident", time.Now().Add(time.Hour))
 			return err

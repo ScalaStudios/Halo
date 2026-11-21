@@ -13,7 +13,17 @@ import { findItem, nav } from "./nav";
 import { Sidebar } from "./sidebar";
 import { useMutation } from "./use-mutation";
 
-export function ConsoleShell({ user, orgName, children }: { user: { name: string; email: string; avatarUrl: string | null }; orgName: string; children: ReactNode }) {
+export function ConsoleShell({
+  user,
+  orgName,
+  limited,
+  children,
+}: {
+  user: { name: string; email: string; avatarUrl: string | null };
+  orgName: string;
+  limited: boolean;
+  children: ReactNode;
+}) {
   const pathname = usePathname();
   const { pending, run, router } = useMutation();
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -40,7 +50,7 @@ export function ConsoleShell({ user, orgName, children }: { user: { name: string
   return (
     <div className="flex min-h-dvh">
       <aside className="sticky top-0 hidden h-dvh w-66 shrink-0 border-r border-border bg-canvas lg:block">
-        <Sidebar orgName={orgName} onSearch={() => setPaletteOpen(true)} />
+        <Sidebar orgName={orgName} limited={limited} onSearch={() => setPaletteOpen(true)} />
       </aside>
 
       <D.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
@@ -52,6 +62,7 @@ export function ConsoleShell({ user, orgName, children }: { user: { name: string
             </VisuallyHidden.Root>
             <Sidebar
               orgName={orgName}
+              limited={limited}
               onSearch={() => {
                 setDrawerOpen(false);
                 setPaletteOpen(true);
@@ -114,7 +125,7 @@ export function ConsoleShell({ user, orgName, children }: { user: { name: string
         </main>
       </div>
 
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      <CommandPalette open={paletteOpen} limited={limited} onOpenChange={setPaletteOpen} />
       {navigating || pending === "sign-out" ? <NavigationProgress /> : null}
     </div>
   );

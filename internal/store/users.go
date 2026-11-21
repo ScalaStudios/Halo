@@ -23,13 +23,33 @@ var RoleLabels = map[string]string{
 	"auditor":        "Auditor",
 }
 
+var ScopedRoles = []string{"user_admin", "helpdesk_admin"}
+
 func (u User) HasRole(keys ...string) bool {
 	for _, key := range keys {
-		if slices.Contains(u.RoleKeys, key) {
+		if _, scoped := u.RoleScopes[key]; slices.Contains(u.RoleKeys, key) && !scoped {
 			return true
 		}
 	}
 	return false
+}
+
+func (u User) Scope(roles ...string) ([]string, bool) {
+	if u.HasRole("global_admin") || u.HasRole(roles...) {
+		return nil, true
+	}
+	var groups []string
+	for _, role := range roles {
+		if slices.Contains(u.RoleKeys, role) {
+			groups = append(groups, u.RoleScopes[role]...)
+		}
+	}
+	return groups, len(groups) > 0
+}
+
+func (u User) Manages(target User, roles ...string) bool {
+	groups, ok := u.Scope(roles...)
+	return ok && (groups == nil || slices.ContainsFunc(target.GroupIDs, func(g string) bool { return slices.Contains(groups, g) }))
 }
 
 func (u User) Expired() bool {
@@ -197,7 +217,7 @@ func (s *Store) TouchSignIn(ctx context.Context, userID string, at time.Time) er
 	return err
 }
 
-func (s *Store) SetUserRoles(ctx context.Context, userID string, roles []string) error {
+func (s *Store) SetUserRoles(ctx context.Context, userID string, roles []string, scopes map[string][]string) error {
 	return s.Tx(ctx, func(tx *Store) error {
 		if _, err := tx.db.Exec(ctx, `delete from user_roles where user_id = $1`, userID); err != nil {
 			return err
@@ -206,7 +226,7 @@ func (s *Store) SetUserRoles(ctx context.Context, userID string, roles []string)
 			if _, ok := RoleLabels[role]; !ok {
 				return fmt.Errorf("unknown role %q", role)
 			}
-			if _, err := tx.db.Exec(ctx, `insert into user_roles (user_id, role) values ($1, $2)`, userID, role); err != nil {
+			if _, err := tx.db.Exec(ctx, `insert into user_roles (user_id, role, scope) values ($1, $2, $3)`, userID, role, scopes[role]); err != nil {
 				return err
 			}
 		}
@@ -269,17 +289,20 @@ func (s *Store) decorate(ctx context.Context, users []User) error {
 		users[i].Roles = []string{}
 		users[i].RoleKeys = []string{}
 		users[i].EligibleRoles = []string{}
+		users[i].RoleScopes = map[string][]string{}
+		users[i].EligibleScopes = map[string][]string{}
 		users[i].Activations = []RoleActivation{}
 		users[i].GroupIDs = []string{}
 		users[i].AppIDs = []string{}
 	}
 
-	rows, err := s.db.Query(ctx, `select user_id, role, kind, id, justification, created_at, expires_at from (
-			select user_id, role, 'standing' as kind, '' as id, '' as justification, created_at, null::timestamptz as expires_at from user_roles where user_id = any($1)
+	rows, err := s.db.Query(ctx, `select user_id, role, kind, id, justification, created_at, expires_at, scope from (
+			select user_id, role, 'standing' as kind, '' as id, '' as justification, created_at, null::timestamptz as expires_at, scope from user_roles where user_id = any($1)
 			union all
-			select user_id, role, 'eligible', '', '', created_at, null from role_eligibilities where user_id = any($1)
+			select user_id, role, 'eligible', '', '', created_at, null, scope from role_eligibilities where user_id = any($1)
 			union all
-			select a.user_id, a.role, 'active', a.id, a.justification, a.created_at, a.expires_at from role_activations a
+			select a.user_id, a.role, 'active', a.id, a.justification, a.created_at, a.expires_at, e.scope from role_activations a
+			left join role_eligibilities e on e.user_id = a.user_id and e.role = a.role
 			where a.user_id = any($1) and a.ended_at is null and a.expires_at > now()
 				and not exists (select 1 from user_roles r where r.user_id = a.user_id and r.role = a.role)
 		) roles order by role`, ids)
@@ -290,14 +313,21 @@ func (s *Store) decorate(ctx context.Context, users []User) error {
 		var userID, role, kind string
 		var a RoleActivation
 		var expires *time.Time
-		if err := rows.Scan(&userID, &role, &kind, &a.ID, &a.Justification, &a.ActivatedAt, &expires); err != nil {
+		var scope []string
+		if err := rows.Scan(&userID, &role, &kind, &a.ID, &a.Justification, &a.ActivatedAt, &expires, &scope); err != nil {
 			rows.Close()
 			return err
 		}
 		u := &users[index[userID]]
 		if kind == "eligible" {
 			u.EligibleRoles = append(u.EligibleRoles, role)
+			if scope != nil {
+				u.EligibleScopes[role] = scope
+			}
 			continue
+		}
+		if scope != nil {
+			u.RoleScopes[role] = scope
 		}
 		u.RoleKeys = append(u.RoleKeys, role)
 		u.Roles = append(u.Roles, RoleLabels[role])

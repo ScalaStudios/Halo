@@ -19,9 +19,21 @@ import (
 )
 
 func (h *handlers) user(r *http.Request) (store.User, error) {
-	u, err := h.st.GetUser(r.Context(), r.PathValue("id"))
+	return h.target(r, r.PathValue("id"))
+}
+
+func (h *handlers) target(r *http.Request, userID string) (store.User, error) {
+	u, err := h.st.GetUser(r.Context(), userID)
+	if err == nil && !inScope(r, u.GroupIDs...) {
+		if r.Method != http.MethodGet {
+			return u, outOfScope
+		}
+		err = store.ErrNotFound
+	}
 	return u, found(err, "This user")
 }
+
+var outOfScope = httpx.Fail(http.StatusForbidden, "ERR_OUT_OF_SCOPE", "This person isn't in a group you manage, so you can't change their account. Ask an administrator whose role covers them.")
 
 func (h *handlers) respondUser(w http.ResponseWriter, r *http.Request, userID string) error {
 	u, err := h.st.GetUser(r.Context(), userID)
@@ -61,6 +73,7 @@ func (h *handlers) listUsers(w http.ResponseWriter, r *http.Request, _ store.Use
 	if err != nil {
 		return err
 	}
+	users = slices.DeleteFunc(users, func(u store.User) bool { return !inScope(r, u.GroupIDs...) })
 	return httpx.JSON(w, http.StatusOK, nonNil(users))
 }
 
@@ -170,6 +183,9 @@ func (h *handlers) inviteUser(w http.ResponseWriter, r *http.Request, actor stor
 		return err
 	}
 	for _, g := range groups {
+		if !inScope(r, g.ID) {
+			return httpx.Fail(http.StatusForbidden, "ERR_OUT_OF_SCOPE", "You can only add people to groups you manage. Remove "+g.Name+" from the invitation.")
+		}
 		if g.Kind == "dynamic" {
 			return httpx.Invalid(g.Name + " is a dynamic group, so people join it through its rule. Leave it out of the invitation.")
 		}
@@ -224,6 +240,9 @@ func (h *handlers) invite(r *http.Request, tx *store.Store, actor store.User, in
 	if err != nil {
 		return user, "", time.Time{}, err
 	}
+	if !inScope(r, user.GroupIDs...) {
+		return user, "", time.Time{}, httpx.Fail(http.StatusForbidden, "ERR_OUT_OF_SCOPE", user.Name+" wouldn't be in any group you manage. Add them to one of your groups, or ask an administrator whose role covers them.")
+	}
 	token, expires, err := tx.CreateEnrollmentToken(r.Context(), user.ID, "invite", &actor.ID)
 	if err != nil {
 		return user, "", time.Time{}, err
@@ -239,9 +258,9 @@ func (h *handlers) suspendUser(w http.ResponseWriter, r *http.Request, actor sto
 }
 
 func (h *handlers) suspend(r *http.Request, actor store.User, userID string) error {
-	target, err := h.st.GetUser(r.Context(), userID)
+	target, err := h.target(r, userID)
 	if err != nil {
-		return found(err, "This user")
+		return err
 	}
 	if target.ID == actor.ID {
 		return httpx.Invalid("You cannot suspend your own account. Ask another administrator if this account must be locked.")
@@ -280,9 +299,9 @@ func (h *handlers) restoreUser(w http.ResponseWriter, r *http.Request, actor sto
 }
 
 func (h *handlers) restore(r *http.Request, actor store.User, userID string) error {
-	target, err := h.st.GetUser(r.Context(), userID)
+	target, err := h.target(r, userID)
 	if err != nil {
-		return found(err, "This user")
+		return err
 	}
 	if err := guardAdmin(actor, target); err != nil {
 		return err
@@ -314,9 +333,9 @@ func (h *handlers) revokeUserSessions(w http.ResponseWriter, r *http.Request, ac
 }
 
 func (h *handlers) revokeSessions(r *http.Request, actor store.User, userID string) (int, error) {
-	target, err := h.st.GetUser(r.Context(), userID)
+	target, err := h.target(r, userID)
 	if err != nil {
-		return 0, found(err, "This user")
+		return 0, err
 	}
 	keep := ""
 	if current, ok := httpx.CurrentSession(r); ok && target.ID == actor.ID {
@@ -474,7 +493,8 @@ func (h *handlers) setRoles(w http.ResponseWriter, r *http.Request, actor store.
 		return err
 	}
 	var in struct {
-		Roles *[]string `json:"roles"`
+		Roles  *[]string           `json:"roles"`
+		Scopes map[string][]string `json:"scopes"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -482,20 +502,33 @@ func (h *handlers) setRoles(w http.ResponseWriter, r *http.Request, actor store.
 	if in.Roles == nil {
 		return httpx.Invalid(`Send the complete list of roles, for example {"roles": ["auditor"]}. Send an empty list to remove every role.`)
 	}
-	roles, labels, err := checkRoles(*in.Roles)
+	roles, _, err := checkRoles(*in.Roles)
+	if err != nil {
+		return err
+	}
+	standing := slices.DeleteFunc(slices.Clone(target.RoleKeys), func(role string) bool { return activated(target, role) })
+	current := map[string][]string{}
+	for _, role := range standing {
+		if scope, ok := target.RoleScopes[role]; ok {
+			current[role] = scope
+		}
+	}
+	scopes, labels, err := h.checkScopes(r, roles, in.Scopes, current)
 	if err != nil {
 		return err
 	}
 	if err := refuseGuestRoles(target, roles); err != nil {
 		return err
 	}
-	if target.ID == actor.ID && slices.ContainsFunc(roles, func(role string) bool { return !target.HasRole(role) || activated(target, role) }) {
-		return httpx.Fail(http.StatusForbidden, "ERR_FORBIDDEN", "You cannot give yourself a role, including one you activated. Ask another global administrator to do it.")
+	if target.ID == actor.ID && slices.ContainsFunc(roles, func(role string) bool {
+		return !slices.Contains(standing, role) || widens(current, scopes, role)
+	}) {
+		return httpx.Fail(http.StatusForbidden, "ERR_FORBIDDEN", "You cannot give yourself a role or widen its groups, including one you activated. Ask another global administrator to do it.")
 	}
 	if target.ID == actor.ID && target.HasRole("global_admin") && !slices.Contains(roles, "global_admin") {
 		return httpx.Invalid("You cannot remove your own global administrator role. Ask another global administrator to do it, so the organization always keeps one.")
 	}
-	change := approval.Change{Summary: roleEvent(target, labels).Summary, TargetType: "user", TargetID: target.ID, TargetLabel: target.Name, State: []any{target.Name, target.Email, target.RoleKeys}}
+	change := approval.Change{Summary: roleEvent(target, labels).Summary, TargetType: "user", TargetID: target.ID, TargetLabel: target.Name, State: []any{target.Name, target.Email, target.RoleKeys, target.RoleScopes}}
 	if slices.Contains(roles, "global_admin") && (!target.HasRole("global_admin") || activated(target, "global_admin")) {
 		change.Action = "global-admin"
 	}
@@ -503,13 +536,12 @@ func (h *handlers) setRoles(w http.ResponseWriter, r *http.Request, actor store.
 		return err
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
-		if err := tx.SetUserRoles(r.Context(), target.ID, roles); err != nil {
+		if err := tx.SetUserRoles(r.Context(), target.ID, roles, scopes); err != nil {
 			return err
 		}
-		standing := slices.DeleteFunc(slices.Clone(target.RoleKeys), func(role string) bool { return activated(target, role) })
 		slices.Sort(roles)
 		event := roleEvent(target, labels)
-		event.Changes = store.Diff(map[string][]string{"roles": standing}, map[string][]string{"roles": roles})
+		event.Changes = store.Diff(map[string]any{"roles": standing, "scopes": current}, map[string]any{"roles": roles, "scopes": scopes})
 		return record(r, tx, actor, event)
 	})
 	if err != nil {
@@ -522,6 +554,54 @@ func activated(u store.User, role string) bool {
 	return slices.ContainsFunc(u.Activations, func(a store.RoleActivation) bool { return a.Role == role })
 }
 
+func widens(current, next map[string][]string, role string) bool {
+	before, scoped := current[role]
+	after, still := next[role]
+	return scoped && (!still || slices.ContainsFunc(after, func(g string) bool { return !slices.Contains(before, g) }))
+}
+
+func (h *handlers) checkScopes(r *http.Request, roles []string, requested, current map[string][]string) (map[string][]string, []string, error) {
+	for role := range requested {
+		if !slices.Contains(roles, role) {
+			return nil, nil, httpx.Invalid(fmt.Sprintf("scopes lists %q, which isn't in roles. Limit only the roles you send.", role))
+		}
+	}
+	all, err := h.st.ListGroupsRaw(r.Context())
+	if err != nil {
+		return nil, nil, err
+	}
+	scopes, labels := map[string][]string{}, []string{}
+	for _, role := range roles {
+		scope, ok := requested[role]
+		if !ok {
+			scope = current[role]
+		} else if len(scope) > 0 {
+			if !slices.Contains(store.ScopedRoles, role) {
+				return nil, nil, httpx.Invalid(store.RoleLabels[role] + " applies to the whole organization. Only user and helpdesk administrators can be limited to groups.")
+			}
+			groups, err := h.groupsByID(r.Context(), scope)
+			if err != nil {
+				return nil, nil, err
+			}
+			scope = groupIDs(groups)
+		}
+		if len(scope) == 0 {
+			labels = append(labels, store.RoleLabels[role])
+			continue
+		}
+		names := make([]string, len(scope))
+		for i, groupID := range scope {
+			names[i] = "a deleted group"
+			if j := slices.IndexFunc(all, func(g store.Group) bool { return g.ID == groupID }); j >= 0 {
+				names[i] = all[j].Name
+			}
+		}
+		scopes[role] = scope
+		labels = append(labels, store.RoleLabels[role]+" for "+strings.Join(names, ", "))
+	}
+	return scopes, labels, nil
+}
+
 func (h *handlers) setEligibleRoles(w http.ResponseWriter, r *http.Request, actor store.User) error {
 	target, err := h.user(r)
 	if err != nil {
@@ -531,7 +611,8 @@ func (h *handlers) setEligibleRoles(w http.ResponseWriter, r *http.Request, acto
 		return httpx.Fail(http.StatusForbidden, "ERR_FORBIDDEN", "You cannot change which roles you are eligible for. Ask another global administrator to do it.")
 	}
 	var in struct {
-		Roles *[]string `json:"roles"`
+		Roles  *[]string           `json:"roles"`
+		Scopes map[string][]string `json:"scopes"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -539,7 +620,11 @@ func (h *handlers) setEligibleRoles(w http.ResponseWriter, r *http.Request, acto
 	if in.Roles == nil {
 		return httpx.Invalid(`Send the complete list of eligible roles, for example {"roles": ["security_admin"]}. Send an empty list to remove every eligibility.`)
 	}
-	roles, labels, err := checkRoles(*in.Roles)
+	roles, _, err := checkRoles(*in.Roles)
+	if err != nil {
+		return err
+	}
+	scopes, labels, err := h.checkScopes(r, roles, in.Scopes, target.EligibleScopes)
 	if err != nil {
 		return err
 	}
@@ -550,7 +635,7 @@ func (h *handlers) setEligibleRoles(w http.ResponseWriter, r *http.Request, acto
 	if len(labels) > 0 {
 		summary = "Set eligible roles to " + strings.Join(labels, ", ")
 	}
-	change := approval.Change{Summary: summary, TargetType: "user", TargetID: target.ID, TargetLabel: target.Name, State: []any{target.Name, target.Email, target.EligibleRoles}}
+	change := approval.Change{Summary: summary, TargetType: "user", TargetID: target.ID, TargetLabel: target.Name, State: []any{target.Name, target.Email, target.EligibleRoles, target.EligibleScopes}}
 	if slices.Contains(roles, "global_admin") && !slices.Contains(target.EligibleRoles, "global_admin") {
 		change.Action = "global-admin"
 	}
@@ -558,7 +643,7 @@ func (h *handlers) setEligibleRoles(w http.ResponseWriter, r *http.Request, acto
 		return err
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
-		ended, err := tx.SetEligibleRoles(r.Context(), target.ID, roles)
+		ended, err := tx.SetEligibleRoles(r.Context(), target.ID, roles, scopes)
 		if err != nil {
 			return err
 		}
@@ -618,7 +703,7 @@ func checkEmail(raw string) (string, error) {
 
 func (h *handlers) manager(r *http.Request, managerID string) (store.User, error) {
 	m, err := h.st.GetUser(r.Context(), managerID)
-	if errors.Is(err, store.ErrNotFound) || (err == nil && m.Kind != "person") {
+	if errors.Is(err, store.ErrNotFound) || (err == nil && (m.Kind != "person" || !inScope(r, m.GroupIDs...))) {
 		return m, httpx.Invalid("That manager is not a person in the directory. Refresh the page and pick someone from the list.")
 	}
 	return m, err
@@ -665,7 +750,7 @@ func (h *handlers) updateUser(w http.ResponseWriter, r *http.Request, actor stor
 		}
 		changed = append(changed, "manager")
 	}
-	if !actor.HasRole("global_admin", "user_admin") && slices.ContainsFunc(changed, func(f string) bool { return f == "name" || f == "email" || f == "manager" }) {
+	if !actor.Manages(target, "user_admin") && slices.ContainsFunc(changed, func(f string) bool { return f == "name" || f == "email" || f == "manager" }) {
 		return httpx.Fail(http.StatusForbidden, "ERR_FORBIDDEN", "Helpdesk administrators can change title, department and location only. Ask a user administrator to change the name, email or manager.")
 	}
 	if len(changed) == 0 {
