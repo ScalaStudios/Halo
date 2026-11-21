@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -175,6 +176,8 @@ func (h *handlers) readPolicy(r *http.Request) (store.AccessPolicy, error) {
 		return p, httpx.Invalid("Choose at least one network for the network condition, or set it to any network.")
 	case !slices.Contains([]string{"", "any", "trusted", "untrusted"}, c.Device):
 		return p, httpx.Invalid(`Choose a device condition: "any", "trusted" or "untrusted".`)
+	case !slices.Contains([]string{"", "any", "compliant", "not-compliant"}, c.Compliance):
+		return p, httpx.Invalid(`Choose a device compliance condition: "any", "compliant" or "not-compliant".`)
 	case slices.ContainsFunc(c.Risk, func(v string) bool { return !slices.Contains(riskLevels, v) }):
 		return p, httpx.Invalid("Risk levels must be none, low, medium or high.")
 	case slices.ContainsFunc(c.Methods, func(v string) bool { return !slices.Contains(store.MethodKinds, v) }):
@@ -397,11 +400,12 @@ func (h *handlers) reorderPolicies(w http.ResponseWriter, r *http.Request, actor
 
 func (h *handlers) simulate(w http.ResponseWriter, r *http.Request, _ store.User) error {
 	var in struct {
-		UserID      string `json:"userId"`
-		AppID       string `json:"appId"`
-		IP          string `json:"ip"`
-		Method      string `json:"method"`
-		DeviceTrust string `json:"deviceTrust"`
+		UserID           string `json:"userId"`
+		AppID            string `json:"appId"`
+		IP               string `json:"ip"`
+		Method           string `json:"method"`
+		DeviceTrust      string `json:"deviceTrust"`
+		DeviceCompliance string `json:"deviceCompliance"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -432,8 +436,10 @@ func (h *handlers) simulate(w http.ResponseWriter, r *http.Request, _ store.User
 		return httpx.Invalid("Choose a sign-in method: " + methodNames + ".")
 	case !slices.Contains([]string{"unknown", "trusted", "blocked"}, in.DeviceTrust):
 		return httpx.Invalid(`Choose the device trust: "unknown", "trusted" or "blocked".`)
+	case !slices.Contains([]string{"", "unknown", "compliant", "non-compliant"}, in.DeviceCompliance):
+		return httpx.Invalid(`Choose the device compliance: "unknown", "compliant" or "non-compliant".`)
 	}
-	sim, err := h.eng.simulate(ctx, u, app, in.Method, strings.TrimSpace(in.IP), in.DeviceTrust)
+	sim, err := h.eng.simulate(ctx, u, app, in.Method, strings.TrimSpace(in.IP), in.DeviceTrust, cmp.Or(in.DeviceCompliance, "unknown"))
 	if err != nil {
 		return err
 	}

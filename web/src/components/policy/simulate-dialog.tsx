@@ -9,9 +9,9 @@ import { Field, Input, Select } from "@/components/ui/input";
 import { ApiError, api } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
 import { METHOD, RISK } from "@/lib/labels";
-import type { DeviceTrust, Simulation } from "@/lib/policy-types";
+import type { ComplianceState, DeviceTrust, Simulation } from "@/lib/policy-types";
 import type { MethodKind } from "@/lib/types";
-import { EFFECT, HALO_APP, POLICY_METHODS, TRUST, policyState } from "./shared";
+import { COMPLIANCE, EFFECT, HALO_APP, POLICY_METHODS, TRUST, policyState } from "./shared";
 
 type Option = { id: string; name: string };
 
@@ -49,6 +49,7 @@ export function SimulateDialog({ users, applications }: { users: Option[]; appli
   const [ip, setIp] = useState("");
   const [method, setMethod] = useState<MethodKind>("passkey");
   const [deviceTrust, setDeviceTrust] = useState<DeviceTrust>("unknown");
+  const [deviceCompliance, setDeviceCompliance] = useState<ComplianceState>("unknown");
   const [errors, setErrors] = useState<{ user?: string; ip?: string; form?: string }>({});
   const [result, setResult] = useState<Simulation | null>(null);
   const [pending, setPending] = useState(false);
@@ -62,7 +63,7 @@ export function SimulateDialog({ users, applications }: { users: Option[]; appli
     if (next.user || next.ip) return;
     setPending(true);
     try {
-      setResult(await api<Simulation>("/policies/simulate", { body: { userId, appId, ip: ip.trim(), method, deviceTrust } }));
+      setResult(await api<Simulation>("/policies/simulate", { body: { userId, appId, ip: ip.trim(), method, deviceTrust, deviceCompliance } }));
     } catch (error) {
       setResult(null);
       setErrors({ form: error instanceof ApiError ? error.message : "Halo could not reach the server. Try again." });
@@ -144,12 +145,23 @@ export function SimulateDialog({ users, applications }: { users: Option[]; appli
               </Select>
             )}
           </Field>
-          <Field label="Device" className="sm:col-span-2" hint="New devices count as unknown until an administrator trusts them.">
+          <Field label="Device trust" hint="New devices count as unknown until an administrator trusts them.">
             {(props) => (
               <Select {...props} value={deviceTrust} onChange={(event) => setDeviceTrust(event.target.value as DeviceTrust)}>
                 {(Object.keys(TRUST) as DeviceTrust[]).map((trust) => (
                   <option key={trust} value={trust}>
                     {TRUST[trust].label}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label="Device compliance" hint="Unknown until a compliance source reports on the device.">
+            {(props) => (
+              <Select {...props} value={deviceCompliance} onChange={(event) => setDeviceCompliance(event.target.value as ComplianceState)}>
+                {(Object.keys(COMPLIANCE) as ComplianceState[]).map((state) => (
+                  <option key={state} value={state}>
+                    {COMPLIANCE[state].label}
                   </option>
                 ))}
               </Select>

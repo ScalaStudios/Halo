@@ -242,6 +242,80 @@ func TestDeviceTrust(t *testing.T) {
 	}
 }
 
+func TestDeviceCompliance(t *testing.T) {
+	st := testdb.New(t)
+	ctx := context.Background()
+	eng := policy.NewEngine(st)
+	ada := member(t, st, "ada@example.com")
+	p := rule(t, st, "Compliant devices only", "enforce", access.Block, store.PolicyConditions{AllUsers: true, AllApps: true, Compliance: "not-compliant"})
+	sourceID, err := st.CreateComplianceSource(ctx, store.ComplianceSource{Name: "Intune", Kind: "intune", TenantID: "contoso", ClientID: "halo", MaxAgeMinutes: 60}, "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := st.GetComplianceSource(ctx, sourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := func(state string, at time.Time) {
+		t.Helper()
+		if err := st.ReportCompliance(ctx, src, []store.ComplianceRecord{{ExternalID: "mdm-1", Name: "ADA-LAPTOP", State: state}}, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report("compliant", time.Now())
+
+	laptop := strings.Repeat("l", 43)
+	d := evaluate(t, eng, ada, "passkey", "198.51.100.7", laptop)
+	want(t, d, access.Block, p.Name)
+	if d.Reason != "Blocks sign-ins on devices that aren't compliant. No compliance source reports on this device." {
+		t.Fatalf("unknown device reason: %s", d.Reason)
+	}
+	want(t, evaluate(t, eng, ada, "passkey", "198.51.100.7", ""), access.Block, p.Name)
+
+	devices, err := st.ListDevices(ctx, ada.ID)
+	if err != nil || len(devices) != 1 || devices[0].Compliance != nil {
+		t.Fatalf("unlinked device: %+v %v", devices, err)
+	}
+	external := "mdm-1"
+	if err := st.LinkDeviceCompliance(ctx, devices[0].ID, &src.ID, &external); err != nil {
+		t.Fatal(err)
+	}
+	want(t, evaluate(t, eng, ada, "passkey", "198.51.100.7", laptop), access.Allow, "")
+
+	report("non-compliant", time.Now())
+	d = evaluate(t, eng, ada, "passkey", "198.51.100.7", laptop)
+	want(t, d, access.Block, p.Name)
+	if d.Reason != "Blocks sign-ins on devices that aren't compliant. Intune reports this device non-compliant." {
+		t.Fatalf("non-compliant reason: %s", d.Reason)
+	}
+	audit, err := st.ListAudit(ctx, 10)
+	if err != nil || len(audit) == 0 || audit[0].Action != "device.compliance" || audit[0].Summary != "Intune reported Firefox on Linux computer as non-compliant, was compliant" || audit[0].TargetID != ada.ID {
+		t.Fatalf("audit after the state changed: %+v %v", audit, err)
+	}
+
+	report("compliant", time.Now().Add(-2*time.Hour))
+	d = evaluate(t, eng, ada, "passkey", "198.51.100.7", laptop)
+	want(t, d, access.Block, p.Name)
+	if !strings.HasSuffix(d.Reason, "Intune has not reported on this device within its freshness limit.") {
+		t.Fatalf("stale reason: %s", d.Reason)
+	}
+	if device, _ := st.GetDevice(ctx, devices[0].ID); device.Compliance == nil || device.Compliance.State != "unknown" || !device.Compliance.Stale {
+		t.Fatalf("stale device: %+v", device.Compliance)
+	}
+
+	only := rule(t, st, "Allow compliant devices", "enforce", access.Allow, store.PolicyConditions{AllUsers: true, AllApps: true, Compliance: "compliant"})
+	setEnabled(t, st, p, false)
+	report("compliant", time.Now())
+	want(t, evaluate(t, eng, ada, "passkey", "198.51.100.7", laptop), access.Allow, only.Name)
+
+	if err := st.DeleteComplianceSource(ctx, src.ID); err != nil {
+		t.Fatal(err)
+	}
+	if device, _ := st.GetDevice(ctx, devices[0].ID); device.Compliance != nil {
+		t.Fatalf("device still linked after its source was deleted: %+v", device.Compliance)
+	}
+}
+
 func riskEvents(t *testing.T, st *store.Store, userID string) []store.RiskEvent {
 	t.Helper()
 	all, err := st.ListRiskEvents(context.Background())

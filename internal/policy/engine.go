@@ -37,16 +37,18 @@ type signal struct {
 }
 
 type attempt struct {
-	user     store.User
-	appID    string
-	appName  string
-	method   string
-	ip       string
-	addr     netip.Addr
-	trust    string
-	risk     string
-	signals  []signal
-	accepted map[string]int
+	user       store.User
+	appID      string
+	appName    string
+	method     string
+	ip         string
+	addr       netip.Addr
+	trust      string
+	compliance string
+	evidence   string
+	risk       string
+	signals    []signal
+	accepted   map[string]int
 }
 
 type state struct {
@@ -67,6 +69,7 @@ type result struct {
 
 func newAttempt(u store.User, app *store.Application, method, ip string) attempt {
 	a := attempt{user: u, appID: haloApp, appName: "Halo", method: method, ip: ip, trust: "unknown", risk: "none"}
+	a.compliance, a.evidence = complianceOf(nil)
 	if app != nil {
 		a.appID, a.appName = app.ID, app.Name
 	}
@@ -140,6 +143,7 @@ func (e *engine) Evaluate(ctx context.Context, in access.Input) (access.Decision
 		}
 		if device != nil {
 			a.trust = device.Trust
+			a.compliance, a.evidence = complianceOf(device.Compliance)
 		} else {
 			others = known
 		}
@@ -184,6 +188,16 @@ func (e *engine) Evaluate(ctx context.Context, in access.Input) (access.Decision
 		return nil
 	})
 	return decision, err
+}
+
+func complianceOf(c *store.DeviceCompliance) (string, string) {
+	switch {
+	case c == nil:
+		return "unknown", "No compliance source reports on this device."
+	case c.Stale:
+		return "unknown", c.Source + " has not reported on this device within its freshness limit."
+	}
+	return c.State, c.Source + " reports this device " + c.State + "."
 }
 
 func (e *engine) assess(ctx context.Context, a *attempt, zones []store.NetworkZone, otherDevices int) error {
@@ -408,6 +422,16 @@ func (s state) match(p store.AccessPolicy, a attempt) (bool, string) {
 	case c.Device == "untrusted":
 		scope = append(scope, "on devices that aren't trusted")
 	}
+	switch {
+	case c.Compliance == "compliant" && a.compliance != "compliant":
+		return false, "The device isn't marked compliant. " + a.evidence
+	case c.Compliance == "compliant":
+		scope = append(scope, "on compliant devices")
+	case c.Compliance == "not-compliant" && a.compliance == "compliant":
+		return false, "The device is compliant."
+	case c.Compliance == "not-compliant":
+		scope = append(scope, "on devices that aren't compliant")
+	}
 	if len(c.Risk) > 0 {
 		if !slices.Contains(c.Risk, a.risk) {
 			return false, "The sign-in risk was " + a.risk + "."
@@ -432,6 +456,9 @@ func (s state) match(p store.AccessPolicy, a attempt) (bool, string) {
 			}
 		}
 		reason += " This sign-in was " + a.risk + " risk: " + strings.Join(evidence, " ")
+	}
+	if c.Compliance == "not-compliant" {
+		reason += " " + a.evidence
 	}
 	return true, reason
 }
@@ -499,13 +526,13 @@ func (e *engine) lockedOut(ctx context.Context, actorID, actorMethod, ip, trust 
 	return checked, nil
 }
 
-func (e *engine) simulate(ctx context.Context, u store.User, app *store.Application, method, ip, trust string) (simulation, error) {
+func (e *engine) simulate(ctx context.Context, u store.User, app *store.Application, method, ip, trust, compliance string) (simulation, error) {
 	s, err := e.load(ctx)
 	if err != nil {
 		return simulation{}, err
 	}
 	a := newAttempt(u, app, method, ip)
-	a.trust = trust
+	a.trust, a.compliance, a.evidence = trust, compliance, "The simulated device is "+compliance+"."
 	if err := e.assess(ctx, &a, s.zones, 0); err != nil {
 		return simulation{}, err
 	}

@@ -46,6 +46,7 @@ type conditionsModel struct {
 	Network         types.String `tfsdk:"network"`
 	ZoneIDs         types.Set    `tfsdk:"zone_ids"`
 	Device          types.String `tfsdk:"device"`
+	Compliance      types.String `tfsdk:"compliance"`
 	Risk            types.Set    `tfsdk:"risk"`
 	Methods         types.Set    `tfsdk:"methods"`
 }
@@ -91,6 +92,7 @@ func (r *accessPolicyResource) Schema(_ context.Context, _ resource.SchemaReques
 					"network":           schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("any"), MarkdownDescription: "`any`, `in` or `not-in`."},
 					"zone_ids":          ids("Network zones for `in` and `not-in`."),
 					"device":            schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("any"), MarkdownDescription: "`any`, `trusted` or `untrusted`."},
+					"compliance":        schema.StringAttribute{Optional: true, Computed: true, Default: stringdefault.StaticString("any"), MarkdownDescription: "`any`, `compliant` or `not-compliant`, as reported by a device compliance source."},
 					"risk":              ids("`none`, `low`, `medium` or `high`. Empty matches every level."),
 					"methods":           ids("Sign-in methods to match. Empty matches every method."),
 				},
@@ -141,6 +143,7 @@ func (m *accessPolicyModel) input(ctx context.Context) accessPolicyInput {
 			Network:         c.Network.ValueString(),
 			ZoneIDs:         stringsOf(ctx, c.ZoneIDs),
 			Device:          c.Device.ValueString(),
+			Compliance:      c.Compliance.ValueString(),
 			Risk:            stringsOf(ctx, c.Risk),
 			Methods:         stringsOf(ctx, c.Methods),
 		},
@@ -167,6 +170,7 @@ func (m *accessPolicyModel) set(p store.AccessPolicy) {
 		Network:         types.StringValue(c.Network),
 		ZoneIDs:         stringSet(c.ZoneIDs),
 		Device:          types.StringValue(c.Device),
+		Compliance:      types.StringValue(c.Compliance),
 		Risk:            stringSet(c.Risk),
 		Methods:         stringSet(c.Methods),
 	}

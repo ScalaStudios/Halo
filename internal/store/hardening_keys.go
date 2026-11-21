@@ -99,6 +99,7 @@ var sealedColumns = []struct{ table, key, column string }{
 	{"webhook_endpoints", "id", "secret_sealed"},
 	{"notification_rules", "id", "url_sealed"},
 	{"notification_rules", "id", "secret_sealed"},
+	{"compliance_sources", "id", "secret_sealed"},
 	{"ssh_authority", "id", "private_key_sealed"},
 	{"approval_requests", "id", "body_sealed"},
 	{"bot_protection", "singleton", "secret_sealed"},

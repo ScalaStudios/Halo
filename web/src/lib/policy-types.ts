@@ -5,6 +5,8 @@ export type PolicyEffect = "allow" | "require-phishing-resistant" | "require-ter
 export type NetworkCondition = "any" | "in" | "not-in";
 export type DeviceCondition = "any" | "trusted" | "untrusted";
 export type DeviceTrust = "unknown" | "trusted" | "blocked";
+export type ComplianceCondition = "any" | "compliant" | "not-compliant";
+export type ComplianceState = "compliant" | "non-compliant" | "unknown";
 export type Outcome = "allow" | "require" | "terms" | "block";
 export type RiskEventType = "risky-network" | "failed-sign-ins" | "new-device";
 
@@ -19,6 +21,7 @@ export type PolicyConditions = {
   network: NetworkCondition;
   zoneIds: string[];
   device: DeviceCondition;
+  compliance: ComplianceCondition;
   risk: RiskLevel[];
   methods: MethodKind[];
 };
@@ -92,7 +95,44 @@ export type Device = {
   lastSeenAt: string;
   lastIp: string;
   signIns: number;
+  compliance: DeviceCompliance | null;
   current?: boolean;
+};
+
+export type DeviceCompliance = {
+  state: ComplianceState;
+  sourceId: string;
+  source: string;
+  externalId: string;
+  record: string;
+  reportedAt: string;
+  stale: boolean;
+};
+
+export type ComplianceSource = {
+  id: string;
+  name: string;
+  kind: "intune" | "agent";
+  tenantId: string;
+  clientId: string;
+  maxAgeMinutes: number;
+  reportedAt: string | null;
+  syncError: string;
+  createdAt: string;
+  updatedAt: string;
+  records: number;
+  linked: number;
+};
+
+export type ComplianceRecord = {
+  id: string;
+  name: string;
+  owner: string;
+  state: ComplianceState;
+  osVersion: string;
+  encrypted: boolean | null;
+  patchLevel: string;
+  reportedAt: string;
 };
 
 export type RiskEvent = {

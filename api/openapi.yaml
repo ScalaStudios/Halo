@@ -57,7 +57,7 @@ tags:
   - name: Lifecycle
     description: Joiner, mover and leaver rules.
   - name: Policies
-    description: Conditional access policies, network zones, sign-in methods, devices and risk events.
+    description: Conditional access policies, network zones, sign-in methods, devices, device compliance sources and risk events.
   - name: Service accounts
     description: Non-human accounts, their API keys and the federated credentials that let workloads sign in without one.
   - name: Provisioning
@@ -4085,6 +4085,7 @@ paths:
                 ip: {type: string, examples: [203.0.113.7]}
                 method: {$ref: '#/components/schemas/MethodKind'}
                 deviceTrust: {type: string, enum: [unknown, trusted, blocked]}
+                deviceCompliance: {type: string, enum: [unknown, compliant, non-compliant], default: unknown}
       responses:
         '200':
           description: The decision, the risk signals and each policy's result.
@@ -4346,6 +4347,197 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /devices/{id}/compliance:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Policies]
+      operationId: linkDeviceCompliance
+      summary: Link a device to a compliance source's device record
+      description: 'Roles: security administrator. The device then takes the compliance state the source reports for that record. Send `sourceId: null` to unlink it, after which its compliance is unknown. Writes a `device.link` audit event.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceId]
+              properties:
+                sourceId: {type: [string, 'null']}
+                externalId: {type: string, description: 'The record''s id in the source, from `GET /compliance-sources/{id}/devices`.'}
+      responses:
+        '200':
+          description: The device.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Device'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /compliance-sources:
+    get:
+      tags: [Policies]
+      operationId: listComplianceSources
+      summary: List device compliance sources
+      description: 'Roles: any administrator. Client and signing secrets are never returned.'
+      responses:
+        '200':
+          description: The sources.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ComplianceSource'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Policies]
+      operationId: createComplianceSource
+      summary: Add a device compliance source
+      description: 'Roles: security administrator, with a recent sign-in. An `intune` source reads managed devices and their compliance state from Microsoft Graph with an app registration that has the `DeviceManagementManagedDevices.Read.All` application permission. Halo syncs it when it is saved and every 30 minutes, through a client that only calls public addresses. An `agent` source receives signed reports at `POST /compliance-sources/{id}/reports`, and its signing secret is returned once. Client secrets and signing secrets are stored sealed.'
+      requestBody: {$ref: '#/components/requestBodies/ComplianceSourceInput'}
+      responses:
+        '201':
+          description: The source, and the signing secret for an `agent` source.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComplianceSourceSaved'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409':
+          description: '`ERR_CONFLICT`: a source with that name exists.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /compliance-sources/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Policies]
+      operationId: updateComplianceSource
+      summary: Replace a source's settings
+      description: 'Roles: security administrator, with a recent sign-in. The kind can''t change. Leave `clientSecret` empty to keep the current one. `rotateSecret` gives an `agent` source a new signing secret, returned once, and the old one stops working.'
+      requestBody: {$ref: '#/components/requestBodies/ComplianceSourceInput'}
+      responses:
+        '200':
+          description: The source, and the new signing secret when it was rotated.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComplianceSourceSaved'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: '`ERR_CONFLICT`: a source with that name exists.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
+    delete:
+      tags: [Policies]
+      operationId: deleteComplianceSource
+      summary: Delete a source and its device records
+      description: 'Roles: security administrator, with a recent sign-in. Devices linked to its records are unlinked, so their compliance becomes unknown.'
+      responses:
+        '204': {$ref: '#/components/responses/NoContent'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /compliance-sources/{id}/sync:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Policies]
+      operationId: syncComplianceSource
+      summary: Sync an Intune source now
+      description: 'Roles: security administrator. A failed sync keeps the last reports and sets `syncError`.'
+      responses:
+        '200':
+          description: The source after the sync.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComplianceSourceSaved'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /compliance-sources/{id}/devices:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Policies]
+      operationId: listComplianceRecords
+      summary: Search the devices a source reported
+      description: 'Roles: any administrator. Returns up to 100 records.'
+      parameters:
+        - {name: q, in: query, description: 'Only records whose name, owner or id contains this text, ignoring case.', schema: {type: string}}
+      responses:
+        '200':
+          description: The records, by owner and name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ComplianceRecord'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /compliance-sources/{id}/reports:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Policies]
+      operationId: reportCompliance
+      summary: Report device compliance from an agent
+      description: 'For `agent` sources, without a session or API key. Sign the raw body like Halo signs webhooks: send `Halo-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>" with the signing secret>`, within 5 minutes of Halo''s clock. Each report replaces the record with the same `id` and counts as fresh for the source''s `maxAgeMinutes`. A changed state writes a `device.compliance` audit event for each linked device.'
+      security: []
+      parameters:
+        - {name: Halo-Signature, in: header, required: true, schema: {type: string, examples: ['t=1763640000,v1=5f2b…']}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [devices]
+              properties:
+                devices:
+                  type: array
+                  minItems: 1
+                  maxItems: 1000
+                  items:
+                    type: object
+                    required: [id, state]
+                    properties:
+                      id: {type: string, maxLength: 200, description: 'The agent''s id for the device, such as its serial number.'}
+                      name: {type: string, maxLength: 200}
+                      owner: {type: string, maxLength: 320, description: The email address of the person who uses the device.}
+                      state: {type: string, enum: [compliant, non-compliant, unknown]}
+                      osVersion: {type: string, maxLength: 100, examples: [macOS 15.1]}
+                      diskEncrypted: {type: boolean}
+                      patchLevel: {type: string, maxLength: 100, examples: ['2026-11-01']}
+      responses:
+        '200':
+          description: The number of devices stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [accepted]
+                properties:
+                  accepted: {type: integer}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401':
+          description: '`ERR_SIGNATURE`: the source does not exist, is not an agent source, or the signature is missing, expired or wrong.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
         '422': {$ref: '#/components/responses/Invalid'}
   /risk-events:
     get:
@@ -5831,6 +6023,21 @@ components:
                 description: Assigned groups that accounts created on first sign-in join.
                 items: {type: string}
               mapping: {$ref: '#/components/schemas/ProviderMapping', description: Omitting it on update removes the mapping, as omitting jitGroupIds removes the groups for new accounts.}
+    ComplianceSourceInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name]
+            properties:
+              name: {type: string, maxLength: 100, examples: [Intune]}
+              kind: {type: string, enum: [intune, agent], description: Required when adding a source.}
+              tenantId: {type: string, description: 'The directory (tenant) ID or primary domain, for `intune`.'}
+              clientId: {type: string, description: 'The application (client) ID, for `intune`.'}
+              clientSecret: {type: string, maxLength: 1024, description: 'The client secret, for `intune`. Required when adding one.'}
+              maxAgeMinutes: {type: integer, minimum: 60, maximum: 43200, default: 1440}
+              rotateSecret: {type: boolean, description: 'Give an `agent` source a new signing secret.'}
     NotificationRuleInput:
       required: true
       content:
@@ -6991,6 +7198,7 @@ components:
           type: array
           items: {type: string}
         device: {type: string, enum: ['', any, trusted, untrusted]}
+        compliance: {type: string, enum: ['', any, compliant, not-compliant], description: '`not-compliant` matches non-compliant devices, devices whose state is unknown or older than their source''s freshness limit, and devices no source reports on.'}
         risk:
           type: array
           description: Match only these risk levels. Empty matches every level.
@@ -7125,7 +7333,55 @@ components:
         lastSeenAt: {type: string, format: date-time}
         lastIp: {type: string}
         signIns: {type: integer}
+        compliance:
+          description: The compliance state from the linked source record, or null when the device is not linked.
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [state, sourceId, source, externalId, record, reportedAt, stale]
+              properties:
+                state: {type: string, enum: [compliant, non-compliant, unknown], description: '`unknown` when the last report is older than the source''s `maxAgeMinutes`.'}
+                sourceId: {type: string}
+                source: {type: string}
+                externalId: {type: string}
+                record: {type: string, description: The device name in the source.}
+                reportedAt: {type: string, format: date-time}
+                stale: {type: boolean}
         current: {type: boolean}
+    ComplianceSource:
+      type: object
+      required: [id, name, kind, tenantId, clientId, maxAgeMinutes, reportedAt, syncError, createdAt, updatedAt, records, linked]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        kind: {type: string, enum: [intune, agent]}
+        tenantId: {type: string}
+        clientId: {type: string}
+        maxAgeMinutes: {type: integer, description: How long a report counts as fresh. Older reports count as unknown.}
+        reportedAt: {type: [string, 'null'], format: date-time, description: The last successful sync or report.}
+        syncError: {type: string, description: 'Why the last Intune sync failed, empty after a successful one.'}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        records: {type: integer, description: Devices the source reported.}
+        linked: {type: integer, description: Halo devices linked to its records.}
+    ComplianceSourceSaved:
+      type: object
+      required: [source]
+      properties:
+        source: {$ref: '#/components/schemas/ComplianceSource'}
+        secret: {type: string, description: 'An agent source''s signing secret, only when created or rotated.', examples: [hcs_…]}
+    ComplianceRecord:
+      type: object
+      required: [id, name, owner, state, osVersion, encrypted, patchLevel, reportedAt]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        owner: {type: string}
+        state: {type: string, enum: [compliant, non-compliant, unknown]}
+        osVersion: {type: string}
+        encrypted: {type: [boolean, 'null']}
+        patchLevel: {type: string}
+        reportedAt: {type: string, format: date-time}
     RiskEvent:
       type: object
       required: [id, time, type, level, status, userId, ip, deviceId, device, signInId, detail, resolvedBy, resolvedAt]
