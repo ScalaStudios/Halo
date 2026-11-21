@@ -85,6 +85,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		"POST /api/v1/auth/access-pass":          h.accessPassSignIn,
 		"POST /api/v1/auth/password":             h.passwordSignIn,
 		"POST /api/v1/auth/certificate":          h.certificateSignIn,
+		"POST /api/v1/auth/kerberos":             h.kerberosSignIn,
 		"POST /api/v1/auth/continue":             h.continueRequest,
 		"GET /api/v1/auth/terms/{ceremony}":      h.pendingTerms,
 		"POST /api/v1/auth/terms":                h.acceptTerms,
@@ -141,6 +142,9 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		"GET /api/v1/certificate-authorities":          h.listCertificateAuthorities,
 		"POST /api/v1/certificate-authorities":         h.createCertificateAuthority,
 		"DELETE /api/v1/certificate-authorities/{id}":  h.deleteCertificateAuthority,
+		"GET /api/v1/kerberos":                         h.getKerberos,
+		"PUT /api/v1/kerberos":                         h.saveKerberos,
+		"DELETE /api/v1/kerberos":                      h.deleteKerberos,
 	} {
 		mux.Handle(pattern, httpx.Handle(fn))
 	}
@@ -438,7 +442,7 @@ func (h *handler) authRequest(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	out := map[string]any{"application": map[string]any{"name": app.Name, "homepage": app.Homepage, "logoUrl": app.LogoURL}, "loginHint": req.LoginHint}
+	out := map[string]any{"application": map[string]any{"name": app.Name, "homepage": app.Homepage, "logoUrl": app.LogoURL, "kerberosSignIn": app.KerberosSignIn}, "loginHint": req.LoginHint}
 	provider, err := h.route(ctx, cmp.Or(req.DomainHint, req.LoginHint))
 	if err != nil {
 		return err

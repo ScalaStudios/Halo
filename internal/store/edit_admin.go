@@ -130,9 +130,9 @@ func (s *Store) DeleteGroup(ctx context.Context, groupID string) error {
 func (s *Store) UpdateApplication(ctx context.Context, a Application) error {
 	return s.Tx(ctx, func(tx *Store) error {
 		tag, err := tx.db.Exec(ctx, `update applications set name = $2, description = $3, homepage = $4, redirect_uris = $5, post_logout_uris = $6, scopes = $7,
-			access_token_ttl = $8, refresh_token_ttl = $9, id_token_ttl = $10, refresh_rotation = $11, owner_id = $12, token_exchange = $13, id_token_alg = $14, max_auth_age = $15, requires_consent = $16, claim_mappings = $17, backchannel_logout_uri = $18, backchannel_logout_session_required = $19, require_par = $20, require_pkce = $21, require_dpop = $22, updated_at = now() where id = $1`,
+			access_token_ttl = $8, refresh_token_ttl = $9, id_token_ttl = $10, refresh_rotation = $11, owner_id = $12, token_exchange = $13, id_token_alg = $14, max_auth_age = $15, requires_consent = $16, claim_mappings = $17, backchannel_logout_uri = $18, backchannel_logout_session_required = $19, require_par = $20, require_pkce = $21, require_dpop = $22, kerberos_sign_in = $23, updated_at = now() where id = $1`,
 			a.ID, a.Name, a.Description, a.Homepage, a.RedirectURIs, a.PostLogoutURIs, a.Scopes,
-			a.TokenPolicy.AccessTokenTTL, a.TokenPolicy.RefreshTokenTTL, a.TokenPolicy.IDTokenTTL, a.TokenPolicy.Rotation, a.Owner, a.TokenPolicy.Exchange, a.TokenPolicy.IDTokenAlg, a.MaxAuthAge, a.RequiresConsent, a.ClaimMappings, a.BackchannelLogoutURI, a.BackchannelLogoutSessionRequired, a.RequirePAR, a.RequirePKCE, a.RequireDPoP)
+			a.TokenPolicy.AccessTokenTTL, a.TokenPolicy.RefreshTokenTTL, a.TokenPolicy.IDTokenTTL, a.TokenPolicy.Rotation, a.Owner, a.TokenPolicy.Exchange, a.TokenPolicy.IDTokenAlg, a.MaxAuthAge, a.RequiresConsent, a.ClaimMappings, a.BackchannelLogoutURI, a.BackchannelLogoutSessionRequired, a.RequirePAR, a.RequirePKCE, a.RequireDPoP, a.KerberosSignIn)
 		if err != nil {
 			return err
 		}

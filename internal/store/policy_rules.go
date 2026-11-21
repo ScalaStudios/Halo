@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"net/netip"
 	"slices"
 	"strings"
 	"time"
@@ -151,6 +152,13 @@ type NetworkZone struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+func (z NetworkZone) Contains(addr netip.Addr) bool {
+	return addr.IsValid() && slices.ContainsFunc(z.CIDRs, func(cidr string) bool {
+		prefix, err := netip.ParsePrefix(cidr)
+		return err == nil && prefix.Contains(addr)
+	})
+}
+
 func (s *Store) ListNetworkZones(ctx context.Context) ([]NetworkZone, error) {
 	rows, err := s.db.Query(ctx, `select id, name, kind, cidrs, created_at, updated_at from network_zones order by lower(name)`)
 	if err != nil {
@@ -209,7 +217,7 @@ func (s *Store) ExistingIDs(ctx context.Context, table string, ids []string) (ma
 	return existing, rows.Err()
 }
 
-var MethodKinds = []string{"passkey", "security-key", "totp", "magic-link", "recovery-codes", "password", "federated", "certificate"}
+var MethodKinds = []string{"passkey", "security-key", "totp", "magic-link", "recovery-codes", "password", "federated", "certificate", "kerberos"}
 
 type MethodSetting struct {
 	Method    string    `json:"method"`

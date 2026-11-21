@@ -632,6 +632,14 @@ func (h *handlers) enabledMethods(w http.ResponseWriter, r *http.Request) error 
 	if err != nil {
 		return err
 	}
+	if slices.Contains(enabled, "kerberos") {
+		_, err := h.st.KerberosSource(r.Context())
+		if errors.Is(err, store.ErrNotFound) || slices.Contains(org.FeaturesOff, "kerberos") {
+			enabled = slices.DeleteFunc(enabled, func(m string) bool { return m == "kerberos" })
+		} else if err != nil {
+			return err
+		}
+	}
 	var challenge any
 	if org.BotProtection != "" {
 		challenge = map[string]string{"provider": org.BotProtection, "siteKey": org.BotProtectionSiteKey}

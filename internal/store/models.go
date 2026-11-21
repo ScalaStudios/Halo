@@ -130,6 +130,8 @@ type Application struct {
 	RequirePKCE bool `json:"requirePkce"`
 	RequireDPoP bool `json:"requireDpop"`
 
+	KerberosSignIn bool `json:"kerberosSignIn"`
+
 	RegisteredDynamically bool   `json:"registeredDynamically"`
 	AwaitingApproval      bool   `json:"awaitingApproval"`
 	RequiresConsent       bool   `json:"requiresConsent"`

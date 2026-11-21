@@ -26,7 +26,7 @@ export default async function SignInPage({ searchParams }: Props) {
   }
   const authRequest = typeof params.authRequest === "string" ? params.authRequest : undefined;
   const [request, methods] = await Promise.all([
-    authRequest ? apiPeek<{ application: { name: string; logoUrl: string | null }; loginHint: string; provider?: SignInProvider }>(`/auth/request/${encodeURIComponent(authRequest)}`) : null,
+    authRequest ? apiPeek<{ application: { name: string; logoUrl: string | null; kerberosSignIn: boolean }; loginHint: string; provider?: SignInProvider }>(`/auth/request/${encodeURIComponent(authRequest)}`) : null,
     apiPeek<{ methods: string[]; emailSignIn: Settings["emailSignIn"]; challenge: Challenge | null; signUp: boolean }>("/auth/methods"),
   ]);
   return (
@@ -38,7 +38,7 @@ export default async function SignInPage({ searchParams }: Props) {
         expired={request?.problem?.code === "ERR_AUTH_REQUEST_EXPIRED"}
         next={typeof params.next === "string" ? params.next : undefined}
         signedIn={(await cookies()).has("halo_session")}
-        allowed={methods.data?.methods ?? ["passkey", "security-key", "totp", "recovery-codes", "magic-link"]}
+        allowed={(methods.data?.methods ?? ["passkey", "security-key", "totp", "recovery-codes", "magic-link"]).filter((m) => m !== "kerberos" || request?.data?.application.kerberosSignIn !== false)}
         emailSignIn={methods.data?.emailSignIn ?? "link"}
         challenge={methods.data?.challenge ?? null}
         signUp={methods.data?.signUp ?? false}

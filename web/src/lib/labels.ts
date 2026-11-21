@@ -1,4 +1,4 @@
-import { Fingerprint, IdCard, KeyRound, ListOrdered, Mail, Network, RectangleEllipsis, Smartphone, TicketCheck, type LucideIcon } from "lucide-react";
+import { Fingerprint, IdCard, KeyRound, ListOrdered, Mail, Monitor, Network, RectangleEllipsis, Smartphone, TicketCheck, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/badge";
 import type { LogExportProtocol, NotificationDestination } from "./settings-types";
 import type { AttributeType, AuthStrength, Group, JoinPolicy, MethodKind, RiskLevel, Scope, SignInEvent, SignInResult, UserStatus } from "./types";
@@ -34,6 +34,7 @@ export const METHOD: Record<MethodKind, { label: string; icon: LucideIcon; phish
   federated: { label: "Identity provider", icon: Network, phishingResistant: false },
   "access-pass": { label: "Temporary access pass", icon: TicketCheck, phishingResistant: false },
   certificate: { label: "Client certificate", icon: IdCard, phishingResistant: false },
+  kerberos: { label: "Windows sign-in", icon: Monitor, phishingResistant: false },
 };
 
 export const SIGN_IN_METHOD: Record<SignInEvent["method"], { label: string }> = { ...METHOD, token: { label: "Token request" } };

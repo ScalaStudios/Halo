@@ -152,6 +152,7 @@ var sealedColumns = []struct{ table, key, column string }{
 	{"ssf_streams", "id", "authorization_sealed"},
 	{"app_credentials", "id", "secret_sealed"},
 	{"applications", "id", "ldap_secret_sealed"},
+	{"kerberos_source", "singleton", "keytab_sealed"},
 }
 
 type ResealedColumn struct {
