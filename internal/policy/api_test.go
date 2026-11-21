@@ -22,6 +22,7 @@ import (
 	"halo/internal/httpx"
 	"halo/internal/mail"
 	"halo/internal/policy"
+	"halo/internal/secret"
 	"halo/internal/store"
 	"halo/internal/testdb"
 )
@@ -202,14 +203,59 @@ func TestLockoutGuard(t *testing.T) {
 	expect(t, call(t, h, token, "PUT", "/api/v1/policies/"+trial.ID, blockAll), 409)
 	expect(t, call(t, h, token, "PUT", "/api/v1/policies/order", map[string]any{"ids": []string{trial.ID}}), 204)
 
+	compliantOnly := body("Compliant devices only", "enforce", access.Block, store.PolicyConditions{AllUsers: true, AllApps: true, Compliance: "not-compliant"})
+	expect(t, call(t, h, token, "POST", "/api/v1/policies", compliantOnly), 409)
+
 	erin := member(t, st, "erin@example.com")
 	emergency(t, st, erin.ID)
 	expect(t, call(t, h, token, "PUT", "/api/v1/policies/"+trial.ID, blockAll), 200)
+	expect(t, call(t, h, token, "POST", "/api/v1/policies", compliantOnly), 201)
 	passkeys := call(t, h, token, "POST", "/api/v1/policies", body("Passkeys everywhere", "enforce", access.RequirePhishingResistant, everyone))
 	expect(t, passkeys, 409)
 	if !strings.Contains(passkeys.Body.String(), "ERR_LOCKOUT") {
 		t.Fatalf("an emergency access account without a passkey can't get past a passkey policy: %s", passkeys.Body)
 	}
+}
+
+func TestLockoutGuardReadsTheActorsDeviceCompliance(t *testing.T) {
+	st, h := server(t)
+	ctx := context.Background()
+	sec, token := admin(t, st, "sec@example.com", "security_admin")
+	compliantOnly := body("Compliant devices only", "enforce", access.Block, store.PolicyConditions{AllUsers: true, AllApps: true, Compliance: "not-compliant"})
+	expect(t, call(t, h, token, "POST", "/api/v1/policies", compliantOnly), 409)
+
+	laptop := strings.Repeat("l", 43)
+	if _, err := st.TouchDevice(ctx, sec.ID, secret.Hash(laptop), firefox, "198.51.100.7", true); err != nil {
+		t.Fatal(err)
+	}
+	sourceID, err := st.CreateComplianceSource(ctx, store.ComplianceSource{Name: "Intune", Kind: "intune", TenantID: "contoso", ClientID: "halo", MaxAgeMinutes: 60}, "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := st.GetComplianceSource(ctx, sourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ReportCompliance(ctx, src, []store.ComplianceRecord{{ExternalID: "mdm-1", Name: "SEC-LAPTOP", State: "compliant"}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	devices, err := st.ListDevices(ctx, sec.ID)
+	if err != nil || len(devices) != 1 {
+		t.Fatalf("devices: %+v %v", devices, err)
+	}
+	external := "mdm-1"
+	if err := st.LinkDeviceCompliance(ctx, devices[0].ID, &src.ID, &external); err != nil {
+		t.Fatal(err)
+	}
+
+	b, _ := json.Marshal(compliantOnly)
+	req := httptest.NewRequest("POST", "/api/v1/policies", bytes.NewReader(b))
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.AddCookie(&http.Cookie{Name: httpx.SessionCookie, Value: token})
+	req.AddCookie(&http.Cookie{Name: httpx.DeviceCookie, Value: laptop})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	expect(t, rec, 201)
 }
 
 func TestSimulate(t *testing.T) {
