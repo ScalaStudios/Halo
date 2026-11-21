@@ -44,6 +44,26 @@ spec:
             - name: HALO_RADIUS_LISTEN
               value: {{ printf ":%v" .Values.radius.port | quote }}
             {{- end }}
+            {{- with .Values.vault.address }}
+            - name: HALO_VAULT_ADDR
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.vault.namespace }}
+            - name: HALO_VAULT_NAMESPACE
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.vault.transitMount }}
+            - name: HALO_VAULT_TRANSIT_MOUNT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.vault.wrappingKey }}
+            - name: HALO_VAULT_WRAPPING_KEY
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.vault.signing }}
+            - name: HALO_VAULT_SIGNING
+              value: "1"
+            {{- end }}
             {{- if .Values.metrics.enabled }}
             - name: HALO_METRICS_LISTEN
               value: {{ printf ":%v" .Values.metrics.port | quote }}
