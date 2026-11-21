@@ -128,6 +128,8 @@ func New(d httpx.Deps) (http.Handler, error) {
 	})
 	workload := &workloads{st: d.Store, dev: d.Config.Dev, issuers: map[string]*issuerKeys{}}
 	mux.HandleFunc("POST /oauth2/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Pragma", "no-cache")
 		_ = r.ParseForm()
 		if r.PostForm.Get("grant_type") == string(oidc.GrantTypeClientCredentials) && r.PostForm.Get("client_assertion_type") == oidc.ClientAssertionTypeJWTAssertion {
 			workload.ServeHTTP(w, r)
