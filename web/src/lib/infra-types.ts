@@ -2,6 +2,21 @@ import type { SigningAlgorithm } from "./types";
 
 export type SshAuthority = { publicKey: string; fingerprint: string; createdAt: string; certificateLifetime: number };
 
+export type SshHostAuthority = SshAuthority & { knownHosts: string };
+
+export type SshHost = {
+  id: string;
+  hostnames: string[];
+  publicKey: string | null;
+  fingerprint: string;
+  keyType: string;
+  serial: number | null;
+  validBefore: string | null;
+  enrollmentExpiresAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+};
+
 export type PrincipalMapping = { id: string; groupId: string; principals: string[]; createdAt: string; updatedAt: string };
 
 export type SshCertificate = {

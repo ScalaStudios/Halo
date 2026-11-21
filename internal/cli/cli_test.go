@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -152,6 +154,20 @@ func TestLoginWhoamiCertificateLogout(t *testing.T) {
 	if err := Run(ctx, "ssh-cert", []string{"--key", privatePath}, &output{}); err == nil || !strings.Contains(err.Error(), "not an OpenSSH public key") {
 		t.Fatalf("ssh-cert with a private key must refuse before contacting Halo: %v", err)
 	}
+	hostCAPub, hostCAPriv, err := ed25519.GenerateKey(rand.Reader)
+	must(err)
+	hostCAKey, err := ssh.NewPublicKey(hostCAPub)
+	must(err)
+	hostCALine := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(hostCAKey)))
+	must(st.CreateSSHAuthority(ctx, true, hostCAPriv.Seed(), hostCALine))
+	domain, err := st.AddDomain(ctx, "example.com")
+	must(err)
+	_, err = st.VerifyDomain(ctx, domain.ID)
+	must(err)
+	knownHosts := filepath.Join(os.Getenv("HOME"), ".ssh", "known_hosts")
+	must(os.MkdirAll(filepath.Dir(knownHosts), 0o700))
+	must(os.WriteFile(knownHosts, []byte("github.com ssh-ed25519 AAAAC3Nza\n@cert-authority *.old.example "+hostCALine+"\n"), 0o600))
+
 	out = &output{}
 	must(Run(ctx, "ssh-cert", []string{"--key", keyPath}, out))
 	written, err := os.ReadFile(privatePath + "-cert.pub")
@@ -160,6 +176,54 @@ func TestLoginWhoamiCertificateLogout(t *testing.T) {
 	must(err)
 	if cert, ok := parsed.(*ssh.Certificate); !ok || cert.ValidPrincipals[0] != "ops" || !strings.Contains(out.String(), "Log in as ops until") {
 		t.Fatalf("ssh-cert: %q %+v", out.String(), parsed)
+	}
+	trusted := "github.com ssh-ed25519 AAAAC3Nza\n@cert-authority example.com,*.example.com " + hostCALine + "\n"
+	if data, err := os.ReadFile(knownHosts); err != nil || string(data) != trusted || !strings.Contains(out.String(), "so ssh trusts hosts Halo signed for example.com,*.example.com") {
+		t.Fatalf("ssh-cert must replace its own known_hosts line and keep the others: %v %q %q", err, data, out.String())
+	}
+	out = &output{}
+	must(Run(ctx, "ssh-cert", []string{"--key", keyPath}, out))
+	if data, err := os.ReadFile(knownHosts); err != nil || string(data) != trusted || strings.Contains(out.String(), "known_hosts") {
+		t.Fatalf("ssh-cert must leave an up-to-date known_hosts alone: %v %q %q", err, data, out.String())
+	}
+
+	host, err := st.CreateSSHHost(ctx, []string{"web1.example.com"})
+	must(err)
+	_, token, err := st.IssueSSHHostToken(ctx, host.ID)
+	must(err)
+	_, hostPriv, err := ed25519.GenerateKey(rand.Reader)
+	must(err)
+	block, err = ssh.MarshalPrivateKey(hostPriv, "")
+	must(err)
+	hostKeyPath := filepath.Join(t.TempDir(), "ssh_host_ed25519_key")
+	must(os.WriteFile(hostKeyPath, pem.EncodeToMemory(block), 0o600))
+	hostCert := func() *ssh.Certificate {
+		t.Helper()
+		data, err := os.ReadFile(hostKeyPath + "-cert.pub")
+		must(err)
+		parsed, _, _, _, err := ssh.ParseAuthorizedKey(data)
+		must(err)
+		return parsed.(*ssh.Certificate)
+	}
+	if err := Run(ctx, "ssh-host", []string{"enroll", "--server", srv.URL, "--key", hostKeyPath}, &output{}); err == nil || !strings.Contains(err.Error(), "--token") {
+		t.Fatalf("enroll without a token: %v", err)
+	}
+	if err := Run(ctx, "ssh-host", []string{"enroll", "--server", srv.URL, "--token", token, "--key", keyPath}, &output{}); err == nil || !strings.Contains(err.Error(), "not an unencrypted OpenSSH private key") {
+		t.Fatalf("enroll with a public key: %v", err)
+	}
+	out = &output{}
+	must(Run(ctx, "ssh-host", []string{"enroll", "--server", srv.URL, "--token", token, "--key", hostKeyPath}, out))
+	enrolled := hostCert()
+	if enrolled.CertType != ssh.HostCert || !slices.Equal(enrolled.ValidPrincipals, []string{"web1.example.com"}) || !bytes.Equal(enrolled.SignatureKey.Marshal(), hostCAKey.Marshal()) ||
+		!strings.Contains(out.String(), "Add HostCertificate "+hostKeyPath+"-cert.pub") {
+		t.Fatalf("ssh-host enroll: %q %+v", out.String(), enrolled)
+	}
+	if err := Run(ctx, "ssh-host", []string{"enroll", "--server", srv.URL, "--token", token, "--key", hostKeyPath}, &output{}); err == nil || !strings.Contains(err.Error(), "not valid") {
+		t.Fatalf("an enrollment token must work once: %v", err)
+	}
+	must(Run(ctx, "ssh-host", []string{"renew", "--server", srv.URL, "--key", hostKeyPath}, &output{}))
+	if renewed := hostCert(); renewed.Serial == enrolled.Serial || !slices.Equal(renewed.ValidPrincipals, enrolled.ValidPrincipals) {
+		t.Fatalf("ssh-host renew: %+v", renewed)
 	}
 
 	out = &output{}

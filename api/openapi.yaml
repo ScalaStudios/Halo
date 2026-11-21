@@ -80,7 +80,7 @@ tags:
 
       **DPoP-bound tokens.** An application binds its tokens to a key it holds by sending a DPoP proof (RFC 9449) in the `DPoP` header of each token request: a JWT with `typ` `dpop+jwt`, the public key in `jwk`, signed with one of `dpop_signing_alg_values_supported` from discovery, with a new `jti`, `htm` and `htu` matching the request and an `iat` within a minute. Halo refuses a `jti` it has seen. The token response then says `token_type: DPoP`, JWT access tokens carry `cnf.jkt`, the key's SHA-256 thumbprint (RFC 7638), and introspection reports `token_type: DPoP` and `cnf`. A refresh token issued with a proof refreshes only with a proof from the same key, and one issued without a proof only without one. At `/oauth2/userinfo` the application sends `Authorization: DPoP <token>` with a proof that also has `ath`, the base64url SHA-256 hash of the token, and Halo refuses a bound token sent as a bearer token. An API that receives bound tokens checks the proof the same way and compares the thumbprint of its `jwk` with `cnf.jkt`.
   - name: SSH
-    description: The SSH certificate authority, principal mappings and issued certificates.
+    description: The SSH certificate authorities for people and hosts, principal mappings, issued certificates and registered hosts.
   - name: Development
     description: Routes that exist only with HALO_DEV=1.
   - name: Client registration
@@ -2042,7 +2042,7 @@ paths:
       tags: [Account, SSH]
       operationId: issueSSHCertificate
       summary: Get an SSH user certificate for a public key
-      description: Signs the key with Halo's SSH certificate authority for every principal mapped to your groups, valid for the configured lifetime. `halo ssh-cert` calls this route.
+      description: Signs the key with Halo's SSH certificate authority for every principal mapped to your groups, valid for the configured lifetime. `halo ssh-cert` calls this route and writes `knownHosts` to `~/.ssh/known_hosts`.
       security: *personal
       requestBody:
         required: true
@@ -6583,6 +6583,209 @@ paths:
                 items: {$ref: '#/components/schemas/SSHCertificate'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /ssh/known_hosts:
+    get:
+      tags: [SSH]
+      operationId: getSSHKnownHosts
+      summary: Get the known_hosts line for the host certificate authority
+      description: 'An `@cert-authority` line for `~/.ssh/known_hosts` or `/etc/ssh/ssh_known_hosts`, scoped to each verified domain and its subdomains, so ssh trusts hosts Halo signed without a prompt. Empty until the host authority exists and a domain is verified.'
+      security: []
+      responses:
+        '200':
+          description: One known_hosts line, or an empty body.
+          content:
+            text/plain:
+              schema: {type: string, examples: ['@cert-authority example.com,*.example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI…']}
+  /ssh/revoked-hosts.krl:
+    get:
+      tags: [SSH]
+      operationId: getSSHRevokedHosts
+      summary: Get the revocation list of host keys
+      description: An OpenSSH key revocation list (KRL) with the key of every revoked host, which also revokes every certificate for that key. Point `RevokedHostKeys` in the clients' `ssh_config` at a copy of it; ssh refuses every host when the file is missing.
+      security: []
+      responses:
+        '200':
+          description: The KRL.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+  /ssh/host-authority:
+    get:
+      tags: [SSH]
+      operationId: getSSHHostAuthority
+      summary: Get the SSH host certificate authority
+      description: 'Roles: any administrator. A separate key from the authority that signs certificates for people. Halo creates it the first time it is needed.'
+      responses:
+        '200': {$ref: '#/components/responses/SSHHostAuthorityResponse'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    put:
+      tags: [SSH]
+      operationId: setSSHHostCertificateLifetime
+      summary: Set how long host certificates last
+      description: 'Roles: security administrator. Recorded as `ssh.host.lifetime`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [certificateLifetime]
+              properties:
+                certificateLifetime: {type: integer, minimum: 86400, maximum: 31536000, description: Seconds.}
+      responses:
+        '200': {$ref: '#/components/responses/SSHHostAuthorityResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /ssh/hosts:
+    get:
+      tags: [SSH]
+      operationId: listSSHHosts
+      summary: List registered hosts
+      description: 'Roles: any administrator. Revoked hosts come last.'
+      responses:
+        '200':
+          description: The hosts, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/SSHHost'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [SSH]
+      operationId: createSSHHost
+      summary: Register a host
+      description: 'Roles: security administrator. Returns an enrollment token that works once, for an hour, with `halo ssh-host enroll`. Recorded as `ssh.host.create`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hostnames]
+              properties:
+                hostnames:
+                  type: array
+                  minItems: 1
+                  maxItems: 32
+                  description: The names people connect with, which become the certificate's principals. Lowercase hostnames or IP addresses, without wildcards or ports.
+                  items: {type: string, examples: [web1.example.com]}
+      responses:
+        '201': {$ref: '#/components/responses/SSHHostEnrollmentResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /ssh/hosts/{id}/enrollment-token:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [SSH]
+      operationId: createSSHHostEnrollmentToken
+      summary: Create a new enrollment token for a host
+      description: 'Roles: security administrator. Replaces the host''s unused token. Recorded as `ssh.host.token`.'
+      responses:
+        '200': {$ref: '#/components/responses/SSHHostEnrollmentResponse'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /ssh/hosts/{id}/certificate:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [SSH]
+      operationId: signSSHHostKey
+      summary: Sign a host key
+      description: 'Roles: security administrator. Signs a pasted host public key for the host''s hostnames and makes it the host''s key, which then renews with `halo ssh-host renew`. Recorded as `ssh.host.certificate.issue`.'
+      requestBody: {$ref: '#/components/requestBodies/SSHHostKeyInput'}
+      responses:
+        '201': {$ref: '#/components/responses/SSHHostCertificateResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /ssh/hosts/{id}/revoke:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [SSH]
+      operationId: revokeSSHHost
+      summary: Revoke a host
+      description: 'Roles: security administrator. The host can no longer renew or enroll, and its key joins `/ssh/revoked-hosts.krl`. A revoked host can''t be restored, and its key can''t be enrolled again. Recorded as `ssh.host.revoke`.'
+      responses:
+        '200':
+          description: The revoked host.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SSHHost'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /ssh/hosts/enroll:
+    post:
+      tags: [SSH]
+      operationId: enrollSSHHost
+      summary: Get a host certificate with an enrollment token
+      description: The host sends its public key and the token from the console. `halo ssh-host enroll` calls this route. Recorded as `ssh.host.certificate.issue` with no actor.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, publicKey]
+              properties:
+                token: {type: string}
+                publicKey: {type: string, examples: ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI…']}
+      responses:
+        '201': {$ref: '#/components/responses/SSHHostCertificateResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401':
+          description: '`ERR_INVALID_TOKEN`: the token is unknown, used, expired or belongs to a revoked host.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /ssh/hosts/renew:
+    post:
+      tags: [SSH]
+      operationId: renewSSHHost
+      summary: Renew a host certificate
+      description: 'The host proves it holds its enrolled key by signing `halo ssh host certificate renewal <timestamp>` with it, within 5 minutes of the server''s clock. `halo ssh-host renew` calls this route. Recorded as `ssh.host.certificate.issue` with no actor.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [publicKey, timestamp, signature]
+              properties:
+                publicKey: {type: string, examples: ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI…']}
+                timestamp: {type: integer, description: Unix seconds.}
+                signature: {type: string, description: The SSH signature in wire format, base64 encoded.}
+      responses:
+        '201': {$ref: '#/components/responses/SSHHostCertificateResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401':
+          description: '`ERR_INVALID_SIGNATURE`: the signature does not verify with the key, or the timestamp is more than 5 minutes off.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403':
+          description: '`ERR_UNKNOWN_HOST`: no host has this key, or the host was revoked.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /dev/outbox:
     get:
       tags: [Development]
@@ -6977,6 +7180,15 @@ components:
                 minItems: 1
                 maxItems: 100
                 items: {$ref: '#/components/schemas/ApiScope'}
+    SSHHostKeyInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [publicKey]
+            properties:
+              publicKey: {type: string, description: 'The host''s public key, such as `/etc/ssh/ssh_host_ed25519_key.pub`. RSA keys need at least 2048 bits.', examples: ['ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI…']}
     SSHPrincipalMappingInput:
       required: true
       content:
@@ -7316,6 +7528,26 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/SSHAuthority'}
+    SSHHostAuthorityResponse:
+      description: The host certificate authority.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SSHHostAuthority'}
+    SSHHostEnrollmentResponse:
+      description: The host and its enrollment token, which Halo shows once.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [host, token]
+            properties:
+              host: {$ref: '#/components/schemas/SSHHost'}
+              token: {type: string}
+    SSHHostCertificateResponse:
+      description: The host certificate. Save it as `<host key>-cert.pub` and name it in `HostCertificate` in `sshd_config`.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SSHCertificateIssued'}
     SSHPrincipalMappingResponse:
       description: The mapping.
       content:
@@ -9026,6 +9258,32 @@ components:
         fingerprint: {type: string}
         validAfter: {type: string, format: date-time, description: '5 minutes before issue, to allow for clock skew.'}
         validBefore: {type: string, format: date-time}
+        knownHosts: {type: string, description: 'Certificates for people only: the `@cert-authority` line from `/ssh/known_hosts`, or empty.'}
+    SSHHostAuthority:
+      type: object
+      required: [publicKey, fingerprint, createdAt, certificateLifetime, knownHosts]
+      properties:
+        publicKey: {type: string}
+        fingerprint: {type: string, examples: ['SHA256:…']}
+        createdAt: {type: string, format: date-time}
+        certificateLifetime: {type: integer, description: Seconds. Defaults to 2592000 (30 days).}
+        knownHosts: {type: string, description: 'The `@cert-authority` line for clients, empty until a domain is verified.'}
+    SSHHost:
+      type: object
+      required: [id, hostnames, publicKey, fingerprint, keyType, serial, validBefore, enrollmentExpiresAt, revokedAt, createdAt]
+      properties:
+        id: {type: string, examples: [hst_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        hostnames:
+          type: array
+          items: {type: string}
+        publicKey: {type: [string, 'null'], description: The key of the last certificate. Null until the host enrolls.}
+        fingerprint: {type: string}
+        keyType: {type: string, examples: [ssh-ed25519]}
+        serial: {type: [integer, 'null'], description: The serial of the last certificate. Its key ID is `halo:<host id>:<serial>`.}
+        validBefore: {type: [string, 'null'], format: date-time}
+        enrollmentExpiresAt: {type: [string, 'null'], format: date-time, description: When the unused enrollment token stops working.}
+        revokedAt: {type: [string, 'null'], format: date-time}
+        createdAt: {type: string, format: date-time}
     DeviceAuthorization:
       type: object
       required: [userCode, application, logoUrl, clientId, scopes, ip, userAgent, requestedAt, expiresAt]

@@ -18,30 +18,36 @@ import type { PrincipalMapping, SshAuthority } from "@/lib/infra-types";
 import type { Group } from "@/lib/types";
 
 const LIFETIMES = [900, 3600, 7200, 14400, 28800, 43200, 86400];
+const HOST_LIFETIMES = [604800, 2592000, 7776000, 31536000];
 
-export function LifetimeSetting({ lifetime }: { lifetime: number }) {
+export function LifetimeSetting({ lifetime, host = false }: { lifetime: number; host?: boolean }) {
   const { pending, run, errorFor, toast } = useMutation();
   const [value, setValue] = useState(lifetime);
-  const options = LIFETIMES.includes(lifetime) ? LIFETIMES : [...LIFETIMES, lifetime].sort((a, b) => a - b);
+  const choices = host ? HOST_LIFETIMES : LIFETIMES;
+  const options = choices.includes(lifetime) ? choices : [...choices, lifetime].sort((a, b) => a - b);
 
   return (
     <form
       className="flex flex-col gap-3 sm:flex-row sm:items-start"
       onSubmit={(event) => {
         event.preventDefault();
-        void run("lifetime", () => api<SshAuthority>("/ssh/authority", { method: "PUT", body: { certificateLifetime: value } }), () =>
-          toast({ title: `Certificates now last ${formatDuration(value)}`, description: "Applies to certificates issued from now on. Recorded in the audit log." }),
+        void run("lifetime", () => api<SshAuthority>(host ? "/ssh/host-authority" : "/ssh/authority", { method: "PUT", body: { certificateLifetime: value } }), () =>
+          toast({ title: `${host ? "Host certificates" : "Certificates"} now last ${formatDuration(value)}`, description: "Applies to certificates issued from now on. Recorded in the audit log." }),
           "inline",
         );
       }}
     >
-      <Field label="Certificate lifetime" hint="People request a new certificate with halo ssh-cert when theirs expires." className="sm:w-64">
+      <Field
+        label={host ? "Host certificate lifetime" : "Certificate lifetime"}
+        hint={host ? "Hosts renew with halo ssh-host renew, so renew more often than this." : "People request a new certificate with halo ssh-cert when theirs expires."}
+        className="sm:w-64"
+      >
         {(props) => (
           <Select {...props} value={value} onChange={(event) => setValue(Number(event.target.value))}>
             {options.map((seconds) => (
               <option key={seconds} value={seconds}>
                 {formatDuration(seconds)}
-                {seconds === 28800 ? " (default)" : ""}
+                {seconds === (host ? 2592000 : 28800) ? " (default)" : ""}
               </option>
             ))}
           </Select>

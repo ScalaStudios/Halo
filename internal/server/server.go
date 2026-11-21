@@ -80,6 +80,9 @@ var sensitiveRoutes = []string{
 	"DELETE /api/v1/ldap-directories/{id}",
 	"PUT /api/v1/applications/{id}/hook",
 	"DELETE /api/v1/applications/{id}/hook",
+	"POST /api/v1/ssh/hosts",
+	"POST /api/v1/ssh/hosts/{id}/enrollment-token",
+	"POST /api/v1/ssh/hosts/{id}/certificate",
 }
 
 var ownMethodRoutes = []string{

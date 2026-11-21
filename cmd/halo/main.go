@@ -36,6 +36,11 @@ Client commands:
   halo login --server URL                 Sign in to a Halo server from this computer with the device flow
   halo whoami                             Show who you are signed in as
   halo ssh-cert [--key K] [--out F]       Get a short-lived SSH certificate for a public key (default ~/.ssh/id_ed25519.pub)
+                                          and trust hosts Halo signed in ~/.ssh/known_hosts
+  halo ssh-host enroll --server URL --token T [--key K]
+                                          Get a host certificate for this server's host key (default /etc/ssh/ssh_host_ed25519_key)
+  halo ssh-host renew --server URL [--key K]
+                                          Renew the host certificate, signing the request with the host key
   halo logout                             Revoke this computer's sign-in and delete the stored credentials
 
 Configuration comes from environment variables: HALO_DATABASE_URL, HALO_PUBLIC_URL,
@@ -66,7 +71,7 @@ func main() {
 		err = devSession(ctx, os.Args[2:])
 	case "rotate-secret-key":
 		err = rotateSecretKey(ctx)
-	case "login", "logout", "whoami", "ssh-cert":
+	case "login", "logout", "whoami", "ssh-cert", "ssh-host":
 		err = cli.Run(ctx, os.Args[1], os.Args[2:], os.Stdout)
 	case "help", "-h", "--help":
 		fmt.Print(usage)

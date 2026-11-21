@@ -5,8 +5,10 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"regexp"
 	"slices"
@@ -25,8 +27,14 @@ var (
 	readers          = []string{"security_admin", "user_admin", "helpdesk_admin", "app_admin", "auditor"}
 	writers          = []string{"security_admin"}
 	principalPattern = regexp.MustCompile(`^[a-z_][a-z0-9_.-]{0,31}$`)
+	hostnamePattern  = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$`)
 	extensions       = map[string]string{"permit-X11-forwarding": "", "permit-agent-forwarding": "", "permit-port-forwarding": "", "permit-pty": "", "permit-user-rc": ""}
 	errNoPrincipals  = httpx.Fail(http.StatusForbidden, "ERR_NO_PRINCIPALS", "None of your groups maps to a server account, so Halo can't issue an SSH certificate. Ask a security administrator to add a principal mapping for one of your groups.")
+	errNoHost        = httpx.Fail(http.StatusNotFound, "ERR_NOT_FOUND", "This host was not found or was revoked. Register it again to sign a key for it.")
+	errInvalidToken  = httpx.Fail(http.StatusUnauthorized, "ERR_INVALID_TOKEN", "This enrollment token is not valid. A token works once, for an hour. Create a new one for the host on the Infrastructure page of the Halo console.")
+	errUnknownHost   = httpx.Fail(http.StatusForbidden, "ERR_UNKNOWN_HOST", "Halo has no host with this key, or the host was revoked. Enroll it with a new token from the Halo console.")
+	errBadSignature  = httpx.Fail(http.StatusUnauthorized, "ERR_INVALID_SIGNATURE", "The renewal was not signed by this host key in the last 5 minutes. Check the host's clock, then try again.")
+	errKeyInUse      = httpx.Fail(http.StatusConflict, "ERR_CONFLICT", "This key already belongs to another host in Halo, or to a revoked one. Generate new host keys, then try again.")
 )
 
 type handlers struct {
@@ -45,9 +53,20 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		}))
 	}
 	mux.Handle("GET /api/v1/ssh/ca.pub", httpx.Handle(h.publicKey))
+	mux.Handle("GET /api/v1/ssh/known_hosts", httpx.Handle(h.knownHostsFile))
+	mux.Handle("GET /api/v1/ssh/revoked-hosts.krl", httpx.Handle(h.revokedHosts))
+	mux.Handle("POST /api/v1/ssh/hosts/enroll", httpx.Handle(h.enrollHost))
+	mux.Handle("POST /api/v1/ssh/hosts/renew", httpx.Handle(h.renewHost))
 	mux.Handle("POST /api/v1/me/ssh/certificates", httpx.Handle(h.issue))
 	route("GET /api/v1/ssh/authority", readers, h.authority)
 	route("PUT /api/v1/ssh/authority", writers, h.setLifetime)
+	route("GET /api/v1/ssh/host-authority", readers, h.hostAuthority)
+	route("PUT /api/v1/ssh/host-authority", writers, h.setHostLifetime)
+	route("GET /api/v1/ssh/hosts", readers, h.listHosts)
+	route("POST /api/v1/ssh/hosts", writers, h.createHost)
+	route("POST /api/v1/ssh/hosts/{id}/enrollment-token", writers, h.hostToken)
+	route("POST /api/v1/ssh/hosts/{id}/certificate", writers, h.signHost)
+	route("POST /api/v1/ssh/hosts/{id}/revoke", writers, h.revokeHost)
 	route("GET /api/v1/ssh/principal-mappings", readers, h.listMappings)
 	route("POST /api/v1/ssh/principal-mappings", writers, h.createMapping)
 	route("PUT /api/v1/ssh/principal-mappings/{id}", writers, h.updateMapping)
@@ -56,8 +75,8 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	return nil
 }
 
-func (h *handlers) ca(ctx context.Context) (store.SSHAuthority, error) {
-	a, err := h.st.GetSSHAuthority(ctx)
+func (h *handlers) ca(ctx context.Context, host bool) (store.SSHAuthority, error) {
+	a, err := h.st.GetSSHAuthority(ctx, host)
 	if !errors.Is(err, store.ErrNotFound) {
 		return a, err
 	}
@@ -69,10 +88,14 @@ func (h *handlers) ca(ctx context.Context) (store.SSHAuthority, error) {
 	if err != nil {
 		return a, err
 	}
-	if err := h.st.CreateSSHAuthority(ctx, priv.Seed(), strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))); err != nil {
+	if err := h.st.CreateSSHAuthority(ctx, host, priv.Seed(), authorizedKey(key)); err != nil {
 		return a, err
 	}
-	return h.st.GetSSHAuthority(ctx)
+	return h.st.GetSSHAuthority(ctx, host)
+}
+
+func authorizedKey(key ssh.PublicKey) string {
+	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))
 }
 
 func fingerprint(authorizedKey string) string {
@@ -84,7 +107,7 @@ func fingerprint(authorizedKey string) string {
 }
 
 func (h *handlers) publicKey(w http.ResponseWriter, r *http.Request) error {
-	a, err := h.ca(r.Context())
+	a, err := h.ca(r.Context(), false)
 	if err != nil {
 		return err
 	}
@@ -93,41 +116,113 @@ func (h *handlers) publicKey(w http.ResponseWriter, r *http.Request) error {
 	return err
 }
 
+func describe(a store.SSHAuthority) map[string]any {
+	return map[string]any{"publicKey": a.PublicKey, "fingerprint": fingerprint(a.PublicKey), "createdAt": a.CreatedAt, "certificateLifetime": a.CertificateLifetime}
+}
+
 func (h *handlers) authority(w http.ResponseWriter, r *http.Request, _ store.User) error {
-	a, err := h.ca(r.Context())
+	a, err := h.ca(r.Context(), false)
 	if err != nil {
 		return err
 	}
-	return httpx.JSON(w, http.StatusOK, map[string]any{"publicKey": a.PublicKey, "fingerprint": fingerprint(a.PublicKey), "createdAt": a.CreatedAt, "certificateLifetime": a.CertificateLifetime})
+	return httpx.JSON(w, http.StatusOK, describe(a))
+}
+
+func (h *handlers) hostAuthority(w http.ResponseWriter, r *http.Request, _ store.User) error {
+	a, err := h.ca(r.Context(), true)
+	if err != nil {
+		return err
+	}
+	body := describe(a)
+	if body["knownHosts"], err = h.knownHosts(r.Context()); err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, body)
+}
+
+func (h *handlers) knownHosts(ctx context.Context) (string, error) {
+	a, err := h.st.GetSSHAuthority(ctx, true)
+	if errors.Is(err, store.ErrNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	domains, err := h.st.ListDomains(ctx)
+	if err != nil {
+		return "", err
+	}
+	patterns := []string{}
+	for _, d := range domains {
+		if d.VerifiedAt != nil {
+			patterns = append(patterns, d.Name, "*."+d.Name)
+		}
+	}
+	if len(patterns) == 0 {
+		return "", nil
+	}
+	return "@cert-authority " + strings.Join(patterns, ",") + " " + a.PublicKey, nil
+}
+
+func (h *handlers) knownHostsFile(w http.ResponseWriter, r *http.Request) error {
+	line, err := h.knownHosts(r.Context())
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if line != "" {
+		_, err = fmt.Fprintln(w, line)
+	}
+	return err
 }
 
 func (h *handlers) setLifetime(w http.ResponseWriter, r *http.Request, actor store.User) error {
+	if err := h.saveLifetime(r, actor, false); err != nil {
+		return err
+	}
+	return h.authority(w, r, actor)
+}
+
+func (h *handlers) setHostLifetime(w http.ResponseWriter, r *http.Request, actor store.User) error {
+	if err := h.saveLifetime(r, actor, true); err != nil {
+		return err
+	}
+	return h.hostAuthority(w, r, actor)
+}
+
+func (h *handlers) saveLifetime(r *http.Request, actor store.User, host bool) error {
 	var in struct {
 		CertificateLifetime int `json:"certificateLifetime"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
-	if in.CertificateLifetime < 300 || in.CertificateLifetime > 86400 {
-		return httpx.Invalid("Set the certificate lifetime between 5 minutes and 24 hours. Short lifetimes are the main control, because sshd cannot check revocation online.")
+	low, high, invalid := 300, 86400, "Set the certificate lifetime between 5 minutes and 24 hours. Short lifetimes are the main control, because sshd cannot check revocation online."
+	e := store.AuditEvent{Action: "ssh.lifetime", Summary: "Set the SSH certificate lifetime to ", TargetType: "ssh_authority", TargetID: "ssh", TargetLabel: "SSH certificate authority"}
+	if host {
+		low, high, invalid = 86400, 31536000, "Set the host certificate lifetime between 1 day and 365 days. Hosts renew theirs with halo ssh-host renew before it ends."
+		e = store.AuditEvent{Action: "ssh.host.lifetime", Summary: "Set the SSH host certificate lifetime to ", TargetType: "ssh_host_authority", TargetID: "ssh_host", TargetLabel: "SSH host certificate authority"}
 	}
-	if _, err := h.ca(r.Context()); err != nil {
+	if in.CertificateLifetime < low || in.CertificateLifetime > high {
+		return httpx.Invalid(invalid)
+	}
+	if _, err := h.ca(r.Context(), host); err != nil {
 		return err
 	}
-	err := h.st.Tx(r.Context(), func(tx *store.Store) error {
-		if err := tx.SetSSHCertificateLifetime(r.Context(), in.CertificateLifetime); err != nil {
+	e.Summary += lifetime(in.CertificateLifetime)
+	return h.st.Tx(r.Context(), func(tx *store.Store) error {
+		if err := tx.SetSSHCertificateLifetime(r.Context(), host, in.CertificateLifetime); err != nil {
 			return err
 		}
-		return record(r, tx, actor, store.AuditEvent{Action: "ssh.lifetime", Summary: "Set the SSH certificate lifetime to " + lifetime(in.CertificateLifetime), TargetType: "ssh_authority", TargetID: "ssh", TargetLabel: "SSH certificate authority"})
+		return record(r, tx, actor, e)
 	})
-	if err != nil {
-		return err
-	}
-	return h.authority(w, r, actor)
 }
 
 func lifetime(seconds int) string {
 	d := time.Duration(seconds) * time.Second
+	if d%(24*time.Hour) == 0 {
+		return plural(int(d/(24*time.Hour)), "day", "days")
+	}
 	if d%time.Hour == 0 {
 		return plural(int(d/time.Hour), "hour", "hours")
 	}
@@ -326,11 +421,7 @@ func (h *handlers) issue(w http.ResponseWriter, r *http.Request) error {
 	if len(principals) == 0 {
 		return errNoPrincipals
 	}
-	authority, err := h.ca(ctx)
-	if err != nil {
-		return err
-	}
-	signer, err := ssh.NewSignerFromKey(ed25519.NewKeyFromSeed(authority.Seed))
+	authority, err := h.ca(ctx, false)
 	if err != nil {
 		return err
 	}
@@ -340,18 +431,8 @@ func (h *handlers) issue(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		now := time.Now()
-		cert = &ssh.Certificate{
-			Key:             key,
-			Serial:          serial,
-			CertType:        ssh.UserCert,
-			KeyId:           fmt.Sprintf("halo:%s:%d", u.ID, serial),
-			ValidPrincipals: principals,
-			ValidAfter:      uint64(now.Add(-clockSkew).Unix()),
-			ValidBefore:     uint64(now.Add(time.Duration(authority.CertificateLifetime) * time.Second).Unix()),
-			Permissions:     ssh.Permissions{Extensions: extensions},
-		}
-		if err := cert.SignCert(rand.Reader, signer); err != nil {
+		cert = &ssh.Certificate{Key: key, Serial: serial, CertType: ssh.UserCert, KeyId: fmt.Sprintf("halo:%s:%d", u.ID, serial), ValidPrincipals: principals, Permissions: ssh.Permissions{Extensions: extensions}}
+		if err := sign(cert, authority); err != nil {
 			return err
 		}
 		c := store.SSHCertificate{Serial: serial, KeyID: cert.KeyId, UserID: &u.ID, Principals: principals, Fingerprint: ssh.FingerprintSHA256(key), KeyType: key.Type(), IP: httpx.ClientIP(r),
@@ -365,8 +446,241 @@ func (h *handlers) issue(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	return httpx.JSON(w, http.StatusCreated, map[string]any{
-		"certificate": strings.TrimSpace(string(ssh.MarshalAuthorizedKey(cert))), "serial": cert.Serial, "keyId": cert.KeyId, "principals": principals,
-		"fingerprint": ssh.FingerprintSHA256(key), "validAfter": time.Unix(int64(cert.ValidAfter), 0).UTC(), "validBefore": time.Unix(int64(cert.ValidBefore), 0).UTC(),
+	body := issued(cert)
+	if body["knownHosts"], err = h.knownHosts(ctx); err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusCreated, body)
+}
+
+func sign(cert *ssh.Certificate, authority store.SSHAuthority) error {
+	signer, err := ssh.NewSignerFromKey(ed25519.NewKeyFromSeed(authority.Seed))
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	cert.ValidAfter = uint64(now.Add(-clockSkew).Unix())
+	cert.ValidBefore = uint64(now.Add(time.Duration(authority.CertificateLifetime) * time.Second).Unix())
+	return cert.SignCert(rand.Reader, signer)
+}
+
+func issued(cert *ssh.Certificate) map[string]any {
+	return map[string]any{
+		"certificate": authorizedKey(cert), "serial": cert.Serial, "keyId": cert.KeyId, "principals": cert.ValidPrincipals,
+		"fingerprint": ssh.FingerprintSHA256(cert.Key), "validAfter": time.Unix(int64(cert.ValidAfter), 0).UTC(), "validBefore": time.Unix(int64(cert.ValidBefore), 0).UTC(),
+	}
+}
+
+func RenewalMessage(timestamp int64) []byte {
+	return fmt.Appendf(nil, "halo ssh host certificate renewal %d", timestamp)
+}
+
+func (h *handlers) listHosts(w http.ResponseWriter, r *http.Request, _ store.User) error {
+	hosts, err := h.st.ListSSHHosts(r.Context())
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, hosts)
+}
+
+func (h *handlers) createHost(w http.ResponseWriter, r *http.Request, actor store.User) error {
+	var in struct {
+		Hostnames []string `json:"hostnames"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	hostnames := []string{}
+	for _, name := range in.Hostnames {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "" || slices.Contains(hostnames, name) {
+			continue
+		}
+		if !hostnamePattern.MatchString(name) && net.ParseIP(name) == nil {
+			return httpx.Invalid(fmt.Sprintf("“%s” is not a hostname or IP address. Use the names people type after ssh, such as web1.example.com, without wildcards or ports.", name))
+		}
+		hostnames = append(hostnames, name)
+	}
+	if len(hostnames) == 0 || len(hostnames) > 32 {
+		return httpx.Invalid("Add between 1 and 32 hostnames, the names people connect to this host with, such as web1.example.com.")
+	}
+	return h.enrollmentToken(w, r, actor, http.StatusCreated, "ssh.host.create", "Registered the SSH host ", func(tx *store.Store) (string, error) {
+		host, err := tx.CreateSSHHost(r.Context(), hostnames)
+		return host.ID, err
 	})
+}
+
+func (h *handlers) hostToken(w http.ResponseWriter, r *http.Request, actor store.User) error {
+	return h.enrollmentToken(w, r, actor, http.StatusOK, "ssh.host.token", "Created an enrollment token for the SSH host ", func(*store.Store) (string, error) {
+		return r.PathValue("id"), nil
+	})
+}
+
+func (h *handlers) enrollmentToken(w http.ResponseWriter, r *http.Request, actor store.User, status int, action, summary string, target func(*store.Store) (string, error)) error {
+	var host store.SSHHost
+	var token string
+	err := h.st.Tx(r.Context(), func(tx *store.Store) error {
+		hostID, err := target(tx)
+		if err != nil {
+			return err
+		}
+		if host, token, err = tx.IssueSSHHostToken(r.Context(), hostID); errors.Is(err, store.ErrNotFound) {
+			return errNoHost
+		} else if err != nil {
+			return err
+		}
+		return record(r, tx, actor, store.AuditEvent{Action: action, Summary: summary + strings.Join(host.Hostnames, ", "), TargetType: "ssh_host", TargetID: host.ID, TargetLabel: host.Hostnames[0]})
+	})
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, status, map[string]any{"host": host, "token": token})
+}
+
+func (h *handlers) revokeHost(w http.ResponseWriter, r *http.Request, actor store.User) error {
+	var host store.SSHHost
+	err := h.st.Tx(r.Context(), func(tx *store.Store) error {
+		var err error
+		if host, err = tx.RevokeSSHHost(r.Context(), r.PathValue("id")); errors.Is(err, store.ErrNotFound) {
+			return errNoHost
+		} else if err != nil {
+			return err
+		}
+		return record(r, tx, actor, store.AuditEvent{Action: "ssh.host.revoke", Summary: "Revoked the SSH host " + strings.Join(host.Hostnames, ", "), TargetType: "ssh_host", TargetID: host.ID, TargetLabel: host.Hostnames[0]})
+	})
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, host)
+}
+
+func (h *handlers) signHost(w http.ResponseWriter, r *http.Request, actor store.User) error {
+	var in struct {
+		PublicKey string `json:"publicKey"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	key, err := parseKey(in.PublicKey)
+	if err != nil {
+		return err
+	}
+	return h.certifyHost(w, r, &actor, key, "for a key signed in the console", errNoHost, func(tx *store.Store) (store.SSHHost, error) {
+		return tx.GetSSHHost(r.Context(), r.PathValue("id"))
+	})
+}
+
+func (h *handlers) enrollHost(w http.ResponseWriter, r *http.Request) error {
+	var in struct {
+		Token     string `json:"token"`
+		PublicKey string `json:"publicKey"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	key, err := parseKey(in.PublicKey)
+	if err != nil {
+		return err
+	}
+	return h.certifyHost(w, r, nil, key, "at enrollment", errInvalidToken, func(tx *store.Store) (store.SSHHost, error) {
+		return tx.ConsumeSSHHostToken(r.Context(), in.Token)
+	})
+}
+
+func (h *handlers) renewHost(w http.ResponseWriter, r *http.Request) error {
+	var in struct {
+		PublicKey string `json:"publicKey"`
+		Timestamp int64  `json:"timestamp"`
+		Signature string `json:"signature"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	key, err := parseKey(in.PublicKey)
+	if err != nil {
+		return err
+	}
+	var sig ssh.Signature
+	blob, err := base64.StdEncoding.DecodeString(in.Signature)
+	if err != nil || ssh.Unmarshal(blob, &sig) != nil || time.Since(time.Unix(in.Timestamp, 0)).Abs() > clockSkew || key.Verify(RenewalMessage(in.Timestamp), &sig) != nil {
+		return errBadSignature
+	}
+	return h.certifyHost(w, r, nil, key, "at renewal", errUnknownHost, func(tx *store.Store) (store.SSHHost, error) {
+		return tx.SSHHostByKey(r.Context(), authorizedKey(key))
+	})
+}
+
+func (h *handlers) certifyHost(w http.ResponseWriter, r *http.Request, actor *store.User, key ssh.PublicKey, how string, missing error, find func(*store.Store) (store.SSHHost, error)) error {
+	ctx := r.Context()
+	authority, err := h.ca(ctx, true)
+	if err != nil {
+		return err
+	}
+	var cert *ssh.Certificate
+	err = h.st.Tx(ctx, func(tx *store.Store) error {
+		host, err := find(tx)
+		if errors.Is(err, store.ErrNotFound) {
+			return missing
+		} else if err != nil {
+			return err
+		}
+		serial, err := tx.NextSSHSerial(ctx)
+		if err != nil {
+			return err
+		}
+		cert = &ssh.Certificate{Key: key, Serial: serial, CertType: ssh.HostCert, KeyId: fmt.Sprintf("halo:%s:%d", host.ID, serial), ValidPrincipals: host.Hostnames}
+		if err := sign(cert, authority); err != nil {
+			return err
+		}
+		if err := tx.CertifySSHHost(ctx, host.ID, authorizedKey(key), ssh.FingerprintSHA256(key), key.Type(), serial, time.Unix(int64(cert.ValidBefore), 0)); errors.Is(err, store.ErrConflict) {
+			return errKeyInUse
+		} else if err != nil {
+			return err
+		}
+		e := store.AuditEvent{Action: "ssh.host.certificate.issue", Summary: fmt.Sprintf("Issued SSH host certificate %d for %s %s, valid %s", serial, strings.Join(host.Hostnames, ", "), how, lifetime(authority.CertificateLifetime)),
+			TargetType: "ssh_host", TargetID: host.ID, TargetLabel: host.Hostnames[0], IP: httpx.ClientIP(r)}
+		if actor != nil {
+			e.ActorID = &actor.ID
+		}
+		return tx.RecordAudit(ctx, e)
+	})
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusCreated, issued(cert))
+}
+
+func (h *handlers) revokedHosts(w http.ResponseWriter, r *http.Request) error {
+	hosts, err := h.st.ListSSHHosts(r.Context())
+	if err != nil {
+		return err
+	}
+	var keys []byte
+	var version int64
+	for _, host := range hosts {
+		if host.RevokedAt == nil || host.PublicKey == nil {
+			continue
+		}
+		key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(*host.PublicKey))
+		if err != nil {
+			return err
+		}
+		keys = append(keys, ssh.Marshal(struct{ Key []byte }{key.Marshal()})...)
+		version = max(version, host.RevokedAt.Unix())
+	}
+	krl := ssh.Marshal(struct {
+		Magic                     uint64
+		Format                    uint32
+		Version, Generated, Flags uint64
+		Reserved, Comment         string
+	}{0x5353484b524c0a00, 1, uint64(version), uint64(time.Now().Unix()), 0, "", ""})
+	if len(keys) > 0 {
+		krl = append(krl, ssh.Marshal(struct {
+			Section uint8
+			Keys    []byte
+		}{2, keys})...)
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	_, err = w.Write(krl)
+	return err
 }
