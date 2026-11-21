@@ -146,6 +146,8 @@ func TestReportsOnSeededData(t *testing.T) {
 	signIn(cat.ID, &payroll.ID, "totp", "success", ago(45), nil)
 	signIn(ann.ID, &payroll.ID, "password", "success", ago(1), &cat.ID)
 	signIn(bot.ID, nil, "federated", "success", ago(1), nil)
+	signIn(ann.ID, &payroll.ID, "token", "success", ago(1), nil)
+	signIn(cat.ID, &payroll.ID, "token", "success", ago(1), nil)
 
 	get := func(token, path string, status int) *httptest.ResponseRecorder {
 		t.Helper()

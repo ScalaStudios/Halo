@@ -37,7 +37,7 @@ func (s *Store) WeeklyDigest(ctx context.Context, now time.Time) (Digest, error)
 		(select count(*) from risk_events where time >= $1 and level = 'high'),
 		(select count(distinct user_id) from risk_events where time >= $1),
 		(select count(*) from risk_events where status = 'open'),
-		(select count(*) from sign_in_events where time >= $1 and result = 'failure'),
+		(select count(*) from sign_in_events where time >= $1 and result = 'failure' and method <> 'token'),
 		(select count(*) from user_roles where created_at >= $1)`, d.From).
 		Scan(&d.RiskEvents, &d.HighRiskEvents, &d.RiskyUsers, &d.OpenRiskEvents, &d.FailedSignIns, &d.RolesAssigned)
 	if err != nil {

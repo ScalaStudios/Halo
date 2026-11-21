@@ -26,7 +26,7 @@ func (s *Store) RecordSignIn(ctx context.Context, e SignInEvent) error {
 	}
 	_, err := s.db.Exec(ctx, `insert into sign_in_events (id, time, user_id, email, app_id, result, method, ip, location, device, risk, reason, challenge, impersonator_id, hook) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		e.ID, e.Time, e.UserID, e.Email, e.AppID, e.Result, e.Method, e.IP, e.Location, e.Device, e.Risk, e.Reason, e.Challenge, e.ImpersonatorID, e.Hook)
-	if err == nil {
+	if err == nil && e.Method != "token" {
 		metrics.SignIns.Inc(e.Method, e.Result, e.Risk)
 	}
 	return err
@@ -76,7 +76,7 @@ func (s *Store) SignInsByApp(ctx context.Context, from, to time.Time) (map[strin
 func (s *Store) countSignIns(ctx context.Context, key string, from, to time.Time) (map[string]SignInCount, error) {
 	rows, err := s.db.Query(ctx, `select e.key, sum(e.n)::bigint, count(*), max(e.last) from (
 			select coalesce(`+key+`, '') as key, user_id, count(*) as n, max(time) as last from sign_in_events
-			where result = 'success' and impersonator_id is null and time >= $1 and time < $2 group by 1, 2
+			where result = 'success' and impersonator_id is null and method <> 'token' and time >= $1 and time < $2 group by 1, 2
 		) e join users u on u.id = e.user_id and u.kind = 'person' group by e.key`, from, to)
 	if err != nil {
 		return nil, err
