@@ -60,6 +60,10 @@ func TestSponsorExtendsGuestUntilItExpires(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	guest.Attributes = map[string]any{"contractId": "C-7"}
+	if err := st.UpdateUserProfile(ctx, guest); err != nil {
+		t.Fatal(err)
+	}
 	path := "/api/v1/users/" + guest.ID + "/guest"
 	later := time.Now().Add(60 * 24 * time.Hour).Truncate(time.Second)
 
@@ -67,11 +71,11 @@ func TestSponsorExtendsGuestUntilItExpires(t *testing.T) {
 	expect(t, call(t, h, sponsorToken, "PUT", path, map[string]any{"sponsorId": other.ID}), 403)
 	rec := call(t, h, sponsorToken, "PUT", path, map[string]any{"expiresAt": later})
 	expect(t, rec, 200)
-	if got := decode[store.User](t, rec); got.ExpiresAt == nil || !got.ExpiresAt.Equal(later) {
-		t.Fatalf("not extended: %+v", got)
+	if got := decode[store.User](t, rec); got.ExpiresAt == nil || !got.ExpiresAt.Equal(later) || got.Attributes != nil {
+		t.Fatalf("not extended, or attribute values shown to the sponsor: %+v", got)
 	}
 	mine := decode[[]store.User](t, call(t, h, sponsorToken, "GET", "/api/v1/me/guests", nil))
-	if len(mine) != 1 || mine[0].ID != guest.ID {
+	if len(mine) != 1 || mine[0].ID != guest.ID || mine[0].Attributes != nil {
 		t.Fatalf("sponsored guests: %+v", mine)
 	}
 	if len(decode[[]store.User](t, call(t, h, otherToken, "GET", "/api/v1/me/guests", nil))) != 0 {
