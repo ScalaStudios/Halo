@@ -159,6 +159,14 @@ export type Claim = { name: string; source: string };
 
 export type AppRole = { id: string; key: string; name: string; description: string; groupIds: string[]; userIds: string[] };
 
+export type AuthorizationRelation = { subjects?: string[]; union?: string[]; roles?: string[]; from?: { via: string; relation: string }[] };
+
+export type AuthorizationModel = { types: Record<string, Record<string, AuthorizationRelation>>; updatedAt: string | null };
+
+export type AuthorizationAnswer = { allowed: boolean; path: string[] };
+
+export type PersonRelationship = { applicationId: string; application: string; object: string; relation: string; groupId?: string; createdAt: string };
+
 export type Scope = { name: string; description: string };
 
 export type Consent = { appId: string; name: string; homepage: string; logoUrl: string | null; scopes: Scope[]; grantedAt: string };

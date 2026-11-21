@@ -9,6 +9,7 @@ import (
 	"halo/internal/apikeys"
 	"halo/internal/approval"
 	"halo/internal/auth"
+	"halo/internal/authz"
 	"halo/internal/avatars"
 	"halo/internal/compliance"
 	"halo/internal/config"
@@ -111,7 +112,7 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 	})
 
 	apiMux := http.NewServeMux()
-	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, governance.Register, policy.Register, compliance.Register, apikeys.Register, provisioning.Register, ldapsync.Register, settings.Register, webhooks.Register, logexport.Register, oidc.Register, sshca.Register, avatars.Register, approval.Register, features.Register} {
+	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, authz.Register, governance.Register, policy.Register, compliance.Register, apikeys.Register, provisioning.Register, ldapsync.Register, settings.Register, webhooks.Register, logexport.Register, oidc.Register, sshca.Register, avatars.Register, approval.Register, features.Register} {
 		if err := register(apiMux, deps); err != nil {
 			return nil, err
 		}

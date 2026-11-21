@@ -30,6 +30,8 @@ var catalog = []eventType{
 	{"api_resource.delete", "An API was deleted with its grants"},
 	{"api_resource.grant", "The scopes an application has on an API changed"},
 	{"api_resource.update", "An API's settings were changed"},
+	{"application.authorization.delete", "An application's authorization model was removed with all its tuples"},
+	{"application.authorization.update", "An application's authorization model was saved"},
 	{"application.create", "An application was registered"},
 	{"application.delete", "An application was deleted with its credentials"},
 	{"application.disable", "Sign-in to an application was turned off"},

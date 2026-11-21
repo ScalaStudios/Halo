@@ -30,7 +30,7 @@ import { formatAttribute, formatDate, formatDateTime, formatRelative } from "@/l
 import { METHOD, STATUS, STRENGTH } from "@/lib/labels";
 import type { ComplianceSource, Device } from "@/lib/policy-types";
 import type { SettingsResponse } from "@/lib/settings-types";
-import type { Application, Attribute, AuditEvent, Group, Impersonation, Session, SignInEvent, User } from "@/lib/types";
+import type { Application, Attribute, AuditEvent, Group, Impersonation, PersonRelationship, Session, SignInEvent, User } from "@/lib/types";
 
 const strengthIcon = { "phishing-resistant": ShieldCheck, "multi-factor": ShieldAlert, "single-factor": ShieldX } as const;
 const strengthColor = { "phishing-resistant": "text-success", "multi-factor": "text-warning", "single-factor": "text-danger" } as const;
@@ -44,7 +44,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
   const { id } = await params;
   const { tab = "overview" } = await searchParams;
   const path = `/users/${encodeURIComponent(id)}`;
-  const [user, userSessions, userSignIns, groups, applications, audit, userDevices, directory, me, enabled, response, impersonations, sources, attributes] = await Promise.all([
+  const [user, userSessions, userSignIns, groups, applications, audit, userDevices, directory, me, enabled, response, impersonations, sources, attributes, relationships] = await Promise.all([
     apiGet<User>(path),
     apiGet<Session[]>(`${path}/sessions`),
     apiGet<SignInEvent[]>(`${path}/sign-ins`),
@@ -59,6 +59,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
     apiGet<Impersonation[]>(`/impersonations?user=${encodeURIComponent(id)}`, []),
     apiGet<ComplianceSource[]>("/compliance-sources", []),
     apiGet<Attribute[]>("/attributes", []),
+    tab === "applications" ? apiGet<PersonRelationship[]>(`${path}/relationships`, []) : [],
   ]);
   const settings = response?.settings;
   const limited = limitedOnly(me);
@@ -193,6 +194,24 @@ export default async function UserPage({ params, searchParams }: { params: Promi
                     last ? formatRelative(last.time) : "—",
                   ];
                 })}
+              />
+            )}
+            <SectionTitle title="Relationships" description="What applications recorded about this person through Halo's authorization API, directly or through their groups. Deleting the person deletes the ones that name them." />
+            {relationships.length === 0 ? (
+              <EmptyState title="No relationships" description="Applications with an authorization model list the objects this person or their groups relate to here." />
+            ) : (
+              <SimpleTable
+                caption="Relationships"
+                head={["Application", "Object", "Relation", "Through", "Since"]}
+                rows={relationships.map((t) => [
+                  <Link key="a" href={`/admin/applications/${t.applicationId}?tab=authorization`} className="font-medium text-fg hover:underline">
+                    {t.application}
+                  </Link>,
+                  <Tag key="o">{t.object}</Tag>,
+                  <Tag key="r">{t.relation}</Tag>,
+                  t.groupId ? (userGroups.find((g) => g.id === t.groupId)?.name ?? t.groupId) : "Direct",
+                  formatDate(t.createdAt),
+                ])}
               />
             )}
           </div>
