@@ -36,10 +36,18 @@ const ROTATION: Record<Rotation, { path: string; title: string; description: str
   },
 };
 
+function keyManager(ref: string) {
+  if (ref.startsWith("arn:")) return "AWS KMS";
+  if (ref.startsWith("projects/")) return "Google Cloud KMS";
+  if (ref.includes("://")) return "Azure Key Vault";
+  if (ref.startsWith("pkcs11:")) return "PKCS #11 token";
+  return "Vault Transit";
+}
+
 function storedIn(externalKey: string | null) {
   return externalKey ? (
     <span key="l" className="whitespace-nowrap" title={externalKey}>
-      Vault Transit
+      {keyManager(externalKey)}
     </span>
   ) : (
     <span key="l" className="whitespace-nowrap text-fg-3">

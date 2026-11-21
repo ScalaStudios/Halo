@@ -105,6 +105,19 @@ func (s *Store) CheckExternalKeys(ctx context.Context) error {
 		if err := s.Keys.Ping(ctx); err != nil {
 			return err
 		}
+		rows, err := s.db.Query(ctx, `select id_token_alg from applications union select access_token_alg from api_resources`)
+		if err != nil {
+			return err
+		}
+		algorithms, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		for _, algorithm := range algorithms {
+			if err := s.Keys.Supports(algorithm); err != nil {
+				return fmt.Errorf("an application or API signs tokens with %s: %w", algorithm, err)
+			}
+		}
 	}
 	rows, err := s.db.Query(ctx, `select external_key from signing_keys where retired_at is null and external_key is not null
 		union all select external_key from saml_keys where retired_at is null and external_key is not null
@@ -154,6 +167,7 @@ var sealedColumns = []struct{ table, key, column string }{
 	{"ssf_streams", "id", "authorization_sealed"},
 	{"app_credentials", "id", "secret_sealed"},
 	{"applications", "id", "ldap_secret_sealed"},
+	{"kerberos_source", "singleton", "keytab_sealed"},
 }
 
 type ResealedColumn struct {

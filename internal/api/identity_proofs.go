@@ -62,8 +62,8 @@ func (h *handlers) checkIdentity(w http.ResponseWriter, r *http.Request, actor s
 	if err := guardAdmin(actor, target); err != nil {
 		return err
 	}
-	if target.Kind != "person" || target.Status != "invited" && target.Status != "active" {
-		return conflict(target.Name + " isn't an invited or active person, so there is no identity to confirm.")
+	if target.Kind != "person" || target.Status == "deprovisioned" {
+		return conflict(target.Name + " is deprovisioned or is not a person, so there is no identity to confirm.")
 	}
 	var in inPersonCheck
 	if err := httpx.Decode(r, &in); err != nil {

@@ -1,3 +1,8 @@
+alter table users add column awaiting_activation boolean not null default false;
+
+update users set awaiting_activation = true
+where kind = 'person' and (status = 'invited' or (status in ('suspended', 'deprovisioned') and last_sign_in_at is null));
+
 create table identity_proofs (
   id text primary key,
   user_id text references users (id) on delete cascade,

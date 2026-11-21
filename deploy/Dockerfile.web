@@ -22,4 +22,4 @@ COPY --from=build --chown=node:node /web/.next/static ./.next/static
 COPY --from=build --chown=node:node /web/public ./public
 USER node
 EXPOSE 3200
-CMD ["node", "server.js"]
+CMD ["node", "--max-http-header-size=131072", "server.js"]

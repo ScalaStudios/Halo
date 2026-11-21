@@ -71,6 +71,27 @@ func (s *Store) IdentityCheck(ctx context.Context, userID, signUpID string) (Ide
 	return s.proof(ctx, `where p.user_id = $1 or p.sign_up_id = $2 order by p.status = 'verified' desc, p.created_at desc, p.id desc`, userID, signUpID)
 }
 
+func (s *Store) checkInvitationProof(ctx context.Context, userID string) error {
+	settings, err := s.Settings(ctx)
+	if err != nil || !settings.IdentityProofingInvites {
+		return err
+	}
+	if len(settings.IdentityProofingGroupIDs) > 0 {
+		user, err := s.GetUser(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if !settings.ProofingRequired(user.GroupIDs, false) {
+			return nil
+		}
+	}
+	proof, err := s.IdentityCheck(ctx, userID, "")
+	if errors.Is(err, ErrNotFound) || err == nil && proof.Status != "verified" {
+		return ErrProofRequired
+	}
+	return err
+}
+
 func (s *Store) PendingIdentityProofs(ctx context.Context) ([]IdentityProof, error) {
 	return s.proofs(ctx, `where p.method = 'provider' and p.status = 'pending' and p.created_at > now() - interval '2 days' order by p.created_at limit 100`)
 }

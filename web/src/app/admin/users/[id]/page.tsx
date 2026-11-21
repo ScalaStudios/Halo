@@ -88,7 +88,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
     Boolean(settings?.identityProofingInvites) &&
     (settings?.identityProofingGroupIds.length === 0 || Boolean(settings?.identityProofingGroupIds.some((g) => user.groupIds.includes(g)))) &&
     !proofs.some((p) => p.status === "verified");
-  const canCheckIdentity = Boolean(access) && user.id !== me.id && (user.status === "invited" || user.status === "active");
+  const canCheckIdentity = Boolean(access) && user.id !== me.id && user.status !== "deprovisioned";
   const passwordGroups = settings?.passwordGroupIds.map((id) => groups.find((g) => g.id === id)?.name ?? "a deleted group") ?? [];
   const passwordWarning =
     !settings || !enabled

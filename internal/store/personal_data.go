@@ -16,6 +16,7 @@ var PersonalDataSections = []ExportSection{
 	{"ownedGroups", "group_owners", `select g.id, g.name, o.created_at as added_at from group_owners o join groups g on g.id = o.group_id where o.user_id = $1 order by g.name`},
 	{"groupJoinRequests", "group_join_requests", `select g.id, g.name, j.created_at from group_join_requests j join groups g on g.id = j.group_id where j.user_id = $1 order by j.created_at`},
 	{"linkedAccounts", "federated_identities", `select i.id, p.name as provider, i.subject, i.email, i.created_at, i.last_used_at from federated_identities i join identity_providers p on p.id = i.provider_id where i.user_id = $1 order by i.created_at`},
+	{"kerberosPrincipals", "kerberos_principals", `select principal, created_at from kerberos_principals where user_id = $1 order by created_at`},
 	{"sessions", "sessions", `select id, method, ip, location, user_agent, client_id, second_factor, created_at, last_active_at, reauthenticated_at, expires_at, revoked_at from sessions where user_id = $1 order by created_at`},
 	{"devices", "devices", `select id, user_agent, trust, last_ip, sign_in_count, first_seen_at, last_seen_at from devices where user_id = $1 order by first_seen_at`},
 	{"signIns", "sign_in_events", `select id, time, email, app_id, result, method, ip, location, device, risk, reason, challenge, impersonator_id, hook from sign_in_events

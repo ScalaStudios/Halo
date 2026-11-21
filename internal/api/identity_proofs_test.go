@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"halo/internal/store"
 )
@@ -83,6 +84,51 @@ func TestInPersonIdentityCheck(t *testing.T) {
 	expect(t, rec, 409)
 	if !strings.Contains(rec.Body.String(), "Identity checks") {
 		t.Fatalf("group in use by the identity check requirement: %s", rec.Body)
+	}
+}
+
+func TestRestoringAnInvitationRequiresApplicableIdentityCheck(t *testing.T) {
+	st, h := setup(t)
+	ctx := context.Background()
+	_, admin := person(t, st, "uma@example.com", "user_admin")
+	group, err := st.CreateGroup(ctx, store.NewGroup{Name: "Staff", Kind: "assigned"})
+	must(t, err)
+	settings, err := st.CurrentSettings(ctx)
+	must(t, err)
+	settings.IdentityProofingInvites = true
+	settings.IdentityProofingGroupIDs = []string{group.ID}
+	must(t, st.SaveSettings(ctx, settings))
+
+	pending, err := st.CreateUser(ctx, store.NewUser{Email: "pat@example.com", Name: "Pat", GroupIDs: []string{group.ID}})
+	must(t, err)
+	must(t, st.SetPassword(ctx, pending.ID, "test-password-hash", false))
+	if err := st.TouchSignIn(ctx, pending.ID, time.Now()); !errors.Is(err, store.ErrProofRequired) {
+		t.Fatalf("first sign-in must check proofing: %v", err)
+	}
+	must(t, st.SetUserStatus(ctx, pending.ID, "suspended"))
+
+	outside, err := st.CreateUser(ctx, store.NewUser{Email: "eli@example.com", Name: "Eli"})
+	must(t, err)
+	must(t, st.SetPassword(ctx, outside.ID, "test-password-hash", false))
+	must(t, st.SetUserStatus(ctx, outside.ID, "suspended"))
+
+	path := "/api/v1/users/" + pending.ID
+	rec := call(t, h, admin, "POST", path+"/restore", nil)
+	expect(t, rec, 409)
+	if !strings.Contains(rec.Body.String(), "ERR_IDENTITY_CHECK_REQUIRED") {
+		t.Fatalf("restore response: %s", rec.Body)
+	}
+	rec = call(t, h, admin, "POST", "/api/v1/users/bulk/restore", map[string]any{"userIds": []string{pending.ID, outside.ID}})
+	expect(t, rec, 200)
+	codes := decode[bulkResponse](t, rec).codes()
+	if codes[pending.ID] != "ERR_IDENTITY_CHECK_REQUIRED" || codes[outside.ID] != "ok" || status(t, st, pending.ID) != "suspended" || status(t, st, outside.ID) != "active" {
+		t.Fatalf("bulk restore: %s", rec.Body)
+	}
+
+	expect(t, call(t, h, admin, "POST", path+"/identity-proofs", map[string]string{"document": "passport", "note": "Checked the photo in person"}), 201)
+	expect(t, call(t, h, admin, "POST", path+"/restore", nil), 200)
+	if got := status(t, st, pending.ID); got != "active" {
+		t.Fatalf("verified account status: %s", got)
 	}
 }
 

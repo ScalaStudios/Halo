@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"halo/internal/config"
 	"halo/internal/httpx"
 	"halo/internal/kms"
 	"halo/internal/kms/kmstest"
@@ -23,6 +24,19 @@ import (
 )
 
 func TestExternalAuthority(t *testing.T) {
+	for _, c := range []struct {
+		name, keyType string
+		keys          func(*testing.T) config.KMS
+	}{
+		{"vault", ssh.KeyAlgoED25519, func(t *testing.T) config.KMS { return kmstest.New(t).Config() }},
+		{"aws", ssh.KeyAlgoED25519, func(t *testing.T) config.KMS { return kmstest.NewAWS(t).Config() }},
+		{"azure without ed25519", ssh.KeyAlgoECDSA256, func(t *testing.T) config.KMS { return kmstest.NewAzure(t).Config() }},
+	} {
+		t.Run(c.name, func(t *testing.T) { externalAuthority(t, kms.FromConfig(c.keys(t)), c.keyType) })
+	}
+}
+
+func externalAuthority(t *testing.T, keys *kms.Keys, keyType string) {
 	st := testdb.New(t)
 	ctx := context.Background()
 	must := func(err error) {
@@ -31,8 +45,7 @@ func TestExternalAuthority(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	fake := kmstest.New(t)
-	st.Keys = kms.FromConfig(fake.Config())
+	st.Keys = keys
 	group, err := st.CreateGroup(ctx, store.NewGroup{Name: "Ops", Kind: "assigned"})
 	must(err)
 	ops, err := st.CreateUser(ctx, store.NewUser{Email: "ada@example.com", Name: "Ada", Status: "active", GroupIDs: []string{group.ID}})
@@ -76,8 +89,8 @@ func TestExternalAuthority(t *testing.T) {
 	must(err)
 	published, _, _, _, err := ssh.ParseAuthorizedKey(call("GET", "/api/v1/ssh/ca.pub", "").Body.Bytes())
 	must(err)
-	if authority.Seed != nil || !bytes.Equal(published.Marshal(), caKey.Marshal()) {
-		t.Fatal("the certificate authority key must live only in Vault and be the published one")
+	if authority.Seed != nil || !bytes.Equal(published.Marshal(), caKey.Marshal()) || caKey.Type() != keyType {
+		t.Fatalf("the %s certificate authority key must live only in %s and be the published one", keyType, keys.Name)
 	}
 	checker := ssh.CertChecker{IsUserAuthority: func(auth ssh.PublicKey) bool { return bytes.Equal(auth.Marshal(), caKey.Marshal()) }}
 	must(checker.CheckCert("ops", parsed.(*ssh.Certificate)))

@@ -370,6 +370,45 @@ export function SignInFrequencyForm({ app }: { app: Pick<Application, "id" | "na
   );
 }
 
+export function WindowsSignInForm({ app }: { app: Pick<Application, "id" | "name" | "kerberosSignIn"> }) {
+  const [allowed, setAllowed] = useState(app.kerberosSignIn);
+  const { pending, run, errorFor, toast } = useMutation();
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    void run(
+      "windows",
+      () => api(`/applications/${app.id}`, { method: "PATCH", body: { kerberosSignIn: allowed } }),
+      () => toast({ title: "Windows sign-in saved", description: `${app.name} uses it from the next sign-in. Recorded in the audit log.` }),
+      "inline",
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Windows sign-in" description={`Whether people on computers joined to your domain can reach ${app.name} with the Kerberos ticket their browser sends, when Windows sign-in is turned on under Methods.`} />
+      <form onSubmit={submit} noValidate>
+        <CardBody className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <Field label="Windows sign-in" hint={allowed ? "Allowed, as for the rest of the organization." : `Blocked for ${app.name}, including single sign-on from a session that started with Windows sign-in. People sign in another way.`}>
+            {(props) => (
+              <Select {...props} value={allowed ? "allowed" : "blocked"} onChange={(event) => setAllowed(event.target.value === "allowed")}>
+                <option value="allowed">Allowed</option>
+                <option value="blocked">Not allowed</option>
+              </Select>
+            )}
+          </Field>
+        </CardBody>
+        <div className="flex flex-wrap items-center justify-end gap-4 border-t border-border px-6 py-4">
+          <ActionError message={errorFor("windows")} />
+          <Button type="submit" variant="primary" loading={pending === "windows"}>
+            Save Windows sign-in
+          </Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
+
 export function BackchannelLogoutForm({ app }: { app: Pick<Application, "id" | "name" | "backchannelLogoutUri" | "backchannelLogoutSessionRequired"> }) {
   const [uri, setUri] = useState(app.backchannelLogoutUri);
   const [sessionRequired, setSessionRequired] = useState(app.backchannelLogoutSessionRequired);

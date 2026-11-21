@@ -71,6 +71,16 @@ spec:
             - name: HALO_VAULT_SIGNING
               value: "1"
             {{- end }}
+            {{- $kms := dict
+              "HALO_AWS_KMS_REGION" .Values.awsKms.region "HALO_AWS_KMS_ENDPOINT" .Values.awsKms.endpoint "HALO_AWS_KMS_WRAPPING_KEY" .Values.awsKms.wrappingKey "HALO_AWS_KMS_SIGNING" (ternary "1" "" .Values.awsKms.signing)
+              "HALO_GCP_KMS_KEY_RING" .Values.gcpKms.keyRing "HALO_GCP_KMS_ENDPOINT" .Values.gcpKms.endpoint "HALO_GCP_KMS_HSM" (ternary "1" "" .Values.gcpKms.hsm) "HALO_GCP_KMS_WRAPPING_KEY" .Values.gcpKms.wrappingKey "HALO_GCP_KMS_SIGNING" (ternary "1" "" .Values.gcpKms.signing)
+              "HALO_AZURE_KEY_VAULT_URL" .Values.azureKeyVault.url "HALO_AZURE_KEY_VAULT_HSM" (ternary "1" "" .Values.azureKeyVault.hsm) "HALO_AZURE_KEY_VAULT_WRAPPING_KEY" .Values.azureKeyVault.wrappingKey "HALO_AZURE_KEY_VAULT_SIGNING" (ternary "1" "" .Values.azureKeyVault.signing) }}
+            {{- range $name, $value := $kms }}
+            {{- if $value }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- end }}
             {{- if .Values.metrics.enabled }}
             - name: HALO_METRICS_LISTEN
               value: {{ printf ":%v" .Values.metrics.port | quote }}

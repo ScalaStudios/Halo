@@ -65,6 +65,7 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	_, shared, err := st.AddSharedSecret(ctx, vpn.ID, "Initial", time.Hour)
 	must(err)
+	must(st.SaveKerberosSource(ctx, store.KerberosSource{ServicePrincipal: "HTTP/auth.example.com@CORP.EXAMPLE.COM", Realms: []store.KerberosRealm{}, ZoneIDs: []string{}, Keytab: []byte("keytab")}))
 
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
@@ -72,7 +73,7 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	rotation, err := st.RotateSecretKey(ctx, next)
 	must(err)
-	if len(rotation.Resealed) != 24 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
+	if len(rotation.Resealed) != 25 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
 		t.Fatalf("resealed: %+v", rotation.Resealed)
 	}
 	if !slices.Equal(rotation.RecoveryCodeUsers, []string{"ada@example.com"}) {
@@ -116,6 +117,8 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	directory, err := rotated.GetLDAPDirectory(ctx, directoryID)
 	must(err)
+	kerberos, err := rotated.KerberosSource(ctx)
+	must(err)
 	if clients, err := rotated.RADIUSClients(ctx); err != nil || len(clients) != 1 || string(clients[0].Secrets[0].Value) != shared {
 		t.Fatalf("RADIUS shared secret with the new key: %+v %v", clients, err)
 	}
@@ -131,7 +134,7 @@ func TestRotateSecretKey(t *testing.T) {
 	if plain, err := rotated.Sealer.Open(rule.URLSealed); err != nil || string(plain) != "https://hooks.example.com/rule" {
 		t.Fatalf("notification rule URL: %q %v", plain, err)
 	}
-	if string(keys[0].PrivateKey) != "oidc-key" || mail[0].Text != "mail body" || string(saml.PrivateKey) != "saml-key" || string(ssh.Seed) != "ssh-seed" || string(hostCA.Seed) != "host-seed" || string(pending.Body) != "approval-body" || bot != "bot-secret" {
+	if string(keys[0].PrivateKey) != "oidc-key" || mail[0].Text != "mail body" || string(saml.PrivateKey) != "saml-key" || string(ssh.Seed) != "ssh-seed" || string(hostCA.Seed) != "host-seed" || string(pending.Body) != "approval-body" || bot != "bot-secret" || string(kerberos.Keytab) != "keytab" {
 		t.Fatalf("rotated values: %q %q %q %q %q %q %q", keys[0].PrivateKey, mail[0].Text, saml.PrivateKey, ssh.Seed, hostCA.Seed, pending.Body, bot)
 	}
 	if apiKey, hook, err := rotated.ProofingSecrets(ctx); err != nil || apiKey != "proofing-key" || hook != "proofing-hook" {

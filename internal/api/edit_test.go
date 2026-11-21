@@ -299,6 +299,17 @@ func TestUpdateApplication(t *testing.T) {
 	}
 	rec = call(t, h, admin, "PATCH", path, map[string]any{"requirePar": false, "requirePkce": false, "requireDpop": false})
 	expect(t, rec, 200)
+	if !decode[store.Application](t, rec).KerberosSignIn {
+		t.Fatal("Windows sign-in must be on for new applications")
+	}
+	rec = call(t, h, admin, "PATCH", path, map[string]any{"kerberosSignIn": false})
+	expect(t, rec, 200)
+	if got := decode[store.Application](t, rec); got.KerberosSignIn {
+		t.Fatalf("Windows sign-in still on: %+v", got)
+	}
+	if e := lastAudit(t, st); e.Summary != "Updated Windows sign-in" || diff(e)["kerberosSignIn"] != "true → false" {
+		t.Fatalf("audit: %+v %v", e, diff(e))
+	}
 
 	for _, body := range []map[string]any{
 		{"name": ""},
@@ -374,6 +385,7 @@ func TestUpdateApplication(t *testing.T) {
 	}
 	expect(t, call(t, h, admin, "PATCH", "/api/v1/applications/"+service.ID, map[string]any{"maxAuthAge": 3600}), 422)
 	expect(t, call(t, h, admin, "PATCH", "/api/v1/applications/"+service.ID, map[string]any{"requirePar": true}), 422)
+	expect(t, call(t, h, admin, "PATCH", "/api/v1/applications/"+service.ID, map[string]any{"kerberosSignIn": false}), 422)
 	expect(t, call(t, h, admin, "PATCH", "/api/v1/applications/"+service.ID, map[string]any{"requireDpop": true}), 200)
 
 	ops, err := st.CreateGroup(ctx, store.NewGroup{Name: "Ops", Kind: "assigned"})

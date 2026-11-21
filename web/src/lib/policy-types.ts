@@ -86,6 +86,16 @@ export type CertificateAuthority = {
   createdAt: string;
 };
 
+export type KerberosRealm = { realm: string; domain: string };
+
+export type KerberosSource = {
+  servicePrincipal: string;
+  realms: KerberosRealm[];
+  zoneIds: string[];
+  keys: { version: number; type: string; createdAt: string }[];
+  updatedAt: string;
+};
+
 export type MethodSetting = {
   method: MethodKind;
   enabled: boolean;

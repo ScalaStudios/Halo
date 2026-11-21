@@ -3,7 +3,7 @@ import type { RoleKey } from "./provisioning-types";
 
 export type UserStatus = "active" | "suspended" | "invited" | "deprovisioned";
 export type AuthStrength = "phishing-resistant" | "multi-factor" | "single-factor";
-export type MethodKind = "passkey" | "security-key" | "totp" | "magic-link" | "recovery-codes" | "password" | "federated" | "access-pass" | "certificate";
+export type MethodKind = "passkey" | "security-key" | "totp" | "magic-link" | "recovery-codes" | "password" | "federated" | "access-pass" | "certificate" | "kerberos";
 
 export type AuthMethod = {
   id: string;
@@ -188,6 +188,7 @@ export type Application = {
   requirePar: boolean;
   requirePkce: boolean;
   requireDpop: boolean;
+  kerberosSignIn: boolean;
   radiusPort?: number;
 };
 
