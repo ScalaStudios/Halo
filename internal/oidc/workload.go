@@ -42,11 +42,15 @@ type issuerKeys struct {
 	fetched time.Time
 }
 
+type keyCache struct {
+	mu      sync.Mutex
+	entries map[string]*issuerKeys
+}
+
 type workloads struct {
 	st      *store.Store
 	dev     bool
-	mu      sync.Mutex
-	issuers map[string]*issuerKeys
+	issuers keyCache
 }
 
 func (h *workloads) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -173,36 +177,53 @@ func (h *workloads) verify(ctx context.Context, issuer string, tok *jwt.JSONWebT
 }
 
 func (h *workloads) keys(ctx context.Context, issuer string, stale bool) ([]jose.JSONWebKey, error) {
-	h.mu.Lock()
-	k := h.issuers[issuer]
+	return h.issuers.get(ctx, issuer, stale, func(ctx context.Context) ([]jose.JSONWebKey, error) {
+		discovery, err := oidcclient.Discover(ctx, issuer, workloadClient)
+		if err != nil {
+			return nil, err
+		}
+		if !httpx.ValidIssuer(discovery.JwksURI, h.dev) {
+			return nil, fmt.Errorf("jwks_uri %q is not an https URL", discovery.JwksURI)
+		}
+		return fetchKeySet(ctx, workloadClient, discovery.JwksURI)
+	})
+}
+
+func (c *keyCache) get(ctx context.Context, key string, stale bool, fetch func(context.Context) ([]jose.JSONWebKey, error)) ([]jose.JSONWebKey, error) {
+	c.mu.Lock()
+	if c.entries == nil {
+		c.entries = map[string]*issuerKeys{}
+	}
+	k := c.entries[key]
 	if k == nil {
 		k = &issuerKeys{}
-		h.issuers[issuer] = k
+		c.entries[key] = k
 	}
-	h.mu.Unlock()
+	c.mu.Unlock()
 	k.Lock()
 	defer k.Unlock()
 	age := time.Since(k.fetched)
 	if !k.fetched.IsZero() && age < issuerKeyLifetime && (!stale || age < issuerKeyRefetch) {
 		return k.keys, nil
 	}
-	discovery, err := oidcclient.Discover(ctx, issuer, workloadClient)
+	keys, err := fetch(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if !httpx.ValidIssuer(discovery.JwksURI, h.dev) {
-		return nil, fmt.Errorf("jwks_uri %q is not an https URL", discovery.JwksURI)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, discovery.JwksURI, nil)
+	k.keys, k.fetched = keys, time.Now()
+	return k.keys, nil
+}
+
+func fetchKeySet(ctx context.Context, client *http.Client, uri string) ([]jose.JSONWebKey, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
 	if err != nil {
 		return nil, err
 	}
 	var set jose.JSONWebKeySet
-	if err := httphelper.HttpRequest(workloadClient, req, &set); err != nil {
+	if err := httphelper.HttpRequest(client, req, &set); err != nil {
 		return nil, err
 	}
-	k.keys, k.fetched = set.Keys, time.Now()
-	return k.keys, nil
+	return set.Keys, nil
 }
 
 func mismatch(conditions map[string]string, claims map[string]any) string {
