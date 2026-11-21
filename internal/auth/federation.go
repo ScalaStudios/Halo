@@ -45,6 +45,7 @@ var federationClient = &http.Client{Timeout: 10 * time.Second}
 type federatedProfile struct {
 	subject, email, name string
 	verified             bool
+	claims               map[string]any
 }
 
 func (h *handler) providers(w http.ResponseWriter, r *http.Request) error {
@@ -158,6 +159,9 @@ func (h *handler) federatedCallback(w http.ResponseWriter, r *http.Request, s *s
 	a.email = profile.email
 	link, err := h.federatedUser(r, p, profile, &a)
 	if err != nil {
+		return "", err
+	}
+	if err := h.applyMapping(r, p, a.user, profile.claims); err != nil {
 		return "", err
 	}
 	verified := profile.verified && strings.EqualFold(profile.email, a.user.Email)
@@ -294,6 +298,7 @@ func (h *handler) exchange(ctx context.Context, p store.IdentityProvider, code s
 		email:    c.Email,
 		name:     cmp.Or(c.Name, strings.TrimSpace(c.GivenName+" "+c.FamilyName)),
 		verified: bool(c.EmailVerified) || c.Claims["xms_edov"] == true,
+		claims:   c.Claims,
 	}, nil
 }
 

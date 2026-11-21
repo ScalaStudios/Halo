@@ -21,19 +21,42 @@ type IdentityProvider struct {
 	AllowedDomains []string  `json:"allowedDomains"`
 	JIT            bool      `json:"jit"`
 	JITGroupIDs    []string  `json:"jitGroupIds"`
+	Mapping        Mapping   `json:"mapping"`
 	LinkedCount    int       `json:"linkedCount"`
 	CreatedAt      time.Time `json:"createdAt"`
 	UpdatedAt      time.Time `json:"updatedAt"`
 	SecretSealed   []byte    `json:"-"`
 }
 
-const providerColumns = `id, kind, name, issuer, client_id, client_secret_sealed, scopes, enabled, show_on_sign_in, route_by_domain, allowed_domains, jit, jit_group_ids, created_at, updated_at,
+type Mapping struct {
+	Profile    []ProfileMapping `json:"profile"`
+	GroupClaim string           `json:"groupClaim"`
+	Groups     []GroupMapping   `json:"groups"`
+}
+
+type ProfileMapping struct {
+	Claim string `json:"claim"`
+	Field string `json:"field"`
+}
+
+type GroupMapping struct {
+	Value   string `json:"value"`
+	GroupID string `json:"groupId"`
+}
+
+const providerColumns = `id, kind, name, issuer, client_id, client_secret_sealed, scopes, enabled, show_on_sign_in, route_by_domain, allowed_domains, jit, jit_group_ids, mapping, created_at, updated_at,
 	(select count(*) from federated_identities f where f.provider_id = identity_providers.id)`
 
 func scanProvider(row rowScanner) (IdentityProvider, error) {
 	var p IdentityProvider
-	err := row.Scan(&p.ID, &p.Kind, &p.Name, &p.Issuer, &p.ClientID, &p.SecretSealed, &p.Scopes, &p.Enabled, &p.ShowOnSignIn, &p.RouteByDomain, &p.AllowedDomains, &p.JIT, &p.JITGroupIDs, &p.CreatedAt, &p.UpdatedAt, &p.LinkedCount)
+	err := row.Scan(&p.ID, &p.Kind, &p.Name, &p.Issuer, &p.ClientID, &p.SecretSealed, &p.Scopes, &p.Enabled, &p.ShowOnSignIn, &p.RouteByDomain, &p.AllowedDomains, &p.JIT, &p.JITGroupIDs, &p.Mapping, &p.CreatedAt, &p.UpdatedAt, &p.LinkedCount)
 	p.HasSecret = len(p.SecretSealed) > 0
+	if p.Mapping.Profile == nil {
+		p.Mapping.Profile = []ProfileMapping{}
+	}
+	if p.Mapping.Groups == nil {
+		p.Mapping.Groups = []GroupMapping{}
+	}
 	return p, err
 }
 
@@ -66,17 +89,17 @@ func (s *Store) SaveIdentityProvider(ctx context.Context, p IdentityProvider, cl
 	}
 	if p.ID == "" {
 		p.ID = id.New("idp")
-		_, err := s.db.Exec(ctx, `insert into identity_providers (id, kind, name, issuer, client_id, client_secret_sealed, scopes, enabled, show_on_sign_in, route_by_domain, allowed_domains, jit, jit_group_ids)
-			values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-			p.ID, p.Kind, p.Name, p.Issuer, p.ClientID, sealed, p.Scopes, p.Enabled, p.ShowOnSignIn, p.RouteByDomain, p.AllowedDomains, p.JIT, p.JITGroupIDs)
+		_, err := s.db.Exec(ctx, `insert into identity_providers (id, kind, name, issuer, client_id, client_secret_sealed, scopes, enabled, show_on_sign_in, route_by_domain, allowed_domains, jit, jit_group_ids, mapping)
+			values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+			p.ID, p.Kind, p.Name, p.Issuer, p.ClientID, sealed, p.Scopes, p.Enabled, p.ShowOnSignIn, p.RouteByDomain, p.AllowedDomains, p.JIT, p.JITGroupIDs, p.Mapping)
 		if err != nil {
 			return IdentityProvider{}, conflict(err)
 		}
 		return s.GetIdentityProvider(ctx, p.ID)
 	}
 	tag, err := s.db.Exec(ctx, `update identity_providers set name = $2, issuer = $3, client_id = $4, client_secret_sealed = coalesce($5, client_secret_sealed), scopes = $6, enabled = $7,
-		show_on_sign_in = $8, route_by_domain = $9, allowed_domains = $10, jit = $11, jit_group_ids = $12, updated_at = now() where id = $1`,
-		p.ID, p.Name, p.Issuer, p.ClientID, sealed, p.Scopes, p.Enabled, p.ShowOnSignIn, p.RouteByDomain, p.AllowedDomains, p.JIT, p.JITGroupIDs)
+		show_on_sign_in = $8, route_by_domain = $9, allowed_domains = $10, jit = $11, jit_group_ids = $12, mapping = $13, updated_at = now() where id = $1`,
+		p.ID, p.Name, p.Issuer, p.ClientID, sealed, p.Scopes, p.Enabled, p.ShowOnSignIn, p.RouteByDomain, p.AllowedDomains, p.JIT, p.JITGroupIDs, p.Mapping)
 	if err != nil {
 		return IdentityProvider{}, conflict(err)
 	}

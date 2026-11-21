@@ -1,6 +1,6 @@
 "use client";
 
-import { Ellipsis, LogIn, Network, Pencil, Plus, Power, Trash2 } from "lucide-react";
+import { Ellipsis, LogIn, Network, Pencil, Plus, Power, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { providerStartUrl } from "@/components/auth/providers";
 import { useMutation } from "@/components/console/use-mutation";
@@ -10,13 +10,13 @@ import { Card } from "@/components/ui/card";
 import { CopyField } from "@/components/ui/copy-field";
 import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Checkbox, Field, Input } from "@/components/ui/input";
+import { Checkbox, Field, Input, Select } from "@/components/ui/input";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { PageHeader } from "@/components/ui/page-header";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
-import type { IdentityProvider, ProviderKind } from "@/lib/federation-types";
+import type { IdentityProvider, ProfileField, ProviderKind, ProviderMapping } from "@/lib/federation-types";
 import { pluralize } from "@/lib/format";
 import type { Group } from "@/lib/types";
 
@@ -26,6 +26,8 @@ const KIND: Record<ProviderKind, { label: string; name: string; scopes: string; 
   github: { label: "GitHub", name: "GitHub", scopes: "read:user user:email", description: "GitHub.com or GitHub Enterprise Server." },
   oidc: { label: "OpenID Connect", name: "", scopes: "openid email profile", description: "Okta, Keycloak, Authentik or any OIDC provider." },
 };
+
+const FIELD: Record<ProfileField, string> = { name: "Name", title: "Job title", department: "Department", location: "Location" };
 
 const ENTRA = /^https:\/\/login\.microsoftonline\.com\/([^/]+)\/v2\.0$/;
 const TEST_NEXT = "/admin/identity-providers";
@@ -188,7 +190,14 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
   const [routeByDomain, setRouteByDomain] = useState(provider?.routeByDomain ?? false);
   const [jit, setJit] = useState(provider?.jit ?? false);
   const [jitGroupIds, setJitGroupIds] = useState(provider?.jitGroupIds ?? []);
-  const [errors, setErrors] = useState<Partial<Record<"name" | "issuer" | "tenant" | "clientId" | "clientSecret" | "domains", string>>>({});
+  const [profileMap, setProfileMap] = useState<ProviderMapping["profile"]>(provider?.mapping.profile ?? []);
+  const [groupClaim, setGroupClaim] = useState(provider?.mapping.groupClaim || "groups");
+  const [groupMap, setGroupMap] = useState<ProviderMapping["groups"]>(provider?.mapping.groups ?? []);
+  const [errors, setErrors] = useState<
+    Partial<Record<"name" | "issuer" | "tenant" | "clientId" | "clientSecret" | "domains" | "profileMap" | "groupClaim" | "groupMap", string>>
+  >({});
+  const mapped = kind !== "github";
+  const unusedFields = (Object.keys(FIELD) as ProfileField[]).filter((f) => !profileMap.some((m) => m.field === f));
   const assigned = groups.filter((g) => g.kind === "assigned");
   const secretRequired = !provider?.hasSecret && kind !== "oidc";
 
@@ -214,6 +223,9 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
             : routeByDomain
               ? "Add at least one domain to send people straight to this provider."
               : undefined,
+      profileMap: mapped && profileMap.some((m) => !m.claim.trim()) ? "Enter the claim for every profile field." : undefined,
+      groupClaim: mapped && groupMap.length && !groupClaim.trim() ? "Enter the claim that lists the person's groups." : undefined,
+      groupMap: mapped && groupMap.some((m) => !m.value.trim() || !m.groupId) ? "Enter a value and choose a group on every row." : undefined,
     };
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
@@ -230,6 +242,13 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
       allowedDomains: words(domains),
       jit,
       jitGroupIds: jit ? jitGroupIds : [],
+      mapping: mapped
+        ? {
+            profile: profileMap.map((m) => ({ ...m, claim: m.claim.trim() })),
+            groupClaim: groupMap.length ? groupClaim.trim() : "",
+            groups: groupMap.map((m) => ({ ...m, value: m.value.trim() })),
+          }
+        : { profile: [], groupClaim: "", groups: [] },
     };
     void run(
       "save",
@@ -382,6 +401,143 @@ function ProviderDialog({ provider, groups, onClose }: { provider: IdentityProvi
               <p className="text-body-sm text-fg-3">No assigned groups yet. Dynamic groups pick people up from their profile.</p>
             )}
           </fieldset>
+        ) : null}
+        {mapped ? (
+          <>
+            <fieldset className="flex flex-col gap-3">
+              <legend className="mb-3 text-label text-fg">Profile from claims</legend>
+              {profileMap.map((m, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <Input
+                    mono
+                    className="min-w-0"
+                    aria-label={`Claim for ${FIELD[m.field]}`}
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={m.claim}
+                    onChange={(event) => setProfileMap((current) => current.map((c, i) => (i === index ? { ...c, claim: event.target.value } : c)))}
+                    placeholder="department"
+                  />
+                  <Select
+                    aria-label={`Profile field ${index + 1}`}
+                    value={m.field}
+                    onChange={(event) =>
+                      setProfileMap((current) => current.map((c, i) => (i === index ? { ...c, field: event.target.value as ProfileField } : c)))
+                    }
+                  >
+                    {(Object.keys(FIELD) as ProfileField[]).map((f) => (
+                      <option key={f} value={f} disabled={f !== m.field && !unusedFields.includes(f)}>
+                        {FIELD[f]}
+                      </option>
+                    ))}
+                  </Select>
+                  <Button
+                    size="icon"
+                    variant="quiet"
+                    aria-label={`Stop mapping ${FIELD[m.field]}`}
+                    onClick={() => setProfileMap((current) => current.filter((_, i) => i !== index))}
+                  >
+                    <X aria-hidden="true" size={16} strokeWidth={1.75} />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                size="sm"
+                variant="secondary"
+                className="self-start"
+                disabled={!unusedFields.length}
+                onClick={() => setProfileMap((current) => [...current, { claim: "", field: unusedFields[0] }])}
+              >
+                <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
+                Map a profile field
+              </Button>
+              {errors.profileMap ? (
+                <p className="text-caption text-danger">{errors.profileMap}</p>
+              ) : (
+                <p className="text-caption text-fg-3">
+                  Copied on every sign-in. A claim the provider leaves out keeps the current value; an empty one clears it, except the name.
+                </p>
+              )}
+            </fieldset>
+            <fieldset className="flex flex-col gap-3">
+              <legend className="mb-3 text-label text-fg">Groups from claims</legend>
+              {assigned.length ? (
+                <>
+                  {groupMap.length ? (
+                    <Field label="Groups claim" error={errors.groupClaim}>
+                      {(props) => (
+                        <Input
+                          {...props}
+                          mono
+                          autoComplete="off"
+                          spellCheck={false}
+                          value={groupClaim}
+                          onChange={(event) => setGroupClaim(event.target.value)}
+                          placeholder="groups"
+                        />
+                      )}
+                    </Field>
+                  ) : null}
+                  {groupMap.map((m, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <Input
+                        mono
+                        className="min-w-0"
+                        aria-label={`Provider value ${index + 1}`}
+                        autoComplete="off"
+                        spellCheck={false}
+                        value={m.value}
+                        onChange={(event) => setGroupMap((current) => current.map((c, i) => (i === index ? { ...c, value: event.target.value } : c)))}
+                        placeholder="Group name or ID"
+                      />
+                      <Select
+                        aria-label={`Halo group for value ${index + 1}`}
+                        value={m.groupId}
+                        onChange={(event) => setGroupMap((current) => current.map((c, i) => (i === index ? { ...c, groupId: event.target.value } : c)))}
+                      >
+                        <option value="" disabled>
+                          Choose a group
+                        </option>
+                        {assigned.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.name}
+                          </option>
+                        ))}
+                      </Select>
+                      <Button
+                        size="icon"
+                        variant="quiet"
+                        aria-label={`Remove group row ${index + 1}`}
+                        onClick={() => setGroupMap((current) => current.filter((_, i) => i !== index))}
+                      >
+                        <X aria-hidden="true" size={16} strokeWidth={1.75} />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="self-start"
+                    disabled={groupMap.length >= 100}
+                    onClick={() => setGroupMap((current) => [...current, { value: "", groupId: "" }])}
+                  >
+                    <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
+                    Map a group
+                  </Button>
+                  {errors.groupMap ? (
+                    <p className="text-caption text-danger">{errors.groupMap}</p>
+                  ) : (
+                    <p className="text-caption text-fg-3">
+                      On every sign-in, people join a group while the claim contains its value and leave it when the value is gone. Groups not listed here are
+                      never changed.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-body-sm text-fg-3">No assigned groups yet. Create one to map provider groups to it.</p>
+              )}
+            </fieldset>
+          </>
         ) : null}
         <button type="submit" hidden />
       </form>

@@ -5623,6 +5623,7 @@ components:
                 type: array
                 description: Assigned groups that accounts created on first sign-in join.
                 items: {type: string}
+              mapping: {$ref: '#/components/schemas/ProviderMapping', description: Omitting it on update removes the mapping, as omitting jitGroupIds removes the groups for new accounts.}
     NotificationRuleInput:
       required: true
       content:
@@ -6954,7 +6955,7 @@ components:
         updatedAt: {type: string, format: date-time}
     IdentityProvider:
       type: object
-      required: [id, kind, name, issuer, clientId, hasSecret, scopes, enabled, showOnSignIn, routeByDomain, allowedDomains, jit, jitGroupIds, linkedCount, createdAt, updatedAt]
+      required: [id, kind, name, issuer, clientId, hasSecret, scopes, enabled, showOnSignIn, routeByDomain, allowedDomains, jit, jitGroupIds, mapping, linkedCount, createdAt, updatedAt]
       properties:
         id: {type: string, examples: [idp_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         kind: {$ref: '#/components/schemas/ProviderKind'}
@@ -6975,9 +6976,34 @@ components:
         jitGroupIds:
           type: array
           items: {type: string}
+        mapping: {$ref: '#/components/schemas/ProviderMapping'}
         linkedCount: {type: integer}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+    ProviderMapping:
+      type: object
+      required: [profile, groupClaim, groups]
+      description: 'Applied on every sign-in through the provider, including the first. A claim the provider leaves out changes nothing. A claim that is present but empty clears the field or removes the person from every mapped group, except that the name is never cleared. Mapping never changes email, roles, or groups that are not mapped here. Each change is written to the audit log with Halo as the actor and the provider named in the summary. GitHub sends no claims, so its mapping must be empty.'
+      properties:
+        profile:
+          type: array
+          items:
+            type: object
+            required: [claim, field]
+            properties:
+              claim: {type: string, examples: [department], description: 'A string claim, or the first entry of a list claim.'}
+              field: {type: string, enum: [name, title, department, location], description: Each field can be mapped from one claim.}
+        groupClaim: {type: string, examples: [groups], description: 'The claim that lists the person''s groups, as a list of strings or one string. Required when groups has entries.'}
+        groups:
+          type: array
+          maxItems: 100
+          description: The person joins each listed group while the group claim contains one of its values, and leaves it when none is present. Several values can map to the same group.
+          items:
+            type: object
+            required: [value, groupId]
+            properties:
+              value: {type: string, examples: [3f2504e0-4f89-11d3-9a0c-0305e82c3301]}
+              groupId: {type: string, description: An assigned group.}
     FederatedIdentity:
       type: object
       required: [id, providerId, providerName, providerKind, email, createdAt, lastUsedAt]

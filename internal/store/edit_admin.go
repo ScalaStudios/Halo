@@ -58,7 +58,7 @@ func (s *Store) GroupUses(ctx context.Context, groupID string) ([]GroupUse, erro
 		union all
 		select 'policy', p.id, p.name from access_policies p where p.conditions->'groupIds' ? $1 or p.conditions->'excludeGroupIds' ? $1
 		union all
-		select 'identity provider', p.id, p.name from identity_providers p where $1 = any(p.jit_group_ids)
+		select 'identity provider', p.id, p.name from identity_providers p where $1 = any(p.jit_group_ids) or p.mapping->'groups' @> jsonb_build_array(jsonb_build_object('groupId', $1::text))
 		union all
 		select 'access review', v.id, v.name from access_reviews v where v.group_id = $1 and v.status <> 'completed'
 		union all
