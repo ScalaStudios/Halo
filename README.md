@@ -13,7 +13,7 @@ Halo provides single sign-on over OpenID Connect (OIDC) and SAML 2.0, passkey si
 > [!NOTE]
 > Halo is in active development. The API and configuration may change before 1.0. See the [latest release](https://github.com/ScalaStudios/Halo/releases/latest) for release notes and container image versions.
 
-![The Halo console home page, with the organization's users, groups, devices and applications, the signed-in administrator's roles, open risk events and shortcuts](.github/assets/console-overview.png)
+![The Fernway Systems console overview, showing directory totals, administrator shortcuts, an open risk event, and security posture](.github/assets/console-overview.png)
 
 ## Halo Cloud
 
@@ -261,16 +261,82 @@ systemctl enable --now halo-hostd && systemctl reload ssh
 
 ## Screenshots
 
+The screenshots show Fernway Systems, a fictional organization with 68 people, 14 groups, 13 applications, and sample activity. The demo includes generated profile photos and example integrations. [Load the built-in demo data](https://halo.scala.gg/docs/getting-started#explore-with-demo-data) to explore Halo locally.
+
 <table>
   <tr>
-    <td width="50%"><img src=".github/assets/sign-in.png" alt="Halo's sign-in page, with Continue with passkey as the main action"><br>Passkey-first sign-in</td>
-    <td width="50%"><img src=".github/assets/application.png" alt="The Grafana application in the console, with its client ID, issuer and a ready-to-paste grafana.ini block"><br>Connection details and a setup guide for every application</td>
+    <td width="50%"><a href=".github/assets/sign-in.png"><img src=".github/assets/sign-in.png" alt="Halo sign-in with Continue with passkey as the main action"></a><br>Passkey-first sign-in</td>
+    <td width="50%"><a href=".github/assets/app-launcher.png"><img src=".github/assets/app-launcher.png" alt="The account portal showing assigned applications with Grafana, Forgejo, and Nextcloud logos"></a><br>Account app launcher</td>
   </tr>
   <tr>
-    <td width="50%"><img src=".github/assets/policies.png" alt="The access policies page, with report-only insights above three policies"><br>Conditional access with report-only insights</td>
-    <td width="50%"><img src=".github/assets/access-review.png" alt="An overdue access review, with keep and remove decisions for each member"><br>Access reviews with automatic removal</td>
+    <td width="50%"><a href=".github/assets/directory.png"><img src=".github/assets/directory.png" alt="The Fernway Systems directory showing profile photos, user status, and authentication strength"></a><br>User directory</td>
+    <td width="50%"><a href=".github/assets/identity-checks.png"><img src=".github/assets/identity-checks.png" alt="Priya Raman's profile photo, registered sign-in methods, and verified in-person identity check"></a><br>Authentication methods and identity checks</td>
+  </tr>
+  <tr>
+    <td width="50%"><a href=".github/assets/policies.png"><img src=".github/assets/policies.png" alt="An enforced policy and two report-only policies with impact estimates from recent sign-ins"></a><br>Conditional access</td>
+    <td width="50%"><a href=".github/assets/access-review.png"><img src=".github/assets/access-review.png" alt="An overdue review of the production access group with keep and remove decisions for individual members"></a><br>Access review</td>
   </tr>
 </table>
+
+<details>
+<summary>Applications and integrations</summary>
+
+<table>
+  <tr>
+    <td width="50%"><a href=".github/assets/application.png"><img src=".github/assets/application.png" alt="Grafana's OpenID Connect connection details and grafana.ini setup example"></a><br>OpenID Connect setup</td>
+    <td width="50%"><a href=".github/assets/saml.png"><img src=".github/assets/saml.png" alt="Slack's SAML metadata, sign-in endpoint, certificate, and setup guide"></a><br>SAML setup</td>
+  </tr>
+  <tr>
+    <td width="50%"><a href=".github/assets/client-security.png"><img src=".github/assets/client-security.png" alt="Billing API configured with private key JWT, the FAPI 2.0 security profile, and required DPoP"></a><br>OAuth client security</td>
+    <td width="50%"><a href=".github/assets/federation.png"><img src=".github/assets/federation.png" alt="The enabled Fernway Partner SSO provider with automatic account provisioning"></a><br>Federated sign-in</td>
+  </tr>
+  <tr>
+    <td width="50%"><a href=".github/assets/provisioning.png"><img src=".github/assets/provisioning.png" alt="A Workday connector and recent SCIM changes to the directory"></a><br>Inbound SCIM</td>
+    <td width="50%"><a href=".github/assets/outbound-scim.png"><img src=".github/assets/outbound-scim.png" alt="Slack provisioning settings with sample account and group sync totals"></a><br>Outbound SCIM</td>
+  </tr>
+  <tr>
+    <td width="50%"><a href=".github/assets/directory-sync.png"><img src=".github/assets/directory-sync.png" alt="Two successful example runs in the Fernway Workforce Directory sync history"></a><br>LDAP directory sync</td>
+    <td width="50%"><a href=".github/assets/webhooks.png"><img src=".github/assets/webhooks.png" alt="The sample security events webhook with successful delivery history"></a><br>Webhook deliveries</td>
+  </tr>
+</table>
+
+</details>
+
+<details>
+<summary>Governance and infrastructure</summary>
+
+<table>
+  <tr>
+    <td width="50%"><a href=".github/assets/groups.png"><img src=".github/assets/groups.png" alt="Fernway groups including Engineering, Contractors, and Production access"></a><br>Groups and membership</td>
+    <td width="50%"><a href=".github/assets/access-packages.png"><img src=".github/assets/access-packages.png" alt="Requestable access packages for Grafana, Kubernetes, and production systems"></a><br>Access packages</td>
+  </tr>
+  <tr>
+    <td width="50%"><a href=".github/assets/access-requests.png"><img src=".github/assets/access-requests.png" alt="Pending approval requests and recent decisions for temporary access"></a><br>Access requests</td>
+    <td width="50%"><a href=".github/assets/lifecycle.png"><img src=".github/assets/lifecycle.png" alt="Enabled joiner and leaver rules with recent run history"></a><br>Lifecycle automation</td>
+  </tr>
+  <tr>
+    <td width="50%"><a href=".github/assets/ssh-certificates.png"><img src=".github/assets/ssh-certificates.png" alt="Group-to-principal mappings and an example short-lived SSH certificate"></a><br>SSH certificates</td>
+    <td width="50%"><a href=".github/assets/infrastructure.png"><img src=".github/assets/infrastructure.png" alt="Fernway bastions and CI runners with Linux account and sudo rules by host group"></a><br>Linux host access</td>
+  </tr>
+</table>
+
+</details>
+
+<details>
+<summary>Monitoring and reporting</summary>
+
+<table>
+  <tr>
+    <td width="50%"><a href=".github/assets/sign-in-logs.png"><img src=".github/assets/sign-in-logs.png" alt="Successful and failed demo sign-ins with methods, applications, and risk levels"></a><br>Sign-in logs</td>
+    <td width="50%"><a href=".github/assets/risk.png"><img src=".github/assets/risk.png" alt="An open sign-in risk event with the reason and actions to investigate it"></a><br>Risk events</td>
+  </tr>
+  <tr>
+    <td width="50%"><a href=".github/assets/audit-log.png"><img src=".github/assets/audit-log.png" alt="Administrator and service account actions in the sample audit history"></a><br>Audit log</td>
+    <td width="50%"><a href=".github/assets/reports.png"><img src=".github/assets/reports.png" alt="Sign-in method enrollment counts and a per-person breakdown"></a><br>Authentication reports</td>
+  </tr>
+</table>
+
+</details>
 
 ## Architecture
 
