@@ -434,6 +434,76 @@ export function BackchannelLogoutForm({ app }: { app: Pick<Application, "id" | "
 }
 
 
+export function SenderConstraintForm({ app }: { app: Pick<Application, "id" | "name" | "type" | "requirePar" | "requirePkce" | "requireDpop"> }) {
+  const service = app.type === "service";
+  const publicClient = app.type === "spa" || app.type === "native";
+  const [par, setPar] = useState(app.requirePar);
+  const [pkce, setPkce] = useState(app.requirePkce);
+  const [dpop, setDpop] = useState(app.requireDpop);
+  const { pending, run, errorFor, toast } = useMutation();
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    void run(
+      "constraint",
+      () => api(`/applications/${app.id}`, { method: "PATCH", body: service ? { requireDpop: dpop } : { requirePar: par, requirePkce: pkce, requireDpop: dpop } }),
+      () => toast({ title: "Request and token protection saved", description: `${app.name} must meet it from its next request. Recorded in the audit log.` }),
+      "inline",
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Request and token protection"
+        description={
+          service
+            ? `Require ${app.name} to bind its access tokens to a key it holds, so a copied token is useless without that key.`
+            : `Require ${app.name} to push its authorization requests, use PKCE and bind its tokens to a key it holds, as the FAPI 2.0 security profile asks. A copied token is useless without the key.`
+        }
+      />
+      <form onSubmit={submit} noValidate>
+        <CardBody className="grid grid-cols-1 gap-6 md:grid-cols-3">
+          {service ? null : (
+            <Field label="Pushed authorization requests" hint={par ? "Requests must be posted to /oauth2/par first and referenced with request_uri." : "Accepts authorization requests in the URL as well as pushed ones."}>
+              {(props) => (
+                <Select {...props} value={par ? "required" : "optional"} onChange={(event) => setPar(event.target.value === "required")}>
+                  <option value="required">Required</option>
+                  <option value="optional">Not required</option>
+                </Select>
+              )}
+            </Field>
+          )}
+          {service ? null : (
+            <Field label="PKCE" hint={publicClient ? "Always required for applications without a client secret." : pkce ? "Every authorization request must send an S256 code_challenge." : "Used when the application sends a code_challenge."}>
+              {(props) => (
+                <Select {...props} disabled={publicClient} value={publicClient || pkce ? "required" : "optional"} onChange={(event) => setPkce(event.target.value === "required")}>
+                  <option value="required">Required</option>
+                  <option value="optional">Not required</option>
+                </Select>
+              )}
+            </Field>
+          )}
+          <Field label="DPoP-bound tokens" hint={dpop ? "Every token request must carry a DPoP proof. Refresh tokens issued without one stop working; access tokens last until they expire." : "Tokens are bound to a key only when the token request carries a DPoP proof."}>
+            {(props) => (
+              <Select {...props} value={dpop ? "required" : "optional"} onChange={(event) => setDpop(event.target.value === "required")}>
+                <option value="required">Required</option>
+                <option value="optional">Not required</option>
+              </Select>
+            )}
+          </Field>
+        </CardBody>
+        <div className="flex flex-wrap items-center justify-end gap-4 border-t border-border px-6 py-4">
+          <ActionError message={errorFor("constraint")} />
+          <Button type="submit" variant="primary" loading={pending === "constraint"}>
+            Save protection
+          </Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
+
 export function ProtectedAddressesForm({ app }: { app: Pick<Application, "id" | "name" | "redirectUris"> }) {
   const [addresses, setAddresses] = useState(app.redirectUris);
   const [errors, setErrors] = useState<(string | undefined)[]>([]);

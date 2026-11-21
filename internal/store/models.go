@@ -122,6 +122,10 @@ type Application struct {
 	BackchannelLogoutURI             string `json:"backchannelLogoutUri"`
 	BackchannelLogoutSessionRequired bool   `json:"backchannelLogoutSessionRequired"`
 
+	RequirePAR  bool `json:"requirePar"`
+	RequirePKCE bool `json:"requirePkce"`
+	RequireDPoP bool `json:"requireDpop"`
+
 	RegisteredDynamically bool   `json:"registeredDynamically"`
 	AwaitingApproval      bool   `json:"awaitingApproval"`
 	RequiresConsent       bool   `json:"requiresConsent"`

@@ -154,6 +154,12 @@ func TestTokenExchange(t *testing.T) {
 	if n := exchanges(); n != 4 {
 		t.Fatalf("want 4 token.exchange audit events, got %d", n)
 	}
+	key := newDPoPSigner(t)
+	bound, _ := h.do(http.MethodPost, "/oauth2/token", url.Values{"grant_type": {string(oidc.GrantTypeTokenExchange)}, "subject_token": {subject}, "subject_token_type": {string(oidc.AccessTokenType)}, "audience": {ledger.Identifier}, "scope": {"ledger:read"}},
+		basicAuth(invoices.ClientID, invoicesSecret), header("DPoP", key.proof("POST", h.srv.URL+"/oauth2/token", "", nil)))
+	if cnf, _ := payload(t, bound.body["access_token"].(string))["cnf"].(map[string]any); bound.status != http.StatusOK || bound.body["token_type"] != "DPoP" || cnf["jkt"] != key.thumbprint() {
+		t.Fatalf("exchange with DPoP: %d %v", bound.status, bound.body)
+	}
 
 	cc := h.post("/oauth2/token", url.Values{"grant_type": {"client_credentials"}, "scope": {"ledger:read"}}, invoices.ClientID, invoicesSecret)
 	ledgerOnly := url.Values{"audience": {ledger.Identifier}}
@@ -222,7 +228,7 @@ func TestTokenExchange(t *testing.T) {
 	if r := exchange(invoices.ClientID, invoicesSecret, subject, ledgerOnly); r.status != 400 || r.body["error"] != "invalid_request" || unaccepted(r) {
 		t.Fatalf("expired subject token: %d %v", r.status, r.body)
 	}
-	if n := exchanges(); n != 4 {
+	if n := exchanges(); n != 5 {
 		t.Fatalf("failed exchanges must not be audited, got %d events", n)
 	}
 }

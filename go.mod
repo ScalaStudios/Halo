@@ -17,6 +17,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/pquerna/otp v1.5.0
+	github.com/rs/cors v1.11.1
 	github.com/zitadel/oidc/v3 v3.51.11
 	golang.org/x/crypto v0.57.0
 	golang.org/x/oauth2 v0.37.0
@@ -86,7 +87,6 @@ require (
 	github.com/muhlemmer/httpforwarded v0.1.0 // indirect
 	github.com/oklog/run v1.2.0 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
-	github.com/rs/cors v1.11.1 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/russellhaering/goxmldsig v1.4.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect

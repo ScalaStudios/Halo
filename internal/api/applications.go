@@ -632,6 +632,10 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 
 		BackchannelLogoutURI             *string `json:"backchannelLogoutUri"`
 		BackchannelLogoutSessionRequired *bool   `json:"backchannelLogoutSessionRequired"`
+
+		RequirePAR  *bool `json:"requirePar"`
+		RequirePKCE *bool `json:"requirePkce"`
+		RequireDPoP *bool `json:"requireDpop"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -648,6 +652,12 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	}
 	if app.Protocol == "forward-auth" && (in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil || in.RequiresConsent != nil || logout) {
 		return httpx.Invalid(app.Name + " is checked by its reverse proxy, so it has no post-logout URIs, scopes, token lifetimes, consent screen or back-channel logout. Change its protected addresses in redirectUris.")
+	}
+	if (in.RequirePAR != nil || in.RequirePKCE != nil || in.RequireDPoP != nil) && (app.Protocol != "oidc" && app.Protocol != "oauth" || app.ClientID == oidc.CLIClientID) {
+		return httpx.Invalid(app.Name + " does not take OAuth authorization requests from its own client, so it can't require pushed requests, PKCE or DPoP.")
+	}
+	if app.Type == "service" && (in.RequirePAR != nil || in.RequirePKCE != nil) {
+		return httpx.Invalid(app.Name + " is a service application. It gets tokens with client credentials, never through an authorization request, so it can't require pushed requests or PKCE.")
 	}
 	if app.Type == "service" && in.ClaimMappings != nil {
 		return httpx.Invalid(app.Name + " is a service application. Nobody signs in to it, so it has no ID tokens or user claims to map.")
@@ -744,6 +754,16 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	if in.RequiresConsent != nil && *in.RequiresConsent != app.RequiresConsent {
 		next.RequiresConsent = *in.RequiresConsent
 		changed = append(changed, "consent screen")
+	}
+	for _, f := range []struct {
+		label string
+		value *bool
+		field *bool
+	}{{"pushed authorization requirement", in.RequirePAR, &next.RequirePAR}, {"PKCE requirement", in.RequirePKCE, &next.RequirePKCE}, {"DPoP requirement", in.RequireDPoP, &next.RequireDPoP}} {
+		if f.value != nil && *f.value != *f.field {
+			*f.field = *f.value
+			changed = append(changed, f.label)
+		}
 	}
 	if in.BackchannelLogoutSessionRequired != nil && *in.BackchannelLogoutSessionRequired != app.BackchannelLogoutSessionRequired {
 		next.BackchannelLogoutSessionRequired = *in.BackchannelLogoutSessionRequired

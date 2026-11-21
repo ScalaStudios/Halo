@@ -150,6 +150,9 @@ export type Application = {
   requiresConsent: boolean;
   backchannelLogoutUri: string;
   backchannelLogoutSessionRequired: boolean;
+  requirePar: boolean;
+  requirePkce: boolean;
+  requireDpop: boolean;
 };
 
 export type Claim = { name: string; source: string };

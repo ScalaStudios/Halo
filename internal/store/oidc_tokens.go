@@ -22,24 +22,25 @@ type OIDCToken struct {
 	CreatedAt   time.Time
 	ExpiresAt   time.Time
 	SubjectID   *string
+	DPoPJKT     string
 }
 
 const revocable = `(revoked_at is null or rotated and expires_at > now())`
 
-const oidcTokenColumns = `id, kind, client_id, user_id, session_id, refresh_id, scopes, audience, amr, auth_time, created_at, expires_at, subject_token_id`
+const oidcTokenColumns = `id, kind, client_id, user_id, session_id, refresh_id, scopes, audience, amr, auth_time, created_at, expires_at, subject_token_id, dpop_jkt`
 
 func scanOIDCToken(row rowScanner) (OIDCToken, error) {
 	var t OIDCToken
-	err := row.Scan(&t.ID, &t.Kind, &t.ClientID, &t.UserID, &t.SessionID, &t.RefreshID, &t.Scopes, &t.Audience, &t.AMR, &t.AuthTime, &t.CreatedAt, &t.ExpiresAt, &t.SubjectID)
+	err := row.Scan(&t.ID, &t.Kind, &t.ClientID, &t.UserID, &t.SessionID, &t.RefreshID, &t.Scopes, &t.Audience, &t.AMR, &t.AuthTime, &t.CreatedAt, &t.ExpiresAt, &t.SubjectID, &t.DPoPJKT)
 	return t, notFound(err)
 }
 
 func (s *Store) CreateOIDCTokens(ctx context.Context, tokens ...OIDCToken) error {
 	return s.Tx(ctx, func(tx *Store) error {
 		for _, t := range tokens {
-			_, err := tx.db.Exec(ctx, `insert into oidc_tokens (id, kind, client_id, user_id, session_id, refresh_token_hash, refresh_id, scopes, audience, amr, auth_time, expires_at, subject_token_id)
-				values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-				t.ID, t.Kind, t.ClientID, t.UserID, t.SessionID, t.RefreshHash, t.RefreshID, nonNil(t.Scopes), nonNil(t.Audience), nonNil(t.AMR), t.AuthTime, t.ExpiresAt, t.SubjectID)
+			_, err := tx.db.Exec(ctx, `insert into oidc_tokens (id, kind, client_id, user_id, session_id, refresh_token_hash, refresh_id, scopes, audience, amr, auth_time, expires_at, subject_token_id, dpop_jkt)
+				values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+				t.ID, t.Kind, t.ClientID, t.UserID, t.SessionID, t.RefreshHash, t.RefreshID, nonNil(t.Scopes), nonNil(t.Audience), nonNil(t.AMR), t.AuthTime, t.ExpiresAt, t.SubjectID, t.DPoPJKT)
 			if err != nil {
 				return err
 			}
@@ -102,4 +103,15 @@ func nonNil(values []string) []string {
 		return []string{}
 	}
 	return values
+}
+
+func (s *Store) UseDPoPProof(ctx context.Context, jkt, jti string, expiresAt time.Time) error {
+	tag, err := s.db.Exec(ctx, `insert into dpop_proofs (jkt, jti, expires_at) values ($1, $2, $3) on conflict do nothing`, jkt, jti, expiresAt)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrConflict
+	}
+	return nil
 }

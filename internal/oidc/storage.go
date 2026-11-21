@@ -126,8 +126,11 @@ func (s *storage) CreateAuthRequest(ctx context.Context, req *oidc.AuthRequest, 
 	if err != nil {
 		return nil, err
 	}
-	if (client{app: app}).public() && (req.CodeChallenge == "" || req.CodeChallengeMethod != oidc.CodeChallengeMethodS256) {
-		return nil, oidc.ErrInvalidRequest().WithDescription("This application must use PKCE: send code_challenge with code_challenge_method=S256.")
+	if err := checkPKCE(app, req); err != nil {
+		return nil, err
+	}
+	if _, pushed := ctx.Value(pushedKey{}).(bool); app.RequirePAR && !pushed {
+		return nil, oidc.ErrInvalidRequest().WithDescription("This application must push its authorization request to /oauth2/par first and send only client_id and request_uri here.")
 	}
 	var maxAge *int
 	if req.MaxAge != nil {
@@ -181,6 +184,13 @@ func (s *storage) CreateAuthRequest(ctx context.Context, req *oidc.AuthRequest, 
 	}
 	created, err := s.st.CreateAuthRequest(ctx, a)
 	return s.wrap(ctx, created, err)
+}
+
+func checkPKCE(app store.Application, req *oidc.AuthRequest) error {
+	if ((client{app: app}).public() || app.RequirePKCE) && (req.CodeChallenge == "" || req.CodeChallengeMethod != oidc.CodeChallengeMethodS256) {
+		return oidc.ErrInvalidRequest().WithDescription("This application must use PKCE: send code_challenge with code_challenge_method=S256.")
+	}
+	return nil
 }
 
 func requestedACR(claims string, values []string) ([]string, bool) {
@@ -356,6 +366,9 @@ func (s *storage) SetUserinfoFromToken(ctx context.Context, info *oidc.UserInfo,
 	if t.UserID == nil {
 		return errors.New("the access token does not belong to a user")
 	}
+	if t.DPoPJKT != dpopJKT(ctx) {
+		return oidc.ErrInvalidRequest().WithDescription("The access token is bound to a DPoP key. Send it as Authorization: DPoP with a DPoP proof signed by that key.")
+	}
 	return s.userinfo(ctx, info, u, t.Scopes, t.ClientID)
 }
 
@@ -369,6 +382,9 @@ func (s *storage) SetIntrospectionFromToken(ctx context.Context, resp *oidc.Intr
 	}
 	resp.Scope, resp.ClientID, resp.TokenType, resp.Audience, resp.Subject = t.Scopes, t.ClientID, oidc.BearerToken, t.Audience, t.ClientID
 	resp.IssuedAt, resp.Expiration, resp.AuthTime = oidc.FromTime(t.CreatedAt), oidc.FromTime(t.ExpiresAt), oidc.FromTime(deref(t.AuthTime))
+	if t.DPoPJKT != "" {
+		resp.TokenType, resp.Claims = dpopTokenType, map[string]any{"cnf": map[string]any{"jkt": t.DPoPJKT}}
+	}
 	if t.UserID == nil {
 		return nil
 	}
@@ -384,6 +400,7 @@ func (s *storage) GetPrivateClaimsFromScopes(ctx context.Context, userID, client
 	signingAccessToken(ctx)
 	claims := hookClaims(ctx)
 	claims["scope"] = strings.Join(scopes, " ")
+	confirm(ctx, claims)
 	app, err := s.st.GetApplicationByClientID(ctx, clientID)
 	if errors.Is(err, store.ErrNotFound) || err == nil && len(app.Roles) == 0 {
 		return claims, nil

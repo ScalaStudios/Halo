@@ -4,7 +4,7 @@ import { AvatarEditor } from "@/components/account/avatar-editor";
 import { AppActions, DangerZone } from "@/components/applications/app-actions";
 import { ClaimMappingsForm } from "@/components/applications/claim-mappings";
 import { CredentialList } from "@/components/applications/credentials";
-import { AuthenticationForm, BackchannelLogoutForm, ProtectedAddressesForm, ScopesForm, SignInFrequencyForm } from "@/components/applications/edit-application";
+import { AuthenticationForm, BackchannelLogoutForm, ProtectedAddressesForm, ScopesForm, SenderConstraintForm, SignInFrequencyForm } from "@/components/applications/edit-application";
 import { HookForm } from "@/components/applications/hook-form";
 import { RolesTable } from "@/components/applications/roles";
 import { SamlAttributesForm, SamlConnectionFields, SamlSettingsForm } from "@/components/applications/saml";
@@ -56,6 +56,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const service = app.type === "service";
   const hookable = !saml && !bookmark && !forward && !service && app.clientId !== "halo-cli";
   const roleable = !bookmark && !service && app.clientId !== "halo-cli";
+  const constrainable = (app.protocol === "oidc" || app.protocol === "oauth") && app.clientId !== "halo-cli";
   const owner = users.find((u) => u.id === app.owner);
   const appGroups = groups.filter((g) => app.groupIds.includes(g.id));
   const assigned = new Set(users.filter((u) => u.appIds.includes(app.id)).map((u) => u.id));
@@ -178,6 +179,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         {tab === "authentication" ? (
           <div className="flex flex-col gap-6">
             {forward ? <ProtectedAddressesForm key={app.redirectUris.join()} app={app} /> : <AuthenticationTab app={app} resources={resources} />}
+            {constrainable ? <SenderConstraintForm key={`${app.requirePar}:${app.requirePkce}:${app.requireDpop}`} app={app} /> : null}
             {service ? null : <SignInFrequencyForm key={app.maxAuthAge} app={app} />}
             {hookable ? <HookForm key={JSON.stringify(hook)} appId={app.id} appName={app.name} hook={hook} /> : null}
             {hookable ? <BackchannelLogoutForm key={`${app.backchannelLogoutUri}:${app.backchannelLogoutSessionRequired}`} app={app} /> : null}

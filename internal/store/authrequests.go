@@ -112,3 +112,16 @@ func (s *Store) DecideConsent(ctx context.Context, requestID, sessionID, decisio
 func AuthorizeCallbackPath(requestID string) string {
 	return "/oauth2/authorize/callback?id=" + requestID
 }
+
+var PushedRequestLifetime = time.Minute
+
+func (s *Store) PushAuthRequest(ctx context.Context, requestHash []byte, clientID, params string) error {
+	_, err := s.db.Exec(ctx, `insert into oidc_pushed_requests (request_hash, client_id, params, expires_at) values ($1, $2, $3, $4)`, requestHash, clientID, params, time.Now().Add(PushedRequestLifetime))
+	return err
+}
+
+func (s *Store) TakePushedAuthRequest(ctx context.Context, requestHash []byte, clientID string) (string, error) {
+	var params string
+	err := s.db.QueryRow(ctx, `delete from oidc_pushed_requests where request_hash = $1 and client_id = $2 and expires_at > now() returning params`, requestHash, clientID).Scan(&params)
+	return params, notFound(err)
+}

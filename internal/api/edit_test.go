@@ -289,6 +289,16 @@ func TestUpdateApplication(t *testing.T) {
 	if e := lastAudit(t, st); e.Summary != "Updated back-channel logout URI, back-channel logout session requirement" || diff(e)["backchannelLogoutUri"] != `"" → "https://grafana.example.com/backchannel"` {
 		t.Fatalf("audit: %+v", e)
 	}
+	rec = call(t, h, admin, "PATCH", path, map[string]any{"requirePar": true, "requirePkce": true, "requireDpop": true})
+	expect(t, rec, 200)
+	if got := decode[store.Application](t, rec); !got.RequirePAR || !got.RequirePKCE || !got.RequireDPoP {
+		t.Fatalf("pushed requests, PKCE and DPoP not required: %+v", got)
+	}
+	if e := lastAudit(t, st); e.Summary != "Updated pushed authorization requirement, PKCE requirement, DPoP requirement" || diff(e)["requireDpop"] != "false → true" {
+		t.Fatalf("audit: %+v %v", e, diff(e))
+	}
+	rec = call(t, h, admin, "PATCH", path, map[string]any{"requirePar": false, "requirePkce": false, "requireDpop": false})
+	expect(t, rec, 200)
 
 	for _, body := range []map[string]any{
 		{"name": ""},
@@ -363,6 +373,8 @@ func TestUpdateApplication(t *testing.T) {
 		t.Fatal(err)
 	}
 	expect(t, call(t, h, admin, "PATCH", "/api/v1/applications/"+service.ID, map[string]any{"maxAuthAge": 3600}), 422)
+	expect(t, call(t, h, admin, "PATCH", "/api/v1/applications/"+service.ID, map[string]any{"requirePar": true}), 422)
+	expect(t, call(t, h, admin, "PATCH", "/api/v1/applications/"+service.ID, map[string]any{"requireDpop": true}), 200)
 
 	ops, err := st.CreateGroup(ctx, store.NewGroup{Name: "Ops", Kind: "assigned"})
 	if err != nil {
@@ -408,6 +420,7 @@ func TestUpdateApplication(t *testing.T) {
 	}
 	expect(t, call(t, h, admin, "PATCH", "/api/v1/applications/"+saml.ID, map[string]any{"scopes": []string{"openid"}}), 422)
 	expect(t, call(t, h, admin, "PATCH", "/api/v1/applications/"+saml.ID, map[string]any{"requiresConsent": true}), 422)
+	expect(t, call(t, h, admin, "PATCH", "/api/v1/applications/"+saml.ID, map[string]any{"requireDpop": true}), 422)
 	rec = call(t, h, admin, "PATCH", "/api/v1/applications/"+saml.ID, map[string]any{"name": "Slack Enterprise", "description": "Chat"})
 	expect(t, rec, 200)
 	if got := decode[store.Application](t, rec); got.Name != "Slack Enterprise" || !slices.Equal(got.RedirectURIs, []string{"https://example.slack.com/sso/saml"}) {
