@@ -28,7 +28,7 @@ const (
 )
 
 var (
-	HookClient     = guardedClient()
+	HookClient     = GuardedClient()
 	hookTimeout    = 3 * time.Second
 	claimName      = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.:/-]{0,99}$`)
 	reservedClaims = []string{"iss", "sub", "aud", "exp", "nbf", "iat", "jti", "auth_time", "nonce", "acr", "amr", "azp", "at_hash", "c_hash", "s_hash", "sid",

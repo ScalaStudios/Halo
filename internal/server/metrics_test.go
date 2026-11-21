@@ -78,6 +78,13 @@ func TestMetricsCountWithoutPersonalLabels(t *testing.T) {
 	if got := metrics.SignIns.Value("totp", "failure", "high"); got != before+1 {
 		t.Fatalf("sign-in counter went from %v to %v", before, got)
 	}
+	before = metrics.SignIns.Value("token", "success", "none")
+	if err := e.st.RecordSignIn(context.Background(), store.SignInEvent{UserID: &u.ID, Email: u.Email, Result: "success", Method: "token"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := metrics.SignIns.Value("token", "success", "none"); got != before {
+		t.Fatalf("token hook rows counted as sign-ins: %v to %v", before, got)
+	}
 
 	route := "GET /api/v1/users/{id}"
 	before = metrics.HTTPRequests.Value(route, "200")

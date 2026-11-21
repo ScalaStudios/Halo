@@ -70,6 +70,30 @@ func TestHookAdministration(t *testing.T) {
 	if rec := call(t, h, auditor, "GET", path, nil); rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != "null" {
 		t.Fatalf("no hook yet: %d %s", rec.Code, rec.Body.String())
 	}
+	support, err := st.CreateGroup(ctx, store.NewGroup{Name: "Support", Kind: "assigned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scoped := person(t, st, "sue@example.com")
+	sue, err := st.GetUserByEmail(ctx, "sue@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetUserRoles(ctx, sue.ID, []string{"user_admin", "helpdesk_admin"}, map[string][]string{"user_admin": {support.ID}, "helpdesk_admin": {support.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []string{"GET", "PUT", "DELETE"} {
+		if rec := call(t, h, scoped, method, path, valid); rec.Code != 403 {
+			t.Fatalf("group-scoped administrator %s: %d", method, rec.Code)
+		}
+	}
+	global := person(t, st, "gia@example.com", "global_admin")
+	if rec := call(t, h, global, "PUT", path, valid); rec.Code != 200 {
+		t.Fatalf("global administrator save: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := call(t, h, global, "DELETE", path, nil); rec.Code != 204 {
+		t.Fatalf("global administrator delete: %d", rec.Code)
+	}
 	for name, body := range map[string]map[string]any{
 		"http":           {"url": "http://checks.example.com/halo", "secret": hookSecret},
 		"private":        {"url": "https://10.0.0.8/halo", "secret": hookSecret},
@@ -137,7 +161,7 @@ func TestHookAdministration(t *testing.T) {
 			t.Fatalf("the audit log names the hook URL or secret: %s", e.Summary)
 		}
 	}
-	if actions["application.hook.update"] != 2 || actions["application.hook.delete"] != 1 {
+	if actions["application.hook.update"] != 3 || actions["application.hook.delete"] != 2 {
 		t.Fatalf("audit actions: %v", actions)
 	}
 }
@@ -246,7 +270,7 @@ func TestRunHookRefusesPrivateAddresses(t *testing.T) {
 	srv := httptest.NewServer(hs)
 	defer srv.Close()
 	prev := HookClient
-	HookClient = guardedClient()
+	HookClient = GuardedClient()
 	t.Cleanup(func() { HookClient = prev })
 	if err := st.SaveApplicationHook(ctx, store.ApplicationHook{AppID: app.ID, Host: "checks.example.com", URLSealed: st.Sealer.Seal([]byte(srv.URL)), SecretSealed: st.Sealer.Seal([]byte(hookSecret)), Claims: []string{}}); err != nil {
 		t.Fatal(err)
