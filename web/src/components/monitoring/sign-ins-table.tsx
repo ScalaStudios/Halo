@@ -190,7 +190,7 @@ function csv(events: Row[]) {
   const head = ["time", "user", "email", "application", "result", "reason", "method", "risk", "location", "ip", "device", "event_id"];
   const lines = events.map((e) =>
     [e.time, e.user, e.email, e.app, e.result, e.reason ?? "", e.method, e.risk, e.location, e.ip, e.device, e.id]
-      .map((value) => `"${value.replaceAll('"', '""')}"`)
+      .map((value) => `"${(/^[=+\-@\t\r]/.test(value) ? `'${value}` : value).replaceAll('"', '""')}"`)
       .join(","),
   );
   return [head.join(","), ...lines].join("\n");
