@@ -58,6 +58,11 @@ web:
   tolerations: []
   affinity: {}
 
+radius:
+  enabled: false
+  port: 1812
+  serviceType: LoadBalancer
+
 metrics:
   enabled: false
   port: 9090

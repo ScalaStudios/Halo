@@ -26,6 +26,7 @@ type AppSummary = {
   homepage: string;
   saml: boolean;
   bookmark: boolean;
+  radius: boolean;
   disabled: boolean;
   awaitingApproval: boolean;
   redirectUris: string[];
@@ -60,7 +61,7 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
           Approve
         </Button>
       ) : null}
-      {app.bookmark ? null : (
+      {app.bookmark || app.radius ? null : (
         <Link href={`/admin/applications/${app.id}#setup-guide`} className={buttonClasses("secondary", "sm")}>
           <BookOpen aria-hidden="true" size={16} strokeWidth={1.75} />
           View setup guide
@@ -87,7 +88,7 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
               Open {new URL(app.homepage).host}
             </MenuItem>
           ) : null}
-          {app.bookmark ? null : (
+          {app.bookmark || app.radius ? null : (
             <MenuItem
               icon={Copy}
               onSelect={() => {
@@ -107,7 +108,7 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
           </MenuItem>
         </MenuContent>
       </Menu>
-      {app.hasSecret ? <RotateSecretDialog open={rotate} onOpenChange={setRotate} appId={app.id} appName={app.name} /> : null}
+      {app.hasSecret ? <RotateSecretDialog open={rotate} onOpenChange={setRotate} appId={app.id} appName={app.name} label={app.radius ? "Shared secret" : undefined} /> : null}
       <EditDetailsDialog app={app} directory={directory} open={editing} onOpenChange={setEditing} />
     </div>
   );

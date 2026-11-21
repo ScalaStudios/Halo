@@ -417,3 +417,31 @@ func TestScheduledExport(t *testing.T) {
 		t.Fatalf("audit: %+v", events[0])
 	}
 }
+
+func TestImportRestoresApplicationsWithoutScopes(t *testing.T) {
+	e := importEnv(t)
+	admin := e.person("ada@example.com", "global_admin")
+	ids := []string{}
+	for _, body := range []map[string]any{
+		{"name": "Status", "protocol": "bookmark", "homepage": "https://status.example.com"},
+		{"name": "Files", "protocol": "forward-auth", "redirectUris": []string{"https://files.example.com"}},
+		{"name": "VPN", "protocol": "radius", "redirectUris": []string{"10.0.0.0/24"}},
+	} {
+		created := decode[struct {
+			Application store.Application `json:"application"`
+		}](t, e.expect(e.call(admin, "POST", "/api/v1/applications", body), http.StatusCreated))
+		ids = append(ids, created.Application.ID)
+	}
+	e.expect(e.call(admin, "PATCH", "/api/v1/applications/"+ids[2], map[string]any{"maxAuthAge": 3600}), http.StatusOK)
+	file := e.exportFile(admin)
+	for _, id := range ids {
+		e.expect(e.call(admin, "DELETE", "/api/v1/applications/"+id, nil), http.StatusNoContent)
+	}
+	if rep := e.importFile(admin, file, false, false, http.StatusOK); !rep.Applied || len(rep.Changes) != 3 {
+		t.Fatalf("import: %v", lines(rep.Changes))
+	}
+	now := e.exportFile(admin)
+	if vpn := named(now, "applications", "VPN"); vpn == nil || vpn["protocol"] != "radius" || vpn["maxAuthAge"] != float64(3600) || named(now, "applications", "Status") == nil || named(now, "applications", "Files") == nil {
+		t.Fatalf("restored applications: %v", rows(now, "applications"))
+	}
+}

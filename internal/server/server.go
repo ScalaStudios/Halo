@@ -25,6 +25,7 @@ import (
 	"halo/internal/oidc"
 	"halo/internal/policy"
 	"halo/internal/provisioning"
+	"halo/internal/radius"
 	"halo/internal/saml"
 	"halo/internal/scim"
 	"halo/internal/settings"
@@ -100,6 +101,7 @@ var ownMethodRoutes = []string{
 type App struct {
 	Handler http.Handler
 	Metrics http.Handler
+	RADIUS  *radius.Server
 	Jobs    *jobs.Scheduler
 }
 
@@ -156,7 +158,7 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 		}
 		w.Write([]byte("ok"))
 	})
-	app := &App{Handler: httpx.Logging(features.Gate(st, root)), Jobs: scheduler}
+	app := &App{Handler: httpx.Logging(features.Gate(st, root)), RADIUS: radius.New(deps), Jobs: scheduler}
 	if cfg.MetricsListen != "" || cfg.MetricsToken != "" {
 		exporter := metrics.Handler(cfg.MetricsToken, func() []metrics.Gauge {
 			pool := st.PoolStat()

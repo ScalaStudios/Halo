@@ -170,6 +170,9 @@ func createApplication(row map[string]any) []call {
 	body := pick(row, "name", "description", "protocol", "homepage", "redirectUris", "postLogoutUris", "scopes", "groupIds", "setupGuide")
 	body["type"] = row["appType"]
 	protocol := str(row["protocol"])
+	if protocol == "bookmark" || protocol == "forward-auth" || protocol == "radius" {
+		delete(body, "scopes")
+	}
 	if protocol == "saml" {
 		body["saml"] = map[string]any{"entityId": row["clientId"], "acsUrls": row["redirectUris"]}
 		delete(body, "redirectUris")

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownToLine, ClipboardCheck, FileBadge, RefreshCw, Route, Server, ToggleRight, TriangleAlert, Waypoints, Webhook, type LucideIcon } from "lucide-react";
+import { ArrowDownToLine, ClipboardCheck, FileBadge, Network, RefreshCw, Route, Server, ToggleRight, TriangleAlert, Waypoints, Webhook, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { ActionError } from "@/components/ui/action-error";
@@ -22,6 +22,7 @@ const ICON: Partial<Record<FeatureId, LucideIcon>> = {
   governance: ClipboardCheck,
   webhooks: Webhook,
   "forward-auth": Route,
+  radius: Network,
   "log-streaming": Waypoints,
 };
 

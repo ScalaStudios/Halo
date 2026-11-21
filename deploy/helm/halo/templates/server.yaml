@@ -40,6 +40,10 @@ spec:
             - name: HALO_TRUSTED_PROXIES
               value: {{ . | quote }}
             {{- end }}
+            {{- if .Values.radius.enabled }}
+            - name: HALO_RADIUS_LISTEN
+              value: {{ printf ":%v" .Values.radius.port | quote }}
+            {{- end }}
             {{- if .Values.metrics.enabled }}
             - name: HALO_METRICS_LISTEN
               value: {{ printf ":%v" .Values.metrics.port | quote }}
@@ -54,6 +58,11 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+            {{- if .Values.radius.enabled }}
+            - name: radius
+              containerPort: {{ .Values.radius.port }}
+              protocol: UDP
+            {{- end }}
             {{- if .Values.metrics.enabled }}
             - name: metrics
               containerPort: {{ .Values.metrics.port }}
@@ -108,3 +117,28 @@ spec:
       port: {{ .Values.metrics.port }}
       targetPort: metrics
     {{- end }}
+{{- if .Values.radius.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "halo.fullname" . }}-radius
+  labels:
+    {{- include "halo.labels" $ctx | nindent 4 }}
+spec:
+  type: {{ .Values.radius.serviceType }}
+  {{- if ne .Values.radius.serviceType "ClusterIP" }}
+  externalTrafficPolicy: Local
+  {{- end }}
+  selector:
+    {{- include "halo.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: radius
+      port: {{ .Values.radius.port }}
+      targetPort: radius
+      protocol: UDP
+    - name: radius-accounting
+      port: {{ add .Values.radius.port 1 }}
+      targetPort: radius
+      protocol: UDP
+{{- end }}

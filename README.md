@@ -35,9 +35,9 @@ Halo works in the same space as hosted services such as Microsoft Entra ID, Okta
 | **Provisioning** | A SCIM 2.0 server, tested with the request formats of Okta and Microsoft Entra ID, so either of them or an HR system can provision people into Halo; LDAP directory sync that reads people and groups from Active Directory or OpenLDAP on a schedule and suspends people who leave; and outbound SCIM that creates, updates and deactivates accounts in your applications and keeps the groups you choose in step. |
 | **Access policies** | Conditional access by person, group, application, network zone, device trust, device compliance from Microsoft Intune or a device agent, sign-in risk and sign-in method, with effects that allow, block, require a passkey or security key, or require accepting versioned terms of use, report-only mode and a simulator. |
 | **Governance** | Access packages that people request, with approvers, justifications and time limits; access reviews that can remove access automatically when they complete; administrator roles that eligible people activate for a few hours with a reason; guest accounts with a sponsor and an end date; and joiner, mover and leaver rules, plus rules that run on a date such as a contract end date or after a number of days without signing in. |
-| **Infrastructure access** | An SSH certificate authority that issues short-lived certificates to people in mapped groups, through `halo login` and `halo ssh-cert`, and a host certificate authority that signs registered servers' host keys with `halo ssh-host`, so people connect without the first-connection prompt. |
+| **Infrastructure access** | An SSH certificate authority that issues short-lived certificates to people in mapped groups, through `halo login` and `halo ssh-cert`, and a host certificate authority that signs registered servers' host keys with `halo ssh-host`, so people connect without the first-connection prompt; and a RADIUS server that signs people in to VPNs and network devices with their Halo password. |
 | **Monitoring** | A sign-in log, an audit log of every administrative change, risk events for risky networks, repeated failures, new devices and new networks, signed webhooks for audit and sign-in events, and streaming of both to syslog or OpenTelemetry. |
-| **Administration** | An admin console whose home page shows the directory, which features are on, your roles, open risk events and shortcuts, a self-service account portal with profile pictures, organization branding, sign-in methods you can switch off, optional areas you can switch off with their routes and background jobs (SAML, SCIM in either direction, SSH certificates, governance, webhooks, forward auth and log streaming), email over SMTP with retries, JSON export with scheduled exports to an S3-compatible bucket, import of configuration from an export with a dry run, and rotation of client secrets, signing keys and `HALO_SECRET_KEY`. |
+| **Administration** | An admin console whose home page shows the directory, which features are on, your roles, open risk events and shortcuts, a self-service account portal with profile pictures, organization branding, sign-in methods you can switch off, optional areas you can switch off with their routes and background jobs (SAML, SCIM in either direction, SSH certificates, governance, webhooks, forward auth, RADIUS and log streaming), email over SMTP with retries, JSON export with scheduled exports to an S3-compatible bucket, import of configuration from an export with a dry run, and rotation of client secrets, signing keys and `HALO_SECRET_KEY`. |
 | **Developers** | A REST API described by an OpenAPI 3.1 document, API keys for service accounts, API resources with their own scopes and JWT access tokens, and setup guides with ready-made configuration for common applications. |
 
 ## Supported standards
@@ -58,6 +58,7 @@ Halo works in the same space as hosted services such as Microsoft Entra ID, Okta
 | SCIM 2.0 (RFC 7643 and RFC 7644) | Implemented | A server for users and groups with the full filter grammar and bulk operations, and a client that provisions users into applications |
 | WebAuthn and FIDO2 | Implemented | Passkeys and security keys as discoverable credentials, for sign-in without a username |
 | TOTP (RFC 6238) | Implemented | Six-digit codes from authenticator apps |
+| RADIUS (RFC 2865 and RFC 2866) | Partial | PAP sign-in, Access-Challenge for authenticator codes, Message-Authenticator (RFC 3579) required on every Access-Request and sent first in every reply, and accounting stops in the sign-in log. No EAP, CHAP or RADIUS over TLS |
 | LDAP (RFC 4511) | Partial | A client that syncs people and groups from a directory over LDAPS or StartTLS with the simple paged results control (RFC 2696). Halo is not an LDAP server |
 
 "Implemented" means the feature works in the current release. Halo has not been through OpenID Foundation conformance testing or any other certification.
@@ -171,6 +172,23 @@ https://files.example.com {
 - `/_halo/sign-out` on the application's address signs the person out of the application and of Halo.
 - Halo reads `X-Forwarded-Host` and `X-Forwarded-Uri` only from addresses in `HALO_TRUSTED_PROXIES`. The web interface replaces `X-Forwarded-Host` with Halo's own host, so through Halo's public address only applications with one protected address work. For more than one, point the proxy at the Halo server directly, such as `http://halo-server:8080` in the Compose setup, and add the proxy's address to `HALO_TRUSTED_PROXIES`.
 
+### VPNs and network devices
+
+Halo has a RADIUS server for VPN gateways, firewalls and network devices that sign people in with a username and password. It is off until you set `HALO_RADIUS_LISTEN`, such as `:1812`, and answers authentication and accounting on that one UDP port.
+
+1. Choose **Add application**, then **RADIUS**, and enter the IP address or CIDR range the device sends from. Halo shows the shared secret once.
+2. Assign groups on **Users & groups**.
+3. In the device, add a RADIUS server with the Halo server's address, the port and the shared secret. Use PAP, send a Message-Authenticator with every request, and send accounting to the same port.
+
+- People sign in with their email address and Halo password, so passwords must be on under sign-in methods and allowed for them. Accounts that only have passkeys can't sign in over RADIUS.
+- When the organization asks for an authenticator app with passwords, Halo answers a correct password with an Access-Challenge, and the device asks for the code. Devices that can't show a challenge can't sign these people in.
+- Halo checks the group assignment, suspension, access policies, lockout and risk like any other sign-in, writes the sign-in log, and returns the sign-in frequency, or the organization's session lifetime, as Session-Timeout. Policies and the per-address lockout use the IP address in Calling-Station-Id when the device sends one, and the device's own address otherwise.
+- Halo doesn't reply to requests from addresses no RADIUS client lists, to requests signed with another secret, or to Access-Requests without a valid Message-Authenticator, which protects against BlastRADIUS (CVE-2024-3596). Every Access-Accept, Access-Reject and Access-Challenge starts with a Message-Authenticator.
+- Accounting stops appear in the sign-in log as ended sessions with the session time.
+- Each RADIUS client can send 600 sign-in requests a minute. Changes to its addresses and secrets reach the RADIUS server within 10 seconds.
+- Shared secrets expire after a year, like client secrets. Rotate one on the **Credentials** tab before then; the old one keeps working for 24 hours.
+- Halo recognizes a RADIUS client by the source address of its packets, so nothing between the device and Halo may rewrite it. The Helm chart's `radius` option sets `externalTrafficPolicy: Local` on its LoadBalancer or NodePort Service for that reason.
+
 ## Screenshots
 
 <table>
@@ -244,7 +262,8 @@ Labels never hold people, email addresses, IP addresses or client IDs, and HTTP 
 | `halo_ldap_sync_changes_total` | `action`: `created`, `updated`, `suspended`, `restored`, `group_created`, `group_renamed`, `member_added`, `member_removed` |
 | `halo_webhook_deliveries_total` | `outcome`: `delivered`, `pending` (retried later), `failed` (out of retries) |
 | `halo_log_export_events_total` | `outcome`: `sent`, `failed` (retried later), `rejected` (refused by the collector), `dropped` (queue full) |
-| `halo_rate_limited_requests_total` | `scope`: `api`, `scim`, `bulk` |
+| `halo_rate_limited_requests_total` | `scope`: `api`, `scim`, `bulk`, `radius` |
+| `halo_radius_requests_total` | `outcome`: `accept`, `reject`, `challenge`, `accounting`, `dropped` (no reply: unknown client, missing or wrong Message-Authenticator, malformed packet, rate limit or server error) |
 | `halo_http_requests_total`, `halo_http_request_duration_seconds` | `route`, plus `status` on the counter |
 | `halo_db_pool_acquired_connections`, `_idle_`, `_total_`, `_max_connections` | |
 | `go_goroutines`, `go_memstats_heap_alloc_bytes`, `go_memstats_sys_bytes`, `go_gc_cycles_completed` | |

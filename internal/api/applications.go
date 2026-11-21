@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -52,6 +54,17 @@ func checkHomepage(raw string) error {
 }
 
 func checkRedirects(protocol, appType string, redirects, postLogout []string) error {
+	if protocol == "radius" {
+		for _, address := range redirects {
+			if _, ok := store.ClientAddress(address); !ok {
+				return httpx.Invalid(fmt.Sprintf("%q is not an IP address or CIDR range. Enter the address the RADIUS client sends from, like 10.0.0.5 or 10.0.0.0/24.", address))
+			}
+		}
+		if len(redirects) == 0 || len(postLogout) > 0 {
+			return httpx.Invalid("Add at least one address the RADIUS client sends from, like 10.0.0.5 or 10.0.0.0/24, and no post-logout URIs. Halo ignores RADIUS requests from any other address.")
+		}
+		return nil
+	}
 	for _, uri := range redirects {
 		if err := checkURI(uri, "redirect URI"); err != nil {
 			return err
@@ -115,6 +128,14 @@ type samlView struct {
 }
 
 func (h *handlers) view(ctx context.Context, app store.Application) (any, error) {
+	if app.Protocol == "radius" {
+		_, port, _ := net.SplitHostPort(h.cfg.RADIUSListen)
+		n, _ := strconv.Atoi(port)
+		return struct {
+			store.Application
+			RADIUSPort int `json:"radiusPort"`
+		}{app, n}, nil
+	}
 	if app.Protocol != "saml" {
 		return app, nil
 	}
@@ -290,10 +311,10 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 	}
 	switch in.Protocol {
 	case "oidc", "oauth":
-	case "saml", "bookmark", "forward-auth":
+	case "saml", "bookmark", "forward-auth", "radius":
 		in.Type = "web"
 	default:
-		return httpx.Invalid(`Choose a protocol: "oidc" for OpenID Connect sign-in, "oauth" for API access, "saml" for SAML 2.0 sign-in, "forward-auth" for applications behind a reverse proxy or "bookmark" for a link in the account portal.`)
+		return httpx.Invalid(`Choose a protocol: "oidc" for OpenID Connect sign-in, "oauth" for API access, "saml" for SAML 2.0 sign-in, "forward-auth" for applications behind a reverse proxy, "radius" for VPNs and network devices or "bookmark" for a link in the account portal.`)
 	}
 	if !slices.Contains([]string{"web", "spa", "native", "service"}, in.Type) {
 		return httpx.Invalid(`Choose an application type: "web", "spa", "native" or "service".`)
@@ -316,6 +337,9 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 		if in.Homepage == "" && len(in.RedirectURIs) > 0 {
 			in.Homepage = in.RedirectURIs[0]
 		}
+	}
+	if in.Protocol == "radius" && (len(in.Scopes) > 0 || in.SAML != nil) {
+		return httpx.Invalid("A RADIUS client takes the addresses it sends from in redirectUris, and no scopes or SAML settings.")
 	}
 	if err := checkRedirects(in.Protocol, in.Type, in.RedirectURIs, in.PostLogoutURIs); err != nil {
 		return err
@@ -375,6 +399,12 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 			if err := tx.SetSAMLSettings(r.Context(), created.ID, entityID, in.RedirectURIs, settings); err != nil {
 				return err
 			}
+		} else if in.Protocol == "radius" {
+			_, value, err := tx.AddSharedSecret(r.Context(), created.ID, "Initial", secretLifetime)
+			if err != nil {
+				return err
+			}
+			secret = &value
 		} else if in.Protocol != "bookmark" && in.Protocol != "forward-auth" && (in.Type == "web" || in.Type == "service") {
 			_, value, err := tx.AddClientSecret(r.Context(), created.ID, "Initial", secretLifetime)
 			if err != nil {
@@ -388,6 +418,9 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 		}
 		if in.Protocol == "forward-auth" {
 			summary = "Registered forward-auth application for " + strings.Join(in.RedirectURIs, ", ")
+		}
+		if in.Protocol == "radius" {
+			summary = "Registered RADIUS client for " + strings.Join(in.RedirectURIs, ", ")
 		}
 		if err := record(r, tx, actor, store.AuditEvent{Action: "application.create", Summary: summary, TargetType: "application", TargetID: created.ID, TargetLabel: created.Name}); err != nil {
 			return err
@@ -443,12 +476,16 @@ func (h *handlers) rotateSecret(w http.ResponseWriter, r *http.Request, actor st
 				}
 			}
 		}
+		add, kind := tx.AddClientSecret, "client secret"
+		if app.Protocol == "radius" {
+			add, kind = tx.AddSharedSecret, "shared secret"
+		}
 		var err error
-		credential, value, err = tx.AddClientSecret(r.Context(), app.ID, label, secretLifetime)
+		credential, value, err = add(r.Context(), app.ID, label, secretLifetime)
 		if err != nil {
 			return err
 		}
-		return record(r, tx, actor, store.AuditEvent{Action: "application.secret.rotate", Summary: "Created client secret “" + label + "”; older secrets stop working in 24 hours", TargetType: "application", TargetID: app.ID, TargetLabel: app.Name})
+		return record(r, tx, actor, store.AuditEvent{Action: "application.secret.rotate", Summary: "Created " + kind + " “" + label + "”; older secrets stop working in 24 hours", TargetType: "application", TargetID: app.ID, TargetLabel: app.Name})
 	})
 	if err != nil {
 		return err
@@ -658,6 +695,9 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	}
 	if app.Type == "service" && (in.RequirePAR != nil || in.RequirePKCE != nil) {
 		return httpx.Invalid(app.Name + " is a service application. It gets tokens with client credentials, never through an authorization request, so it can't require pushed requests or PKCE.")
+	}
+	if app.Protocol == "radius" && (in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil || in.RequiresConsent != nil || in.ClaimMappings != nil && len(*in.ClaimMappings) > 0 || logout) {
+		return httpx.Invalid(app.Name + " is a RADIUS client, so it has no post-logout URIs, scopes, claims, token lifetimes, consent screen or back-channel logout. Change the addresses it sends from in redirectUris.")
 	}
 	if app.Type == "service" && in.ClaimMappings != nil {
 		return httpx.Invalid(app.Name + " is a service application. Nobody signs in to it, so it has no ID tokens or user claims to map.")

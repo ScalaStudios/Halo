@@ -99,7 +99,7 @@ export type JoinableGroup = Group & { requested: boolean };
 export type JoinRequest = { user: NamedRef; createdAt: string };
 export type OwnedGroupDetail = { group: OwnedGroup; members: Required<NamedRef>[]; requests: JoinRequest[]; people: Required<NamedRef>[] };
 
-export type Protocol = "oidc" | "saml" | "oauth" | "bookmark" | "forward-auth";
+export type Protocol = "oidc" | "saml" | "oauth" | "bookmark" | "forward-auth" | "radius";
 export type AppType = "web" | "spa" | "native" | "service";
 
 export type Credential = {
@@ -170,6 +170,7 @@ export type Application = {
   requirePar: boolean;
   requirePkce: boolean;
   requireDpop: boolean;
+  radiusPort?: number;
 };
 
 export type Claim = { name: string; source: string };
