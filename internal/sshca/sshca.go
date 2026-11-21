@@ -438,21 +438,64 @@ func (h *handlers) issue(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ctx := r.Context()
-	principals, err := h.principals(ctx, u)
+	cert, err := h.certify(ctx, u, key, httpx.ClientIP(r), 0)
 	if err != nil {
 		return err
 	}
-	if p, err := h.hostPrincipal(r, u); err != nil {
+	body := issued(cert)
+	if body["knownHosts"], err = h.knownHosts(ctx); err != nil {
 		return err
+	}
+	return httpx.JSON(w, http.StatusCreated, body)
+}
+
+func Principals(ctx context.Context, st *store.Store, u store.User) ([]string, error) {
+	return (&handlers{st: st}).allPrincipals(ctx, u)
+}
+
+func UserCertificate(ctx context.Context, st *store.Store, u store.User, key ssh.PublicKey, ip string, seconds int) (*ssh.Certificate, error) {
+	return (&handlers{st: st}).certify(ctx, u, key, ip, seconds)
+}
+
+func HostAuthorityKey(ctx context.Context, st *store.Store) (ssh.PublicKey, error) {
+	a, err := st.GetSSHAuthority(ctx, true)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(a.PublicKey))
+	return key, err
+}
+
+func (h *handlers) allPrincipals(ctx context.Context, u store.User) ([]string, error) {
+	principals, err := h.principals(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	if p, err := h.hostPrincipal(ctx, u); err != nil {
+		return nil, err
 	} else if p != "" {
 		principals = append(principals, p)
 	}
+	return principals, nil
+}
+
+func (h *handlers) certify(ctx context.Context, u store.User, key ssh.PublicKey, ip string, seconds int) (*ssh.Certificate, error) {
+	principals, err := h.allPrincipals(ctx, u)
+	if err != nil {
+		return nil, err
+	}
 	if len(principals) == 0 {
-		return errNoPrincipals
+		return nil, errNoPrincipals
 	}
 	authority, err := h.ca(ctx, false)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	if seconds > 0 {
+		authority.CertificateLifetime = seconds
 	}
 	var cert *ssh.Certificate
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
@@ -464,7 +507,7 @@ func (h *handlers) issue(w http.ResponseWriter, r *http.Request) error {
 		if err := h.sign(ctx, cert, authority); err != nil {
 			return err
 		}
-		c := store.SSHCertificate{Serial: serial, KeyID: cert.KeyId, UserID: &u.ID, Principals: principals, Fingerprint: ssh.FingerprintSHA256(key), KeyType: key.Type(), IP: httpx.ClientIP(r),
+		c := store.SSHCertificate{Serial: serial, KeyID: cert.KeyId, UserID: &u.ID, Principals: principals, Fingerprint: ssh.FingerprintSHA256(key), KeyType: key.Type(), IP: ip,
 			ValidAfter: time.Unix(int64(cert.ValidAfter), 0), ValidBefore: time.Unix(int64(cert.ValidBefore), 0)}
 		if err := tx.RecordSSHCertificate(ctx, c); err != nil {
 			return err
@@ -472,14 +515,7 @@ func (h *handlers) issue(w http.ResponseWriter, r *http.Request) error {
 		return tx.RecordAudit(ctx, store.AuditEvent{ActorID: &u.ID, Action: "ssh.certificate.issue", Summary: fmt.Sprintf("Issued SSH certificate %d for %s, valid %s", serial, strings.Join(principals, ", "), lifetime(authority.CertificateLifetime)),
 			TargetType: "user", TargetID: u.ID, TargetLabel: u.Name, IP: c.IP})
 	})
-	if err != nil {
-		return err
-	}
-	body := issued(cert)
-	if body["knownHosts"], err = h.knownHosts(ctx); err != nil {
-		return err
-	}
-	return httpx.JSON(w, http.StatusCreated, body)
+	return cert, err
 }
 
 func (h *handlers) sign(ctx context.Context, cert *ssh.Certificate, authority store.SSHAuthority) error {

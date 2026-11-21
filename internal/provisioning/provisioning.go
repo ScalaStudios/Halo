@@ -61,6 +61,9 @@ func (h *handlers) application(r *http.Request) (store.Application, error) {
 	if err == nil && app.Protocol == "radius" {
 		return app, httpx.Invalid(app.Name + " is a RADIUS client, so Halo has no accounts to provision in it. Provisioning works with OpenID Connect and SAML applications that people sign in to.")
 	}
+	if err == nil && app.Protocol == "remote" {
+		return app, httpx.Invalid(app.Name + " opens sessions to a host, so Halo has no accounts to provision in it.")
+	}
 	if err == nil && app.Protocol == "ldap" {
 		return app, httpx.Invalid(app.Name + " reads people and groups from Halo's LDAP server, so Halo has no accounts to provision in it.")
 	}

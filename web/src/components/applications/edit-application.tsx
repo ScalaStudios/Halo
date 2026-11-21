@@ -37,7 +37,7 @@ const UNITS = [
 
 type Unit = (typeof UNITS)[number][0];
 export type Duration = { amount: string; unit: Unit };
-type Details = Pick<Application, "id" | "name" | "description" | "homepage" | "owner"> & { bookmark?: boolean };
+type Details = Pick<Application, "id" | "name" | "description" | "homepage" | "owner"> & { bookmark?: boolean; remote?: boolean };
 
 export function split(seconds: number): Duration {
   const [unit, size] = [...UNITS].reverse().find(([, size]) => seconds % size === 0) ?? UNITS[0];
@@ -133,13 +133,15 @@ function DetailsForm({
       <Field label="Description" hint="Optional. Shown next to the name in the console.">
         {(props) => <Textarea {...props} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} />}
       </Field>
-      <Field
-        label={app.bookmark ? "URL" : "Homepage"}
-        error={errors.homepage}
-        hint={app.bookmark ? "The address the bookmark opens from the account portal." : "Optional. Where the app launcher opens the application."}
-      >
-        {(props) => <Input {...props} type="url" mono value={homepage} onChange={(event) => setHomepage(event.target.value)} placeholder="https://grafana.example.com" />}
-      </Field>
+      {app.remote ? null : (
+        <Field
+          label={app.bookmark ? "URL" : "Homepage"}
+          error={errors.homepage}
+          hint={app.bookmark ? "The address the bookmark opens from the account portal." : "Optional. Where the app launcher opens the application."}
+        >
+          {(props) => <Input {...props} type="url" mono value={homepage} onChange={(event) => setHomepage(event.target.value)} placeholder="https://grafana.example.com" />}
+        </Field>
+      )}
       <Field label="Owner" hint="The person responsible for this application. Optional.">
         {(props) => (
           <PeoplePicker
@@ -352,6 +354,8 @@ export function SignInFrequencyForm({ app }: { app: Pick<Application, "id" | "na
               ? `People who signed in to Halo longer ago than this sign in again before the proxy lets them into ${app.name}. Other applications keep single sign-on.`
             : app.protocol === "radius"
               ? `Halo sends this to ${app.name} as Session-Timeout with every accepted sign-in, so the connection ends after this long and people sign in again.`
+            : app.protocol === "remote"
+              ? `People who signed in to Halo longer ago than this sign in again before they open a session to ${app.name}. Sessions already open run until their time limit.`
             : `People who signed in to Halo longer ago than this sign in again before ${app.name} gets a token, and its refresh tokens stop working. Other applications keep single sign-on.`
         }
       />

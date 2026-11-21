@@ -137,6 +137,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("DELETE /api/v1/applications/{id}", []string{"app_admin"}, h.deleteApplication)
 	route("PUT /api/v1/applications/{id}/groups", []string{"app_admin"}, h.setApplicationGroups)
 	route("PUT /api/v1/applications/{id}/saml", []string{"app_admin"}, h.setApplicationSAML)
+	route("PUT /api/v1/applications/{id}/remote", []string{"app_admin"}, h.setApplicationRemote)
 	route("PATCH /api/v1/applications/{id}", []string{"app_admin"}, h.updateApplication)
 	route("POST /api/v1/applications/{id}/roles", []string{"app_admin"}, h.createAppRole)
 	route("PATCH /api/v1/applications/{id}/roles/{roleId}", []string{"app_admin"}, h.updateAppRole)

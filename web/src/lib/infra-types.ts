@@ -24,6 +24,58 @@ export type HostRule = { groupId: string; sudo: string[] };
 
 export type HostGroup = { id: string; name: string; description: string; rules: HostRule[]; hostCount: number; createdAt: string; updatedAt: string };
 
+export type RemoteAuth = "certificate" | "password" | "key";
+
+export type RemoteTarget = {
+  outpostId: string;
+  protocol: "ssh";
+  host: string;
+  port: number;
+  username: string;
+  auth: RemoteAuth;
+  hasCredential: boolean;
+  hostKey: string;
+  sessionLimit: number;
+  record: boolean;
+};
+
+export type Outpost = {
+  id: string;
+  name: string;
+  enrolledAt: string | null;
+  enrollmentExpiresAt: string | null;
+  lastSeenAt: string | null;
+  lastIp: string;
+  version: string;
+  createdAt: string;
+  targets: number;
+  connected: boolean;
+};
+
+export type RemoteSession = {
+  id: string;
+  createdAt: string;
+  applicationId: string | null;
+  applicationName: string;
+  userId: string | null;
+  email: string;
+  outpostId: string | null;
+  protocol: "ssh";
+  address: string;
+  username: string;
+  ip: string;
+  limitSeconds: number;
+  record: boolean;
+  status: "pending" | "active" | "ended";
+  startedAt: string | null;
+  endedAt: string | null;
+  endReason: string;
+  bytesIn: number;
+  bytesOut: number;
+  recorded: boolean;
+  terminatedBy: string | null;
+};
+
 export type PrincipalMapping = { id: string; groupId: string; principals: string[]; createdAt: string; updatedAt: string };
 
 export type SshCertificate = {

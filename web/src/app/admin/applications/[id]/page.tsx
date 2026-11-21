@@ -8,6 +8,9 @@ import { CredentialList } from "@/components/applications/credentials";
 import { AuthenticationForm, BackchannelLogoutForm, ProtectedAddressesForm, ScopesForm, SenderConstraintForm, SignInFrequencyForm, WindowsSignInForm } from "@/components/applications/edit-application";
 import { HookForm } from "@/components/applications/hook-form";
 import { RolesTable } from "@/components/applications/roles";
+import { RemoteSessions } from "@/components/remote/sessions";
+import { RemoteSettingsForm } from "@/components/remote/settings";
+import { hasRole } from "@/components/settings/roles";
 import { SamlAttributesForm, SamlConnectionFields, SamlSettingsForm } from "@/components/applications/saml";
 import { SharedSignals } from "@/components/applications/shared-signals";
 import { APP_STATUS, LdapConnectionFields, PROTOCOL_LABEL, RadiusServerFields, SetupGuideCard, statusKey, TYPE_LABEL } from "@/components/applications/shared";
@@ -25,7 +28,8 @@ import { SimpleTable } from "@/components/ui/simple-table";
 import { TabNav } from "@/components/ui/tab-nav";
 import { apiGet } from "@/lib/api/server";
 import { formatDuration, pluralize } from "@/lib/format";
-import type { ApiResource } from "@/lib/infra-types";
+import { REMOTE_AUTH } from "@/lib/labels";
+import type { ApiResource, Outpost, RemoteSession } from "@/lib/infra-types";
 import type { SamlApplication } from "@/lib/saml-types";
 import type { OrganizationProfile, WebhookDelivery } from "@/lib/settings-types";
 import { endpoints, proxyGuides, setupGuide } from "@/lib/setup-guides";
@@ -59,12 +63,17 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const forward = app.protocol === "forward-auth";
   const radius = app.protocol === "radius";
   const ldap = app.protocol === "ldap";
+  const remote = app.protocol === "remote";
   const service = app.type === "service";
-  const hookable = !saml && !bookmark && !forward && !radius && !ldap && !service && app.clientId !== "halo-cli";
-  const roleable = !bookmark && !radius && !ldap && !service && app.clientId !== "halo-cli";
+  const hookable = !saml && !bookmark && !forward && !radius && !ldap && !remote && !service && app.clientId !== "halo-cli";
+  const roleable = !bookmark && !radius && !ldap && !remote && !service && app.clientId !== "halo-cli";
+  const [outposts, remoteSessions, me] =
+    remote && !org.featuresOff.includes("remote-access")
+      ? await Promise.all([apiGet<Outpost[]>("/outposts"), apiGet<RemoteSession[]>(`/remote-sessions?app=${encodeURIComponent(id)}`), apiGet<User>("/me")])
+      : [[], [], null];
   const modelled = (app.protocol === "oidc" || app.protocol === "oauth") && (app.type === "web" || service) && app.clientId !== "halo-cli";
   const constrainable = (app.protocol === "oidc" || app.protocol === "oauth") && app.clientId !== "halo-cli";
-  const windows = !bookmark && !radius && !ldap && !service && !org.featuresOff.includes("kerberos");
+  const windows = !bookmark && !radius && !ldap && !remote && !service && !org.featuresOff.includes("kerberos");
   const owner = users.find((u) => u.id === app.owner);
   const appGroups = groups.filter((g) => app.groupIds.includes(g.id));
   const assigned = new Set(users.filter((u) => u.appIds.includes(app.id)).map((u) => u.id));
@@ -87,6 +96,14 @@ export default async function ApplicationPage({ params, searchParams }: { params
       ? [
           { id: "overview", label: "Overview" },
           { id: "users", label: "Users & groups", count: appGroups.length },
+          { id: "logs", label: "Logs", count: appSignIns.length },
+        ]
+    : remote
+      ? [
+          { id: "overview", label: "Overview" },
+          { id: "authentication", label: "Connection" },
+          { id: "users", label: "Users & groups", count: appGroups.length },
+          { id: "sessions", label: "Sessions", count: remoteSessions.length },
           { id: "logs", label: "Logs", count: appSignIns.length },
         ]
     : forward
@@ -147,20 +164,21 @@ export default async function ApplicationPage({ params, searchParams }: { params
               bookmark,
               radius,
               ldap,
+              remote,
               disabled: app.status === "disabled",
               awaitingApproval: app.awaitingApproval,
               redirectUris: app.redirectUris,
               postLogoutUris: app.postLogoutUris,
-              hasSecret: ldap || (!saml && !bookmark && !forward && (app.type === "web" || app.type === "service")),
+              hasSecret: ldap || (!saml && !bookmark && !forward && !remote && (app.type === "web" || app.type === "service")),
             }}
             directory={users}
           />
         </header>
         <DescriptionList
-          className={`grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 ${bookmark ? "xl:grid-cols-4" : forward || radius || ldap ? "xl:grid-cols-5" : "xl:grid-cols-6"}`}
+          className={`grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 ${bookmark ? "xl:grid-cols-4" : forward || radius || ldap || remote ? "xl:grid-cols-5" : "xl:grid-cols-6"}`}
           items={[
             { label: "Protocol", value: PROTOCOL_LABEL[app.protocol] },
-            ...(bookmark || forward || radius || ldap ? [] : [{ label: "Type", value: TYPE_LABEL[app.type] }]),
+            ...(bookmark || forward || radius || ldap || remote ? [] : [{ label: "Type", value: TYPE_LABEL[app.type] }]),
             {
               label: "Status",
               value: (
@@ -200,8 +218,14 @@ export default async function ApplicationPage({ params, searchParams }: { params
       <TabNav label="Application sections" tabs={tabs} active={tab} hrefFor={(t) => `/admin/applications/${app.id}${t === "overview" ? "" : `?tab=${t}`}`} />
 
       <div key={tab} className="animate-enter">
-        {tab === "overview" ? <OverviewTab app={app} issuer={org.issuer} /> : null}
-        {tab === "authentication" ? (
+        {tab === "overview" ? <OverviewTab app={app} issuer={org.issuer} outposts={outposts} /> : null}
+        {tab === "authentication" && remote && app.remote ? (
+          <div className="flex flex-col gap-6">
+            <RemoteSettingsForm key={JSON.stringify(app.remote)} appId={app.id} appName={app.name} target={app.remote} outposts={outposts} />
+            <SignInFrequencyForm key={app.maxAuthAge} app={app} />
+          </div>
+        ) : null}
+        {tab === "authentication" && !remote ? (
           <div className="flex flex-col gap-6">
             {forward || radius ? <ProtectedAddressesForm key={app.redirectUris.join()} app={app} /> : <AuthenticationTab app={app} resources={resources} />}
             {constrainable ? <SenderConstraintForm key={`${app.requirePar}:${app.requirePkce}:${app.requireDpop}`} app={app} /> : null}
@@ -392,7 +416,19 @@ export default async function ApplicationPage({ params, searchParams }: { params
             />
           </div>
         ) : null}
-        {tab === "sessions" ? (
+        {tab === "sessions" && remote ? (
+          <div className="flex flex-col gap-6">
+            <SectionTitle title="Sessions" description={`Terminal sessions to ${app.name}, newest first. Ending one closes it at once.`} />
+            <RemoteSessions
+              sessions={remoteSessions}
+              showApplication={false}
+              canEnd={me ? hasRole(me, "security_admin", "app_admin") : false}
+              canDownload={me ? hasRole(me, "security_admin", "auditor") : false}
+              empty={`Sessions appear here when someone opens ${app.name} from their account portal.`}
+            />
+          </div>
+        ) : null}
+        {tab === "sessions" && !remote ? (
           <div className="flex flex-col gap-6">
             <SectionTitle
               title="Sessions"
@@ -440,9 +476,38 @@ export default async function ApplicationPage({ params, searchParams }: { params
   );
 }
 
-function OverviewTab({ app, issuer }: { app: SamlApplication; issuer: string }) {
+function OverviewTab({ app, issuer, outposts }: { app: SamlApplication; issuer: string; outposts: Outpost[] }) {
   const saml = app.protocol === "saml";
   const urls = endpoints(issuer);
+  if (app.remote) {
+    const target = app.remote;
+    const outpost = outposts.find((o) => o.id === target.outpostId);
+    return (
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        <Card className="min-w-0 xl:col-span-7">
+          <CardHeader
+            title="Connection"
+            description={`People assigned to ${app.name} open an SSH terminal to this host from their account portal. Halo checks their access and policies first, then the outpost connects to the host.`}
+          />
+          <CardBody>
+            <DescriptionList
+              columns={2}
+              items={[
+                { label: "Host", value: `${target.host}:${target.port}`, mono: true },
+                { label: "Outpost", value: outpost ? `${outpost.name} · ${outpost.connected ? "connected" : "not connected"}` : "Unknown" },
+                { label: "Signs in with", value: REMOTE_AUTH[target.auth] },
+                { label: "Account", value: target.username || "Each person's first SSH principal" },
+                { label: "Host key", value: target.hostKey ? `Pinned ${target.hostKey.split(" ")[0]} key` : "Halo host certificate" },
+                { label: "Time limit", value: formatDuration(target.sessionLimit) },
+                { label: "Recording", value: target.record ? "Terminal output is recorded" : "Off" },
+              ]}
+            />
+          </CardBody>
+        </Card>
+        <DangerZone id={app.id} name={app.name} disabled={app.status === "disabled"} className="xl:col-span-12" />
+      </div>
+    );
+  }
   if (app.protocol === "bookmark") {
     return (
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">

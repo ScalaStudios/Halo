@@ -108,7 +108,7 @@ Change the image tags, or upgrade to a newer chart, then run `helm upgrade`. The
 | `organization` | | `HALO_ORGANIZATION`. |
 | `trustedProxies` | `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16` | `HALO_TRUSTED_PROXIES`. Narrow it to your pod CIDR. |
 | `imagePullSecrets` | `[]` | Pull secrets for every pod. |
-| `server.replicaCount` | `1` | Server replicas. Above 1, upgrades roll one pod at a time and a PodDisruptionBudget allows one pod down; see [Running several instances](../../../README.md#running-several-instances). |
+| `server.replicaCount` | `1` | Server replicas. Above 1, upgrades roll one pod at a time and a PodDisruptionBudget allows one pod down, and remote access sessions only start on the pod that holds the outpost's connection; see [Running several instances](../../../README.md#running-several-instances). |
 | `server.image.*` | `ghcr.io/scalastudios/halo-server`, chart `appVersion` | Server image. |
 | `server.env` | `{}` | Other non-secret server variables, such as `HALO_SMTP_HOST`, `HALO_SMTP_FROM` or `HALO_S3_ENDPOINT`. |
 | `server.resources`, `server.podSecurityContext`, `server.securityContext`, `server.nodeSelector`, `server.tolerations`, `server.affinity` | | Server pod settings. |

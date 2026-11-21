@@ -361,7 +361,7 @@ func claimsFor(a Application) []Claim {
 	if a.Protocol == "saml" {
 		return a.Mapped(SAMLClaims(DefaultSAMLSettings()))
 	}
-	if a.Protocol == "bookmark" || a.Protocol == "radius" || a.Protocol == "ldap" {
+	if a.Protocol == "bookmark" || a.Protocol == "radius" || a.Protocol == "ldap" || a.Protocol == "remote" {
 		return []Claim{}
 	}
 	if a.Protocol == "forward-auth" {

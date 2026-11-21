@@ -50,7 +50,7 @@ func (s *Store) PruneLogs(ctx context.Context, batch int) error {
 	for _, l := range []struct {
 		table, label string
 		days         int
-	}{{"sign_in_events", "the sign-in log", settings.SignInLogDays}, {"audit_events", "the audit log", settings.AuditLogDays}} {
+	}{{"sign_in_events", "the sign-in log", settings.SignInLogDays}, {"remote_sessions", "the remote session log", settings.SignInLogDays}, {"audit_events", "the audit log", settings.AuditLogDays}} {
 		if l.days == 0 {
 			continue
 		}
