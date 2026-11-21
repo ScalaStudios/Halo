@@ -281,6 +281,14 @@ func TestUpdateApplication(t *testing.T) {
 	if e := lastAudit(t, st); e.Summary != "Updated consent screen" {
 		t.Fatalf("audit: %+v", e)
 	}
+	rec = call(t, h, admin, "PATCH", path, map[string]any{"backchannelLogoutUri": " https://grafana.example.com/backchannel ", "backchannelLogoutSessionRequired": false})
+	expect(t, rec, 200)
+	if got := decode[store.Application](t, rec); got.BackchannelLogoutURI != "https://grafana.example.com/backchannel" || got.BackchannelLogoutSessionRequired {
+		t.Fatalf("back-channel logout: %+v", got)
+	}
+	if e := lastAudit(t, st); e.Summary != "Updated back-channel logout URI, back-channel logout session requirement" || diff(e)["backchannelLogoutUri"] != `"" → "https://grafana.example.com/backchannel"` {
+		t.Fatalf("audit: %+v", e)
+	}
 
 	for _, body := range []map[string]any{
 		{"name": ""},
@@ -299,6 +307,10 @@ func TestUpdateApplication(t *testing.T) {
 		{"maxAuthAge": 59},
 		{"maxAuthAge": 90*86400 + 1},
 		{"owner": "usr_missing"},
+		{"backchannelLogoutUri": "http://grafana.example.com/backchannel"},
+		{"backchannelLogoutUri": "https://10.0.0.8/backchannel"},
+		{"backchannelLogoutUri": "https://localhost/backchannel"},
+		{"backchannelLogoutUri": "https://grafana.example.com/backchannel#logout"},
 	} {
 		if rec := call(t, h, admin, "PATCH", path, body); rec.Code != 422 {
 			t.Errorf("%v: want 422, got %d: %s", body, rec.Code, rec.Body)

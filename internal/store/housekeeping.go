@@ -16,6 +16,7 @@ func (s *Store) Purge(ctx context.Context) error {
 		`delete from sessions where coalesce(revoked_at, expires_at) < now() - interval '30 days'`,
 		`delete from enrollment_tokens where expires_at < now() - interval '30 days'`,
 		`delete from mail_outbox where created_at < now() - interval '30 days' and (sent_at is not null or attempts >= 5)`,
+		`delete from webhook_deliveries where app_id is not null and created_at < now() - interval '30 days'`,
 		`delete from magic_links where expires_at < now() - interval '1 day'`,
 		`delete from rate_limit_windows where window_start < now() - interval '1 day'`,
 		`delete from sign_ups where verified_at is null and expires_at < now()`,

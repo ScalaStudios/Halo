@@ -72,6 +72,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("GET /api/v1/applications/{id}/hook", readers, h.getHook)
 	route("PUT /api/v1/applications/{id}/hook", []string{"app_admin"}, h.putHook)
 	route("DELETE /api/v1/applications/{id}/hook", []string{"app_admin"}, h.deleteHook)
+	route("GET /api/v1/applications/{id}/logout-deliveries", readers, h.logoutDeliveries)
 	return nil
 }
 
@@ -156,6 +157,10 @@ func (h *handler) attempt(ctx context.Context, d store.WebhookDelivery, now time
 		return err
 	}
 	code, message := send(ctx, client, target, secret, []byte(d.Body))
+	return Record(ctx, h.st, d, code, message, now)
+}
+
+func Record(ctx context.Context, st *store.Store, d store.WebhookDelivery, code int, message string, now time.Time) error {
 	status, next := "delivered", now
 	if code < 200 || code > 299 {
 		status = "pending"
@@ -170,7 +175,7 @@ func (h *handler) attempt(ctx context.Context, d store.WebhookDelivery, now time
 		response = &code
 	}
 	metrics.WebhookDeliveries.Inc(status)
-	return h.st.RecordWebhookAttempt(ctx, d.ID, status, response, message, now, next)
+	return st.RecordWebhookAttempt(ctx, d.ID, status, response, message, now, next)
 }
 
 func send(ctx context.Context, client *http.Client, target string, secret, body []byte) (int, string) {
@@ -181,6 +186,10 @@ func send(ctx context.Context, client *http.Client, target string, secret, body 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "Halo-Webhooks")
 	req.Header.Set("Halo-Signature", sign(secret, time.Now(), body))
+	return Post(client, req)
+}
+
+func Post(client *http.Client, req *http.Request) (int, string) {
 	res, err := client.Do(req)
 	if err != nil {
 		return 0, withoutURL(err)

@@ -117,6 +117,9 @@ type Application struct {
 	LogoURL        *string      `json:"logoUrl"`
 	ClaimMappings  []Claim      `json:"claimMappings"`
 
+	BackchannelLogoutURI             string `json:"backchannelLogoutUri"`
+	BackchannelLogoutSessionRequired bool   `json:"backchannelLogoutSessionRequired"`
+
 	RegisteredDynamically bool   `json:"registeredDynamically"`
 	AwaitingApproval      bool   `json:"awaitingApproval"`
 	RequiresConsent       bool   `json:"requiresConsent"`

@@ -3281,6 +3281,8 @@ paths:
                   maxItems: 50
                   description: Replaces the claim mappings. Not for service applications or bookmarks. An empty list removes every mapping.
                   items: {$ref: '#/components/schemas/ClaimMapping'}
+                backchannelLogoutUri: {type: string, description: 'An https:// URL on a public address, or an empty string to stop sending logout tokens. Not for SAML applications, bookmarks or service applications.'}
+                backchannelLogoutSessionRequired: {type: boolean, description: Not for SAML applications, bookmarks or service applications.}
       responses:
         '200': {$ref: '#/components/responses/ApplicationResponse'}
         '400': {$ref: '#/components/responses/BadJSON'}
@@ -3564,6 +3566,25 @@ paths:
       responses:
         '204': {$ref: '#/components/responses/NoContent'}
         '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /applications/{id}/logout-deliveries:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Applications]
+      operationId: listApplicationLogoutDeliveries
+      summary: List an application's 50 most recent back-channel logout deliveries
+      description: 'Roles: any administrator. Each delivery is one Halo session that ended, with `eventId` set to the session id and `body` holding its `sub` and `sid`. Halo signs a new logout token for every attempt and retries a failed one like a webhook.'
+      responses:
+        '200':
+          description: The deliveries, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/WebhookDelivery'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
   /collections:
@@ -7101,7 +7122,7 @@ components:
           examples: [attribute.employeeNumber]
     Application:
       type: object
-      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent]
+      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent, backchannelLogoutUri, backchannelLogoutSessionRequired]
       properties:
         id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
@@ -7147,6 +7168,8 @@ components:
         registeredDynamically: {type: boolean, description: The client registered itself at `/oauth2/register` and can change or delete its registration with its registration access token.}
         awaitingApproval: {type: boolean, description: 'The client registered while `clientRegistration` is `approval`, or changed its registration while it is `approval` or while the client is assigned to groups. Its status stays `disabled` until an application administrator enables it.'}
         requiresConsent: {type: boolean, description: 'People see the requested scopes and allow them before their first sign-in, and again when the application asks for scopes they have not allowed. `prompt=none` then fails with `consent_required`. On for clients that registered themselves, off for applications created in the console. Any OpenID Connect application that sends `prompt=consent` gets the screen regardless.'}
+        backchannelLogoutUri: {type: string, description: 'OpenID Connect Back-Channel Logout. When a Halo session the application got tokens in ends, by sign-out, revocation, the session limit, a device block, suspension, an authentication reset, the end of an impersonation, expiry or deletion of the person, Halo posts `logout_token` to this URL. The token is a JWT typed `logout+jwt`, signed like the application''s ID tokens, with `iss`, `aud`, `iat`, `exp`, `jti`, `sub`, `sid` and the back-channel logout event. Empty when off.'}
+        backchannelLogoutSessionRequired: {type: boolean, description: 'The application needs `sid` in logout tokens. Halo always sends it, so this only records what the application expects.'}
         saml: {$ref: '#/components/schemas/SAMLView'}
     SAMLAttributes:
       type: object
@@ -8187,9 +8210,10 @@ components:
         id: {type: string, examples: [whd_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         endpointId: {type: string, description: Set for deliveries to a webhook endpoint.}
         ruleId: {type: string, description: Set for messages sent by a notification rule.}
+        appId: {type: string, description: Set for back-channel logouts sent to an application.}
         eventId: {type: string}
         eventType: {type: string}
-        body: {type: string, description: The exact JSON body Halo sends.}
+        body: {type: string, description: 'The exact JSON body Halo sends, or for a back-channel logout the session the logout token is made for.'}
         status: {type: string, enum: [pending, delivered, failed]}
         attempts: {type: integer}
         nextAttemptAt: {type: string, format: date-time}

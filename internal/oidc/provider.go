@@ -90,6 +90,7 @@ func New(d httpx.Deps) (http.Handler, error) {
 			c.ResponseTypesSupported = []string{string(oidc.ResponseTypeCode)}
 			c.GrantTypesSupported = slices.DeleteFunc(c.GrantTypesSupported, func(g oidc.GrantType) bool { return g == oidc.GrantTypeImplicit || g == oidc.GrantTypeBearer })
 			c.IntrospectionEndpointAuthSigningAlgValuesSupported, c.RevocationEndpointAuthSigningAlgValuesSupported = nil, nil
+			c.BackChannelLogoutSupported, c.BackChannelLogoutSessionSupported = true, true
 			if settings, err := d.Store.Settings(r.Context()); err == nil && settings.ClientRegistrationOn() {
 				c.RegistrationEndpoint = d.Config.Issuer() + "/oauth2/register"
 			}
@@ -161,6 +162,8 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	}
 	if d.Jobs != nil {
 		d.Jobs.Every("retire superseded signing keys", time.Hour, func(ctx context.Context) error { return d.Store.RetireSigningKeys(ctx, time.Now()) })
+		d.Jobs.Every("send back-channel logouts", 10*time.Second, func(ctx context.Context) error { return DeliverLogouts(ctx, d.Store, d.Config.Issuer(), time.Now()) })
+		d.Jobs.Every("queue back-channel logouts for expired sessions", time.Minute, d.Store.QueueExpiredSessionLogouts)
 	}
 	resources := &resourceHandlers{st: d.Store}
 	route("GET /api/v1/api-resources", readers, resources.list)

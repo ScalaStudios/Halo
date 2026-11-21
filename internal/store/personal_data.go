@@ -68,7 +68,7 @@ func (s *Store) ErasePerson(ctx context.Context, u User) (string, error) {
 			state = case when target_id = @id then '' else regexp_replace(state, @mention, @pseudonym, 'gi') end,
 			path = replace(path, @id, @pseudonym), summary = regexp_replace(summary, @mention, @pseudonym, 'gi')
 			where target_id = @id or strpos(path, @id) > 0 or target_label ~* @mention or state ~* @mention or summary ~* @mention`,
-		`update webhook_deliveries set body = regexp_replace(body, @mention, @pseudonym, 'gi') where body ~* @mention`,
+		`update webhook_deliveries set body = regexp_replace(body, @mention, @pseudonym, 'gi') where body ~* @mention and (app_id is null or status <> 'pending')`,
 		`update ssh_certificates set key_id = replace(key_id, @id, @pseudonym) where user_id = @id`,
 		`update access_policies set conditions = conditions || jsonb_build_object('userIds', coalesce(conditions->'userIds', '[]') - @id::text, 'excludeUserIds', coalesce(conditions->'excludeUserIds', '[]') - @id::text)
 			where conditions->'userIds' ? @id::text or conditions->'excludeUserIds' ? @id::text`,
@@ -77,11 +77,14 @@ func (s *Store) ErasePerson(ctx context.Context, u User) (string, error) {
 		`delete from rate_limit_windows where subject = lower(@email)`,
 		`delete from oidc_auth_requests where lower(login_hint) = lower(@email)`,
 		`delete from risk_events where user_id = @id`,
-		`delete from users where id = @id`,
 	} {
 		if _, err := s.db.Exec(ctx, sql, args); err != nil {
 			return "", err
 		}
 	}
-	return pseudonym, nil
+	if err := s.queueLogouts(ctx, `s.user_id = $1 and s.revoked_at is null and s.expires_at > now()`, u.ID); err != nil {
+		return "", err
+	}
+	_, err := s.db.Exec(ctx, `delete from users where id = $1`, u.ID)
+	return pseudonym, err
 }

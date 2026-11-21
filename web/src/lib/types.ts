@@ -146,6 +146,8 @@ export type Application = {
   registeredDynamically: boolean;
   awaitingApproval: boolean;
   requiresConsent: boolean;
+  backchannelLogoutUri: string;
+  backchannelLogoutSessionRequired: boolean;
 };
 
 export type Claim = { name: string; source: string };
