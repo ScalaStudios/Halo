@@ -23,6 +23,7 @@ var (
 	SCIMRuns          = NewCounter("halo_scim_outbound_runs_total", "Outbound SCIM runs by result.", "result")
 	SCIMRecords       = NewCounter("halo_scim_outbound_records_total", "Users and groups that outbound SCIM changed, by resource and action.", "resource", "action")
 	WebhookDeliveries = NewCounter("halo_webhook_deliveries_total", "Webhook delivery attempts by outcome: delivered, pending for a retry, or failed for good.", "outcome")
+	LogExport         = NewCounter("halo_log_export_events_total", "Sign-in and audit events for the log exporter by outcome: sent, failed and retried later, rejected by the collector, or dropped from a full queue.", "outcome")
 	RateLimited       = NewCounter("halo_rate_limited_requests_total", "Requests refused by the API rate limit, by scope.", "scope")
 	HTTPRequests      = NewCounter("halo_http_requests_total", "HTTP requests by route pattern and status code.", "route", "status")
 	HTTPDuration      = NewHistogram("halo_http_request_duration_seconds", "HTTP request duration by route pattern.", []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}, "route")
@@ -40,6 +41,9 @@ func init() {
 	}
 	for _, v := range []string{"delivered", "pending", "failed"} {
 		WebhookDeliveries.Add(0, v)
+	}
+	for _, v := range []string{"sent", "failed", "rejected", "dropped"} {
+		LogExport.Add(0, v)
 	}
 	for _, v := range []string{"account", "address"} {
 		Lockouts.Add(0, v)

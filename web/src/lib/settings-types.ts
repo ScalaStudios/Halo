@@ -125,6 +125,22 @@ export type Webhook = {
   lastDeliveryAt: string | null;
 };
 
+export type LogExportProtocol = "syslog-tls" | "syslog-udp" | "otlp-http";
+
+export type LogExport = {
+  protocol: LogExportProtocol;
+  endpoint: string;
+  allowPrivate: boolean;
+  headersSet: boolean;
+  failures: number;
+  nextAttemptAt: string;
+  lastSentAt: string | null;
+  lastError: string;
+  updatedAt: string;
+};
+
+export type LogExportResponse = { exporter: LogExport | null; queued: number; environment: boolean };
+
 export type NotificationDestination = "webhook" | "slack" | "discord";
 
 export type NotificationRule = {

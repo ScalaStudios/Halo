@@ -131,20 +131,26 @@ func (s *Store) QueueWebhookDelivery(ctx context.Context, endpointID string, e W
 	return deliveryID, err
 }
 
+var eventSources = []struct{ name, table, columns string }{
+	{"audit", "audit_events", `id, action, time, jsonb_build_object('id', id, 'time', time, 'actorId', actor_id, 'action', action, 'summary', summary,
+		'targetType', target_type, 'targetId', target_id, 'target', target_label, 'ip', ip, 'changes', changes)`},
+	{"sign_in", "sign_in_events", `id, 'sign_in.' || result, time, jsonb_build_object('id', id, 'time', time, 'userId', user_id, 'email', email, 'appId', app_id,
+		'result', result, 'method', method, 'ip', ip, 'location', location, 'device', device, 'risk', risk, 'reason', reason, 'challenge', challenge, 'impersonatorId', impersonator_id, 'hook', hook)`},
+}
+
 func (s *Store) PollWebhookEvents(ctx context.Context, before time.Time, limit int) ([]WebhookEvent, error) {
+	return s.pollEvents(ctx, "", before, limit)
+}
+
+func (s *Store) pollEvents(ctx context.Context, cursor string, before time.Time, limit int) ([]WebhookEvent, error) {
 	var events []WebhookEvent
-	for _, source := range []struct{ name, query string }{
-		{"audit", `select id, action, time, jsonb_build_object('id', id, 'time', time, 'actorId', actor_id, 'action', action, 'summary', summary,
-			'targetType', target_type, 'targetId', target_id, 'target', target_label, 'ip', ip, 'changes', changes) from audit_events`},
-		{"sign_in", `select id, 'sign_in.' || result, time, jsonb_build_object('id', id, 'time', time, 'userId', user_id, 'email', email, 'appId', app_id,
-			'result', result, 'method', method, 'ip', ip, 'location', location, 'device', device, 'risk', risk, 'reason', reason, 'challenge', challenge, 'impersonatorId', impersonator_id, 'hook', hook) from sign_in_events`},
-	} {
+	for _, source := range eventSources {
 		var cursorTime time.Time
 		var cursorID string
-		if err := s.db.QueryRow(ctx, `select time, id from webhook_cursors where source = $1 for update`, source.name).Scan(&cursorTime, &cursorID); err != nil {
+		if err := s.db.QueryRow(ctx, `select time, id from webhook_cursors where source = $1 for update`, cursor+source.name).Scan(&cursorTime, &cursorID); err != nil {
 			return nil, err
 		}
-		rows, err := s.db.Query(ctx, source.query+` where (time, id) > ($1, $2) and time < $3 order by time, id limit $4`, cursorTime, cursorID, before, limit)
+		rows, err := s.db.Query(ctx, `select `+source.columns+` from `+source.table+` where (time, id) > ($1, $2) and time < $3 order by time, id limit $4`, cursorTime, cursorID, before, limit)
 		if err != nil {
 			return nil, err
 		}
@@ -156,7 +162,7 @@ func (s *Store) PollWebhookEvents(ctx context.Context, before time.Time, limit i
 			continue
 		}
 		last := batch[len(batch)-1]
-		if _, err := s.db.Exec(ctx, `update webhook_cursors set time = $2, id = $3 where source = $1`, source.name, last.Time, last.ID); err != nil {
+		if _, err := s.db.Exec(ctx, `update webhook_cursors set time = $2, id = $3 where source = $1`, cursor+source.name, last.Time, last.ID); err != nil {
 			return nil, err
 		}
 		events = append(events, batch...)

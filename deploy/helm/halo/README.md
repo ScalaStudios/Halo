@@ -4,7 +4,7 @@ Deploys the Halo server and the web interface, with an optional PostgreSQL 17. T
 
 ## Install
 
-Create a Secret for Halo. Its keys become the server's environment variables, so it must hold `HALO_SECRET_KEY` and `HALO_DATABASE_URL`, and can hold others such as `HALO_SMTP_PASSWORD` or `HALO_S3_SECRET_ACCESS_KEY`.
+Create a Secret for Halo. Its keys become the server's environment variables, so it must hold `HALO_SECRET_KEY` and `HALO_DATABASE_URL`, and can hold others such as `HALO_SMTP_PASSWORD`, `HALO_S3_SECRET_ACCESS_KEY` or `HALO_LOG_EXPORT_HEADERS`.
 
 ```sh
 kubectl create namespace halo

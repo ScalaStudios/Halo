@@ -15,6 +15,7 @@ import (
 	"halo/internal/governance"
 	"halo/internal/httpx"
 	"halo/internal/jobs"
+	"halo/internal/logexport"
 	"halo/internal/mail"
 	"halo/internal/metrics"
 	"halo/internal/oidc"
@@ -98,7 +99,7 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 	})
 
 	apiMux := http.NewServeMux()
-	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, governance.Register, policy.Register, compliance.Register, apikeys.Register, provisioning.Register, settings.Register, webhooks.Register, oidc.Register, sshca.Register, avatars.Register, approval.Register} {
+	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, governance.Register, policy.Register, compliance.Register, apikeys.Register, provisioning.Register, settings.Register, webhooks.Register, logexport.Register, oidc.Register, sshca.Register, avatars.Register, approval.Register} {
 		if err := register(apiMux, deps); err != nil {
 			return nil, err
 		}

@@ -45,6 +45,7 @@ func TestRotateSecretKey(t *testing.T) {
 	approvalID, err := st.CreateApprovalRequest(ctx, store.ApprovalRequest{Action: "global-admin", Summary: "Set roles", TargetType: "user", TargetLabel: "Ada", Method: "PUT", Path: "/api/v1/users/x/roles", Body: []byte("approval-body"), State: "null", Requester: store.NamedRef{ID: u.ID}, ExpiresAt: time.Now().Add(time.Hour)})
 	must(err)
 	must(st.SetBotProtectionSecret(ctx, "bot-secret"))
+	must(st.SaveLogExport(ctx, store.LogExport{Protocol: "otlp-http", Endpoint: "https://otel.example.com/v1/logs"}, "Authorization=Bearer otel"))
 	sourceID, err := st.CreateComplianceSource(ctx, store.ComplianceSource{Name: "Intune", Kind: "intune", TenantID: "contoso", ClientID: "halo", MaxAgeMinutes: 1440}, "intune-secret")
 	must(err)
 
@@ -54,7 +55,7 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	rotation, err := st.RotateSecretKey(ctx, next)
 	must(err)
-	if len(rotation.Resealed) != 16 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
+	if len(rotation.Resealed) != 17 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
 		t.Fatalf("resealed: %+v", rotation.Resealed)
 	}
 	if !slices.Equal(rotation.RecoveryCodeUsers, []string{"ada@example.com"}) {
@@ -92,7 +93,9 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	source, err := rotated.GetComplianceSource(ctx, sourceID)
 	must(err)
-	for want, sealed := range map[string][]byte{"totp-seed": totp[0].Sealed, "scim-token": provisioning.TokenSealed, "client-secret": provider.SecretSealed, "intune-secret": source.Sealed,
+	export, err := rotated.GetLogExport(ctx)
+	must(err)
+	for want, sealed := range map[string][]byte{"totp-seed": totp[0].Sealed, "Authorization=Bearer otel": export.HeadersSealed, "scim-token": provisioning.TokenSealed, "client-secret": provider.SecretSealed, "intune-secret": source.Sealed,
 		"https://checks.example.com/hook": hook.URLSealed, "hook-secret": hook.SecretSealed} {
 		if plain, err := rotated.Sealer.Open(sealed); err != nil || string(plain) != want {
 			t.Fatalf("open %s with the new key: %q %v", want, plain, err)
