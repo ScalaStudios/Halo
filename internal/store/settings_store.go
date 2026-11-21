@@ -23,6 +23,17 @@ type Theme struct {
 	Link       string `json:"link"`
 }
 
+type ClientPolicy struct {
+	ApplicationType    string   `json:"applicationType"`
+	RequirePAR         bool     `json:"requirePar"`
+	RequirePKCE        bool     `json:"requirePkce"`
+	RequireDPoP        bool     `json:"requireDpop"`
+	AllowedAuthMethods []string `json:"allowedAuthMethods"`
+	MaxAccessTokenTTL  int      `json:"maxAccessTokenTtl"`
+	MaxIDTokenTTL      int      `json:"maxIdTokenTtl"`
+	MaxRefreshTokenTTL int      `json:"maxRefreshTokenTtl"`
+}
+
 type Settings struct {
 	OrganizationName     string   `json:"organizationName"`
 	ContactEmail         string   `json:"contactEmail"`
@@ -55,7 +66,8 @@ type Settings struct {
 
 	ImpersonationGroups []string `json:"impersonationGroupIds"`
 
-	ClientRegistration string `json:"clientRegistration"`
+	ClientRegistration string         `json:"clientRegistration"`
+	ClientPolicies     []ClientPolicy `json:"clientPolicies"`
 
 	BotProtection        string `json:"botProtection"`
 	BotProtectionSiteKey string `json:"botProtectionSiteKey"`

@@ -294,6 +294,7 @@ func (h *handlers) setApplicationSAML(w http.ResponseWriter, r *http.Request, ac
 
 func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, actor store.User) error {
 	var in struct {
+		clientAuthChange
 		Name           string     `json:"name"`
 		Description    string     `json:"description"`
 		Protocol       string     `json:"protocol"`
@@ -385,6 +386,10 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 	var app store.Application
 	var secret *string
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+		policies, err := clientPolicies(r.Context(), tx, in.Protocol, in.Type, entityID)
+		if err != nil {
+			return err
+		}
 		created, err := tx.CreateApplication(r.Context(), store.NewApplication{
 			Name:           name,
 			Description:    strings.TrimSpace(in.Description),
@@ -405,6 +410,25 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 		if err != nil {
 			return err
 		}
+		next := created
+		changes, err := in.clientAuthChange.apply(created, &next)
+		if err != nil {
+			return err
+		}
+		if next.FAPI2Profile {
+			if err := tx.Keys.Supports(next.TokenPolicy.IDTokenAlg); err != nil {
+				return httpx.Invalid(err.Error() + ".")
+			}
+		}
+		applyClientPolicyDefaults(&next, policies)
+		if err := checkClientPolicies(next, policies); err != nil {
+			return err
+		}
+		if len(policies) > 0 || len(changes) > 0 {
+			if err := tx.UpdateApplication(r.Context(), next); err != nil {
+				return err
+			}
+		}
 		if in.Protocol == "saml" {
 			if err := tx.SetSAMLSettings(r.Context(), created.ID, entityID, in.RedirectURIs, settings); err != nil {
 				return err
@@ -421,7 +445,7 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 				return err
 			}
 			secret = &value
-		} else if in.Protocol != "bookmark" && in.Protocol != "forward-auth" && (in.Type == "web" || in.Type == "service") {
+		} else if in.Protocol != "bookmark" && in.Protocol != "forward-auth" && (in.Type == "web" || in.Type == "service") && next.TokenEndpointAuthMethod != oidc.PrivateKeyJWT {
 			_, value, err := tx.AddClientSecret(r.Context(), created.ID, "Initial", secretLifetime)
 			if err != nil {
 				return err
@@ -574,6 +598,21 @@ func (h *handlers) setApplicationStatus(status string) handler {
 			}
 		}
 		err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+			if status == "active" {
+				policies, err := clientPolicies(r.Context(), tx, app.Protocol, app.Type, app.ClientID)
+				if err != nil {
+					return err
+				}
+				if len(policies) != 0 {
+					current, err := tx.GetApplication(r.Context(), app.ID)
+					if err != nil {
+						return found(err, "This application")
+					}
+					if err := checkClientPolicies(current, policies); err != nil {
+						return err
+					}
+				}
+			}
 			var err error
 			if approving {
 				err = tx.ApproveRegistration(r.Context(), app.ID, reviewed.RedirectURIs, append([]string{}, reviewed.PostLogoutURIs...))
@@ -955,6 +994,13 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		}
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+		policies, err := clientPolicies(r.Context(), tx, next.Protocol, next.Type, next.ClientID)
+		if err != nil {
+			return err
+		}
+		if err := checkClientPolicies(next, policies); err != nil {
+			return err
+		}
 		if saveGroups != nil {
 			if err := saveGroups(tx); err != nil {
 				return err

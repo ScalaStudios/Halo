@@ -74,6 +74,7 @@ var fields = []struct {
 	{"impersonationGroupIds", "groups whose members can be impersonated", true},
 	{"reauthMinutes", "re-authentication interval", true},
 	{"clientRegistration", "client registration", false},
+	{"clientPolicies", "OAuth client policies", true},
 	{"botProtection", "bot protection", false},
 	{"botProtectionSiteKey", "bot protection site key", false},
 	{"signInLogDays", "sign-in log retention", true},
@@ -228,18 +229,23 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	next.RiskResponses = slices.Clone(before.RiskResponses)
 	next.FeaturesOff = slices.Clone(before.FeaturesOff)
 	var rules []store.AuthenticatorRule
+	var clientPolicies []store.ClientPolicy
 	in := struct {
 		store.Settings
 		BotProtectionSecret           string                     `json:"botProtectionSecret"`
 		IdentityProofingAPIKey        string                     `json:"identityProofingApiKey"`
 		IdentityProofingWebhookSecret string                     `json:"identityProofingWebhookSecret"`
 		AuthenticatorRules            *[]store.AuthenticatorRule `json:"authenticatorRules"`
+		ClientPolicies                *[]store.ClientPolicy      `json:"clientPolicies"`
 		ConfirmFeatures               bool                       `json:"confirmFeatures"`
-	}{Settings: next, AuthenticatorRules: &rules}
+	}{Settings: next, AuthenticatorRules: &rules, ClientPolicies: &clientPolicies}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
 	next = in.Settings
+	if in.ClientPolicies == nil || clientPolicies != nil {
+		next.ClientPolicies = clientPolicies
+	}
 	if in.AuthenticatorRules == nil || rules != nil {
 		next.AuthenticatorRules = []store.AuthenticatorRule{}
 		for _, rule := range rules {
@@ -620,6 +626,9 @@ func validate(s store.Settings) error {
 		return httpx.Invalid("Keep between 1 and 365 scheduled exports.")
 	case slices.ContainsFunc(s.FeaturesOff, func(id string) bool { return !features.Known(id) }):
 		return httpx.Invalid("One of the features to turn off does not exist. Choose features from GET /api/v1/features.")
+	}
+	if err := validateClientPolicies(s.ClientPolicies); err != nil {
+		return err
 	}
 	for i, r := range s.RiskResponses {
 		switch {

@@ -137,6 +137,24 @@ func TestClientRegistrationIsOffByDefault(t *testing.T) {
 	}
 }
 
+func TestSharedSecretRegistrationIgnoresUnusedPublicKeys(t *testing.T) {
+	st, h := registrationStack(t, "open")
+	rec := oauth(t, h, http.MethodPost, "/oauth2/register", "", map[string]any{
+		"redirect_uris":              []string{toolCallback},
+		"token_endpoint_auth_method": "client_secret_basic",
+		"jwks":                       testKeys(t, false),
+	})
+	expect(t, rec, http.StatusCreated)
+	client := decode[registration](t, rec)
+	app, err := st.GetApplicationByClientID(context.Background(), client.ClientID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.ClientSecret == "" || len(app.JWKS) != 0 || app.JWKSURI != "" || strings.Contains(rec.Body.String(), `"jwks"`) {
+		t.Fatal("the client should receive a secret and Halo should discard unused public keys")
+	}
+}
+
 func TestOpenRegistrationGetsNoAdministratorSettings(t *testing.T) {
 	st, h := registrationStack(t, "open")
 	ctx := context.Background()
@@ -396,11 +414,10 @@ func TestRegistrationPrivateKeyJWT(t *testing.T) {
 	ctx := context.Background()
 	keys := testKeys(t, false)
 	for name, body := range map[string]map[string]any{
-		"jwks and jwks_uri":         {"token_endpoint_auth_method": "private_key_jwt", "jwks": keys, "jwks_uri": "https://tool.example.com/jwks.json"},
-		"private key in jwks":       {"token_endpoint_auth_method": "private_key_jwt", "jwks": testKeys(t, true)},
-		"private jwks_uri":          {"token_endpoint_auth_method": "private_key_jwt", "jwks_uri": "https://127.0.0.1/jwks.json"},
-		"native private key jwt":    {"token_endpoint_auth_method": "private_key_jwt", "application_type": "native", "jwks": keys},
-		"jwks with a client secret": {"jwks": keys},
+		"jwks and jwks_uri":      {"token_endpoint_auth_method": "private_key_jwt", "jwks": keys, "jwks_uri": "https://tool.example.com/jwks.json"},
+		"private key in jwks":    {"token_endpoint_auth_method": "private_key_jwt", "jwks": testKeys(t, true)},
+		"private jwks_uri":       {"token_endpoint_auth_method": "private_key_jwt", "jwks_uri": "https://127.0.0.1/jwks.json"},
+		"native private key jwt": {"token_endpoint_auth_method": "private_key_jwt", "application_type": "native", "jwks": keys},
 	} {
 		body["redirect_uris"] = []string{toolCallback}
 		if rec := oauth(t, h, http.MethodPost, "/oauth2/register", "", body); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_client_metadata") {

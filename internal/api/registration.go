@@ -164,8 +164,8 @@ func (m *clientMetadata) check(allowed []string, keys *kms.Keys) (string, []stri
 	default:
 		return "", nil, invalid(`Set token_endpoint_auth_method to "client_secret_basic", "client_secret_post", "private_key_jwt" or "none".`)
 	}
-	if m.TokenEndpointAuthMethod != oidc.PrivateKeyJWT && (len(m.JWKS) > 0 || m.JWKSURI != "") {
-		return "", nil, invalid(`Halo only uses jwks and jwks_uri to check private_key_jwt client assertions. Leave them out, or set token_endpoint_auth_method to "private_key_jwt".`)
+	if m.TokenEndpointAuthMethod != oidc.PrivateKeyJWT {
+		m.JWKS, m.JWKSURI = nil, ""
 	}
 	m.JWKS = compactJSON(m.JWKS)
 	if err := clientKeys(m.TokenEndpointAuthMethod, m.JWKS, m.JWKSURI); err != nil {
@@ -295,6 +295,10 @@ func (h *registrar) register(w http.ResponseWriter, r *http.Request) error {
 	awaiting := settings.ClientRegistration == "approval"
 	out := registeredClient{}
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
+		policies, err := clientPolicies(ctx, tx, "oidc", appType, "")
+		if err != nil {
+			return err
+		}
 		app, err := tx.CreateApplication(ctx, store.NewApplication{
 			Name:             in.ClientName,
 			Protocol:         "oidc",
@@ -310,8 +314,12 @@ func (h *registrar) register(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if in.TokenEndpointAuthMethod == oidc.PrivateKeyJWT || in.DPoPBoundAccessTokens || in.RequirePushedRequests {
-			in.registered(&app)
+		in.registered(&app)
+		applyClientPolicyDefaults(&app, policies)
+		if err := checkClientPolicies(app, policies); err != nil {
+			return metadataError("invalid_client_metadata", err)
+		}
+		if len(policies) > 0 || in.TokenEndpointAuthMethod == oidc.PrivateKeyJWT || in.DPoPBoundAccessTokens || in.RequirePushedRequests {
 			if err := tx.UpdateApplication(ctx, app); err != nil {
 				return err
 			}
@@ -397,6 +405,13 @@ func (h *registrar) update(w http.ResponseWriter, r *http.Request) error {
 		return httpx.JSON(w, http.StatusOK, h.describe(app))
 	}
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
+		policies, err := clientPolicies(ctx, tx, next.Protocol, next.Type, next.ClientID)
+		if err != nil {
+			return err
+		}
+		if err := checkClientPolicies(next, policies); err != nil {
+			return metadataError("invalid_client_metadata", err)
+		}
 		if err := tx.UpdateApplication(ctx, next); err != nil {
 			return err
 		}

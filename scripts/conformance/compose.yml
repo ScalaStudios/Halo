@@ -71,7 +71,7 @@ services:
       OIDC_GOOGLE_SECRET: google-secret
       OIDC_GITLAB_CLIENTID: gitlab-client
       OIDC_GITLAB_SECRET: gitlab-secret
-      SERVER_TOMCAT_REMOTEIP_INTERNALPROXIES: '198\.18\.28\.\d{1,3}'
+      SERVER_TOMCAT_REMOTEIP_INTERNALPROXIES: '198\.18\.${CONFORMANCE_NETWORK_OCTET:-28}\.\d{1,3}'
     depends_on:
       - mongodb
 
@@ -105,4 +105,4 @@ networks:
   default:
     ipam:
       config:
-        - subnet: 198.18.28.0/24
+        - subnet: 198.18.${CONFORMANCE_NETWORK_OCTET:-28}.0/24
