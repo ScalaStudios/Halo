@@ -940,3 +940,193 @@ export function SignUpForm({ settings, groups, domains, canEdit }: { settings: S
     </Card>
   );
 }
+
+const PROVIDERS: Record<Settings["identityProofingProvider"], { label: string; hint: string }> = {
+  "": { label: "In person only", hint: "A user or helpdesk administrator checks each person and records it on their page or in the sign-up queue." },
+  stripe: { label: "Stripe Identity", hint: "People photograph an identity document and their face on Stripe's page. Administrators can still check people in person." },
+  generic: { label: "Another provider", hint: "Any service that follows Halo's session and webhook contract, described in the API reference under the identity proofing webhook." },
+};
+
+export function IdentityProofingForm({
+  settings,
+  groups,
+  issuer,
+  keySet,
+  webhookSecretSet,
+  canEdit,
+}: {
+  settings: Settings;
+  groups: Group[];
+  issuer: string;
+  keySet: boolean;
+  webhookSecretSet: boolean;
+  canEdit: boolean;
+}) {
+  const { saving, failure, save } = useSaveSettings();
+  const [invites, setInvites] = useState(settings.identityProofingInvites);
+  const [signUps, setSignUps] = useState(settings.identityProofingSignUps);
+  const [groupIds, setGroupIds] = useState(() => settings.identityProofingGroupIds.filter((id) => groups.some((g) => g.id === id)));
+  const [provider, setProvider] = useState(settings.identityProofingProvider);
+  const [name, setName] = useState(settings.identityProofingName);
+  const [endpoint, setEndpoint] = useState(settings.identityProofingEndpoint);
+  const [apiKey, setApiKey] = useState("");
+  const [webhookSecret, setWebhookSecret] = useState("");
+  const [attempted, setAttempted] = useState(false);
+  const generic = provider === "generic";
+  const newProvider = provider !== settings.identityProofingProvider || !keySet;
+  const errors = {
+    name: generic && (!name.trim() || name.trim().length > 60) ? "Name the provider in up to 60 characters. People see it on their setup page." : undefined,
+    endpoint: generic && !/^https:\/\/[^\s/@]+/.test(endpoint.trim()) ? "Enter the provider's sessions address as an https URL." : undefined,
+    apiKey:
+      provider && newProvider && !apiKey.trim()
+        ? "Enter the API key from the provider."
+        : provider === "stripe" && apiKey.trim() && !/^(sk|rk)_/.test(apiKey.trim())
+          ? "Enter a Stripe secret key or restricted key, which starts with sk_ or rk_."
+          : undefined,
+    webhookSecret: provider === "stripe" && webhookSecret.trim() && !webhookSecret.trim().startsWith("whsec_") ? "Enter the signing secret of the Stripe webhook endpoint, which starts with whsec_." : undefined,
+  };
+  const body = {
+    identityProofingInvites: invites,
+    identityProofingSignUps: signUps,
+    identityProofingGroupIds: groupIds,
+    identityProofingProvider: provider,
+    identityProofingName: generic ? name.trim() : "",
+    identityProofingEndpoint: generic ? endpoint.trim() : "",
+  };
+  const dirty =
+    JSON.stringify(body) !==
+      JSON.stringify({
+        identityProofingInvites: settings.identityProofingInvites,
+        identityProofingSignUps: settings.identityProofingSignUps,
+        identityProofingGroupIds: settings.identityProofingGroupIds,
+        identityProofingProvider: settings.identityProofingProvider,
+        identityProofingName: settings.identityProofingName,
+        identityProofingEndpoint: settings.identityProofingEndpoint,
+      }) ||
+    apiKey.trim() !== "" ||
+    webhookSecret.trim() !== "";
+  const chosen = groups.filter((g) => settings.identityProofingGroupIds.includes(g.id)).map((g) => g.name);
+  const who = [settings.identityProofingInvites ? "Invited people" : "", settings.identityProofingSignUps ? "people who sign up" : ""].filter(Boolean).join(" and ");
+  const summary = who ? `${who.charAt(0).toUpperCase()}${who.slice(1)}${chosen.length ? ` in ${joinList(chosen)}` : ""} need an identity check before their account is activated.` : "Identity checks are off.";
+
+  function submit() {
+    setAttempted(true);
+    if (Object.values(errors).some(Boolean)) return;
+    void save(
+      { ...body, ...(apiKey.trim() ? { identityProofingApiKey: apiKey.trim() } : {}), ...(webhookSecret.trim() ? { identityProofingWebhookSecret: webhookSecret.trim() } : {}) },
+      invites || signUps ? "Identity checks saved" : "Identity checks turned off",
+      invites || signUps ? "Accounts that need a check stay inactive until one succeeds. Setup links follow within 30 seconds." : "Accounts activate without an identity check within 30 seconds.",
+    ).then((saved) => {
+      if (!saved) return;
+      setApiKey("");
+      setWebhookSecret("");
+    });
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Identity checks"
+        description="Keeps an account inactive until someone confirms the person is who the invitation or sign-up names. Halo stores only how and when they were checked and the result, never the details from their document."
+      />
+      <CardBody>
+        {canEdit ? (
+          <form
+            noValidate
+            className="flex max-w-xl flex-col gap-6"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submit();
+            }}
+          >
+            <fieldset className="flex flex-col gap-3">
+              <legend className="mb-3 text-label text-fg">Who needs a check</legend>
+              <label className="flex cursor-pointer items-start gap-3">
+                <Checkbox className="mt-0.5" checked={invites} onChange={(event) => setInvites(event.target.checked)} />
+                <span className="flex flex-col">
+                  <span className="text-body-sm text-fg">Invited people</span>
+                  <span className="text-caption text-fg-3">Their setup link and every way to sign in stay closed until the check succeeds. People who are already active aren&apos;t affected.</span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-3">
+                <Checkbox className="mt-0.5" checked={signUps} onChange={(event) => setSignUps(event.target.checked)} />
+                <span className="flex flex-col">
+                  <span className="text-body-sm text-fg">People who sign up</span>
+                  <span className="text-caption text-fg-3">Their sign-up waits in the queue on the Users page until the check succeeds, even when anyone at an allowed domain can sign up.</span>
+                </span>
+              </label>
+            </fieldset>
+            <CheckList
+              legend="Only for members of"
+              options={groups.map((g) => ({ id: g.id, name: g.name }))}
+              selected={groupIds}
+              onToggle={(id, on) => setGroupIds((current) => (on ? [...current, id] : current.filter((v) => v !== id)))}
+              empty="There are no groups yet."
+            />
+            <p className="text-caption text-fg-3">Choose no group to check everyone above. Sign-ups count as members of the groups new accounts join.</p>
+            <Field label="Verification provider" hint={PROVIDERS[provider].hint}>
+              {(props) => (
+                <Select {...props} value={provider} onChange={(event) => setProvider(event.target.value as Settings["identityProofingProvider"])}>
+                  {(Object.keys(PROVIDERS) as Settings["identityProofingProvider"][]).map((value) => (
+                    <option key={value} value={value}>
+                      {PROVIDERS[value].label}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            {generic ? (
+              <>
+                <Field label="Provider name" hint="People see it on their setup page." error={attempted ? errors.name : undefined}>
+                  {(props) => <Input {...props} value={name} onChange={(event) => setName(event.target.value)} placeholder="Acme Verify" />}
+                </Field>
+                <Field label="Sessions address" hint="Halo creates a verification session here for each check." error={attempted ? errors.endpoint : undefined}>
+                  {(props) => (
+                    <Input {...props} mono autoComplete="off" spellCheck={false} value={endpoint} onChange={(event) => setEndpoint(event.target.value)} placeholder="https://verify.example.com/sessions" />
+                  )}
+                </Field>
+              </>
+            ) : null}
+            {provider ? (
+              <>
+                <Field
+                  label="API key"
+                  hint={keySet && !newProvider ? "Leave empty to keep the current key. Halo stores it encrypted and never shows it again." : "Stored encrypted. Halo never shows it again."}
+                  error={attempted ? errors.apiKey : undefined}
+                >
+                  {(props) => <Input {...props} mono type="password" autoComplete="new-password" spellCheck={false} value={apiKey} onChange={(event) => setApiKey(event.target.value)} />}
+                </Field>
+                <CopyField
+                  label="Webhook address"
+                  value={`${issuer}/api/v1/identity-proofing/webhook`}
+                  hint={provider === "stripe" ? "Add it as a webhook endpoint in Stripe for the identity.verification_session events." : "Give it to the provider for result notifications."}
+                />
+                <Field
+                  label="Webhook signing secret"
+                  hint={
+                    webhookSecretSet
+                      ? "Leave empty to keep the current secret."
+                      : "Optional. Without it, Halo refuses webhooks and asks the provider for each result instead, when the person returns and every 10 minutes."
+                  }
+                  error={attempted ? errors.webhookSecret : undefined}
+                >
+                  {(props) => (
+                    <Input {...props} mono type="password" autoComplete="new-password" spellCheck={false} value={webhookSecret} onChange={(event) => setWebhookSecret(event.target.value)} />
+                  )}
+                </Field>
+              </>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-4">
+              <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>
+                Save identity checks
+              </Button>
+              <ActionError message={failure} />
+            </div>
+          </form>
+        ) : (
+          <ReadOnlyNote>{`${summary} Only security and global administrators can change identity checks.`}</ReadOnlyNote>
+        )}
+      </CardBody>
+    </Card>
+  );
+}

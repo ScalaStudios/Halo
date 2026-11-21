@@ -48,6 +48,19 @@ export type User = {
 
 export type PosixAccount = { username: string; uidNumber: number; gidNumber: number; loginShell: string; homeDirectory: string };
 
+export type IdentityProof = {
+  id: string;
+  method: "in-person" | "provider";
+  provider: "" | "generic" | "stripe";
+  reference: string;
+  status: "pending" | "verified" | "failed";
+  document: "" | "passport" | "national-id" | "driving-licence" | "residence-permit" | "other";
+  note: string;
+  checkedBy: NamedRef | null;
+  createdAt: string;
+  completedAt: string | null;
+};
+
 export type AttributeType = "string" | "number" | "boolean" | "date" | "list";
 export type AttributeValue = string | number | boolean | string[];
 

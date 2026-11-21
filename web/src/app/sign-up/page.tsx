@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { AuthFrame } from "@/components/auth/auth-frame";
-import { EnrollFlow, type Enrollee } from "@/components/auth/enroll-flow";
+import { EnrollFlow, ResumeAfterCheck, type Enrollee } from "@/components/auth/enroll-flow";
 import { SignUpFlow } from "@/components/auth/sign-up-flow";
 import { apiPeek } from "@/lib/api/server";
 import type { Challenge } from "@/lib/settings-types";
@@ -11,7 +11,14 @@ export const metadata: Metadata = {
 };
 
 export default async function SignUpPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { token } = await searchParams;
+  const { token, proofing } = await searchParams;
+  if (typeof token !== "string" && proofing === "done") {
+    return (
+      <AuthFrame>
+        <ResumeAfterCheck signUp />
+      </AuthFrame>
+    );
+  }
   if (typeof token === "string") {
     const { data, problem } = await apiPeek<Enrollee>(`/auth/sign-up?token=${encodeURIComponent(token)}`);
     return (
