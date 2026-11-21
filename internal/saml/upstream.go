@@ -3,6 +3,10 @@ package saml
 import (
 	"cmp"
 	"context"
+	"crypto"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/xml"
 	"errors"
@@ -16,6 +20,7 @@ import (
 
 	"github.com/beevik/etree"
 	"github.com/crewjam/saml"
+	dsig "github.com/russellhaering/goxmldsig"
 
 	"halo/internal/config"
 	"halo/internal/httpx"
@@ -31,30 +36,29 @@ type Profile struct {
 	Claims  map[string]any
 }
 
-func serviceProvider(ctx context.Context, st *store.Store, cfg config.Config, p store.IdentityProvider) (*saml.ServiceProvider, error) {
+func serviceProvider(ctx context.Context, st *store.Store, cfg config.Config, p store.IdentityProvider) (*saml.ServiceProvider, crypto.Signer, error) {
 	var idp saml.EntityDescriptor
 	if err := xml.Unmarshal([]byte(p.SAMLMetadata), &idp); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	key, cert, err := signingKey(ctx, st, cfg.Hostname())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	method := rsaSHA256
+	local := key
 	if external(key) {
-		key, cert, method = nil, nil, ""
+		local = nil
 	}
 	base := cfg.PublicURL.JoinPath("saml", "sp", p.ID)
 	metadata := base.JoinPath("metadata")
 	entityID := metadata.String()
 	return &saml.ServiceProvider{
 		EntityID:          entityID,
-		Key:               key,
+		Key:               local,
 		Certificate:       cert,
 		MetadataURL:       *metadata,
 		AcsURL:            *base.JoinPath("acs"),
 		IDPMetadata:       &idp,
-		SignatureMethod:   method,
 		AuthnNameIDFormat: saml.UnspecifiedNameIDFormat,
 		ValidateAudienceRestriction: func(a *saml.Assertion) error {
 			if len(a.Conditions.AudienceRestrictions) == 0 {
@@ -67,7 +71,7 @@ func serviceProvider(ctx context.Context, st *store.Store, cfg config.Config, p 
 			}
 			return nil
 		},
-	}, nil
+	}, key, nil
 }
 
 func singleSignOn(md *saml.EntityDescriptor) (string, string) {
@@ -81,7 +85,7 @@ func singleSignOn(md *saml.EntityDescriptor) (string, string) {
 }
 
 func Begin(ctx context.Context, w http.ResponseWriter, st *store.Store, cfg config.Config, p store.IdentityProvider, relayState string, save func(requestID string) error) (string, error) {
-	sp, err := serviceProvider(ctx, st, cfg, p)
+	sp, key, err := serviceProvider(ctx, st, cfg, p)
 	if err != nil {
 		return "", err
 	}
@@ -89,6 +93,11 @@ func Begin(ctx context.Context, w http.ResponseWriter, st *store.Store, cfg conf
 	req, err := sp.MakeAuthenticationRequest(location, binding, saml.HTTPPostBinding)
 	if err != nil {
 		return "", err
+	}
+	if binding == saml.HTTPPostBinding {
+		if err := signRequest(req, key, sp.Certificate); err != nil {
+			return "", err
+		}
 	}
 	if err := save(req.ID); err != nil {
 		return "", err
@@ -98,6 +107,17 @@ func Begin(ctx context.Context, w http.ResponseWriter, st *store.Store, cfg conf
 		if err != nil {
 			return "", err
 		}
+		u.RawQuery += "&SigAlg=" + url.QueryEscape(rsaSHA256)
+		destination, err := url.Parse(req.Destination)
+		if err != nil {
+			return "", err
+		}
+		digest := sha256.Sum256([]byte(strings.TrimPrefix(u.RawQuery[len(destination.RawQuery):], "&")))
+		signature, err := key.Sign(rand.Reader, digest[:], crypto.SHA256)
+		if err != nil {
+			return "", err
+		}
+		u.RawQuery += "&Signature=" + url.QueryEscape(base64.StdEncoding.EncodeToString(signature))
 		return u.String(), nil
 	}
 	doc := etree.NewDocument()
@@ -110,11 +130,28 @@ func Begin(ctx context.Context, w http.ResponseWriter, st *store.Store, cfg conf
 	return "", nil
 }
 
+func signRequest(req *saml.AuthnRequest, key crypto.Signer, cert *x509.Certificate) error {
+	signing, err := dsig.NewSigningContext(key, [][]byte{cert.Raw})
+	if err != nil {
+		return err
+	}
+	signing.Canonicalizer = dsig.MakeC14N10ExclusiveCanonicalizerWithPrefixList("")
+	if err := signing.SetSignatureMethod(rsaSHA256); err != nil {
+		return err
+	}
+	signed, err := signing.SignEnveloped(req.Element())
+	if err != nil {
+		return err
+	}
+	req.Signature = signed.Child[len(signed.Child)-1].(*etree.Element)
+	return nil
+}
+
 func SignIn(ctx context.Context, st *store.Store, cfg config.Config, p store.IdentityProvider, response, requestID string) (Profile, error) {
 	if requestID == "" {
 		return Profile{}, errors.New("the sign-in has no SAML request to answer")
 	}
-	sp, err := serviceProvider(ctx, st, cfg, p)
+	sp, _, err := serviceProvider(ctx, st, cfg, p)
 	if err != nil {
 		return Profile{}, err
 	}
@@ -248,11 +285,12 @@ func (h *handler) serviceProviderMetadata(w http.ResponseWriter, r *http.Request
 		internal(w, r, err)
 		return
 	}
-	sp, err := serviceProvider(r.Context(), h.st, h.cfg, p)
+	sp, _, err := serviceProvider(r.Context(), h.st, h.cfg, p)
 	if err != nil {
 		internal(w, r, err)
 		return
 	}
+	sp.SignatureMethod = rsaSHA256
 	md := sp.Metadata()
 	descriptor := &md.SPSSODescriptors[0]
 	descriptor.AssertionConsumerServices = descriptor.AssertionConsumerServices[:1]

@@ -361,7 +361,7 @@ Labels never hold people, email addresses, IP addresses or client IDs, and HTTP 
 | `halo_ldap_binds_total` | `kind`: `application`, `person`, or `other` for anonymous binds and unknown DNs; `result`: `success`, `failure` |
 | `halo_ldap_searches_total` | `result`: `success`, `failure` |
 | `halo_http_requests_total`, `halo_http_request_duration_seconds` | `route`, plus `status` on the counter |
-| `halo_kms_request_duration_seconds`, `halo_kms_errors_total` | `operation`: `decrypt`, `create`, `read`, `sign`, `ping`; requests to Vault Transit |
+| `halo_kms_request_duration_seconds`, `halo_kms_errors_total` | `operation`: `decrypt`, `create`, `read`, `sign`, `ping`, `token` (credentials from instance metadata or an OAuth token endpoint), `renew` (Vault token renewal); requests to the [external key manager](#keys-in-an-external-key-manager) |
 | `halo_db_pool_acquired_connections`, `_idle_`, `_total_`, `_max_connections` | |
 | `go_goroutines`, `go_memstats_heap_alloc_bytes`, `go_memstats_sys_bytes`, `go_gc_cycles_completed` | |
 
@@ -381,7 +381,7 @@ groups:
         expr: sum(increase(halo_log_export_events_total{outcome=~"failed|rejected|dropped"}[15m])) > 0
       - alert: HaloLockouts
         expr: sum(increase(halo_lockouts_total[15m])) > 10
-      - alert: HaloVaultFailing
+      - alert: HaloKeyManagerFailing
         expr: sum(increase(halo_kms_errors_total[5m])) > 0
 ```
 
@@ -396,21 +396,35 @@ Halo can stream every sign-in event and audit event, with the audit event's chan
 
 Each event is the same JSON as a webhook's, in the syslog message or the OTLP log record body, with secret values already redacted from audit changes. Syslog messages use the `authpriv` facility, the `halo` app name and the event type as the message ID. Halo sends new events every 10 seconds, starting with those recorded after the exporter is first saved. When the collector is down, events wait in the database and Halo retries with a growing delay, up to 5 minutes, so sign-ins never wait for the collector. The console shows the last successful send and how many events are waiting. When more than 100,000 events of one kind are waiting, the oldest are dropped, and an outage longer than the log retention loses the events the retention deletes. To trust a private certificate authority for syslog over TLS, point `SSL_CERT_FILE` at a bundle that holds the system certificates and your authority, since it replaces the system bundle for every connection Halo makes.
 
-### Keys in HashiCorp Vault
+### Keys in an external key manager
 
-Halo can use the [Transit secrets engine](https://developer.hashicorp.com/vault/docs/secrets/transit) of HashiCorp Vault in two ways, separately or together:
+Halo can keep its keys in HashiCorp Vault Transit, AWS KMS, Google Cloud KMS, Azure Key Vault or a PKCS #11 hardware security module, in two ways, separately or together:
 
-- **Wrap `HALO_SECRET_KEY`.** The environment then holds only the key encrypted by Vault, so a copy of the environment and a database backup are not enough to read stored secrets. Halo decrypts it once when it starts and doesn't start while Vault is unreachable. Restoring a backup then also needs the wrapping key in Vault.
-- **Sign inside Vault.** New OpenID Connect, SAML and SSH user and host certificate authority keys are created in Transit as keys that can't be exported. Halo sends Vault what it needs signed, never holds the private key, and publishes the public key it reads from Vault. Halo starts only when it can reach Vault and read every Vault key it signs with. While Vault is unreachable, requests that need a signature fail; Halo never falls back to a key of its own.
+- **Wrap `HALO_SECRET_KEY`.** The environment then holds only the key encrypted by the key manager, so a copy of the environment and a database backup are not enough to read stored secrets. Halo decrypts it once when it starts and doesn't start while the key manager is unreachable. Restoring a backup then also needs the wrapping key.
+- **Sign inside the key manager.** New OpenID Connect, SAML and SSH user and host certificate authority keys are created there as keys that can't be exported. Halo sends what it needs signed, never holds the private key, and publishes the public key it reads back. Halo starts only when it can authenticate to the key manager and read every external key it signs with. While the key manager is unreachable, requests that need a signature fail; Halo never falls back to a key of its own. Authentication requests to upstream SAML identity providers are signed with the SAML key wherever it lives.
 
-Set these on the server:
+Set one key manager. Each has a setting that selects it and two that work the same everywhere, `HALO_<manager>_WRAPPING_KEY` and `HALO_<manager>_SIGNING=1`. With signing on, new keys are created in the key manager. Existing keys stay in the database until they are rotated: rotate the OpenID Connect keys and the SAML certificate under Settings, Security defaults, and the console shows where each of those keys lives. The SSH user and host certificate authorities have no rotation, so each is created in the key manager only on an installation that doesn't have it yet.
 
-- `HALO_VAULT_ADDR`: Vault's address, such as `https://vault.example.com:8200`. Plain `http` is accepted only to the loopback address, such as a Vault Proxy at `http://127.0.0.1:8100`, or with `HALO_DEV=1`. Halo doesn't follow redirects.
-- `HALO_VAULT_TOKEN`: a token with the policy below. Halo doesn't renew it, and Vault revokes a token whose TTL runs out. To keep it renewed, run [Vault Proxy](https://developer.hashicorp.com/vault/docs/agent-and-proxy/proxy/apiproxy) next to Halo with auto-auth and `api_proxy { use_auto_auth_token = true }`, point `HALO_VAULT_ADDR` at it and leave `HALO_VAULT_TOKEN` unset.
+Not every key manager signs with every algorithm. With signing on, Halo refuses to set an application's ID tokens or an API's access tokens to an algorithm the key manager can't sign with, and doesn't start while one is set:
+
+| Key manager | RS256 | ES256 | EdDSA | SSH certificate authorities |
+| --- | --- | --- | --- | --- |
+| Vault Transit | Yes | Yes | Yes | Ed25519 |
+| AWS KMS | Yes | Yes | Yes, for tokens up to 4096 bytes | Ed25519 |
+| Google Cloud KMS | Yes | Yes | Software keys only | Ed25519, or ECDSA P-256 with `HALO_GCP_KMS_HSM=1` |
+| Azure Key Vault | Yes | Yes | No | ECDSA P-256 |
+| PKCS #11 | Yes | Yes | If the token supports `CKM_EDDSA` | Ed25519 |
+
+Every key manager reports to `halo_kms_request_duration_seconds` and `halo_kms_errors_total`. Halo calls Vault and the cloud key managers with the Go standard library, follows no redirects and waits at most 10 seconds for an answer. Their addresses must use https, except to the loopback address or with `HALO_DEV=1`; only the cloud metadata services are reached over plain http.
+
+#### HashiCorp Vault
+
+- `HALO_VAULT_ADDR`: Vault's address, such as `https://vault.example.com:8200`. Plain `http` is accepted only to the loopback address, such as a Vault Proxy at `http://127.0.0.1:8100`, or with `HALO_DEV=1`.
+- `HALO_VAULT_TOKEN`: a token with the policy below. Halo renews it with `auth/token/renew-self` after two thirds of each TTL and logs failed renewals. Vault never extends a token past its maximum TTL, so use a periodic token or give Halo a new token before then. Instead of a token, you can run [Vault Proxy](https://developer.hashicorp.com/vault/docs/agent-and-proxy/proxy/apiproxy) next to Halo with auto-auth and `api_proxy { use_auto_auth_token = true }`, point `HALO_VAULT_ADDR` at it and leave `HALO_VAULT_TOKEN` unset.
 - `HALO_VAULT_NAMESPACE`: the namespace, on Vault Enterprise and HCP Vault Dedicated.
 - `HALO_VAULT_TRANSIT_MOUNT`: where Transit is mounted, `transit` by default.
-- `HALO_VAULT_WRAPPING_KEY`: a Transit encryption key, such as `halo-secret-key`. `HALO_SECRET_KEY` then holds the key encrypted by Vault. Create a new one with `vault write -field=ciphertext transit/encrypt/halo-secret-key plaintext="$(openssl rand -base64 32)"`, or wrap the key of an existing installation with `plaintext="$HALO_SECRET_KEY"`. To rotate the wrapping key, run `vault write -f transit/keys/halo-secret-key/rotate`, then replace `HALO_SECRET_KEY` with the output of `vault write -field=ciphertext transit/rewrap/halo-secret-key ciphertext=<current value>`; stored secrets stay as they are. `halo rotate-secret-key` reads `HALO_NEW_SECRET_KEY` in the same encrypted form.
-- `HALO_VAULT_SIGNING=1`: create new signing keys in Vault, named `halo-key_` and an ID. Existing keys stay in the database until they are rotated: rotate the OpenID Connect keys and the SAML certificate under Settings, Security defaults, and the console shows where each of those keys lives. The SSH user and host certificate authorities have no rotation, so each is created in Vault only on an installation that doesn't have it yet. While the SAML key is in Vault, Halo sends unsigned authentication requests to upstream SAML identity providers.
+- `HALO_VAULT_WRAPPING_KEY`: a Transit encryption key, such as `halo-secret-key`. `HALO_SECRET_KEY` then holds the key encrypted by Vault. Create a new one with `vault write -field=ciphertext transit/encrypt/halo-secret-key plaintext="$(openssl rand -base64 32)"`, or wrap the key of an existing installation with `plaintext="$HALO_SECRET_KEY"`. To rotate the wrapping key, run `vault write -f transit/keys/halo-secret-key/rotate`, then replace `HALO_SECRET_KEY` with the output of `vault write -field=ciphertext transit/rewrap/halo-secret-key ciphertext=<current value>`; stored secrets stay as they are. `halo rotate-secret-key` reads `HALO_NEW_SECRET_KEY` in the same encrypted form, for every key manager.
+- `HALO_VAULT_SIGNING=1`: create new signing keys in Vault, named `halo-key_` and an ID.
 
 The token needs this policy, with the wrapping key's name in the first path:
 
@@ -427,7 +441,63 @@ path "transit/sign/halo-key_*" {
 path "auth/token/lookup-self" {
   capabilities = ["read"]
 }
+path "auth/token/renew-self" {
+  capabilities = ["update"]
+}
 ```
+
+#### AWS KMS
+
+- `HALO_AWS_KMS_REGION`: the Region, such as `eu-central-1`.
+- `HALO_AWS_KMS_ENDPOINT`: another endpoint, such as `https://kms-fips.us-east-1.amazonaws.com` or a VPC endpoint.
+- Credentials: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and, for temporary credentials, `AWS_SESSION_TOKEN`. Without them Halo uses the EC2 instance role through IMDSv2; `AWS_EC2_METADATA_SERVICE_ENDPOINT` changes the metadata address. Halo signs requests with Signature Version 4 itself and doesn't read `~/.aws`, ECS task roles, EKS Pod Identity or IAM roles for service accounts.
+- `HALO_AWS_KMS_WRAPPING_KEY`: a symmetric encryption key's ID, ARN or alias, such as `alias/halo-secret-key`. `HALO_SECRET_KEY` then holds the ciphertext blob, base64 encoded: `aws kms encrypt --key-id alias/halo-secret-key --plaintext fileb://<(openssl rand 32) --query CiphertextBlob --output text`. Halo names the key when it decrypts, so a blob from another key is refused. Rotating the KMS key needs no new blob.
+- `HALO_AWS_KMS_SIGNING=1`: create new signing keys as `RSA_2048`, `ECC_NIST_P256` or `ECC_NIST_EDWARDS25519` keys for `SIGN_VERIFY`, tagged `halo=signing-key`. Halo stores each key's ARN and refuses keys with imported key material. AWS KMS signs at most 4096 bytes with Ed25519, so an EdDSA ID token with many claims fails; use RS256 or ES256 for those applications.
+
+The credentials need this IAM policy, with the wrapping key's ARN in the first statement:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": "kms:Decrypt", "Resource": "arn:aws:kms:eu-central-1:111122223333:key/WRAPPING-KEY-ID" },
+    { "Effect": "Allow", "Action": "kms:CreateKey", "Resource": "*" },
+    { "Effect": "Allow", "Action": "kms:TagResource", "Resource": "*", "Condition": { "StringEquals": { "aws:RequestTag/halo": "signing-key" } } },
+    { "Effect": "Allow", "Action": ["kms:DescribeKey", "kms:GetPublicKey", "kms:Sign"], "Resource": "*", "Condition": { "StringEquals": { "aws:ResourceTag/halo": "signing-key" } } },
+    { "Effect": "Allow", "Action": "kms:ListKeys", "Resource": "*" }
+  ]
+}
+```
+
+#### Google Cloud KMS
+
+- `HALO_GCP_KMS_KEY_RING`: the key ring, such as `projects/acme/locations/europe-west1/keyRings/halo`.
+- `HALO_GCP_KMS_HSM=1`: create signing keys at the `HSM` protection level instead of `SOFTWARE`. Cloud HSM has no Ed25519, so EdDSA isn't available and the SSH certificate authorities use ECDSA P-256.
+- `HALO_GCP_KMS_ENDPOINT`: another endpoint, such as a Private Service Connect address.
+- Credentials: `GOOGLE_APPLICATION_CREDENTIALS`, the path of a service account key file. Without it Halo asks the metadata server for the attached service account's token, on Compute Engine, Cloud Run, and GKE with Workload Identity; `GCE_METADATA_HOST` changes the metadata address. Halo doesn't read user credentials or workload identity federation files.
+- `HALO_GCP_KMS_WRAPPING_KEY`: an encryption key in the key ring, such as `halo-secret-key`. `HALO_SECRET_KEY` then holds the ciphertext, base64 encoded: `openssl rand 32 | gcloud kms encrypt --project acme --location europe-west1 --keyring halo --key halo-secret-key --plaintext-file - --ciphertext-file - | base64 -w0`. Rotating the key needs no new ciphertext.
+- `HALO_GCP_KMS_SIGNING=1`: create new signing keys in the key ring, named `halo-key_` and an ID, with the `RSA_SIGN_PKCS1_2048_SHA256`, `EC_SIGN_P256_SHA256` or `EC_SIGN_ED25519` algorithm. Halo stores each key version's name and refuses imported versions.
+
+Grant the service account `roles/cloudkms.cryptoKeyDecrypter` on the wrapping key and, on the key ring, a custom role with `cloudkms.keyRings.get`, `cloudkms.cryptoKeys.create`, `cloudkms.cryptoKeyVersions.get`, `cloudkms.cryptoKeyVersions.viewPublicKey` and `cloudkms.cryptoKeyVersions.useToSign`.
+
+#### Azure Key Vault
+
+- `HALO_AZURE_KEY_VAULT_URL`: the vault, such as `https://acme-halo.vault.azure.net`, or a Managed HSM, such as `https://acme-halo.managedhsm.azure.net`. Halo asks for tokens for the vault's domain and sends them only to this address.
+- `HALO_AZURE_KEY_VAULT_HSM=1`: create `RSA-HSM` and `EC-HSM` keys, on a Premium vault or a Managed HSM.
+- Credentials: `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET` for an app registration, or `AZURE_FEDERATED_TOKEN_FILE` instead of the secret with AKS workload identity. Without them Halo uses a managed identity: through `IDENTITY_ENDPOINT` and `IDENTITY_HEADER` on App Service and Container Apps, or the instance metadata service on virtual machines. `AZURE_CLIENT_ID` then selects a user-assigned identity. `AZURE_AUTHORITY_HOST` changes the sign-in address for national clouds.
+- `HALO_AZURE_KEY_VAULT_WRAPPING_KEY`: an RSA key and its version, such as `halo-secret-key/0123456789abcdef0123456789abcdef`. `HALO_SECRET_KEY` then holds 32 random bytes encrypted with RSA-OAEP-256 to that key, base64 encoded: `az keyvault key download --id https://acme-halo.vault.azure.net/keys/halo-secret-key/0123456789abcdef0123456789abcdef --file halo-wrapping-key.pem && openssl rand 32 | openssl pkeyutl -encrypt -pubin -inkey halo-wrapping-key.pem -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 | base64 -w0`. After rotating the key, keep the old version enabled until `HALO_SECRET_KEY` is wrapped to the new one.
+- `HALO_AZURE_KEY_VAULT_SIGNING=1`: create new signing keys as RSA 2048 or EC P-256 keys that can only sign and verify, named `halo-key-` and an ID. Key Vault has no Ed25519, so EdDSA isn't available and the SSH certificate authorities use ECDSA P-256. Halo stores each key's identifier and refuses exportable keys.
+
+With Azure RBAC, grant the identity `Key Vault Crypto User` on the vault for wrapping, or `Key Vault Crypto Officer`, which can also create keys, when Halo signs inside Key Vault. With access policies, grant the key permissions `get`, `list`, `create`, `sign` and `unwrapKey`.
+
+#### PKCS #11
+
+PKCS #11 needs cgo and a server built with `CGO_ENABLED=1 go build -tags pkcs11 ./cmd/halo`. The published images are built without it, and a server without it refuses to start with these settings.
+
+- `HALO_PKCS11_MODULE`: the vendor's PKCS #11 library, such as `/usr/lib/softhsm/libsofthsm2.so`.
+- `HALO_PKCS11_TOKEN_LABEL` and `HALO_PKCS11_PIN`: the token and its user PIN.
+- `HALO_PKCS11_WRAPPING_KEY`: the label of an RSA private key on the token that may decrypt. `HALO_SECRET_KEY` then holds 32 random bytes encrypted with RSA-OAEP and SHA-256 to its public key, base64 encoded: `openssl rand 32 | openssl pkeyutl -encrypt -pubin -inkey halo-wrapping-key.pem -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 | base64 -w0`. SoftHSM 2.6 can't decrypt RSA-OAEP with SHA-256.
+- `HALO_PKCS11_SIGNING=1`: create new signing key pairs on the token, labelled `halo-key_` and an ID, with a sensitive private key that can't be extracted. Halo refuses keys the token lets be extracted. Halo uses one session, opens a new one after the token drops it, and signs one request at a time.
 
 ## Halo Cloud
 
@@ -469,7 +539,7 @@ Bug reports, fixes, documentation and features are welcome. Report bugs and prop
 
 Report vulnerabilities privately through [GitHub's private vulnerability reporting](https://github.com/ScalaStudios/Halo/security/advisories/new), never in a public issue. [SECURITY.md](SECURITY.md) lists what to include and the response times to expect.
 
-Halo stores session tokens, client secrets, API keys and refresh tokens only as SHA-256 hashes, encrypts signing keys and other stored secrets with AES-256-GCM, can keep that key wrapped by and the signing keys inside [HashiCorp Vault](#keys-in-hashicorp-vault), writes every administrative change to the audit log in the same transaction, and refuses to start without HTTPS outside development. The [security model](https://halo.scala.gg/docs/security-model) explains each of these and lists the known limitations.
+Halo stores session tokens, client secrets, API keys and refresh tokens only as SHA-256 hashes, encrypts signing keys and other stored secrets with AES-256-GCM, can keep that key wrapped by and the signing keys inside [Vault, a cloud KMS or an HSM](#keys-in-an-external-key-manager), writes every administrative change to the audit log in the same transaction, and refuses to start without HTTPS outside development. The [security model](https://halo.scala.gg/docs/security-model) explains each of these and lists the known limitations.
 
 ## License
 

@@ -16,9 +16,11 @@ require (
 	github.com/hashicorp/terraform-plugin-testing v1.16.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/jcmturner/gokrb5/v8 v8.4.4
+	github.com/miekg/pkcs11 v1.1.2
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/pquerna/otp v1.5.0
 	github.com/rs/cors v1.11.1
+	github.com/russellhaering/goxmldsig v1.4.0
 	github.com/zitadel/oidc/v3 v3.51.11
 	golang.org/x/crypto v0.57.0
 	golang.org/x/oauth2 v0.37.0
@@ -95,7 +97,6 @@ require (
 	github.com/oklog/run v1.2.0 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/rs/xid v1.6.0 // indirect
-	github.com/russellhaering/goxmldsig v1.4.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/vmihailenco/msgpack v4.0.4+incompatible // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect

@@ -13,11 +13,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"halo/internal/config"
 )
@@ -30,35 +32,44 @@ type Vault struct {
 	mu         sync.Mutex
 	keys       map[string]crypto.Signer
 	exportable map[string]bool
-	aead       cipher.AEAD
+	aead       *envelope
+	ttl        time.Duration
+	expires    time.Time
+	renewals   int
 }
 
 func New(t testing.TB) *Vault {
 	t.Helper()
-	key := make([]byte, 32)
-	_, _ = rand.Read(key)
-	block, _ := aes.NewCipher(key)
-	aead, _ := cipher.NewGCM(block)
-	v := &Vault{Token: "test-token", keys: map[string]crypto.Signer{}, exportable: map[string]bool{}, aead: aead}
+	v := &Vault{Token: "test-token", keys: map[string]crypto.Signer{}, exportable: map[string]bool{}, aead: newEnvelope()}
 	v.Server = httptest.NewServer(http.HandlerFunc(v.serve))
 	t.Cleanup(v.Close)
 	return v
 }
 
-func (v *Vault) Config() config.Vault {
-	return config.Vault{Address: v.URL, Token: v.Token, Mount: "transit", WrappingKey: "halo-secret-key", Signing: true}
+func (v *Vault) Config() config.KMS {
+	return config.KMS{Vault: config.Vault{Address: v.URL, Token: v.Token, Mount: "transit"}, WrappingKey: "halo-secret-key", Signing: true}
 }
 
 func (v *Vault) Wrap(plain []byte) string {
-	nonce := make([]byte, v.aead.NonceSize())
-	_, _ = rand.Read(nonce)
-	return "vault:v1:" + base64.StdEncoding.EncodeToString(v.aead.Seal(nonce, nonce, plain, nil))
+	return "vault:v1:" + v.aead.seal(plain)
 }
 
 func (v *Vault) Has(name string) bool {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.keys[name] != nil
+}
+
+func (v *Vault) ExpireToken(ttl time.Duration) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.ttl, v.expires = ttl, time.Now().Add(ttl)
+}
+
+func (v *Vault) Renewals() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.renewals
 }
 
 func (v *Vault) AllowExport(name string) {
@@ -68,7 +79,14 @@ func (v *Vault) AllowExport(name string) {
 }
 
 func (v *Vault) serve(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("X-Vault-Token") != v.Token {
+	v.mu.Lock()
+	expired := v.ttl > 0 && time.Now().After(v.expires)
+	ttl := 0
+	if v.ttl > 0 {
+		ttl = max(int(time.Until(v.expires).Round(time.Second).Seconds()), 0)
+	}
+	v.mu.Unlock()
+	if r.Header.Get("X-Vault-Token") != v.Token || expired {
 		fail(w, http.StatusForbidden, "permission denied")
 		return
 	}
@@ -85,7 +103,17 @@ func (v *Vault) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	path := strings.Split(strings.TrimPrefix(r.URL.Path, "/v1/"), "/")
 	if r.Method == http.MethodGet && strings.Join(path, "/") == "auth/token/lookup-self" {
-		reply(w, map[string]any{"id": v.Token})
+		reply(w, map[string]any{"id": v.Token, "ttl": ttl, "renewable": ttl > 0})
+		return
+	}
+	if r.Method == http.MethodPost && strings.Join(path, "/") == "auth/token/renew-self" {
+		v.mu.Lock()
+		v.expires = time.Now().Add(v.ttl)
+		v.renewals++
+		lease := int(v.ttl.Seconds())
+		v.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"auth": map[string]any{"lease_duration": lease, "renewable": true}})
 		return
 	}
 	if len(path) < 3 || path[0] != "transit" {
@@ -116,15 +144,9 @@ func (v *Vault) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		reply(w, map[string]any{"signature": "vault:v1:" + base64.StdEncoding.EncodeToString(signature), "key_version": 1})
 	case path[1] == "decrypt" && len(path) == 3 && r.Method == http.MethodPost && name == "halo-secret-key":
-		sealed, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(in.Ciphertext, "vault:v1:"))
-		size := v.aead.NonceSize()
-		if err != nil || len(sealed) < size || !strings.HasPrefix(in.Ciphertext, "vault:v1:") {
+		plain, err := v.aead.open(strings.TrimPrefix(in.Ciphertext, "vault:v1:"))
+		if err != nil || !strings.HasPrefix(in.Ciphertext, "vault:v1:") {
 			fail(w, http.StatusBadRequest, "invalid ciphertext")
-			return
-		}
-		plain, err := v.aead.Open(nil, sealed[:size], sealed[size:], nil)
-		if err != nil {
-			fail(w, http.StatusBadRequest, "cipher: message authentication failed")
 			return
 		}
 		reply(w, map[string]any{"plaintext": base64.StdEncoding.EncodeToString(plain)})
@@ -215,6 +237,30 @@ func public(key crypto.Signer) string {
 	}
 	der, _ := x509.MarshalPKIXPublicKey(key.Public())
 	return string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))
+}
+
+type envelope struct{ cipher.AEAD }
+
+func newEnvelope() *envelope {
+	key := make([]byte, 32)
+	_, _ = rand.Read(key)
+	block, _ := aes.NewCipher(key)
+	aead, _ := cipher.NewGCM(block)
+	return &envelope{aead}
+}
+
+func (e *envelope) seal(plain []byte) string {
+	nonce := make([]byte, e.NonceSize())
+	_, _ = rand.Read(nonce)
+	return base64.StdEncoding.EncodeToString(e.Seal(nonce, nonce, plain, nil))
+}
+
+func (e *envelope) open(sealed string) ([]byte, error) {
+	raw, err := base64.StdEncoding.DecodeString(sealed)
+	if err != nil || len(raw) < e.NonceSize() {
+		return nil, errors.New("invalid ciphertext")
+	}
+	return e.Open(nil, raw[:e.NonceSize()], raw[e.NonceSize():], nil)
 }
 
 func reply(w http.ResponseWriter, data any) {

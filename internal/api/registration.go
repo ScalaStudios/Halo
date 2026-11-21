@@ -17,6 +17,7 @@ import (
 
 	"halo/internal/config"
 	"halo/internal/httpx"
+	"halo/internal/kms"
 	"halo/internal/secret"
 	"halo/internal/store"
 )
@@ -114,7 +115,7 @@ func decodeMetadata(w http.ResponseWriter, r *http.Request, dst any) error {
 	return nil
 }
 
-func (m *clientMetadata) check(allowed []string) (string, []string, error) {
+func (m *clientMetadata) check(allowed []string, keys *kms.Keys) (string, []string, error) {
 	invalid := func(format string, args ...any) error {
 		return httpx.Fail(http.StatusBadRequest, "invalid_client_metadata", fmt.Sprintf(format, args...))
 	}
@@ -154,6 +155,9 @@ func (m *clientMetadata) check(allowed []string) (string, []string, error) {
 	m.IDTokenSignedAlg = cmp.Or(m.IDTokenSignedAlg, "RS256")
 	if !slices.Contains(store.SigningAlgorithms, m.IDTokenSignedAlg) {
 		return "", nil, invalid(`Set id_token_signed_response_alg to "RS256", "ES256" or "EdDSA".`)
+	}
+	if err := keys.Supports(m.IDTokenSignedAlg); err != nil {
+		return "", nil, invalid("%s.", err)
 	}
 	if len(m.RedirectURIs) == 0 || len(m.RedirectURIs) > 10 {
 		return "", nil, httpx.Fail(http.StatusBadRequest, "invalid_redirect_uri", "Register between 1 and 10 redirect URIs.")
@@ -252,7 +256,7 @@ func (h *registrar) register(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeMetadata(w, r, &in); err != nil {
 		return err
 	}
-	appType, scopes, err := in.check(registrationScopes)
+	appType, scopes, err := in.check(registrationScopes, h.st.Keys)
 	if err != nil {
 		return err
 	}
@@ -335,7 +339,7 @@ func (h *registrar) update(w http.ResponseWriter, r *http.Request) error {
 	if in.ClientID != app.ClientID {
 		return httpx.Fail(http.StatusBadRequest, "invalid_request", "Send this client's client_id in the body, as RFC 7592 requires.")
 	}
-	appType, scopes, err := in.check(append(slices.Clone(registrationScopes), app.Scopes...))
+	appType, scopes, err := in.check(append(slices.Clone(registrationScopes), app.Scopes...), h.st.Keys)
 	if err != nil {
 		return err
 	}

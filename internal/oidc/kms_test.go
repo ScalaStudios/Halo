@@ -153,3 +153,17 @@ func TestExternalSigningKeys(t *testing.T) {
 		t.Fatal("startup must fail when keys are in Vault but Vault is not configured")
 	}
 }
+
+func TestAccessTokenAlgorithmTheKeyManagerCantSign(t *testing.T) {
+	h := newInfra(t, nil)
+	h.st.Keys = kms.FromConfig(kmstest.NewAzure(t).Config())
+	billing := map[string]any{"name": "Billing API", "identifier": "https://billing.example.com", "accessTokenTtl": 300, "accessTokenAlg": "EdDSA",
+		"scopes": []map[string]string{{"name": "billing:read", "description": "Read invoices."}}}
+	if r := h.send(http.MethodPost, "/api/v1/api-resources", billing, cookie(h.admin)); r.status != http.StatusUnprocessableEntity || !strings.Contains(fmt.Sprint(r.body), "Azure Key Vault can't sign with EdDSA") {
+		t.Fatalf("EdDSA access tokens must be refused while keys are in Azure Key Vault: %d %v", r.status, r.body)
+	}
+	billing["accessTokenAlg"] = "ES256"
+	if r := h.send(http.MethodPost, "/api/v1/api-resources", billing, cookie(h.admin)); r.status != http.StatusCreated {
+		t.Fatalf("ES256 access tokens: %d %v", r.status, r.body)
+	}
+}

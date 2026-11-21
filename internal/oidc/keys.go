@@ -49,13 +49,13 @@ type externalSigner struct{ crypto.Signer }
 func (s externalSigner) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
 	signature, err := s.Signer.Sign(rand, digest, opts)
 	if err != nil {
-		return nil, vaultUnavailable(err)
+		return nil, keyUnavailable(err)
 	}
 	return signature, nil
 }
 
-func vaultUnavailable(err error) error {
-	return oidc.ErrServerError().WithDescription("Halo could not use its signing key in Vault Transit. Try again; if it keeps failing, check the server log.").WithParent(err)
+func keyUnavailable(err error) error {
+	return oidc.ErrServerError().WithDescription("Halo could not use its signing key in the external key manager. Try again; if it keeps failing, check the server log.").WithParent(err)
 }
 
 type publicKey struct{ signingKey }
@@ -125,7 +125,7 @@ func (s *storage) signingKeys(ctx context.Context, need jose.SignatureAlgorithm)
 		keys[i] = signingKey{row.ID, jose.SignatureAlgorithm(row.Algorithm), nil, row.ExternalKey != ""}
 		if keys[i].external {
 			if keys[i].key, err = s.st.Keys.Signer(ctx, row.ExternalKey); err != nil {
-				return nil, vaultUnavailable(err)
+				return nil, keyUnavailable(err)
 			}
 			continue
 		}
@@ -143,7 +143,7 @@ func CreateSigningKey(ctx context.Context, st *store.Store, algorithm string) (s
 	if st.Keys.External() {
 		ref, err := st.Keys.CreateKey(ctx, algorithm)
 		if err != nil {
-			return store.SigningKey{}, vaultUnavailable(err)
+			return store.SigningKey{}, keyUnavailable(err)
 		}
 		return st.CreateSigningKey(ctx, algorithm, nil, ref)
 	}

@@ -117,6 +117,9 @@ func (h *resourceHandlers) read(r *http.Request, current string) (store.APIResou
 	case len(in.Scopes) == 0 || len(in.Scopes) > 100:
 		return res, httpx.Invalid("Add between 1 and 100 scopes, such as billing:read.")
 	}
+	if err := h.st.Keys.Supports(res.AccessTokenAlg); res.AccessTokenAlg != "" && err != nil {
+		return res, httpx.Invalid(err.Error() + ".")
+	}
 	for _, scope := range in.Scopes {
 		scope.Name, scope.Description = strings.TrimSpace(scope.Name), strings.TrimSpace(scope.Description)
 		switch {
