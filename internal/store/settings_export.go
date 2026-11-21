@@ -27,7 +27,6 @@ var ExportSections = []ExportSection{
 	{"applicationRoles", "app_roles", `select r.id, r.app_id, r.key, r.name, r.description, r.created_at,
 		array(select g.group_id from app_role_groups g where g.role_id = r.id order by g.group_id) as group_ids,
 		array(select u.user_id from app_role_users u where u.role_id = r.id order by u.user_id) as user_ids from app_roles r order by r.app_id, r.key`},
-	{"policies", "access_policies", `select id, name, description, priority, enabled, mode, effect, terms_id, conditions, created_at, updated_at from access_policies order by priority`},
 	{"policies", "access_policies", `select id, name, description, priority, enabled, mode, effect, terms_id, context_id, conditions, created_at, updated_at from access_policies order by priority`},
 	{"authenticationContexts", "authentication_contexts", `select id, name, methods, max_age, created_at, updated_at from authentication_contexts order by id`},
 	{"terms", "terms", `select id, name, version, text, url, created_at, updated_at from terms order by lower(name)`},

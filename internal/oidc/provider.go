@@ -30,8 +30,7 @@ const (
 
 var ReservedClaims = []string{"sub", "iss", "aud", "exp", "iat", "nbf", "jti", "nonce", "azp", "acr", "amr", "sid", "auth_time", "at_hash", "c_hash", "act", "client_id", "scope"}
 
-var supportedClaims = []string{"sub", "aud", "exp", "iat", "iss", "auth_time", "nonce", "amr", "at_hash", "azp", "client_id", "scope", "sid", "email", "email_verified", "name", "preferred_username", "picture", groupsScope, "roles"}
-var supportedClaims = []string{"sub", "aud", "exp", "iat", "iss", "auth_time", "nonce", "acr", "amr", "at_hash", "azp", "client_id", "scope", "sid", "email", "email_verified", "name", "preferred_username", "picture", groupsScope}
+var supportedClaims = []string{"sub", "aud", "exp", "iat", "iss", "auth_time", "nonce", "acr", "amr", "at_hash", "azp", "client_id", "scope", "sid", "email", "email_verified", "name", "preferred_username", "picture", groupsScope, "roles"}
 
 func New(d httpx.Deps) (http.Handler, error) {
 	config := &op.Config{
