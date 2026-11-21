@@ -61,6 +61,8 @@ helm upgrade halo deploy/helm/halo -n halo --reuse-values \
   --set metrics.serviceMonitor.tokenKey=HALO_METRICS_TOKEN
 ```
 
+A running server reads the Secret only when it starts, so after adding or changing `HALO_METRICS_TOKEN` restart it with `kubectl -n halo rollout restart deployment/halo-server`, then check that a scrape without the token gets 401.
+
 ## Upgrades
 
 Change the image tags, or upgrade to a newer chart, then run `helm upgrade`. The server applies database migrations when it starts and reports ready only afterwards. It runs as a single replica that is stopped before the new one starts, because background jobs run in every server process. Back up the database and `HALO_SECRET_KEY` first.
