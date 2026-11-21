@@ -19,6 +19,8 @@ type LifecycleRule struct {
 	Name      string            `json:"name"`
 	Trigger   string            `json:"trigger"`
 	Condition *string           `json:"condition"`
+	Attribute *string           `json:"attribute"`
+	Days      *int              `json:"days"`
 	Actions   []LifecycleAction `json:"actions"`
 	Enabled   bool              `json:"enabled"`
 	Runs      int               `json:"runs"`
@@ -30,6 +32,8 @@ type LifecycleRuleInput struct {
 	Name      string
 	Trigger   string
 	Condition *string
+	Attribute *string
+	Days      *int
 	Actions   []LifecycleAction
 	Enabled   bool
 }
@@ -58,7 +62,7 @@ type LifecycleChange struct {
 }
 
 func (s *Store) ListLifecycleRules(ctx context.Context) ([]LifecycleRule, error) {
-	rows, err := s.db.Query(ctx, `select l.id, l.name, l.trigger, l.condition, l.actions, l.enabled,
+	rows, err := s.db.Query(ctx, `select l.id, l.name, l.trigger, l.condition, l.attribute, l.days, l.actions, l.enabled,
 		(select count(*) from lifecycle_runs r where r.rule_id = l.id), (select max(r.created_at) from lifecycle_runs r where r.rule_id = l.id), l.created_at
 		from lifecycle_rules l order by l.created_at, l.id`)
 	if err != nil {
@@ -66,7 +70,7 @@ func (s *Store) ListLifecycleRules(ctx context.Context) ([]LifecycleRule, error)
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (LifecycleRule, error) {
 		var l LifecycleRule
-		return l, row.Scan(&l.ID, &l.Name, &l.Trigger, &l.Condition, &l.Actions, &l.Enabled, &l.Runs, &l.LastRunAt, &l.CreatedAt)
+		return l, row.Scan(&l.ID, &l.Name, &l.Trigger, &l.Condition, &l.Attribute, &l.Days, &l.Actions, &l.Enabled, &l.Runs, &l.LastRunAt, &l.CreatedAt)
 	})
 }
 
@@ -86,12 +90,12 @@ func (s *Store) GetLifecycleRule(ctx context.Context, ruleID string) (LifecycleR
 func (s *Store) SaveLifecycleRule(ctx context.Context, ruleID string, in LifecycleRuleInput) (string, error) {
 	if ruleID == "" {
 		ruleID = id.New("lcr")
-		_, err := s.db.Exec(ctx, `insert into lifecycle_rules (id, name, trigger, condition, actions, enabled) values ($1, $2, $3, $4, $5, $6)`,
-			ruleID, in.Name, in.Trigger, in.Condition, in.Actions, in.Enabled)
+		_, err := s.db.Exec(ctx, `insert into lifecycle_rules (id, name, trigger, condition, actions, enabled, attribute, days) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+			ruleID, in.Name, in.Trigger, in.Condition, in.Actions, in.Enabled, in.Attribute, in.Days)
 		return ruleID, err
 	}
-	tag, err := s.db.Exec(ctx, `update lifecycle_rules set name = $2, trigger = $3, condition = $4, actions = $5, enabled = $6, updated_at = now() where id = $1`,
-		ruleID, in.Name, in.Trigger, in.Condition, in.Actions, in.Enabled)
+	tag, err := s.db.Exec(ctx, `update lifecycle_rules set name = $2, trigger = $3, condition = $4, actions = $5, enabled = $6, attribute = $7, days = $8, updated_at = now() where id = $1`,
+		ruleID, in.Name, in.Trigger, in.Condition, in.Actions, in.Enabled, in.Attribute, in.Days)
 	if err == nil && tag.RowsAffected() == 0 {
 		err = ErrNotFound
 	}
@@ -162,6 +166,37 @@ func (s *Store) ClaimLifecycleChange(ctx context.Context, c LifecycleChange) (bo
 		args = append(args, p.Department, p.Title, p.Location, p.Status)
 	}
 	tag, err := s.db.Exec(ctx, sql, args...)
+	return err == nil && tag.RowsAffected() == 1, err
+}
+
+func (s *Store) LifecycleCandidates(ctx context.Context) ([]User, error) {
+	rows, err := s.db.Query(ctx, `select id, email, name, title, department, location, status, source, guest, created_at, last_sign_in_at, attributes
+		from users where kind = 'person' and status <> 'deprovisioned' order by created_at, id`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (User, error) {
+		u := User{Kind: "person"}
+		return u, row.Scan(&u.ID, &u.Email, &u.Name, &u.Title, &u.Department, &u.Location, &u.Status, &u.Source, &u.Guest, &u.CreatedAt, &u.LastSignInAt, &u.Attributes)
+	})
+}
+
+func (s *Store) LifecycleOccurrences(ctx context.Context) (map[[3]string]bool, error) {
+	rows, err := s.db.Query(ctx, `select rule_id, user_id, occurrence from lifecycle_occurrences`)
+	if err != nil {
+		return nil, err
+	}
+	fired := map[[3]string]bool{}
+	var key [3]string
+	_, err = pgx.ForEachRow(rows, []any{&key[0], &key[1], &key[2]}, func() error {
+		fired[key] = true
+		return nil
+	})
+	return fired, err
+}
+
+func (s *Store) ClaimLifecycleOccurrence(ctx context.Context, ruleID, userID, occurrence string) (bool, error) {
+	tag, err := s.db.Exec(ctx, `insert into lifecycle_occurrences (rule_id, user_id, occurrence) values ($1, $2, $3) on conflict do nothing`, ruleID, userID, occurrence)
 	return err == nil && tag.RowsAffected() == 1, err
 }
 
