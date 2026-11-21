@@ -3,6 +3,7 @@ set -eu
 
 version=0.1.1
 raw=https://raw.githubusercontent.com/ScalaStudios/Halo
+releases=https://github.com/ScalaStudios/Halo/releases
 guide=https://halo.scala.gg/docs/self-hosting
 
 if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ]; then tty=1; else tty=; fi
@@ -16,7 +17,17 @@ fi
 cols=$( (stty size </dev/tty) 2>/dev/null | cut -d' ' -f2)
 case $cols in '' | 0 | *[!0-9]*) cols=80 ;; esac
 pid=
-trap '[ -z "$tty" ] || printf "\033[?25h"' EXIT
+stage=
+cleanup() {
+  [ -z "$tty" ] || printf '\033[?25h'
+  if [ -n "$stage" ]; then
+    for file in halo.sh compose.yml Caddyfile; do
+      rm -f "$stage/$file" "$stage/$file.new"
+    done
+    rmdir "$stage"
+  fi
+}
+trap cleanup EXIT
 trap '[ -z "$pid" ] || kill "$pid" 2>/dev/null || :; exit 130' INT TERM
 
 fail() {
@@ -108,7 +119,7 @@ fetch() {
 
 compose() {
   [ -f "$dir/.env" ] || fail "Halo is not installed in $dir. Install it with: curl -fsSL https://halo.scala.gg/install.sh | sh"
-  docker compose --project-directory "$dir" -f "$dir/compose.yml" "$@"
+  docker compose --project-directory "$dir" -f "${compose_file:-$dir/compose.yml}" "$@"
 }
 
 install_docker() {
@@ -117,10 +128,11 @@ install_docker() {
 }
 
 download() {
-  fetch "v$version/deploy/install.sh" "$dir/halo.sh"
-  fetch "v$version/deploy/compose.yml" "$dir/compose.yml"
-  fetch "v$version/deploy/Caddyfile" "$dir/Caddyfile"
-  chmod 755 "$dir/halo.sh"
+  destination=${1:-$dir}
+  fetch "v$version/deploy/install.sh" "$destination/halo.sh"
+  fetch "v$version/deploy/compose.yml" "$destination/compose.yml"
+  fetch "v$version/deploy/Caddyfile" "$destination/Caddyfile"
+  chmod 755 "$destination/halo.sh"
 }
 
 configure() {
@@ -181,21 +193,59 @@ install() {
   printf '  %sNot loading? Point %s at this server and open ports 80 and 443.%s\n\n' "$dim" "$domain" "$reset"
 }
 
-update() {
-  command -v curl >/dev/null 2>&1 || fail "curl is not installed. Install it and run this script again."
-  [ -f "$dir/compose.yml" ] || fail "Halo is not installed in $dir."
-  fetch main/deploy/install.sh "$dir/halo.sh" || fail "Couldn't download the latest halo.sh."
-  chmod 755 "$dir/halo.sh"
-  HALO_DIR=$dir exec "$dir/halo.sh" update-files
+latest_version() {
+  target=$(curl -fsSL --max-time 20 -o /dev/null -w '%{url_effective}' "$releases/latest") || return 1
+  case $target in
+    "$releases/tag/v"*) candidate=${target#"$releases/tag/v"} ;;
+    *) return 1 ;;
+  esac
+  printf '%s\n' "$candidate" | awk '/^[0-9]+\.[0-9]+\.[0-9]+$/ {print; found=1} END {if (!found) exit 1}'
+}
+
+compose_version() {
+  images=$(compose config --images halo-server halo-web) || return 1
+  printf '%s\n' "$images" | awk -F: '
+    /^ghcr\.io\/scalastudios\/halo-server:[0-9]+\.[0-9]+\.[0-9]+$/ {server=$2}
+    /^ghcr\.io\/scalastudios\/halo-web:[0-9]+\.[0-9]+\.[0-9]+$/ {web=$2}
+    END {
+      if (server == "" || web != server) exit 1
+      print server
+    }'
+}
+
+version_at_least() {
+  awk -v candidate="$1" -v installed="$2" 'BEGIN {
+    split(candidate, proposed, ".")
+    split(installed, current, ".")
+    for (i=1; i<=3; i++) {
+      if (proposed[i]+0 > current[i]+0) exit 0
+      if (proposed[i]+0 < current[i]+0) exit 1
+    }
+  }'
+}
+
+pull_update() {
+  published=$(compose_file="$stage/compose.yml" compose_version) || fail "Release $version does not have matching Halo image tags."
+  [ "$published" = "$version" ] || fail "Release $version points to Halo $published in Compose. The installed files are unchanged."
+  compose_file="$stage/compose.yml" compose pull --quiet
 }
 
 update_files() {
+  command -v curl >/dev/null 2>&1 || fail "curl is not installed. Install it and run this script again."
+  [ -f "$dir/compose.yml" ] || fail "Halo is not installed in $dir."
+  check_docker
+  installed=$(compose_version) || fail "The installed Halo images do not share a numeric release tag. Update this configuration manually."
+  version=$(latest_version) || fail "Couldn't determine the latest published Halo release."
+  version_at_least "$version" "$installed" || fail "The latest published release ($version) is older than installed Halo ($installed)."
+  stage=$(mktemp -d "$dir/.halo-update.XXXXXX")
   task=Update log=$dir/halo.sh.log current=0 total=3 began=$(date +%s)
   banner "Updating Halo to $version" "Log: $log"
-  check_docker
   printf '  %s!%s Migrations only run forward. Back up first: %s#back-up\n\n' "$yellow" "$reset" "$guide"
-  step "Downloading Halo" "halo.sh, compose.yml, Caddyfile" download
-  step "Pulling images" "postgres, halo, caddy" compose pull --quiet
+  step "Downloading Halo" "halo.sh, compose.yml, Caddyfile" download "$stage"
+  step "Pulling images" "postgres, halo, caddy" pull_update
+  mv "$stage/Caddyfile" "$dir/Caddyfile"
+  mv "$stage/compose.yml" "$dir/compose.yml"
+  mv "$stage/halo.sh" "$dir/halo.sh"
   step "Restarting Halo" "" compose up -d --wait --wait-timeout 600
   printf '\n  %s%sHalo %s is running.%s %sUpdated in %s.%s\n\n' "$bold" "$orange" "$version" "$reset" "$dim" "$(duration $(($(date +%s) - began)))" "$reset"
 }
@@ -228,8 +278,7 @@ command=${1:-install}
 [ $# -eq 0 ] || shift
 case $command in
   install) install ;;
-  update) update ;;
-  update-files) update_files ;;
+  update | update-files) update_files ;;
   start) compose up -d --wait --wait-timeout 600 ;;
   stop) compose stop ;;
   restart) compose up -d --force-recreate --wait --wait-timeout 600 ;;

@@ -3830,7 +3830,7 @@ paths:
       tags: [Applications]
       operationId: createApplication
       summary: Register an application
-      description: 'Roles: application administrator. OpenID Connect web applications and services get a client secret, returned once. SAML applications take their settings in `saml` and are always `web`. Forward-auth applications take their protected addresses in `redirectUris`, open the first one from the account portal unless `homepage` is set, have no secret and are always `web`. RADIUS clients take the IP addresses or CIDR ranges they send from in `redirectUris`, get a shared secret returned once in `clientSecret` and are always `web`. LDAP applications get a bind password in `clientSecret`, returned once, take no redirect URIs, scopes or SAML settings and are always `web`. Bookmarks only open their `homepage` from the account portal, have no sign-in protocol and are always `web`.'
+      description: 'Roles: application administrator. OpenID Connect and OAuth web applications and services get a client secret, returned once, unless configured for private_key_jwt. Organization client policies apply required protections and cap initial token lifetimes. SAML applications take their settings in `saml` and are always `web`. Forward-auth applications take their protected addresses in `redirectUris`, open the first one from the account portal unless `homepage` is set, have no secret and are always `web`. RADIUS clients take the IP addresses or CIDR ranges they send from in `redirectUris`, get a shared secret returned once in `clientSecret` and are always `web`. LDAP applications get a bind password in `clientSecret`, returned once, take no redirect URIs, scopes or SAML settings and are always `web`. Bookmarks only open their `homepage` from the account portal, have no sign-in protocol and are always `web`.'
       requestBody:
         required: true
         content:
@@ -3857,6 +3857,10 @@ paths:
                 groupIds:
                   type: array
                   items: {type: string}
+                tokenEndpointAuthMethod: {type: string, enum: [client_secret_basic, private_key_jwt], description: 'Confidential OpenID Connect and OAuth clients only.'}
+                jwks: {type: object, description: 'Public JSON Web Key Set for private_key_jwt. Supply this or jwksUri.'}
+                jwksUri: {type: string, format: uri, description: 'HTTPS URL of the public key set for private_key_jwt.'}
+                fapi2Profile: {type: boolean, description: 'Requires private_key_jwt and applies the FAPI 2.0 client settings supported by Halo.'}
                 setupGuide: {type: string, enum: [grafana, forgejo, aether, generic-oidc, kubernetes, generic-saml, aws-iam-identity-center, slack]}
                 saml: {$ref: '#/components/schemas/SAMLInput'}
       responses:
@@ -10366,6 +10370,25 @@ components:
           description: Helpdesk administrators can impersonate active members of these groups who hold no administrator role and are not eligible for one. Empty turns impersonation off.
         reauthMinutes: {type: integer, minimum: 1, maximum: 1440, default: 10, description: 'How long a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, lets a person make sensitive changes before Halo asks them to confirm it''s them again. Only a global administrator can change it.'}
         clientRegistration: {type: string, enum: ['off', open, token, approval], default: 'off', description: 'Who can register OAuth clients at `/oauth2/register`: nobody, anyone, clients that send an API key with the `registration` scope as the initial access token, or anyone with each new or changed client disabled until an application administrator approves it.'}
+        clientPolicies:
+          type: [array, 'null']
+          description: OAuth client rules. Global administrators can set one rule for all clients and one per application type. A client must satisfy every applicable rule when saved or enabled. Changes leave existing active clients as configured until they are saved. New applications inherit required protections and capped lifetimes.
+          maxItems: 5
+          items:
+            type: object
+            required: [applicationType]
+            properties:
+              applicationType: {type: string, enum: [all, web, spa, native, service]}
+              requirePar: {type: boolean, description: Applies to clients using the authorization code flow.}
+              requirePkce: {type: boolean, description: Applies to clients using the authorization code flow. Public clients already require PKCE.}
+              requireDpop: {type: boolean}
+              allowedAuthMethods:
+                type: array
+                description: 'An empty list allows any method. The client_secret_basic setting includes both Basic and form-body shared-secret authentication. Use none for public clients.'
+                items: {type: string, enum: [none, client_secret_basic, private_key_jwt]}
+              maxAccessTokenTtl: {type: integer, anyOf: [{const: 0}, {minimum: 60, maximum: 86400}], description: 'Maximum configured lifetime in seconds. Use 0 for no cap.'}
+              maxIdTokenTtl: {type: integer, anyOf: [{const: 0}, {minimum: 60, maximum: 86400}], description: 'Maximum configured lifetime in seconds. Use 0 for no cap.'}
+              maxRefreshTokenTtl: {type: integer, minimum: 0, maximum: 7776000, description: 'Maximum configured lifetime in seconds. Use 0 for no cap.'}
         emailTemplates:
           type: object
           readOnly: true
@@ -10485,8 +10508,8 @@ components:
           type: array
           items: {type: string, enum: [code]}
         token_endpoint_auth_method: {type: string, enum: [client_secret_basic, client_secret_post, private_key_jwt, none], default: client_secret_basic, description: '`none` registers a public client that must use PKCE. `private_key_jwt` registers a web client without a client secret that authenticates with client assertions signed by `jwks` or `jwks_uri`.'}
-        jwks: {type: object, description: 'Only with `private_key_jwt`, instead of `jwks_uri`. 1 to 20 public signing keys.'}
-        jwks_uri: {type: string, format: uri, description: 'Only with `private_key_jwt`, instead of `jwks`. An https:// URL on a public address.'}
+        jwks: {type: object, description: 'For `private_key_jwt`, supply 1 to 20 public signing keys instead of `jwks_uri`. Ignored for other client authentication methods.'}
+        jwks_uri: {type: string, format: uri, description: 'For `private_key_jwt`, supply an HTTPS URL on a public address instead of `jwks`. Ignored for other client authentication methods.'}
         dpop_bound_access_tokens: {type: boolean, description: 'RFC 9449. Every token request must carry a DPoP proof. A client can turn this on in an update but not off.'}
         require_pushed_authorization_requests: {type: boolean, description: 'RFC 9126. Every authorization request must be pushed to `/oauth2/par`. A client can turn this on in an update but not off.'}
         application_type: {type: string, enum: [web, native], default: web, description: '`native` needs `token_endpoint_auth_method` `none`.'}

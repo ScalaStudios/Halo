@@ -70,7 +70,7 @@ When it finishes, create the first administrator with the command it prints:
 
 Open the link it prints and register a passkey. The console is at `https://auth.example.com/admin`. To install step by step instead, and for backups, upgrades and email, follow the [self-hosting guide](https://halo.scala.gg/docs/self-hosting).
 
-The public installer currently uses `v0.1.1`. To upgrade to [`v0.2.0`](https://github.com/ScalaStudios/Halo/releases/tag/v0.2.0), [back up PostgreSQL and `HALO_SECRET_KEY`](https://halo.scala.gg/docs/self-hosting), then set both Halo image tags in your installed `compose.yml` to `0.2.0`. Run these commands from the installation directory:
+The public installer currently uses `v0.1.1`. To upgrade to [`v0.3.0`](https://github.com/ScalaStudios/Halo/releases/tag/v0.3.0), [back up PostgreSQL and `HALO_SECRET_KEY`](https://halo.scala.gg/docs/self-hosting), then set both Halo image tags in your installed `compose.yml` to `0.3.0`. Run these commands from the installation directory:
 
 ```bash
 docker compose pull halo-server halo-web
@@ -243,6 +243,27 @@ Halo supports OpenID Connect, OAuth 2.0, SAML 2.0, SCIM 2.0, WebAuthn, and other
 "Implemented" means the feature works in the current release. Halo is not OpenID Certified or certified in any other way. [CONFORMANCE.md](CONFORMANCE.md) records which OpenID Foundation conformance suite test plans pass when we run the suite against Halo, with the date, the Halo version and every known warning.
 
 </details>
+
+### Organization-wide OAuth client policies
+
+A global administrator can set `clientPolicies` through `PATCH /api/v1/settings`. An `all` rule applies to OAuth and OIDC applications. A `web`, `spa`, `native`, or `service` rule adds requirements for that type. The built-in Halo CLI keeps its own settings. This example requires signed client assertions, pushed requests, PKCE, and DPoP for web applications and caps their configured access token lifetime at ten minutes.
+
+```json
+{
+  "clientPolicies": [
+    {
+      "applicationType": "web",
+      "allowedAuthMethods": ["private_key_jwt"],
+      "requirePar": true,
+      "requirePkce": true,
+      "requireDpop": true,
+      "maxAccessTokenTtl": 600
+    }
+  ]
+}
+```
+
+New applications inherit the required protections and stricter lifetime settings. Global rules leave existing applications as configured until they are saved or enabled. For a new app that requires signed client assertions, send `tokenEndpointAuthMethod: "private_key_jwt"` with its public `jwks` or `jwksUri` when you create it through the API. [OpenAPI reference](api/openapi.yaml)
 
 ## Connect your first application
 
@@ -623,7 +644,7 @@ PKCS #11 needs cgo and a server built with `CGO_ENABLED=1 go build -tags pkcs11 
 ## Roadmap and limitations
 
 - Each Halo installation serves one organization. You can run [several server instances](#running-several-instances) against the same database. Follow [multi-organization support](https://github.com/ScalaStudios/Halo/issues/25) for shared installations.
-- FAPI 2.0 support is partial. Mutual TLS client authentication and organization-wide client policies are tracked in [#76](https://github.com/ScalaStudios/Halo/issues/76).
+- FAPI 2.0 support is partial. Mutual TLS client authentication remains open in [#76](https://github.com/ScalaStudios/Halo/issues/76).
 - The [conformance report](CONFORMANCE.md) records the OpenID Foundation test results. OpenID certification and the [independent security audit](https://github.com/ScalaStudios/Halo/issues/28) remain open.
 
 [CHANGELOG.md](CHANGELOG.md) records what has shipped.

@@ -2,9 +2,28 @@
 
 All notable changes to Halo are recorded in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Halo has not published a release yet; versions will follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it does.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Halo follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.3.0
+
+### Added
+
+- Global administrators can define OAuth client requirements for all applications or by type. Rules cover PAR, PKCE, DPoP, client authentication methods, and maximum configured token lifetimes.
+- The application creation API accepts public keys for clients that authenticate with `private_key_jwt`.
+
+### Fixed
+
+- Dynamic registration accepts requests that include unused public-key metadata alongside shared-secret authentication.
+- `halo.sh update` checks the published release and pulls its matching images before replacing the installed files. It refuses to downgrade an installation.
+- The OpenID conformance harness can use another subnet when the default Docker network overlaps an existing one.
+
+[Compare v0.2.0 with v0.3.0](https://github.com/ScalaStudios/Halo/compare/v0.2.0...v0.3.0)
+
+## Earlier releases
+
+See the [v0.2.0 release notes](https://github.com/ScalaStudios/Halo/releases/tag/v0.2.0) for changes in that release.
+
+## Early development
 
 ### Added
 

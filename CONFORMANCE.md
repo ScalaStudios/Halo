@@ -22,6 +22,8 @@ Halo is not OpenID Certified. These are results from running the suite ourselves
 
 The plans use `client_secret_basic`, with `client_secret_post` in its own module, and the authorization code flow with the default response mode except in the Form Post plan.
 
+A follow-up run on 21 November 2026 used the `b7772d5` source with the OAuth client policy changes under development and the v0.2.0 web image. The five non-registration plans matched the baseline. The dynamic registration plan initially failed on client public-key metadata. After the registration fix below, its rerun reproduced the baseline of 21 passed, 7 warnings, 4 review, 6 skipped, and 0 failed modules. The follow-up used the default organization client policy settings.
+
 **Review** is the suite's status for modules that require visual evidence. The scheduled harness uses rendered HTTP transcripts. In a supplemental Chromium run on 21 November 2026, all 20 review modules had screenshots of the expected result. Six showed the sign-in screen for `prompt=login` or `max_age`. Eleven showed request errors on Halo. Three showed the signed-out screen, after confirmation where required. The six sign-in modules were rerun after fixing the sign-in page's handling of fresh authentication requests.
 
 ## Known warnings
@@ -58,6 +60,7 @@ The suite skips these because Halo doesn't offer the feature, which certificatio
 
 | Test that failed | Rule | Fix |
 | --- | --- | --- |
+| Basic OP, dynamic registration | RFC 7591 section 3.1 | Halo accepts registration requests containing public-key metadata alongside a shared-secret authentication method. Halo discards the unused keys. |
 | `oidcc-refresh-token` | RFC 6749 section 5.1 | Every token endpoint response sends `Cache-Control: no-store` and `Pragma: no-cache`. |
 | `oidcc-response-type-missing`, `oidcc-prompt-none-not-logged-in` in the Form Post plan | OAuth 2.0 Form Post Response Mode section 2 | An authorization error is posted to the redirect URI when the request asks for `response_mode=form_post`, instead of being sent in the query. |
 | `oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported` in the Form Post plan | OpenID Connect Core section 6.1 | `request_not_supported` goes back with the response mode and state the request object carries. |
@@ -83,7 +86,7 @@ To run it:
 scripts/conformance/run.sh
 ```
 
-Set `HALO_WEB_IMAGE` to use a web image you already have instead of building `deploy/Dockerfile.web`, `KEEP=1` to leave the containers running, `SUITE_TAG` for another suite release, and pass test plan and configuration pairs to run other plans. `expected-failures.json` and `expected-skips.json` list the known warnings and skips above, so the run fails on anything new, and also when one of them stops happening.
+Set `HALO_WEB_IMAGE` to use a web image you already have instead of building `deploy/Dockerfile.web`, `KEEP=1` to leave the containers running, `SUITE_TAG` for another suite release, and pass test plan and configuration pairs to run other plans. If the default subnet is occupied, set `CONFORMANCE_NETWORK_OCTET=29` to use `198.18.29.0/24`. `expected-failures.json` and `expected-skips.json` list the known warnings and skips above, so the run fails on anything new, and also when one of them stops happening.
 
 ## Security audit
 
