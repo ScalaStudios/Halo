@@ -9,6 +9,7 @@
 <p align="center">
   <a href="https://halo.scala.gg">Website</a> ·
   <a href="https://halo.scala.gg/docs">Documentation</a> ·
+  <a href="#why-halo">Why Halo</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="https://github.com/ScalaStudios/Halo/releases">Releases</a>
@@ -25,11 +26,21 @@ Use passkeys and security keys, connect apps over OpenID Connect or SAML, and ma
 
 ## Why Halo
 
-- **Passkeys by default.** Sign in with passkeys or security keys. Enable passwords and other fallback methods where your rollout needs them.
-- **Policies you can preview.** Check how a rule would have affected recent sign-ins in report-only mode, or test a specific sign-in in the simulator.
-- **Access with an end date.** Use approvals, time-limited access packages, periodic reviews, and lifecycle rules to grant and remove access.
-- **One directory for apps and servers.** Sync people and groups over SCIM or LDAP, issue short-lived SSH certificates, and manage Linux accounts and sudo rules.
-- **A small self-hosted stack.** Run a Go server, a Next.js web interface, and PostgreSQL. Add server replicas on the shared database when you need them.
+Halo is a fit for teams that want app sign-in, workforce access reviews, and Linux host access tied to the same directory. You can run that stack on your own infrastructure under Apache-2.0 or use invite-only Halo Cloud.
+
+- **Approve, review, and expire access.** People request time-limited access packages. Reviewers can remove stale group access when a review closes, and lifecycle rules update membership as people join, change roles, or leave. [Governance guide](https://halo.scala.gg/docs/governance)
+- **Use directory groups for apps and servers.** Assign apps, sync people and groups over SCIM or LDAP, and map group memberships to short-lived SSH certificates, Linux accounts, and sudo rules. [Provisioning](https://halo.scala.gg/docs/provisioning) · [Infrastructure access](https://halo.scala.gg/docs/infrastructure-access)
+- **Test sign-in rules before enforcing them.** Start with passkeys and security keys. Use report-only mode to see how a policy would affect recent sign-ins, or simulate one with a specific person, application, and device. [Access policies](https://halo.scala.gg/docs/policies)
+
+### How Halo compares
+
+| Platform | When to choose it | What to evaluate alongside Halo |
+| --- | --- | --- |
+| **Halo** | You want workforce sign-in, access approvals and reviews, and SSH or Linux host access in one self-hostable stack. | Each installation serves one organization. Self-host with PostgreSQL, or use invite-only Halo Cloud. [Deployment options](#quick-start) |
+| **Keycloak** | You need a self-hosted identity provider with realms, LDAP federation, and customizable authentication flows. | Compare Keycloak's provider extensions with Halo's built-in access packages, group reviews, and SSH certificate authority. [Keycloak administration](https://www.keycloak.org/docs/latest/server_admin/) · [Server extensions](https://www.keycloak.org/docs/latest/server_development/) |
+| **authentik** | You want to compose sign-in flows and deploy proxy, LDAP, or RADIUS outposts near your applications. | authentik also offers time-limited access requests in Enterprise Preview. Evaluate those alongside Halo's group reviews, lifecycle rules, and Linux host management. [Outposts](https://docs.goauthentik.io/add-secure-apps/outposts/) · [Access requests](https://docs.goauthentik.io/add-secure-apps/access-requests/) |
+| **ZITADEL** | You are building B2B login and need multiple customer organizations in one instance, with delegated administration. | ZITADEL can delegate access to projects across organizations. Halo's directory and governance workflows serve one organization per installation. [ZITADEL organizations](https://zitadel.com/docs/guides/manage/console/organizations-overview) |
+| **Okta** | You want managed workforce identity with access certifications and lifecycle automation. | Okta Identity Governance includes requests, certification campaigns, Lifecycle Management, and Workflows. Halo gives you a self-hosted option with group-based reviews and infrastructure access. [Okta Identity Governance](https://help.okta.com/oie/en-us/Content/Topics/identity-governance/iga.htm) |
 
 ## Quick start
 
