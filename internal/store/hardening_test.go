@@ -54,8 +54,7 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	rotation, err := st.RotateSecretKey(ctx, next)
 	must(err)
-	if len(rotation.Resealed) != 14 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
-	if len(rotation.Resealed) != 15 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
+	if len(rotation.Resealed) != 16 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
 		t.Fatalf("resealed: %+v", rotation.Resealed)
 	}
 	if !slices.Equal(rotation.RecoveryCodeUsers, []string{"ada@example.com"}) {
@@ -93,8 +92,7 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	source, err := rotated.GetComplianceSource(ctx, sourceID)
 	must(err)
-	for want, sealed := range map[string][]byte{"totp-seed": totp[0].Sealed, "scim-token": provisioning.TokenSealed, "client-secret": provider.SecretSealed, "intune-secret": source.Sealed} {
-	for want, sealed := range map[string][]byte{"totp-seed": totp[0].Sealed, "scim-token": provisioning.TokenSealed, "client-secret": provider.SecretSealed,
+	for want, sealed := range map[string][]byte{"totp-seed": totp[0].Sealed, "scim-token": provisioning.TokenSealed, "client-secret": provider.SecretSealed, "intune-secret": source.Sealed,
 		"https://checks.example.com/hook": hook.URLSealed, "hook-secret": hook.SecretSealed} {
 		if plain, err := rotated.Sealer.Open(sealed); err != nil || string(plain) != want {
 			t.Fatalf("open %s with the new key: %q %v", want, plain, err)
