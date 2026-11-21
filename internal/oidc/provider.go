@@ -180,6 +180,10 @@ func New(d httpx.Deps) (http.Handler, error) {
 	})
 	mux.HandleFunc("/oauth2/authorize", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
+		if r.Form.Has("request_uri") && !strings.HasPrefix(r.Form.Get("request_uri"), requestURIPrefix) {
+			formPostErrors(w, r, r.Form.Get("response_mode"), r.Form.Get("redirect_uri"), func(w http.ResponseWriter, r *http.Request) { requestURINotSupported(w, r, provider) })
+			return
+		}
 		if r.Form.Has("request_uri") {
 			var ok bool
 			if r, ok = st.pushedAuthRequest(w, r); !ok {
@@ -222,6 +226,16 @@ func New(d httpx.Deps) (http.Handler, error) {
 }
 
 var formPostPage = template.Must(template.New("form_post").Parse(`<!doctype html><html><head><meta charset="utf-8"></head><body onload="document.forms[0].submit()"><form method="post" action="{{.Action}}">{{range $name, $values := .Params}}{{range $values}}<input type="hidden" name="{{$name}}" value="{{.}}">{{end}}{{end}}<noscript><button type="submit">Continue</button></noscript></form></body></html>`))
+
+func requestURINotSupported(w http.ResponseWriter, r *http.Request, provider *op.Provider) {
+	req := &oidc.AuthRequest{ClientID: r.Form.Get("client_id"), RedirectURI: r.Form.Get("redirect_uri"), State: r.Form.Get("state"), ResponseType: oidc.ResponseType(r.Form.Get("response_type")), ResponseMode: oidc.ResponseMode(r.Form.Get("response_mode"))}
+	client, err := provider.Storage().GetClientByClientID(r.Context(), req.ClientID)
+	if err != nil || op.ValidateAuthReqRedirectURI(client, req.RedirectURI, req.ResponseType) != nil {
+		http.Error(w, "Halo accepts request_uri only from its pushed authorization request endpoint, and this request has no registered redirect URI to report that to. Go back to the application and start again.", http.StatusBadRequest)
+		return
+	}
+	op.AuthRequestError(w, r, req, &oidc.Error{ErrorType: "request_uri_not_supported", Description: "Halo accepts request_uri only from its pushed authorization request endpoint."}, provider)
+}
 
 func requestObjectHints(form url.Values) {
 	parts := strings.Split(form.Get("request"), ".")

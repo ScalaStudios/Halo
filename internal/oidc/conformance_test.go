@@ -56,3 +56,17 @@ func TestUnsupportedRequestObjectAnswersAsTheObjectAsks(t *testing.T) {
 	q := url.Values{"client_id": {h.app.ClientID}, "redirect_uri": {callback}, "response_type": {"code"}, "scope": {"openid"}, "request": {"eyJhbGciOiJub25lIn0." + base64.RawURLEncoding.EncodeToString([]byte(object)) + "."}}
 	formPost(t, h, q, "request_not_supported", "st-object")
 }
+
+func TestForeignRequestURIIsNotSupported(t *testing.T) {
+	h := newHarness(t, nil)
+	q := url.Values{"client_id": {h.app.ClientID}, "redirect_uri": {callback}, "response_type": {"code"}, "scope": {"openid"}, "request_uri": {"https://rp.example.com/request.jwt"}}
+	r, _ := h.do(http.MethodGet, "/oauth2/authorize?"+q.Encode(), nil)
+	location, _ := url.Parse(r.location)
+	if r.status != http.StatusFound || !strings.HasPrefix(r.location, callback+"?") || location.Query().Get("error") != "request_uri_not_supported" {
+		t.Fatalf("foreign request_uri: %d %q", r.status, r.location)
+	}
+	q.Set("redirect_uri", "https://attacker.example.com/cb")
+	if r, _ := h.do(http.MethodGet, "/oauth2/authorize?"+q.Encode(), nil); r.status != http.StatusBadRequest || r.location != "" {
+		t.Fatalf("foreign request_uri with an unregistered redirect URI: %d %q", r.status, r.location)
+	}
+}
