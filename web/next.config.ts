@@ -12,6 +12,7 @@ const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   devIndicators: false,
+  experimental: { proxyTimeout: 600_000 },
   agentRules: false,
   async headers() {
     return [

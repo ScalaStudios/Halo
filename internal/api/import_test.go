@@ -60,8 +60,8 @@ func writes(t *testing.T, st *store.Store) [3]int {
 const formula = `=cmd|' /C calc'!A0`
 
 const people = "\xef\xbb\xbfEmail,Name,Title,Department,Manager Email,Groups\r\n" +
-	`ana@example.com,"Silva, Ana","` + formula + `",Engineering,,Ops` + "\r\n" +
 	`ben@example.com,Ben Ode,"Lead` + "\n" + `Engineer",Engineering,ANA@example.com,ops; ` + "\r\n" +
+	`ana@example.com,"Silva, Ana","` + formula + `",Engineering,,Ops` + "\r\n" +
 	",,,,,\r\n" +
 	"Ana@Example.com,Ana Again,,,,\r\n" +
 	"uma@example.com,Uma,,,,\r\n" +
@@ -89,7 +89,7 @@ func TestImportPreviewsThenCreatesValidRows(t *testing.T) {
 	if after := writes(t, st); after != before {
 		t.Fatalf("dry run wrote users, audit events or mail: %v then %v", before, after)
 	}
-	want := map[int]string{2: "", 3: "", 6: "Row 2 already has the email", 7: "ERR_CONFLICT", 8: "Enter the person's name", 9: "Nobody with the email nobody@example.com", 10: "manager on row 11 can't be imported", 11: "lead back to this row", 12: "dynamic group", 13: "own manager"}
+	want := map[int]string{2: "", 4: "", 6: "Row 4 already has the email", 7: "ERR_CONFLICT", 8: "Enter the person's name", 9: "Nobody with the email nobody@example.com", 10: "manager on row 11 can't be imported", 11: "lead back to this row", 12: "dynamic group", 13: "own manager"}
 	if !preview.DryRun || preview.Ready != 2 || preview.Skipped != 8 || len(preview.Rows) != len(want) {
 		t.Fatalf("preview: %+v", preview)
 	}
@@ -104,7 +104,7 @@ func TestImportPreviewsThenCreatesValidRows(t *testing.T) {
 			t.Errorf("row %d: want %q, got %+v", row.Row, problem, row.Error)
 		}
 	}
-	if preview.Rows[0].Title != formula || !slices.Equal(preview.Rows[1].Groups, []string{"ops"}) {
+	if preview.Rows[1].Title != formula || !slices.Equal(preview.Rows[0].Groups, []string{"ops"}) {
 		t.Fatalf("parsed rows: %+v", preview.Rows[:2])
 	}
 
@@ -147,7 +147,7 @@ func TestImportPreviewsThenCreatesValidRows(t *testing.T) {
 			invited++
 		}
 	}
-	if invited != 2 || summary < 0 || audit[summary].Summary != "Imported 2 of 10 rows and held the invitations" {
+	if invited != 2 || summary < 0 || audit[summary].Summary != "Imported 2 of 10 rows, holding the setup links" {
 		t.Fatalf("audit: %+v", audit)
 	}
 	if mail, _ := st.ListMail(ctx, 10); len(mail) != 0 {
@@ -162,7 +162,7 @@ func TestImportPreviewsThenCreatesValidRows(t *testing.T) {
 }
 
 func TestImportFromJSONSendsInvitations(t *testing.T) {
-	st, h := setup(t)
+	st, h, server := mailed(t)
 	ctx := context.Background()
 	_, admin := person(t, st, "uma@example.com", "user_admin")
 
@@ -176,8 +176,8 @@ func TestImportFromJSONSendsInvitations(t *testing.T) {
 	expect(t, rec, 200)
 	out := decode[importResponse](t, rec)
 	mail, err := st.ListMail(ctx, 10)
-	if out.Ready != 1 || out.Rows[0].Row != 1 || err != nil || len(mail) != 1 || !strings.Contains(mail[0].Text, out.Rows[0].EnrollURL) {
-		t.Fatalf("invitation not queued: %+v %+v %v", out, mail, err)
+	if out.Ready != 1 || out.Rows[0].Row != 1 || !out.Rows[0].Emailed || len(server.Deliveries()) != 1 || err != nil || len(mail) != 1 || !strings.Contains(mail[0].Text, out.Rows[0].EnrollURL) {
+		t.Fatalf("invitation not emailed: %+v %+v %v", out, mail, err)
 	}
 	if kim, err := st.GetUserByEmail(ctx, "kim@example.com"); err != nil || len(kim.RoleKeys) > 0 {
 		t.Fatalf("kim: %+v %v", kim, err)
