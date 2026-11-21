@@ -212,7 +212,7 @@ func assigned(u store.User, app store.Application) bool {
 	return app.ClientID == CLIClientID || slices.Contains(u.AppIDs, app.ID)
 }
 
-func (s *storage) userinfo(ctx context.Context, info *oidc.UserInfo, u store.User, scopes []string) error {
+func (s *storage) userinfo(ctx context.Context, info *oidc.UserInfo, u store.User, scopes []string, clientID string) error {
 	info.Subject = u.ID
 	if slices.Contains(scopes, oidc.ScopeEmail) {
 		info.Email = u.Email
@@ -224,20 +224,48 @@ func (s *storage) userinfo(ctx context.Context, info *oidc.UserInfo, u store.Use
 			info.Picture = s.issuer + *u.AvatarURL
 		}
 	}
-	if !slices.Contains(scopes, groupsScope) {
-		return nil
-	}
-	groups, err := s.st.ListGroupsRaw(ctx)
-	if err != nil {
-		return err
+	var mappings []store.Claim
+	if clientID != "" {
+		app, err := s.st.GetApplicationByClientID(ctx, clientID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		mappings = app.ClaimMappings
 	}
 	names := []string{}
-	for _, g := range groups {
-		if slices.Contains(u.GroupIDs, g.ID) {
-			names = append(names, g.Name)
+	if slices.Contains(scopes, groupsScope) || len(mappings) > 0 {
+		groups, err := s.st.ListGroupsRaw(ctx)
+		if err != nil {
+			return err
+		}
+		for _, g := range groups {
+			if slices.Contains(u.GroupIDs, g.ID) {
+				names = append(names, g.Name)
+			}
 		}
 	}
-	info.AppendClaims(groupsScope, names)
+	if slices.Contains(scopes, groupsScope) {
+		info.AppendClaims(groupsScope, names)
+	}
+	for _, m := range mappings {
+		if slices.Contains(ReservedClaims, m.Name) {
+			continue
+		}
+		switch m.Name {
+		case "email":
+			info.Email = ""
+		case "name":
+			info.Name = ""
+		case "preferred_username":
+			info.PreferredUsername = ""
+		case "picture":
+			info.Picture = ""
+		}
+		delete(info.Claims, m.Name)
+		if v := u.ClaimValue(m.Source, names); v != nil {
+			info.AppendClaims(m.Name, v)
+		}
+	}
 	return nil
 }
 
@@ -263,7 +291,7 @@ func (s *storage) SetUserinfoFromRequest(ctx context.Context, info *oidc.UserInf
 	if sessionID != nil {
 		info.AppendClaims("sid", *sessionID)
 	}
-	return s.userinfo(ctx, info, u, scopes)
+	return s.userinfo(ctx, info, u, scopes, req.GetClientID())
 }
 
 func (s *storage) accessToken(ctx context.Context, tokenID string) (store.OIDCToken, store.User, error) {
@@ -291,7 +319,7 @@ func (s *storage) SetUserinfoFromToken(ctx context.Context, info *oidc.UserInfo,
 	if t.UserID == nil {
 		return errors.New("the access token does not belong to a user")
 	}
-	return s.userinfo(ctx, info, u, t.Scopes)
+	return s.userinfo(ctx, info, u, t.Scopes, t.ClientID)
 }
 
 func (s *storage) SetIntrospectionFromToken(ctx context.Context, resp *oidc.IntrospectionResponse, tokenID, _, clientID string) error {
@@ -308,7 +336,7 @@ func (s *storage) SetIntrospectionFromToken(ctx context.Context, resp *oidc.Intr
 		return nil
 	}
 	info := new(oidc.UserInfo)
-	if err := s.userinfo(ctx, info, u, t.Scopes); err != nil {
+	if err := s.userinfo(ctx, info, u, t.Scopes, ""); err != nil {
 		return err
 	}
 	resp.SetUserInfo(info)

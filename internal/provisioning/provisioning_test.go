@@ -18,6 +18,7 @@ import (
 
 	"halo/internal/config"
 	"halo/internal/httpx"
+	"halo/internal/scim"
 	"halo/internal/server"
 	"halo/internal/store"
 	"halo/internal/testdb"
@@ -356,6 +357,18 @@ func TestOutboundProvisioning(t *testing.T) {
 	}
 	if c = sync(); c.Updated != 1 || remote.user("ada@example.com")["title"] != "Staff engineer" {
 		t.Fatalf("attribute change: %+v %v", c, remote.user("ada@example.com"))
+	}
+
+	withAttributes, err := st.GetUser(ctx, people["ada"].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withAttributes.Attributes = map[string]any{"costCentre": "CC-42", "teams": []string{"Platform"}}
+	if err := st.UpdateUserProfile(ctx, withAttributes); err != nil {
+		t.Fatal(err)
+	}
+	if c, ada = sync(), remote.user("ada@example.com"); c.Updated != 1 || fmt.Sprint(ada[scim.AttributesSchema]) != "map[costCentre:CC-42 teams:[Platform]]" || !strings.Contains(fmt.Sprint(ada["schemas"]), scim.AttributesSchema) {
+		t.Fatalf("custom attributes: %+v %v", c, ada)
 	}
 
 	if err := st.RemoveGroupMember(ctx, group.ID, people["bob"].ID); err != nil {

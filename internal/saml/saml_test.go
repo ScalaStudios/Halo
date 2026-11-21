@@ -258,6 +258,19 @@ func TestIdentityProvider(t *testing.T) {
 		t.Fatal("signResponse must sign the whole response")
 	}
 
+	ada.Attributes = map[string]any{"employeeNumber": 1000000, "teams": []string{"Platform", "Security"}, "contractor": false}
+	must(st.UpdateUserProfile(ctx, ada))
+	app.ClaimMappings = []store.Claim{{Name: "employeeNumber", Source: "attribute.employeeNumber"}, {Name: "teams", Source: "attribute.teams"}, {Name: "contractor", Source: "attribute.contractor"},
+		{Name: "mail", Source: "user.name"}, {Name: "memberOf", Source: store.OmitClaim}, {Name: "costCentre", Source: "attribute.costCentre"}}
+	must(st.UpdateApplication(ctx, app))
+	a, _, _ = assertion(call("GET", redirect.String(), passkey, nil), sp, request.ID)
+	if !slices.Equal(attribute(a, "employeeNumber"), []string{"1000000"}) || !slices.Equal(attribute(a, "teams"), []string{"Platform", "Security"}) || !slices.Equal(attribute(a, "contractor"), []string{"false"}) ||
+		!slices.Equal(attribute(a, "mail"), []string{ada.Name}) || attribute(a, "memberOf") != nil || attribute(a, "costCentre") != nil {
+		t.Fatalf("mapped attributes: %+v", a.AttributeStatements)
+	}
+	app.ClaimMappings = []store.Claim{}
+	must(st.UpdateApplication(ctx, app))
+
 	xmlenc.RegisterDecrypter(aes256GCM{})
 	spKey, spCert, spPEM := keyPair(t)
 	otherKey, _, _ := keyPair(t)

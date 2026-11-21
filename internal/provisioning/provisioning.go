@@ -315,6 +315,10 @@ func (h *handlers) sync(ctx context.Context, c store.AppProvisioning, users []st
 		if u.AvatarURL != nil {
 			resource.Photos = []scim.Photo{{Value: h.issuer + *u.AvatarURL, Type: "photo", Primary: true}}
 		}
+		if len(u.Attributes) > 0 {
+			resource.Schemas = append(resource.Schemas, scim.AttributesSchema)
+			resource.Attributes = u.Attributes
+		}
 		encoded, _ := json.Marshal(resource)
 		sum := sha256.Sum256(encoded)
 		hash := hex.EncodeToString(sum[:])

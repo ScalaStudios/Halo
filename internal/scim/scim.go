@@ -19,6 +19,7 @@ const (
 	UserSchema       = "urn:ietf:params:scim:schemas:core:2.0:User"
 	GroupSchema      = "urn:ietf:params:scim:schemas:core:2.0:Group"
 	EnterpriseSchema = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
+	AttributesSchema = "urn:ietf:params:scim:schemas:extension:halo:2.0:User"
 	PatchSchema      = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
 	listSchema       = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
 	errorSchema      = "urn:ietf:params:scim:api:messages:2.0:Error"
@@ -74,6 +75,8 @@ type User struct {
 	Active      bool        `json:"active"`
 	Enterprise  *Enterprise `json:"urn:ietf:params:scim:schemas:extension:enterprise:2.0:User,omitempty"`
 	Meta        *Meta       `json:"meta,omitempty"`
+
+	Attributes map[string]any `json:"urn:ietf:params:scim:schemas:extension:halo:2.0:User,omitempty"`
 }
 
 func NewUser(email, name, title, department string, active bool) User {
