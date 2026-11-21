@@ -6,13 +6,13 @@ import { useMutation } from "@/components/console/use-mutation";
 import { ROLES } from "@/components/provisioning/shared";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Select, Textarea } from "@/components/ui/input";
+import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
 import { formatDateTime, pluralize } from "@/lib/format";
-import type { AccessPackage, AccessRequest } from "@/lib/governance-types";
+import type { AccessPackage, AccessRequest, NamedRef } from "@/lib/governance-types";
 import type { RoleKey } from "@/lib/provisioning-types";
 import type { RoleActivation } from "@/lib/types";
-import { approversLabel, DURATIONS, durationLabel, joinNames } from "./shared";
+import { DURATIONS, durationLabel, joinNames, stagesLabel } from "./shared";
 
 function durationOptions(maxDays: number | null): string[] {
   if (maxDays === null) return [...DURATIONS.map(String), "none"];
@@ -24,7 +24,7 @@ function defaultDuration(pkg: AccessPackage | undefined): string {
   return pkg.maxDays === null ? "none" : String(Math.min(pkg.maxDays, 7));
 }
 
-export function RequestAccess({ packages, pendingIds }: { packages: AccessPackage[]; pendingIds: string[] }) {
+export function RequestAccess({ packages, pendingIds, reports }: { packages: AccessPackage[]; pendingIds: string[]; reports: NamedRef[] }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -32,45 +32,86 @@ export function RequestAccess({ packages, pendingIds }: { packages: AccessPackag
         <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
         Request access
       </Button>
-      {open ? <RequestDialog packages={packages} pendingIds={pendingIds} onClose={() => setOpen(false)} /> : null}
+      {open ? <RequestDialog packages={packages} pendingIds={pendingIds} reports={reports} onClose={() => setOpen(false)} /> : null}
     </>
   );
 }
 
-function RequestDialog({ packages, pendingIds, onClose }: { packages: AccessPackage[]; pendingIds: string[]; onClose: () => void }) {
+export function ExtendAccess({ grant, pkg }: { grant: AccessRequest; pkg: AccessPackage }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
+        Request extension
+      </Button>
+      {open ? <RequestDialog packages={[pkg]} pendingIds={[]} reports={[]} extending={grant} onClose={() => setOpen(false)} /> : null}
+    </>
+  );
+}
+
+function RequestDialog({
+  packages,
+  pendingIds,
+  reports,
+  extending,
+  onClose,
+}: {
+  packages: AccessPackage[];
+  pendingIds: string[];
+  reports: NamedRef[];
+  extending?: AccessRequest;
+  onClose: () => void;
+}) {
   const formId = useId();
-  const first = packages.find((p) => !pendingIds.includes(p.id));
+  const [beneficiaryId, setBeneficiaryId] = useState("");
+  const blocked = beneficiaryId ? [] : pendingIds;
+  const first = packages.find((p) => !blocked.includes(p.id));
   const [selected, setSelected] = useState(first?.id ?? "");
   const [duration, setDuration] = useState(defaultDuration(first));
   const [justification, setJustification] = useState("");
-  const [error, setError] = useState<string>();
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const { pending, run, errorFor, toast } = useMutation();
   const pkg = packages.find((p) => p.id === selected);
+  const beneficiary = reports.find((r) => r.id === beneficiaryId);
+  const whose = beneficiary ? `${beneficiary.name}'s` : "your";
 
   function choose(next: AccessPackage) {
     setSelected(next.id);
     setDuration(defaultDuration(next));
-    setError(undefined);
+    setAnswers({});
+    setErrors({});
   }
 
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!pkg) return;
-    if (pkg.requireJustification && !justification.trim()) {
-      setError(`Add a reason so ${approversLabel(pkg.approvers)} can decide. One sentence is enough.`);
-      return;
-    }
+    const next: Record<string, string> = {};
+    if (pkg.requireJustification && !justification.trim()) next.justification = "Add a reason so the approvers can decide. One sentence is enough.";
+    for (const q of pkg.questions) if (q.required && !answers[q.id]?.trim()) next[q.id] = `Answer this. ${pkg.name} asks it of everyone who requests it.`;
+    setErrors(next);
+    if (Object.keys(next).length) return;
+    const days = duration === "none" ? null : Number(duration);
     void run(
       "request",
       () =>
         api<AccessRequest>("/me/access-requests", {
-          body: { packageId: pkg.id, durationDays: duration === "none" ? null : Number(duration), justification: justification.trim() },
+          body: {
+            packageId: pkg.id,
+            ...(beneficiary ? { beneficiaryId: beneficiary.id } : {}),
+            ...(extending ? { extendsId: extending.id } : {}),
+            durationDays: days,
+            justification: justification.trim(),
+            answers,
+          },
         }),
       () => {
         onClose();
         toast({
-          title: `Request sent to ${approversLabel(pkg.approvers)}`,
-          description: `${pkg.name}, ${durationLabel(duration === "none" ? null : Number(duration)).toLowerCase()}. You'll get an email when they decide.`,
+          title: extending ? "Extension requested" : `Request sent to ${stagesLabel(pkg.stages.slice(0, 1), whose)}`,
+          description: beneficiary
+            ? `${pkg.name} for ${beneficiary.name}. They get an email now and when it's decided.`
+            : `${pkg.name}, ${extending && days !== null ? pluralize(days, "more day") : durationLabel(days).toLowerCase()}. You'll get an email when it's decided.`,
         });
       },
       "inline",
@@ -82,25 +123,43 @@ function RequestDialog({ packages, pendingIds, onClose }: { packages: AccessPack
       open
       onOpenChange={(next) => (next ? undefined : onClose())}
       error={errorFor("request")}
-      title="Request access"
-      description="Choose what you need. An approver reads your reason and decides. Access is removed automatically when it ends."
+      title={extending ? `Extend ${extending.package.name}` : "Request access"}
+      description={
+        extending?.expiresAt
+          ? `Ask for more time before your access ends ${formatDateTime(extending.expiresAt)}. The request goes through the package's approval again, and approved time is added to the end date.`
+          : "Choose what you need. Approvers read your reason and decide. Access is removed automatically when it ends."
+      }
       footer={
         <>
           <Button variant="secondary" disabled={pending === "request"} onClick={onClose}>
             Cancel
           </Button>
           <Button variant="primary" type="submit" form={formId} loading={pending === "request"} disabled={!pkg}>
-            Send request
+            {extending ? "Request extension" : "Send request"}
           </Button>
         </>
       }
     >
       <form id={formId} noValidate onSubmit={submit} className="flex flex-col gap-6">
-        <fieldset>
+        {reports.length ? (
+          <Field label="Request for" hint={beneficiary ? `${beneficiary.name} gets an email and sees the request in their account.` : "You can also ask on behalf of people who report to you."}>
+            {(field) => (
+              <Select {...field} value={beneficiaryId} onChange={(event) => setBeneficiaryId(event.target.value)}>
+                <option value="">Myself</option>
+                {reports.map((report) => (
+                  <option key={report.id} value={report.id}>
+                    {report.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        ) : null}
+        <fieldset hidden={Boolean(extending)}>
           <legend className="text-label text-fg">Access package</legend>
           <div className="mt-2 flex flex-col gap-2">
             {packages.map((option) => {
-              const waiting = pendingIds.includes(option.id);
+              const waiting = blocked.includes(option.id);
               return (
                 <label
                   key={option.id}
@@ -121,7 +180,7 @@ function RequestDialog({ packages, pendingIds, onClose }: { packages: AccessPack
                     <span className="text-caption text-fg-3">
                       {waiting
                         ? "You already asked for this. Waiting for a decision."
-                        : `Grants ${joinNames(option.groups)} · ${option.maxDays === null ? "Until revoked" : `Up to ${durationLabel(option.maxDays).toLowerCase()}`} · Approved by ${approversLabel(option.approvers)}`}
+                        : `Grants ${joinNames(option.groups)} · ${option.maxDays === null ? "Until revoked" : `Up to ${durationLabel(option.maxDays).toLowerCase()}`} · Approved by ${stagesLabel(option.stages, whose)}`}
                     </span>
                   </span>
                 </label>
@@ -133,8 +192,8 @@ function RequestDialog({ packages, pendingIds, onClose }: { packages: AccessPack
           <>
             <Field
               label="Justification"
-              hint={pkg.requireJustification ? "What you'll use it for. One or two sentences is enough." : "Optional. Helps the approver decide."}
-              error={error}
+              hint={pkg.requireJustification ? "What it's for. One or two sentences is enough." : "Optional. Helps the approvers decide."}
+              error={errors.justification}
             >
               {(field) => (
                 <Textarea
@@ -142,12 +201,34 @@ function RequestDialog({ packages, pendingIds, onClose }: { packages: AccessPack
                   value={justification}
                   onChange={(event) => {
                     setJustification(event.target.value);
-                    setError(undefined);
+                    setErrors(({ justification: _, ...rest }) => rest);
                   }}
                 />
               )}
             </Field>
-            <Field label="Duration" hint="Access is removed automatically when it ends.">
+            {pkg.questions.map((q) => (
+              <Field key={q.id} label={q.text} hint={q.required ? undefined : "Optional."} error={errors[q.id]}>
+                {(field) => {
+                  const change = (value: string) => {
+                    setAnswers((current) => ({ ...current, [q.id]: value }));
+                    setErrors(({ [q.id]: _, ...rest }) => rest);
+                  };
+                  return q.kind === "choice" ? (
+                    <Select {...field} value={answers[q.id] ?? ""} onChange={(event) => change(event.target.value)}>
+                      <option value="">Choose an answer</option>
+                      {q.choices.map((choice) => (
+                        <option key={choice} value={choice}>
+                          {choice}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <Input {...field} autoComplete="off" value={answers[q.id] ?? ""} onChange={(event) => change(event.target.value)} />
+                  );
+                }}
+              </Field>
+            ))}
+            <Field label={extending ? "Extra time" : "Duration"} hint={extending ? "Added to the current end date." : "Access is removed automatically when it ends."}>
               {(field) => (
                 <Select {...field} value={duration} onChange={(event) => setDuration(event.target.value)}>
                   {durationOptions(pkg.maxDays).map((value) => (

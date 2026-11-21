@@ -43,6 +43,8 @@ var variables = map[string]Variable{
 	"Package":        {"Package", "The access package.", "Finance tools"},
 	"Duration":       {"Duration", "How long the access was asked for, such as for 30 days or until revoked.", "for 30 days"},
 	"Reason":         {"Reason", "The requester's reason. Empty when they gave none.", "Quarter close"},
+	"RequestedBy":    {"RequestedBy", "The manager who asked for the access on the person's behalf. Empty when the person asked themselves.", "Grace Hopper"},
+	"Answers":        {"Answers", "The answers to the package's questions, one per line. Empty when there are none.", "Ticket number: FIN-1042"},
 	"Approver":       {"Approver", "The person who approved or denied the request.", "Grace Hopper"},
 	"Groups":         {"Groups", "The groups the approval added the person to.", "Finance and Payroll"},
 	"Note":           {"Note", "The approver's note. Empty when they left none.", "Ends with the quarter"},
@@ -114,9 +116,22 @@ var Templates = []Template{
 	},
 	{
 		Kind: "access_request", Label: "Access request", Description: "Sent to approvers when someone asks for an access package.",
-		Variables: uses("Requester", "RequesterEmail", "Package", "Duration", "Reason", "Link", "Organization"),
-		Default: store.EmailTemplate{Subject: "{{.Requester}} requests {{.Package}}", Body: "{{.Requester}} ({{.RequesterEmail}}) requested the access package {{.Package}} {{.Duration}}." +
-			"{{if .Reason}}\n\nReason: {{.Reason}}{{end}}\n\nApprove or deny it in Halo: {{.Link}}"},
+		Variables: uses("Requester", "RequesterEmail", "RequestedBy", "Package", "Duration", "Reason", "Answers", "Link", "Organization"),
+		Default: store.EmailTemplate{Subject: "{{.Requester}} requests {{.Package}}", Body: "{{if .RequestedBy}}{{.RequestedBy}} requested the access package {{.Package}} for {{.Requester}} ({{.RequesterEmail}}) {{.Duration}}." +
+			"{{else}}{{.Requester}} ({{.RequesterEmail}}) requested the access package {{.Package}} {{.Duration}}.{{end}}" +
+			"{{if .Reason}}\n\nReason: {{.Reason}}{{end}}{{if .Answers}}\n\n{{.Answers}}{{end}}\n\nApprove or deny it in Halo: {{.Link}}"},
+	},
+	{
+		Kind: "access_request_for_you", Label: "Access requested for you", Description: "Sent to a person when their manager or sponsor requests an access package for them.",
+		Variables: uses("RequestedBy", "Package", "Duration", "Link", "Organization"),
+		Default: store.EmailTemplate{Subject: "{{.RequestedBy}} requested {{.Package}} for you", Body: "{{.RequestedBy}} requested the access package {{.Package}} for you {{.Duration}}. " +
+			"You get another email when it's decided.\n\nIf you don't need it, cancel the request: {{.Link}}"},
+	},
+	{
+		Kind: "access_expired", Label: "Access request expired", Description: "Sent to the requester when nobody decides their access request before the deadline.",
+		Variables: uses("Package", "Link", "Organization"),
+		Default: store.EmailTemplate{Subject: "Your request for {{.Package}} expired", Body: "Nobody decided your request for {{.Package}} before the deadline, so Halo closed it.\n\n" +
+			"If you still need access, request it again: {{.Link}}"},
 	},
 	{
 		Kind: "access_approved", Label: "Access approved", Description: "Sent to the requester when their access request is approved.",

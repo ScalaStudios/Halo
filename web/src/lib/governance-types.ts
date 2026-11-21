@@ -1,5 +1,17 @@
 export type NamedRef = { id: string; name: string; email?: string };
 
+export type StageApprover = "people" | "manager" | "group-owners";
+
+export type AccessStage = {
+  approver: StageApprover;
+  approvers: NamedRef[];
+  group: NamedRef | null;
+  fallback: NamedRef[];
+  timeoutDays: number | null;
+};
+
+export type AccessQuestion = { id: string; text: string; kind: "text" | "choice"; choices: string[]; required: boolean };
+
 export type AccessPackage = {
   id: string;
   name: string;
@@ -7,6 +19,8 @@ export type AccessPackage = {
   owner: NamedRef | null;
   groups: NamedRef[];
   approvers: NamedRef[];
+  stages: AccessStage[];
+  questions: AccessQuestion[];
   maxDays: number | null;
   requireJustification: boolean;
   archived: boolean;
@@ -15,21 +29,28 @@ export type AccessPackage = {
   createdAt: string;
 };
 
-export type RequestStatus = "pending" | "approved" | "denied" | "cancelled";
+export type RequestStatus = "pending" | "approved" | "denied" | "cancelled" | "expired";
 
 export type AccessRequest = {
   id: string;
   package: NamedRef;
   requester: NamedRef;
+  requestedBy: NamedRef | null;
+  extends: string | null;
   justification: string;
+  answers: { questionId: string; question: string; answer: string }[];
   durationDays: number | null;
   status: RequestStatus;
+  stage: number;
+  stages: number;
+  stageDueAt: string | null;
+  stageApprovals: { stage: number; by: NamedRef | null; note: string; at: string }[];
   decidedBy: NamedRef | null;
   decidedAt: string | null;
   decisionNote: string;
   expiresAt: string | null;
   endedAt: string | null;
-  endReason: "expired" | "revoked" | null;
+  endReason: "expired" | "revoked" | "extended" | null;
   groups: NamedRef[];
   approvers: NamedRef[];
   createdAt: string;

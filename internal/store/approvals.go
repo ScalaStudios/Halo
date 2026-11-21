@@ -47,7 +47,7 @@ var approvalTargetLocks = map[string]struct{ tables, row string }{
 	"identity_provider": {"identity_providers", ""},
 	"method":            {"sign_in_method_settings", ""},
 	"settings":          {"settings", ""},
-	"configuration":     {"settings, user_attributes, groups, group_owners, group_members, terms, applications, app_groups, app_exchange_sources, access_policies, access_packages, access_package_groups, access_package_approvers", ""},
+	"configuration":     {"settings, user_attributes, groups, group_owners, group_members, terms, applications, app_groups, app_exchange_sources, access_policies, access_packages, access_package_groups, access_package_approvers, access_package_stages", ""},
 }
 
 func (s *Store) LockApprovalTarget(ctx context.Context, targetType, targetID string) error {

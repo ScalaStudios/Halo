@@ -31,9 +31,13 @@ var ExportSections = []ExportSection{
 	{"authenticationContexts", "authentication_contexts", `select id, name, methods, max_age, created_at, updated_at from authentication_contexts order by id`},
 	{"terms", "terms", `select id, name, version, text, url, created_at, updated_at from terms order by lower(name)`},
 	{"termsAcceptances", "terms_acceptances", `select user_id, terms_id, name, version, accepted_at from terms_acceptances order by accepted_at, user_id, terms_id`},
-	{"accessPackages", "access_packages", `select p.id, p.name, p.description, p.owner_id, p.max_days, p.require_justification, p.archived, p.created_at, p.updated_at,
+	{"accessPackages", "access_packages", `select p.id, p.name, p.description, p.owner_id, p.max_days, p.require_justification, p.archived, p.created_at, p.updated_at, p.questions,
 		array(select g.group_id from access_package_groups g where g.package_id = p.id order by g.group_id) as group_ids,
-		array(select a.user_id from access_package_approvers a where a.package_id = p.id order by a.user_id) as approver_ids from access_packages p order by p.name`},
+		array(select distinct a.user_id from access_package_approvers a where a.package_id = p.id and not a.fallback order by a.user_id) as approver_ids,
+		(select coalesce(json_agg(json_build_object('approver', s.approver, 'groupId', s.group_id, 'timeoutDays', s.timeout_days,
+			'approverIds', array(select a.user_id from access_package_approvers a where a.package_id = s.package_id and a.stage = s.stage and not a.fallback order by a.user_id),
+			'fallbackIds', array(select a.user_id from access_package_approvers a where a.package_id = s.package_id and a.stage = s.stage and a.fallback order by a.user_id)) order by s.stage), '[]')
+			from access_package_stages s where s.package_id = p.id) as stages from access_packages p order by p.name`},
 	{"accessReviews", "access_reviews", `select r.id, r.name, r.group_id, r.due_at, r.auto_apply, r.status, r.created_by, r.created_at, r.completed_by, r.completed_at,
 		array(select v.user_id from access_review_reviewers v where v.review_id = r.id order by v.user_id) as reviewer_ids,
 		(select coalesce(json_agg(json_build_object('userId', i.user_id, 'decision', i.decision, 'note', i.note, 'decidedBy', i.decided_by, 'decidedAt', i.decided_at, 'outcome', i.outcome) order by i.user_id), '[]')

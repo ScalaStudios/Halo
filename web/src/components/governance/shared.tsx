@@ -5,6 +5,7 @@ import { daysUntil, formatDate, formatDateTime, pluralize } from "@/lib/format";
 import type {
   AccessRequest,
   AccessReview,
+  AccessStage,
   LifecycleActionType,
   LifecycleTrigger,
   NamedRef,
@@ -22,6 +23,7 @@ export const REQUEST_STATUS: Record<RequestStatus, { label: string; tone: Tone }
   approved: { label: "Approved", tone: "success" },
   denied: { label: "Denied", tone: "danger" },
   cancelled: { label: "Cancelled", tone: "neutral" },
+  expired: { label: "Expired", tone: "neutral" },
 };
 
 export const REVIEW_STATUS: Record<ReviewStatus, { label: string; tone: Tone }> = {
@@ -65,9 +67,25 @@ export function durationLabel(days: number | null): string {
   return days === null ? "Until revoked" : pluralize(days, "day");
 }
 
+export function requestDurationLabel(request: AccessRequest): string {
+  return request.extends && request.durationDays !== null ? pluralize(request.durationDays, "more day") : durationLabel(request.durationDays);
+}
+
+export function stagesLabel(stages: AccessStage[], whose = "the requester's"): string {
+  return stages
+    .map((stage) =>
+      stage.approver === "manager"
+        ? `${whose} manager`
+        : stage.approver === "group-owners"
+          ? `the owners of ${stage.group?.name ?? "a removed group"}`
+          : approversLabel(stage.approvers),
+    )
+    .join(", then ");
+}
+
 export function grantLabel(request: AccessRequest, withTime = true): string {
   if (request.status !== "approved") return "—";
-  if (request.endedAt) return `${request.endReason === "revoked" ? "Revoked" : "Expired"} ${formatDate(request.endedAt)}`;
+  if (request.endedAt) return `${{ revoked: "Revoked", extended: "Extended", expired: "Expired" }[request.endReason ?? "expired"]} ${formatDate(request.endedAt)}`;
   if (!request.expiresAt) return "Until revoked";
   return `Until ${withTime ? formatDateTime(request.expiresAt) : formatDate(request.expiresAt)}`;
 }

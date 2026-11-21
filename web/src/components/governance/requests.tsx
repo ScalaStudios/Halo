@@ -15,8 +15,8 @@ import { Field, Textarea } from "@/components/ui/input";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { api } from "@/lib/api/client";
 import { formatDateTime, pluralize } from "@/lib/format";
-import type { AccessRequest } from "@/lib/governance-types";
-import { approversLabel, durationLabel, grantLabel, joinNames, REQUEST_STATUS } from "./shared";
+import type { AccessRequest, RequestStatus } from "@/lib/governance-types";
+import { approversLabel, grantLabel, joinNames, REQUEST_STATUS, requestDurationLabel } from "./shared";
 
 export function PendingRequests({ requests, linkPeople = false }: { requests: AccessRequest[]; linkPeople?: boolean }) {
   const [deciding, setDeciding] = useState<{ request: AccessRequest; approve: boolean } | null>(null);
@@ -28,41 +28,72 @@ export function PendingRequests({ requests, linkPeople = false }: { requests: Ac
   return (
     <>
       <ul className="flex flex-col">
-        {requests.map((request) => (
-          <li key={request.id} className="flex items-start gap-3 border-t border-border py-4 first:border-t-0 first:pt-0 last:pb-0">
-            <Avatar name={request.requester.name} size="md" />
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <p className="text-body-sm text-fg">
-                {linkPeople ? (
-                  <Link href={`/admin/users/${request.requester.id}`} className="font-semibold hover:underline">
-                    {request.requester.name}
-                  </Link>
+        {requests.map((request) => {
+          const requester = linkPeople ? (
+            <Link href={`/admin/users/${request.requester.id}`} className="font-semibold hover:underline">
+              {request.requester.name}
+            </Link>
+          ) : (
+            <span className="font-semibold">{request.requester.name}</span>
+          );
+          const verb = <span className="text-fg-3">{request.extends ? "asks to extend" : "requests"}</span>;
+          return (
+            <li key={request.id} className="flex items-start gap-3 border-t border-border py-4 first:border-t-0 first:pt-0 last:pb-0">
+              <Avatar name={request.requester.name} size="md" />
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <p className="text-body-sm text-fg">
+                  {request.requestedBy ? (
+                    <>
+                      <span className="font-semibold">{request.requestedBy.name}</span> {verb} <span className="font-semibold">{request.package.name}</span>{" "}
+                      <span className="text-fg-3">for</span> {requester}
+                    </>
+                  ) : (
+                    <>
+                      {requester} {verb} <span className="font-semibold">{request.package.name}</span>
+                    </>
+                  )}
+                </p>
+                {request.justification ? <p className="text-body-sm text-fg-3">“{request.justification}”</p> : null}
+                {request.answers.length ? (
+                  <dl className="flex flex-col gap-1 text-body-sm">
+                    {request.answers.map((answer) => (
+                      <div key={answer.questionId} className="flex flex-wrap gap-x-2">
+                        <dt className="text-fg-3">{answer.question}</dt>
+                        <dd className="text-fg">{answer.answer}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : null}
+                <p className="text-caption text-fg-3">
+                  {requestDurationLabel(request)} · Grants {joinNames(request.groups)} · <RelativeTime iso={request.createdAt} />
+                  {request.stages > 1 ? ` · Stage ${request.stage} of ${request.stages}` : null}
+                </p>
+                {request.stageApprovals.length ? (
+                  <p className="text-caption text-fg-3">
+                    {request.stageApprovals.map((a) => `${a.by?.name ?? "Someone"} approved stage ${a.stage}`).join(" · ")}
+                  </p>
+                ) : null}
+                {request.canDecide ? (
+                  <div className="mt-2 flex gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => setDeciding({ request, approve: true })}>
+                      <Check aria-hidden="true" size={16} strokeWidth={1.75} />
+                      Approve
+                    </Button>
+                    <Button size="sm" variant="quiet" onClick={() => setDeciding({ request, approve: false })}>
+                      <X aria-hidden="true" size={16} strokeWidth={1.75} />
+                      Deny
+                    </Button>
+                  </div>
                 ) : (
-                  <span className="font-semibold">{request.requester.name}</span>
-                )}{" "}
-                <span className="text-fg-3">requests</span> <span className="font-semibold">{request.package.name}</span>
-              </p>
-              {request.justification ? <p className="text-body-sm text-fg-3">“{request.justification}”</p> : null}
-              <p className="text-caption text-fg-3">
-                {durationLabel(request.durationDays)} · Grants {joinNames(request.groups)} · <RelativeTime iso={request.createdAt} />
-              </p>
-              {request.canDecide ? (
-                <div className="mt-2 flex gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => setDeciding({ request, approve: true })}>
-                    <Check aria-hidden="true" size={16} strokeWidth={1.75} />
-                    Approve
-                  </Button>
-                  <Button size="sm" variant="quiet" onClick={() => setDeciding({ request, approve: false })}>
-                    <X aria-hidden="true" size={16} strokeWidth={1.75} />
-                    Deny
-                  </Button>
-                </div>
-              ) : (
-                <p className="text-caption text-fg-3">Waiting on {approversLabel(request.approvers)}.</p>
-              )}
-            </div>
-          </li>
-        ))}
+                  <p className="text-caption text-fg-3">
+                    Waiting on {approversLabel(request.approvers)}
+                    {request.stageDueAt ? ` until ${formatDateTime(request.stageDueAt)}` : ""}.
+                  </p>
+                )}
+              </div>
+            </li>
+          );
+        })}
       </ul>
       {deciding ? <DecideDialog {...deciding} onClose={() => setDeciding(null)} /> : null}
     </>
@@ -81,12 +112,14 @@ function DecideDialog({ request, approve, onClose }: { request: AccessRequest; a
       (updated) => {
         onClose();
         toast(
-          approve
-            ? {
-                title: "Request approved",
-                description: `${who} has ${request.package.name} ${updated.expiresAt ? `until ${formatDateTime(updated.expiresAt)}` : "until someone revokes it"}. They get an email.`,
-              }
-            : { title: "Request denied", description: `${who} gets an email${note.trim() ? " with your note" : ""}.` },
+          updated.status === "pending"
+            ? { title: "Stage approved", description: `${who}'s request moved to stage ${updated.stage} of ${updated.stages}. Its approvers get an email.` }
+            : approve
+              ? {
+                  title: "Request approved",
+                  description: `${who} has ${request.package.name} ${updated.expiresAt ? `until ${formatDateTime(updated.expiresAt)}` : "until someone revokes it"}. They get an email.`,
+                }
+              : { title: "Request denied", description: `${who} gets an email${note.trim() ? " with your note" : ""}.` },
         );
       },
       "inline",
@@ -100,9 +133,13 @@ function DecideDialog({ request, approve, onClose }: { request: AccessRequest; a
       error={errorFor("decide")}
       title={approve ? `Approve ${who}'s request?` : `Deny ${who}'s request?`}
       description={
-        approve
-          ? `${who} joins ${joinNames(request.groups)} ${request.durationDays === null ? "until someone revokes the access" : `for ${pluralize(request.durationDays, "day")}, then Halo removes the access`}.`
-          : `${who} keeps their current access and gets an email with your decision.`
+        !approve
+          ? `${who} keeps their current access and gets an email with your decision.`
+          : request.stage < request.stages
+            ? `The request moves to stage ${request.stage + 1} of ${request.stages}. ${who} gets access once every stage approves.`
+            : request.extends && request.durationDays !== null
+              ? `${who} keeps ${joinNames(request.groups)} for ${pluralize(request.durationDays, "more day")} after the current end date.`
+              : `${who} joins ${joinNames(request.groups)} ${request.durationDays === null ? "until someone revokes the access" : `for ${pluralize(request.durationDays, "day")}, then Halo removes the access`}.`
       }
       footer={
         <>
@@ -171,6 +208,8 @@ function RevokeButton({ request }: { request: AccessRequest }) {
   );
 }
 
+const UNDECIDED: Partial<Record<RequestStatus, string>> = { cancelled: "Cancelled by requester", expired: "Nobody decided in time" };
+
 const decidedColumns: ColumnDef<AccessRequest, any>[] = [
   {
     id: "requester",
@@ -208,7 +247,7 @@ const decidedColumns: ColumnDef<AccessRequest, any>[] = [
     cell: ({ row }) => (
       <span className="flex max-w-56 flex-col py-2">
         <span className="whitespace-nowrap">
-          {row.original.decidedBy?.name ?? (row.original.status === "cancelled" ? "Cancelled by requester" : "—")}
+          {row.original.decidedBy?.name ?? UNDECIDED[row.original.status] ?? "—"}
           {row.original.decidedAt ? (
             <span className="text-fg-3" title={formatDateTime(row.original.decidedAt)}>
               {" "}
@@ -259,7 +298,7 @@ export function DecidedRequests({ requests }: { requests: AccessRequest[] }) {
         {
           column: "status",
           label: "Decision",
-          options: (["approved", "denied", "cancelled"] as const).map((value) => ({ value, label: REQUEST_STATUS[value].label })),
+          options: (["approved", "denied", "cancelled", "expired"] as const).map((value) => ({ value, label: REQUEST_STATUS[value].label })),
         },
         { column: "package", label: "Package", options: packages.map((name) => ({ value: name, label: name })) },
       ]}

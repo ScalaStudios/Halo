@@ -12,10 +12,22 @@ import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
-import type { AccessPackage } from "@/lib/governance-types";
+import type { AccessPackage, AccessQuestion, StageApprover } from "@/lib/governance-types";
 import type { Group } from "@/lib/types";
 import { PeoplePicker } from "./people-picker";
-import { DURATIONS, durationLabel, joinNames, type Person } from "./shared";
+import { DURATIONS, durationLabel, joinNames, stagesLabel, type Person } from "./shared";
+
+const DEADLINES = [1, 2, 3, 7, 14, 30];
+
+type StageDraft = { key: number; approver: StageApprover; approverIds: string[]; groupId: string; fallbackIds: string[]; timeout: string };
+type QuestionDraft = { key: number; id: string; text: string; kind: AccessQuestion["kind"]; choices: string; required: boolean };
+
+let draftKey = 0;
+
+function approvalLabel(p: AccessPackage): string {
+  const label = stagesLabel(p.stages);
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
 
 const columns: ColumnDef<AccessPackage, any>[] = [
   {
@@ -39,15 +51,10 @@ const columns: ColumnDef<AccessPackage, any>[] = [
   },
   {
     id: "approvers",
-    accessorFn: (p) => joinNames(p.approvers),
-    header: "Approvers",
-    meta: { label: "Approvers" },
-    cell: ({ row }) =>
-      row.original.approvers.length ? (
-        <span className="whitespace-nowrap">{joinNames(row.original.approvers)}</span>
-      ) : (
-        <span className="whitespace-nowrap text-fg-3">Global administrators</span>
-      ),
+    accessorFn: approvalLabel,
+    header: "Approval",
+    meta: { label: "Approval" },
+    cell: ({ getValue }) => <span className="block max-w-72 min-w-40">{getValue<string>()}</span>,
   },
   {
     id: "duration",
@@ -97,7 +104,6 @@ function bodyFor(p: AccessPackage) {
     description: p.description,
     ownerId: p.owner?.id ?? null,
     groupIds: p.groups.map((g) => g.id),
-    approverIds: p.approvers.map((a) => a.id),
     maxDays: p.maxDays,
     requireJustification: p.requireJustification,
     archived: p.archived,
@@ -148,7 +154,7 @@ export function PackagesTable({ packages, groups, people }: { packages: AccessPa
           label="Access packages"
           noun={["package", "packages"]}
           storageKey="access-packages"
-          searchText={(p) => `${p.name} ${p.description} ${joinNames(p.groups)} ${joinNames(p.approvers)}`}
+          searchText={(p) => `${p.name} ${p.description} ${joinNames(p.groups)} ${approvalLabel(p)}`}
           searchPlaceholder="Search packages, groups or approvers"
           views={views}
           facets={[
@@ -227,7 +233,19 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
   const [name, setName] = useState(pkg?.name ?? "");
   const [description, setDescription] = useState(pkg?.description ?? "");
   const [groupIds, setGroupIds] = useState<string[]>(pkg?.groups.map((g) => g.id) ?? []);
-  const [approverIds, setApproverIds] = useState<string[]>(pkg?.approvers.map((a) => a.id) ?? []);
+  const [stages, setStages] = useState<StageDraft[]>(() =>
+    (pkg?.stages ?? [{ approver: "people" as const, approvers: [], group: null, fallback: [], timeoutDays: null }]).map((stage) => ({
+      key: ++draftKey,
+      approver: stage.approver,
+      approverIds: stage.approvers.map((a) => a.id),
+      groupId: stage.group?.id ?? "",
+      fallbackIds: stage.fallback.map((f) => f.id),
+      timeout: stage.timeoutDays === null ? "none" : String(stage.timeoutDays),
+    })),
+  );
+  const [questions, setQuestions] = useState<QuestionDraft[]>(() =>
+    (pkg?.questions ?? []).map((q) => ({ key: ++draftKey, id: q.id, text: q.text, kind: q.kind, choices: q.choices.join("\n"), required: q.required })),
+  );
   const [ownerId, setOwnerId] = useState(pkg?.owner?.id ?? "");
   const [maxDays, setMaxDays] = useState(pkg ? (pkg.maxDays === null ? "none" : String(pkg.maxDays)) : "7");
   const [requireJustification, setRequireJustification] = useState(pkg?.requireJustification ?? true);
@@ -235,6 +253,14 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
   const [errors, setErrors] = useState<{ name?: string; groups?: string }>({});
   const { pending, run, errorFor, toast } = useMutation();
   const durations = [...new Set([...DURATIONS, ...(pkg?.maxDays ? [pkg.maxDays] : [])])].sort((a, b) => a - b);
+
+  function updateStage(key: number, change: Partial<StageDraft>) {
+    setStages((current) => current.map((stage) => (stage.key === key ? { ...stage, ...change } : stage)));
+  }
+
+  function updateQuestion(key: number, change: Partial<QuestionDraft>) {
+    setQuestions((current) => current.map((q) => (q.key === key ? { ...q, ...change } : q)));
+  }
 
   function submit() {
     const next = { name: name.trim() ? undefined : "Enter a package name.", groups: groupIds.length ? undefined : "Choose at least one group to grant." };
@@ -245,7 +271,20 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
       description: description.trim(),
       ownerId: ownerId || null,
       groupIds,
-      approverIds,
+      stages: stages.map((stage) => ({
+        approver: stage.approver,
+        approverIds: stage.approver === "people" ? stage.approverIds : [],
+        groupId: stage.approver === "group-owners" ? stage.groupId || null : null,
+        fallbackIds: stage.fallbackIds,
+        timeoutDays: stage.timeout === "none" ? null : Number(stage.timeout),
+      })),
+      questions: questions.map((q) => ({
+        id: q.id,
+        text: q.text.trim(),
+        kind: q.kind,
+        choices: q.kind === "choice" ? q.choices.split("\n").map((c) => c.trim()).filter(Boolean) : [],
+        required: q.required,
+      })),
       maxDays: maxDays === "none" ? null : Number(maxDays),
       requireJustification,
       archived,
@@ -257,7 +296,7 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
         onClose();
         toast(
           pkg
-            ? { title: `${saved.name} saved`, description: "Changes apply to new requests. Access already granted keeps its end date." }
+            ? { title: `${saved.name} saved`, description: "Pending requests follow the new stages and deadlines. Access already granted keeps its end date." }
             : { title: `${saved.name} created`, description: "People can request it from the Access page in their account." },
         );
       },
@@ -270,6 +309,7 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
       open
       onOpenChange={(open) => (open ? undefined : onClose())}
       error={errorFor("save")}
+      width="wide"
       title={pkg ? `Edit ${pkg.name}` : "Create access package"}
       description="A package bundles groups people can request. Approved access is removed automatically when it expires."
       footer={
@@ -323,9 +363,136 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
             </p>
           )}
         </fieldset>
-        <Field label="Approvers" hint="Any one of them can approve. Global administrators can always approve. Nobody can approve their own request.">
-          {(props) => <PeoplePicker {...props} people={people} value={approverIds} onChange={setApproverIds} />}
-        </Field>
+        <fieldset className="flex flex-col gap-3">
+          <legend className="mb-3 text-label text-fg">Approval</legend>
+          <ol className="flex flex-col gap-3">
+            {stages.map((stage, index) => (
+              <li key={stage.key} className="flex flex-col gap-4 rounded-md border border-border p-4">
+                <div className="flex min-h-8 items-center justify-between gap-3">
+                  <span className="text-body-sm font-semibold text-fg">Stage {index + 1}</span>
+                  {stages.length > 1 ? (
+                    <Button size="sm" variant="quiet" aria-label={`Remove stage ${index + 1}`} onClick={() => setStages((current) => current.filter((s) => s.key !== stage.key))}>
+                      <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
+                      Remove
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Field label="Decided by">
+                    {(props) => (
+                      <Select {...props} value={stage.approver} onChange={(event) => updateStage(stage.key, { approver: event.target.value as StageApprover })}>
+                        <option value="people">Specific people</option>
+                        <option value="manager">The requester&apos;s manager</option>
+                        <option value="group-owners">Owners of a group</option>
+                      </Select>
+                    )}
+                  </Field>
+                  <Field label="Deadline" hint="Then the fallback approvers get it. Without a decision after that, the request expires.">
+                    {(props) => (
+                      <Select {...props} value={stage.timeout} onChange={(event) => updateStage(stage.key, { timeout: event.target.value })}>
+                        <option value="none">No deadline</option>
+                        {DEADLINES.map((days) => (
+                          <option key={days} value={String(days)}>
+                            {durationLabel(days)}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
+                  </Field>
+                </div>
+                {stage.approver === "people" ? (
+                  <Field label="Approvers" hint="Any one of them decides this stage. Nobody decides a request they made or that is for them.">
+                    {(props) => <PeoplePicker {...props} people={people} value={stage.approverIds} onChange={(approverIds) => updateStage(stage.key, { approverIds })} />}
+                  </Field>
+                ) : null}
+                {stage.approver === "group-owners" ? (
+                  <Field label="Group" hint="Its owners decide this stage.">
+                    {(props) => (
+                      <Select {...props} value={stage.groupId} onChange={(event) => updateStage(stage.key, { groupId: event.target.value })}>
+                        <option value="">Choose a group</option>
+                        {groups.map((group) => (
+                          <option key={group.id} value={group.id}>
+                            {group.name}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
+                  </Field>
+                ) : null}
+                <Field
+                  label="Fallback approvers"
+                  hint="Decide when nobody above can, such as a requester without a manager, and when the deadline passes. Without them, global administrators decide."
+                >
+                  {(props) => <PeoplePicker {...props} people={people} value={stage.fallbackIds} onChange={(fallbackIds) => updateStage(stage.key, { fallbackIds })} />}
+                </Field>
+              </li>
+            ))}
+          </ol>
+          {stages.length < 3 ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="self-start"
+              onClick={() => setStages((current) => [...current, { key: ++draftKey, approver: "people", approverIds: [], groupId: "", fallbackIds: [], timeout: "none" }])}
+            >
+              <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
+              Add stage
+            </Button>
+          ) : null}
+          <p className="text-caption text-fg-3">Requests go through the stages in order. A denial at any stage ends the request. Global administrators can decide any stage.</p>
+        </fieldset>
+        <fieldset className="flex flex-col gap-3">
+          <legend className="mb-3 text-label text-fg">Questions</legend>
+          {questions.length ? (
+            <ol className="flex flex-col gap-3">
+              {questions.map((q, index) => (
+                <li key={q.key} className="flex flex-col gap-4 rounded-md border border-border p-4">
+                  <div className="flex min-h-8 items-center justify-between gap-3">
+                    <span className="text-body-sm font-semibold text-fg">Question {index + 1}</span>
+                    <Button size="sm" variant="quiet" aria-label={`Remove question ${index + 1}`} onClick={() => setQuestions((current) => current.filter((c) => c.key !== q.key))}>
+                      <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
+                      Remove
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_12rem]">
+                    <Field label="Question">
+                      {(props) => <Input {...props} autoComplete="off" value={q.text} onChange={(event) => updateQuestion(q.key, { text: event.target.value })} placeholder="Ticket number" />}
+                    </Field>
+                    <Field label="Answer">
+                      {(props) => (
+                        <Select {...props} value={q.kind} onChange={(event) => updateQuestion(q.key, { kind: event.target.value as AccessQuestion["kind"] })}>
+                          <option value="text">Free text</option>
+                          <option value="choice">Choice from a list</option>
+                        </Select>
+                      )}
+                    </Field>
+                  </div>
+                  {q.kind === "choice" ? (
+                    <Field label="Choices" hint="One per line, at least two.">
+                      {(props) => <Textarea {...props} rows={3} value={q.choices} onChange={(event) => updateQuestion(q.key, { choices: event.target.value })} />}
+                    </Field>
+                  ) : null}
+                  <label className="flex cursor-pointer items-start gap-3">
+                    <Checkbox className="mt-0.5" checked={q.required} onChange={(event) => updateQuestion(q.key, { required: event.target.checked })} />
+                    <span className="text-body-sm text-fg">Required</span>
+                  </label>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+          {questions.length < 10 ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="self-start"
+              onClick={() => setQuestions((current) => [...current, { key: ++draftKey, id: "", text: "", kind: "text", choices: "", required: true }])}
+            >
+              <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
+              Add question
+            </Button>
+          ) : null}
+          <p className="text-caption text-fg-3">Asked on the request form, such as a ticket number or a project. Approvers see the answers, and Halo keeps them with the request.</p>
+        </fieldset>
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           <Field label="Owner" hint="Who answers questions about this package.">
             {(props) => (

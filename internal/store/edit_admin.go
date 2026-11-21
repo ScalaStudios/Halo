@@ -65,7 +65,8 @@ type GroupUse struct {
 func (s *Store) GroupUses(ctx context.Context, groupID string) ([]GroupUse, error) {
 	rows, err := s.db.Query(ctx, `select 'application', a.id, a.name from app_groups ag join applications a on a.id = ag.app_id where ag.group_id = $1
 		union all
-		select 'access package', p.id, p.name from access_package_groups pg join access_packages p on p.id = pg.package_id where pg.group_id = $1
+		select 'access package', p.id, p.name from access_packages p where exists (select 1 from access_package_groups pg where pg.package_id = p.id and pg.group_id = $1)
+			or exists (select 1 from access_package_stages s where s.package_id = p.id and s.group_id = $1)
 		union all
 		select 'policy', p.id, p.name from access_policies p where p.conditions->'groupIds' ? $1 or p.conditions->'excludeGroupIds' ? $1
 		union all

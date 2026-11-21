@@ -28,7 +28,7 @@ var (
 	skippedSections  = []string{"users", "applicationRoles", "termsAcceptances", "accessReviews", "auditEvents"}
 	termsFields      = []string{"name", "text", "url"}
 	policyFields     = []string{"name", "description", "enabled", "mode", "effect", "termsId", "conditions"}
-	packageFields    = []string{"name", "description", "ownerId", "groupIds", "approverIds", "maxDays", "requireJustification", "archived"}
+	packageFields    = []string{"name", "description", "ownerId", "groupIds", "approverIds", "stages", "questions", "maxDays", "requireJustification", "archived"}
 	tokenFields      = map[string]string{"accessTokenTtl": "accessTokenTtl", "refreshTokenTtl": "refreshTokenTtl", "idTokenTtl": "idTokenTtl", "refreshRotation": "rotation", "tokenExchange": "exchange", "tokenExchangeFrom": "exchangeFrom"}
 )
 

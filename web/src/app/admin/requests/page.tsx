@@ -13,7 +13,7 @@ export const metadata = { title: "Requests" };
 export default async function RequestsPage() {
   const [pending, decided] = await Promise.all([
     apiGet<AccessRequest[]>("/access-requests?status=pending"),
-    apiGet<AccessRequest[]>("/access-requests?status=approved,denied,cancelled"),
+    apiGet<AccessRequest[]>("/access-requests?status=approved,denied,cancelled,expired"),
   ]);
   const yours = pending.filter((r) => r.canDecide).length;
   return (
@@ -29,12 +29,12 @@ export default async function RequestsPage() {
         </CardBody>
       </Card>
       <section className="flex flex-col gap-4">
-        <SectionTitle title="Decided" description="Approvals, denials and cancellations, newest first. Revoke approved access here before it ends." />
+        <SectionTitle title="Decided" description="Approvals, denials, cancellations and requests nobody decided in time, newest first. Revoke approved access here before it ends." />
         {decided.length ? (
           <DecidedRequests requests={decided} />
         ) : (
           <Card>
-            <EmptyState icon={CheckCheck} title="No decisions yet" description="Approved, denied and cancelled requests appear here." />
+            <EmptyState icon={CheckCheck} title="No decisions yet" description="Approved, denied, cancelled and expired requests appear here." />
           </Card>
         )}
       </section>

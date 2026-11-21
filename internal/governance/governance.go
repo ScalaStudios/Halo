@@ -75,12 +75,14 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	handle("POST /api/v1/me/access-requests/{id}/cancel", nil, h.cancelRequest)
 	handle("GET /api/v1/me/access-grants", nil, h.myGrants)
 	handle("GET /api/v1/me/approvals", nil, h.myApprovals)
+	handle("GET /api/v1/me/direct-reports", nil, h.myReports)
 	handle("GET /api/v1/me/reviews", nil, h.myReviews)
 	handle("POST /api/v1/me/role-activations", nil, h.activateRole)
 	handle("POST /api/v1/me/role-activations/{id}/deactivate", nil, h.deactivateRole)
 
 	if d.Jobs != nil {
 		d.Jobs.Every("expire access grants", time.Minute, func(ctx context.Context) error { return expireGrants(ctx, d.Store, time.Now()) })
+		d.Jobs.Every("escalate and close undecided access requests", time.Minute, func(ctx context.Context) error { return h.timeOutRequests(ctx, time.Now()) })
 		d.Jobs.Every("expire role activations", time.Minute, func(ctx context.Context) error { return expireActivations(ctx, d.Store, time.Now()) })
 		d.Jobs.Every("mark overdue access reviews", time.Minute, func(ctx context.Context) error { return markOverdueReviews(ctx, d.Store, time.Now()) })
 		d.Jobs.Every("run lifecycle rules", time.Minute, func(ctx context.Context) error { return runLifecycle(ctx, d.Store) })

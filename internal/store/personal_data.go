@@ -25,7 +25,7 @@ var PersonalDataSections = []ExportSection{
 	{"applicationRelationships", "authz_tuples", `select t.app_id, a.name as application, t.object_type, t.object_id, t.relation, t.created_at from authz_tuples t join applications a on a.id = t.app_id where t.user_id = $1 order by a.name, t.object_type, t.object_id, t.relation`},
 	{"consents", "consent_grants", `select c.app_id, a.name as application, c.scopes, c.granted_at from consent_grants c join applications a on a.id = c.app_id where c.user_id = $1 order by c.granted_at`},
 	{"tokens", "oidc_tokens", `select kind, client_id, scopes, audience, created_at, expires_at, revoked_at from oidc_tokens where user_id = $1 order by created_at`},
-	{"accessRequests", "access_requests", `select r.id, r.package_id, p.name as package, r.justification, r.duration_days, r.status, r.decided_at, r.decision_note, r.expires_at, r.ended_at, r.end_reason, r.created_at
+	{"accessRequests", "access_requests", `select r.id, r.package_id, p.name as package, r.requested_by, r.extends_id, r.justification, r.answers, r.duration_days, r.status, r.decided_at, r.decision_note, r.expires_at, r.ended_at, r.end_reason, r.created_at
 		from access_requests r join access_packages p on p.id = r.package_id where r.requester_id = $1 order by r.created_at`},
 	{"accessReviews", "access_review_items", `select i.review_id, r.name as review, i.decision, i.note, i.decided_at, i.outcome from access_review_items i join access_reviews r on r.id = i.review_id where i.user_id = $1 order by r.created_at`},
 	{"termsAcceptances", "terms_acceptances", `select terms_id, name, version, accepted_at from terms_acceptances where user_id = $1 order by accepted_at`},
