@@ -4,12 +4,13 @@ import { AvatarEditor } from "@/components/account/avatar-editor";
 import { AppActions, DangerZone } from "@/components/applications/app-actions";
 import { ClaimMappingsForm } from "@/components/applications/claim-mappings";
 import { CredentialList } from "@/components/applications/credentials";
-import { AuthenticationForm, ScopesForm, SignInFrequencyForm } from "@/components/applications/edit-application";
+import { AuthenticationForm, BackchannelLogoutForm, ScopesForm, SignInFrequencyForm } from "@/components/applications/edit-application";
 import { HookForm } from "@/components/applications/hook-form";
 import { SamlAttributesForm, SamlConnectionFields, SamlSettingsForm } from "@/components/applications/saml";
 import { APP_STATUS, PROTOCOL_LABEL, SetupGuideCard, statusKey, TYPE_LABEL } from "@/components/applications/shared";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
 import { SessionsTable } from "@/components/monitoring/sessions-table";
+import { DeliveryLog } from "@/components/settings/webhooks";
 import { SignInRows } from "@/components/monitoring/sign-in-rows";
 import { Badge, StatusDot, Tag } from "@/components/ui/badge";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -23,6 +24,7 @@ import { apiGet } from "@/lib/api/server";
 import { formatDuration, pluralize } from "@/lib/format";
 import type { ApiResource } from "@/lib/infra-types";
 import type { SamlApplication } from "@/lib/saml-types";
+import type { WebhookDelivery } from "@/lib/settings-types";
 import { endpoints, setupGuide } from "@/lib/setup-guides";
 import type { Application, ApplicationHook, Attribute, Group, Organization, Session, SignInEvent, User } from "@/lib/types";
 
@@ -34,7 +36,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function ApplicationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { id } = await params;
   const { tab = "overview" } = await searchParams;
-  const [app, groups, users, sessions, appSignIns, org, resources, hook, attributes] = await Promise.all([
+  const [app, groups, users, sessions, appSignIns, org, resources, hook, attributes, logouts] = await Promise.all([
     apiGet<SamlApplication>(`/applications/${encodeURIComponent(id)}`),
     apiGet<Group[]>("/groups"),
     apiGet<User[]>("/users"),
@@ -44,6 +46,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
     tab === "authentication" ? apiGet<ApiResource[]>("/api-resources") : [],
     tab === "authentication" ? apiGet<ApplicationHook | null>(`/applications/${encodeURIComponent(id)}/hook`) : null,
     tab === "claims" ? apiGet<Attribute[]>("/attributes") : [],
+    tab === "authentication" ? apiGet<WebhookDelivery[]>(`/applications/${encodeURIComponent(id)}/logout-deliveries`) : [],
   ]);
 
   const saml = app.protocol === "saml";
@@ -163,6 +166,13 @@ export default async function ApplicationPage({ params, searchParams }: { params
             <AuthenticationTab app={app} resources={resources} />
             {service ? null : <SignInFrequencyForm key={app.maxAuthAge} app={app} />}
             {hookable ? <HookForm key={JSON.stringify(hook)} appId={app.id} appName={app.name} hook={hook} /> : null}
+            {hookable ? <BackchannelLogoutForm key={`${app.backchannelLogoutUri}:${app.backchannelLogoutSessionRequired}`} app={app} /> : null}
+            {logouts.length > 0 ? (
+              <section className="flex flex-col gap-6">
+                <SectionTitle title="Logout deliveries" description={`The latest ${pluralize(logouts.length, "logout")}, newest first. Each one is a Halo session that ended.`} />
+                <DeliveryLog deliveries={logouts} payloadNote="The session the logout token ends. Halo signs a new token with it on every attempt." />
+              </section>
+            ) : null}
           </div>
         ) : null}
         {tab === "permissions" ? (

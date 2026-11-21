@@ -15,6 +15,7 @@ import (
 	"halo/internal/oidc"
 	"halo/internal/saml"
 	"halo/internal/store"
+	"halo/internal/webhooks"
 )
 
 const (
@@ -604,15 +605,22 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		RequiresConsent *bool     `json:"requiresConsent"`
 
 		ClaimMappings *[]store.Claim `json:"claimMappings"`
+
+		BackchannelLogoutURI             *string `json:"backchannelLogoutUri"`
+		BackchannelLogoutSessionRequired *bool   `json:"backchannelLogoutSessionRequired"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
-	if app.Protocol == "saml" && (in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil || in.RequiresConsent != nil) {
-		return httpx.Invalid(app.Name + " signs in with SAML, so it has no redirect URIs, scopes or token lifetimes. Change its ACS URLs in the SAML settings.")
+	logout := in.BackchannelLogoutURI != nil || in.BackchannelLogoutSessionRequired != nil
+	if app.Protocol == "saml" && (in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil || in.RequiresConsent != nil || logout) {
+		return httpx.Invalid(app.Name + " signs in with SAML, so it has no redirect URIs, scopes, token lifetimes or back-channel logout. Change its ACS URLs in the SAML settings.")
 	}
-	if app.Protocol == "bookmark" && (in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil || in.MaxAuthAge != nil || in.RequiresConsent != nil || in.ClaimMappings != nil) {
-		return httpx.Invalid(app.Name + " is a bookmark, so it has no redirect URIs, scopes, claims, token lifetimes or sign-in frequency.")
+	if app.Protocol == "bookmark" && (in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil || in.MaxAuthAge != nil || in.RequiresConsent != nil || in.ClaimMappings != nil || logout) {
+		return httpx.Invalid(app.Name + " is a bookmark, so it has no redirect URIs, scopes, claims, token lifetimes, sign-in frequency or back-channel logout.")
+	}
+	if app.Type == "service" && logout {
+		return httpx.Invalid(app.Name + " is a service application. Nobody signs in to it, so it has no sessions to end with back-channel logout.")
 	}
 	if app.Type == "service" && in.ClaimMappings != nil {
 		return httpx.Invalid(app.Name + " is a service application. Nobody signs in to it, so it has no ID tokens or user claims to map.")
@@ -625,7 +633,7 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		label string
 		value *string
 		field *string
-	}{{"name", in.Name, &next.Name}, {"description", in.Description, &next.Description}, {"homepage", in.Homepage, &next.Homepage}} {
+	}{{"name", in.Name, &next.Name}, {"description", in.Description, &next.Description}, {"homepage", in.Homepage, &next.Homepage}, {"back-channel logout URI", in.BackchannelLogoutURI, &next.BackchannelLogoutURI}} {
 		if f.value != nil && strings.TrimSpace(*f.value) != *f.field {
 			*f.field = strings.TrimSpace(*f.value)
 			changed = append(changed, f.label)
@@ -710,6 +718,10 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		next.RequiresConsent = *in.RequiresConsent
 		changed = append(changed, "consent screen")
 	}
+	if in.BackchannelLogoutSessionRequired != nil && *in.BackchannelLogoutSessionRequired != app.BackchannelLogoutSessionRequired {
+		next.BackchannelLogoutSessionRequired = *in.BackchannelLogoutSessionRequired
+		changed = append(changed, "back-channel logout session requirement")
+	}
 	current := ""
 	if app.Owner != nil {
 		current = *app.Owner
@@ -756,6 +768,15 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	if slices.Contains(changed, "redirect URIs") || slices.Contains(changed, "post-logout URIs") {
 		if err := checkRedirects(app.Protocol, app.Type, next.RedirectURIs, next.PostLogoutURIs); err != nil {
 			return err
+		}
+	}
+	if slices.Contains(changed, "back-channel logout URI") && next.BackchannelLogoutURI != "" {
+		u, err := webhooks.PublicURL(next.BackchannelLogoutURI, "back-channel logout endpoint", "Back-channel logout only calls")
+		if err != nil {
+			return err
+		}
+		if u.Fragment != "" {
+			return httpx.Invalid("Remove the #fragment from the back-channel logout URI. Halo posts logout tokens to the URL without one.")
 		}
 	}
 	if slices.Contains(changed, "scopes") {

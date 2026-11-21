@@ -418,7 +418,7 @@ export function WebhookActions({ webhook, eventTypes }: { webhook: Webhook; even
   );
 }
 
-export function DeliveryLog({ deliveries }: { deliveries: WebhookDelivery[] }) {
+export function DeliveryLog({ deliveries, payloadNote = "The exact JSON body Halo signs and sends. Retries send the same body." }: { deliveries: WebhookDelivery[]; payloadNote?: string }) {
   const [open, setOpen] = useState<WebhookDelivery | null>(null);
   if (deliveries.length === 0) {
     return (
@@ -464,7 +464,7 @@ export function DeliveryLog({ deliveries }: { deliveries: WebhookDelivery[] }) {
           if (!next) setOpen(null);
         }}
         title={open ? open.eventType : "Payload"}
-        description="The exact JSON body Halo signs and sends. Retries send the same body."
+        description={payloadNote}
         width="wide"
       >
         {open ? <pre className="overflow-x-auto rounded-md border border-border bg-sunken p-4 font-mono text-code-sm text-fg-2">{JSON.stringify(JSON.parse(open.body), null, 2)}</pre> : null}

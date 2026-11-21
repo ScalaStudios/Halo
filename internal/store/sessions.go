@@ -202,8 +202,34 @@ func (s *Store) revokeTokensForSessions(ctx context.Context, sessionIDs []string
 	if len(sessionIDs) == 0 {
 		return nil
 	}
+	if err := s.queueLogouts(ctx, `s.id = any($1)`, sessionIDs); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(ctx, `update oidc_tokens set revoked_at = now() where session_id = any($1) and revoked_at is null`, sessionIDs)
 	return err
+}
+
+func (s *Store) QueueExpiredSessionLogouts(ctx context.Context) error {
+	return s.queueLogouts(ctx, `s.revoked_at is null and s.client_id is null and s.expires_at <= now() and s.expires_at > now() - interval '1 hour'`)
+}
+
+func (s *Store) queueLogouts(ctx context.Context, where string, args ...any) error {
+	rows, err := s.db.Query(ctx, `select distinct a.id, s.id, jsonb_build_object('sub', s.user_id, 'sid', s.id)::text from sessions s
+		join oidc_tokens t on t.session_id = s.id join applications a on a.client_id = t.client_id where a.backchannel_logout_uri <> '' and `+where, args...)
+	if err != nil {
+		return err
+	}
+	logouts, err := pgx.CollectRows(rows, pgx.RowToStructByPos[struct{ AppID, SessionID, Body string }])
+	if err != nil {
+		return err
+	}
+	for _, l := range logouts {
+		if _, err := s.db.Exec(ctx, `insert into webhook_deliveries (id, app_id, event_id, event_type, body) values ($1, $2, $3, 'backchannel_logout', $4) on conflict (app_id, event_id) do nothing`,
+			id.New("whd"), l.AppID, l.SessionID, l.Body); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 var (

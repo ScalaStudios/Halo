@@ -366,6 +366,71 @@ export function SignInFrequencyForm({ app }: { app: Pick<Application, "id" | "na
   );
 }
 
+export function BackchannelLogoutForm({ app }: { app: Pick<Application, "id" | "name" | "backchannelLogoutUri" | "backchannelLogoutSessionRequired"> }) {
+  const [uri, setUri] = useState(app.backchannelLogoutUri);
+  const [sessionRequired, setSessionRequired] = useState(app.backchannelLogoutSessionRequired);
+  const [error, setError] = useState<string>();
+  const { pending, run, errorFor, toast } = useMutation();
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    const next = uri.trim() && !/^https:\/\/\S+$/.test(uri.trim()) ? "Enter the https:// URL of the back-channel logout endpoint, or leave it empty." : undefined;
+    setError(next);
+    if (next) return;
+    void run(
+      "logout",
+      () => api(`/applications/${app.id}`, { method: "PATCH", body: { backchannelLogoutUri: uri.trim(), backchannelLogoutSessionRequired: sessionRequired } }),
+      () =>
+        toast({
+          title: "Back-channel logout saved",
+          description: uri.trim() ? `${app.name} hears about every Halo session that ends. Recorded in the audit log.` : `Halo no longer tells ${app.name} when sessions end. Recorded in the audit log.`,
+        }),
+      "inline",
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Back-channel logout"
+        description={`When a Halo session that signed in to ${app.name} ends, Halo posts a signed logout token to this endpoint so ${app.name} ends its own session too. Failed requests are retried after 30 seconds, then 1, 2, 4, 8, 16 and 32 minutes.`}
+      />
+      <form onSubmit={submit} noValidate>
+        <CardBody className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <Field label="Back-channel logout URI" error={error} hint="Leave empty to turn it off. Private and local addresses are refused.">
+            {(props) => (
+              <Input
+                {...props}
+                mono
+                type="url"
+                autoComplete="off"
+                spellCheck={false}
+                value={uri}
+                placeholder="https://app.example.com/backchannel-logout"
+                onChange={(event) => setUri(event.target.value)}
+              />
+            )}
+          </Field>
+          <Field label="Session ID (sid)" hint="Halo sends sid and sub in every logout token. This records whether the application needs sid.">
+            {(props) => (
+              <Select {...props} value={sessionRequired ? "required" : "optional"} onChange={(event) => setSessionRequired(event.target.value === "required")}>
+                <option value="required">Required</option>
+                <option value="optional">Not required</option>
+              </Select>
+            )}
+          </Field>
+        </CardBody>
+        <div className="flex flex-wrap items-center justify-end gap-4 border-t border-border px-6 py-4">
+          <ActionError message={errorFor("logout")} />
+          <Button type="submit" variant="primary" loading={pending === "logout"}>
+            Save back-channel logout
+          </Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
+
 function DurationField({ label, hint, value, onChange, error }: { label: string; hint: string; value: Duration; onChange: (value: Duration) => void; error?: string }) {
   return (
     <Field label={label} hint={hint} error={error}>

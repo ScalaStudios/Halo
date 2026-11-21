@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/netip"
-	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -47,12 +45,9 @@ func (in ruleInput) validate(creating bool) (store.NewNotificationRule, error) {
 		return r, httpx.Invalid("Choose webhook, slack or discord as the destination.")
 	}
 	if creating || r.URL != "" {
-		u, err := url.Parse(r.URL)
-		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || len(r.URL) > 2048 {
-			return r, httpx.Invalid("Enter the https:// URL of the incoming webhook, under 2,048 characters.")
-		}
-		if ip, err := netip.ParseAddr(u.Hostname()); err == nil && !httpx.PublicAddress(ip) || local(u.Hostname()) {
-			return r, httpx.Invalid("Notification rules only send to public addresses. Private, loopback and link-local addresses are refused.")
+		u, err := PublicURL(r.URL, "incoming webhook", "Notification rules only send to")
+		if err != nil {
+			return r, err
 		}
 		r.Host = u.Host
 	}

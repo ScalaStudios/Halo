@@ -164,6 +164,17 @@ type hookInput struct {
 	FailOpen bool     `json:"failOpen"`
 }
 
+func PublicURL(raw, name, caller string) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || len(raw) > 2048 {
+		return nil, httpx.Invalid("Enter the https:// URL of the " + name + ", under 2,048 characters.")
+	}
+	if ip, err := netip.ParseAddr(u.Hostname()); err == nil && !httpx.PublicAddress(ip) || local(u.Hostname()) {
+		return nil, httpx.Invalid(caller + " public addresses. Private, loopback and link-local addresses are refused.")
+	}
+	return u, nil
+}
+
 func hookable(app store.Application) error {
 	if app.Protocol != "oidc" && app.Protocol != "oauth" || app.Type == "service" || app.ClientID == store.CLIClientID {
 		return httpx.Invalid("Hooks run when a person signs in to an OpenID Connect application. Service applications, SAML applications, bookmarks and the Halo CLI can't have one.")
@@ -174,12 +185,9 @@ func hookable(app store.Application) error {
 func (in hookInput) apply(hook *store.ApplicationHook, seal func([]byte) []byte, creating bool) error {
 	in.URL, in.Secret = strings.TrimSpace(in.URL), strings.TrimSpace(in.Secret)
 	if creating || in.URL != "" {
-		u, err := url.Parse(in.URL)
-		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || len(in.URL) > 2048 {
-			return httpx.Invalid("Enter the https:// URL of the hook, under 2,048 characters.")
-		}
-		if ip, err := netip.ParseAddr(u.Hostname()); err == nil && !httpx.PublicAddress(ip) || local(u.Hostname()) {
-			return httpx.Invalid("Hooks only call public addresses. Private, loopback and link-local addresses are refused.")
+		u, err := PublicURL(in.URL, "hook", "Hooks only call")
+		if err != nil {
+			return err
 		}
 		hook.Host, hook.URLSealed = u.Host, seal([]byte(in.URL))
 	}
@@ -223,6 +231,18 @@ func (h *handler) getHook(w http.ResponseWriter, r *http.Request, _ store.User) 
 		return err
 	}
 	return httpx.JSON(w, http.StatusOK, hook)
+}
+
+func (h *handler) logoutDeliveries(w http.ResponseWriter, r *http.Request, _ store.User) error {
+	app, err := h.st.GetApplication(r.Context(), r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	deliveries, err := h.st.ListWebhookDeliveries(r.Context(), app.ID, 50)
+	if err != nil {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, deliveries)
 }
 
 func (h *handler) putHook(w http.ResponseWriter, r *http.Request, actor store.User) error {

@@ -169,6 +169,7 @@ export type WebhookDelivery = {
   id: string;
   endpointId?: string;
   ruleId?: string;
+  appId?: string;
   eventId: string;
   eventType: string;
   body: string;
