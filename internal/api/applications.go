@@ -62,6 +62,16 @@ func checkRedirects(protocol, appType string, redirects, postLogout []string) er
 			return err
 		}
 	}
+	if protocol == "forward-auth" {
+		for _, uri := range redirects {
+			if u, _ := url.Parse(uri); u.Path != "" && u.Path != "/" || u.RawQuery != "" || u.User != nil {
+				return httpx.Invalid(fmt.Sprintf("%q is not a protected address. Use only the scheme and host, like https://files.example.com.", uri))
+			}
+		}
+		if len(redirects) == 0 || len(postLogout) > 0 {
+			return httpx.Invalid("Add at least one protected address, like https://files.example.com, and no post-logout URIs. Halo only sends people back to these addresses.")
+		}
+	}
 	if protocol == "oidc" && appType != "service" && len(redirects) == 0 {
 		return httpx.Invalid("Add at least one redirect URI. Halo only sends people back to addresses registered here, for example https://grafana.example.com/login/generic_oauth.")
 	}
@@ -280,10 +290,10 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 	}
 	switch in.Protocol {
 	case "oidc", "oauth":
-	case "saml", "bookmark":
+	case "saml", "bookmark", "forward-auth":
 		in.Type = "web"
 	default:
-		return httpx.Invalid(`Choose a protocol: "oidc" for OpenID Connect sign-in, "oauth" for API access, "saml" for SAML 2.0 sign-in or "bookmark" for a link in the account portal.`)
+		return httpx.Invalid(`Choose a protocol: "oidc" for OpenID Connect sign-in, "oauth" for API access, "saml" for SAML 2.0 sign-in, "forward-auth" for applications behind a reverse proxy or "bookmark" for a link in the account portal.`)
 	}
 	if !slices.Contains([]string{"web", "spa", "native", "service"}, in.Type) {
 		return httpx.Invalid(`Choose an application type: "web", "spa", "native" or "service".`)
@@ -297,6 +307,14 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 		}
 		if len(in.RedirectURIs) > 0 || len(in.PostLogoutURIs) > 0 || len(in.Scopes) > 0 || in.SAML != nil {
 			return httpx.Invalid("A bookmark only opens its URL, so it takes no redirect URIs, scopes or SAML settings.")
+		}
+	}
+	if in.Protocol == "forward-auth" {
+		if len(in.Scopes) > 0 || in.SAML != nil {
+			return httpx.Invalid("A forward-auth application takes its protected addresses in redirectUris, and no scopes or SAML settings.")
+		}
+		if in.Homepage == "" && len(in.RedirectURIs) > 0 {
+			in.Homepage = in.RedirectURIs[0]
 		}
 	}
 	if err := checkRedirects(in.Protocol, in.Type, in.RedirectURIs, in.PostLogoutURIs); err != nil {
@@ -357,7 +375,7 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 			if err := tx.SetSAMLSettings(r.Context(), created.ID, entityID, in.RedirectURIs, settings); err != nil {
 				return err
 			}
-		} else if in.Protocol != "bookmark" && (in.Type == "web" || in.Type == "service") {
+		} else if in.Protocol != "bookmark" && in.Protocol != "forward-auth" && (in.Type == "web" || in.Type == "service") {
 			_, value, err := tx.AddClientSecret(r.Context(), created.ID, "Initial", secretLifetime)
 			if err != nil {
 				return err
@@ -367,6 +385,9 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 		summary := "Registered " + map[string]string{"oidc": "OpenID Connect", "oauth": "OAuth", "saml": "SAML"}[in.Protocol] + " " + in.Type + " application"
 		if in.Protocol == "bookmark" {
 			summary = "Added a bookmark to " + in.Homepage
+		}
+		if in.Protocol == "forward-auth" {
+			summary = "Registered forward-auth application for " + strings.Join(in.RedirectURIs, ", ")
 		}
 		if err := record(r, tx, actor, store.AuditEvent{Action: "application.create", Summary: summary, TargetType: "application", TargetID: created.ID, TargetLabel: created.Name}); err != nil {
 			return err
@@ -397,6 +418,9 @@ func (h *handlers) rotateSecret(w http.ResponseWriter, r *http.Request, actor st
 	}
 	if app.Protocol == "bookmark" {
 		return httpx.Invalid(app.Name + " is a bookmark. Nobody signs in to it through Halo, so it has no client secret.")
+	}
+	if app.Protocol == "forward-auth" {
+		return httpx.Invalid(app.Name + " is checked by its reverse proxy, so it has no client secret.")
 	}
 	if app.Protocol == "saml" || (app.Type != "web" && app.Type != "service") {
 		return httpx.Invalid(app.Name + " is a public client that signs in without a client secret, so there is nothing to rotate.")
@@ -621,6 +645,9 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	}
 	if app.Type == "service" && logout {
 		return httpx.Invalid(app.Name + " is a service application. Nobody signs in to it, so it has no sessions to end with back-channel logout.")
+	}
+	if app.Protocol == "forward-auth" && (in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil || in.RequiresConsent != nil || logout) {
+		return httpx.Invalid(app.Name + " is checked by its reverse proxy, so it has no post-logout URIs, scopes, token lifetimes, consent screen or back-channel logout. Change its protected addresses in redirectUris.")
 	}
 	if app.Type == "service" && in.ClaimMappings != nil {
 		return httpx.Invalid(app.Name + " is a service application. Nobody signs in to it, so it has no ID tokens or user claims to map.")

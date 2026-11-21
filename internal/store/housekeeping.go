@@ -22,6 +22,7 @@ func (s *Store) Purge(ctx context.Context) error {
 		`delete from sign_ups where verified_at is null and expires_at < now()`,
 		`delete from api_keys where credential_id is not null and expires_at < now()`,
 		`delete from saml_assertions where expires_at < now()`,
+		`delete from forward_auth_sessions where expires_at < now()`,
 	} {
 		if _, err := s.db.Exec(ctx, sql); err != nil {
 			return err

@@ -28,6 +28,7 @@ const config: NextConfig = {
       { source: "/.well-known/:path*", destination: `${api}/.well-known/:path*` },
       { source: "/saml/:path*", destination: `${api}/saml/:path*` },
       { source: "/scim/:path*", destination: `${api}/scim/:path*` },
+      { source: "/forward-auth/:path*", destination: `${api}/forward-auth/:path*` },
     ];
   },
 };

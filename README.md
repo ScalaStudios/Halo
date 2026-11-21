@@ -30,7 +30,7 @@ Halo works in the same space as hosted services such as Microsoft Entra ID, Okta
 | Area | What Halo includes |
 | --- | --- |
 | **Sign-in** | Passkeys and security keys (WebAuthn), authenticator apps (TOTP), single-use recovery codes, and magic links or one-time codes by email. Sign-in through Google, Microsoft Entra ID, GitHub or any OpenID Connect provider, with account linking and accounts created on first sign-in. |
-| **Single sign-on** | An OpenID Connect provider and OAuth 2.0 authorization server for web, single-page, native and machine-to-machine applications. A SAML 2.0 identity provider with service provider metadata import and IdP-initiated sign-in. |
+| **Single sign-on** | An OpenID Connect provider and OAuth 2.0 authorization server for web, single-page, native and machine-to-machine applications. A SAML 2.0 identity provider with service provider metadata import and IdP-initiated sign-in. Forward auth for Traefik, nginx and Caddy in front of applications that support neither. |
 | **Directory** | People with profiles and managers, assigned groups with owners and self-service joining, rule-based groups such as `user.department == "Engineering"`, service accounts, devices, and six administrative roles. |
 | **Provisioning** | A SCIM 2.0 server, tested with the request formats of Okta and Microsoft Entra ID, so either of them or an HR system can provision people into Halo; and outbound SCIM that creates, updates and deactivates accounts in your applications and keeps the groups you choose in step. |
 | **Access policies** | Conditional access by person, group, application, network zone, device trust, device compliance from Microsoft Intune or a device agent, sign-in risk and sign-in method, with effects that allow, block, require a passkey or security key, or require accepting versioned terms of use, report-only mode and a simulator. |
@@ -145,6 +145,31 @@ curl -X POST https://auth.example.com/api/v1/users \
 
 Every route is described in the OpenAPI document at `/api/v1/openapi.yaml`; the [API guide](https://halo.scala.gg/docs/api) covers authentication, roles and errors.
 
+### Applications without OpenID Connect or SAML
+
+Forward auth puts Halo's sign-in in front of applications that have their own login or none, such as admin consoles, file servers and internal tools. The reverse proxy in front of the application asks Halo before every request, and keeps carrying the traffic itself.
+
+1. Choose **Add application**, then **Forward auth**, and enter the address people open the application at, such as `https://files.example.com`. Add more hosts on the **Authentication** tab.
+2. Assign groups on **Users & groups**.
+3. Copy the Traefik, nginx or Caddy configuration from the application's **Overview** tab. For Caddy:
+
+```caddy
+https://files.example.com {
+	forward_auth https://auth.example.com {
+		uri /forward-auth/app_…/verify
+		header_up Host {upstream_hostport}
+		copy_headers X-Halo-User X-Halo-Email X-Halo-Name X-Halo-Groups
+	}
+	reverse_proxy 127.0.0.1:8080
+}
+```
+
+- People who are signed in and assigned get through, and the application receives `X-Halo-User` (the person's id), `X-Halo-Email`, `X-Halo-Name` and `X-Halo-Groups` (group names separated by commas, with a comma inside a name sent as a space), and `X-Halo-Roles` when the application has roles. Change the names, or add custom attributes, on the **Headers** tab. The proxy replaces any copy of these headers that the browser sends, so make the application reachable only through the proxy.
+- Everyone else goes to Halo's sign-in page. Halo checks the group assignment, the sign-in frequency and the access policies, writes the sign-in log, and only sends people back to the application's own addresses.
+- Halo never gives its session cookie to the application. After sign-in it sets a separate cookie on each protected host through `/_halo/callback`, with a code that works once and only in the browser that started the sign-in. The cookie lasts as long as the Halo session: signing out, revoking the session, the session limit, suspending the person or removing their access ends it on the next request, and Halo checks the access policies again at least every hour.
+- `/_halo/sign-out` on the application's address signs the person out of the application and of Halo.
+- Halo reads `X-Forwarded-Host` and `X-Forwarded-Uri` only from addresses in `HALO_TRUSTED_PROXIES`. The web interface replaces `X-Forwarded-Host` with Halo's own host, so through Halo's public address only applications with one protected address work. For more than one, point the proxy at the Halo server directly, such as `http://halo-server:8080` in the Compose setup, and add the proxy's address to `HALO_TRUSTED_PROXIES`.
+
 ## Screenshots
 
 <table>
@@ -181,6 +206,7 @@ The web interface is the only public entry point. It serves the console, the acc
 | `/api/v1/*` | The management and account API, described at `/api/v1/openapi.yaml` |
 | `/oauth2/*`, `/.well-known/openid-configuration` | The OpenID Connect provider |
 | `/saml/*` | The SAML 2.0 identity provider |
+| `/forward-auth/*` | The check reverse proxies run before each request to a forward-auth application, and its sign-in |
 | `/scim/v2/*` | The SCIM 2.0 server |
 
 [Architecture](https://halo.scala.gg/docs/architecture) covers the Go packages and how a sign-in flows through them.

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bookmark, Check, FileKey, KeyRound, ServerCog, type LucideIcon } from "lucide-react";
+import { Bookmark, Check, FileKey, KeyRound, ServerCog, ShieldCheck, type LucideIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { ActionError } from "@/components/ui/action-error";
@@ -16,7 +16,7 @@ import { endpoints, setupGuide } from "@/lib/setup-guides";
 import { SamlConnectionFields } from "./saml";
 import { SecretWarning, SetupGuideCard, TYPE_ICON } from "./shared";
 
-type Protocol = "oidc" | "saml" | "oauth" | "bookmark";
+type Protocol = "oidc" | "saml" | "oauth" | "forward-auth" | "bookmark";
 type Source = "values" | "metadata";
 type Platform = "web" | "spa" | "native";
 type Template = { value: string; label: string; uri: string; entityId?: string; guide: string; platform?: Platform; hint?: string; more?: string[]; scopes?: string[] };
@@ -26,6 +26,12 @@ const PROTOCOLS: Option<Protocol>[] = [
   { value: "oidc", label: "OpenID Connect", description: "Sign-in for web, single-page and command-line apps. Use this unless the app only supports SAML.", icon: KeyRound },
   { value: "saml", label: "SAML 2.0", description: "Sign-in for applications that only support SAML, like AWS IAM Identity Center and Slack.", icon: FileKey },
   { value: "oauth", label: "OAuth 2.0 service", description: "Machine-to-machine access with client credentials. Nobody signs in.", icon: ServerCog },
+  {
+    value: "forward-auth",
+    label: "Forward auth",
+    description: "Sign-in in front of applications without OpenID Connect or SAML. Traefik, nginx or Caddy asks Halo before every request.",
+    icon: ShieldCheck,
+  },
   { value: "bookmark", label: "Bookmark", description: "A link in the account portal, like an intranet page, status page or helpdesk. Nobody signs in through Halo.", icon: Bookmark },
 ];
 
@@ -97,6 +103,13 @@ export function uriError(value: string, empty = "Enter where Halo sends people a
   return undefined;
 }
 
+export function originError(value: string): string | undefined {
+  const error = uriError(value, "Enter the address people open the application at, like https://files.example.com.");
+  if (error) return error;
+  const url = new URL(value.trim());
+  return url.pathname !== "/" || url.search ? "Use only the scheme and host, like https://files.example.com. Halo protects every path on it." : undefined;
+}
+
 export function NewApplicationFlow({ issuer }: { issuer: string }) {
   const [step, setStep] = useState(0);
   const [protocol, setProtocol] = useState<Protocol>("oidc");
@@ -157,6 +170,10 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
       submitBookmark();
       return;
     }
+    if (protocol === "forward-auth") {
+      submitForwardAuth();
+      return;
+    }
     const next = {
       name: name.trim() ? undefined : "Enter a name. People see it on the Halo sign-in screen.",
       uri: needsUri && !aether ? uriError(uri) : undefined,
@@ -202,6 +219,21 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
       ({ application }) => {
         toast({ title: `${application.name} created`, description: "Assign groups so people see it in their account portal." });
         router.push(`/admin/applications/${application.id}?tab=users`);
+      },
+      "inline",
+    );
+  }
+
+  function submitForwardAuth() {
+    const next = { name: name.trim() ? undefined : "Enter a name. People see it on the Halo sign-in screen.", address: originError(address) };
+    setErrors(next);
+    if (next.name || next.address) return;
+    void run(
+      "create",
+      () => api<{ application: SamlApplication }>("/applications", { body: { name: name.trim(), protocol, redirectUris: [address.trim()] } }),
+      ({ application }) => {
+        toast({ title: `${application.name} created`, description: "Add the proxy configuration below, then assign groups." });
+        router.push(`/admin/applications/${application.id}`);
       },
       "inline",
     );
@@ -377,6 +409,21 @@ export function NewApplicationFlow({ issuer }: { issuer: string }) {
                     ))}
                   </Select>
                 )}
+              </Field>
+            </div>
+          ) : null}
+          {current === "Details" && protocol === "forward-auth" ? (
+            <div className="flex flex-col gap-6">
+              <h2 className="text-h4 text-fg">Application details</h2>
+              <Field label="Name" error={errors.name}>
+                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="File server" />}
+              </Field>
+              <Field
+                label="Protected address"
+                error={errors.address}
+                hint="Where people open the application. Halo only sends people back to its protected addresses. Add more on the Authentication tab."
+              >
+                {(props) => <Input {...props} type="url" mono value={address} onChange={(e) => setAddress(e.target.value)} placeholder="https://files.example.com" />}
               </Field>
             </div>
           ) : null}

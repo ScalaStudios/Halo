@@ -130,7 +130,7 @@ func peer(r *http.Request) string {
 	return client
 }
 
-func ClientCertificate(r *http.Request, header string) string {
+func ProxyHeader(r *http.Request, header string) string {
 	values := r.Header.Values(header)
 	if header == "" || len(values) != 1 || !trusted(net.ParseIP(peer(r))) {
 		return ""

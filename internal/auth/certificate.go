@@ -53,7 +53,7 @@ func (h *handler) certificateSignIn(w http.ResponseWriter, r *http.Request) erro
 	if h.cfg.CertHeader == "" {
 		return h.reject(r, a, "HALO_CLIENT_CERT_HEADER isn't set, so Halo reads no client certificates.", errCertificateMissing)
 	}
-	header := strings.TrimSpace(httpx.ClientCertificate(r, h.cfg.CertHeader))
+	header := strings.TrimSpace(httpx.ProxyHeader(r, h.cfg.CertHeader))
 	if header == "" || header == "::" {
 		return h.reject(r, a, "The browser sent no client certificate.", errCertificateMissing)
 	}

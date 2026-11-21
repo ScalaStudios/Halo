@@ -16,7 +16,7 @@ import { api } from "@/lib/api/client";
 import { formatDuration } from "@/lib/format";
 import type { ApiResource } from "@/lib/infra-types";
 import { SIGNING_ALGORITHMS, type Application, type SigningAlgorithm, type User } from "@/lib/types";
-import { uriError } from "./new-application-flow";
+import { originError, uriError } from "./new-application-flow";
 
 const SCOPES: Record<string, string> = {
   openid: "Signs the person in and issues an ID token.",
@@ -348,6 +348,8 @@ export function SignInFrequencyForm({ app }: { app: Pick<Application, "id" | "na
         description={
           app.protocol === "saml"
             ? `People who signed in to Halo longer ago than this sign in again before ${app.name} gets an assertion. Other applications keep single sign-on.`
+            : app.protocol === "forward-auth"
+              ? `People who signed in to Halo longer ago than this sign in again before the proxy lets them into ${app.name}. Other applications keep single sign-on.`
             : `People who signed in to Halo longer ago than this sign in again before ${app.name} gets a token, and its refresh tokens stop working. Other applications keep single sign-on.`
         }
       />
@@ -432,6 +434,57 @@ export function BackchannelLogoutForm({ app }: { app: Pick<Application, "id" | "
 }
 
 export function DurationField({ label, hint, value, onChange, error }: { label: string; hint: string; value: Duration; onChange: (value: Duration) => void; error?: string }) {
+
+export function ProtectedAddressesForm({ app }: { app: Pick<Application, "id" | "name" | "redirectUris"> }) {
+  const [addresses, setAddresses] = useState(app.redirectUris);
+  const [errors, setErrors] = useState<(string | undefined)[]>([]);
+  const [error, setError] = useState<string>();
+  const { pending, run, errorFor, toast } = useMutation();
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    const clean = addresses.map((a) => a.trim()).filter(Boolean);
+    const next = addresses.map((a) => (a.trim() ? originError(a) : undefined));
+    const empty = clean.length === 0 ? "Add at least one protected address." : undefined;
+    setErrors(next);
+    setError(empty);
+    if (empty || next.some(Boolean)) return;
+    void run(
+      "addresses",
+      () => api(`/applications/${app.id}`, { method: "PATCH", body: { redirectUris: clean } }),
+      () => toast({ title: "Protected addresses saved", description: `Update the proxy configuration of ${app.name} if you added a host. Recorded in the audit log.` }),
+      "inline",
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Protected addresses" description={`Halo answers checks for ${app.name} only from these hosts, and only sends people back to them after sign-in.`} />
+      <form onSubmit={submit} noValidate>
+        <CardBody>
+          <UriList
+            legend="Addresses"
+            values={addresses}
+            onChange={setAddresses}
+            errors={errors}
+            error={error}
+            placeholder="https://files.example.com"
+            empty="No protected addresses."
+            add="Add address"
+          />
+        </CardBody>
+        <div className="flex flex-wrap items-center justify-end gap-4 border-t border-border px-6 py-4">
+          <ActionError message={errorFor("addresses")} />
+          <Button type="submit" variant="primary" loading={pending === "addresses"}>
+            Save addresses
+          </Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
+
+function DurationField({ label, hint, value, onChange, error }: { label: string; hint: string; value: Duration; onChange: (value: Duration) => void; error?: string }) {
   return (
     <Field label={label} hint={hint} error={error}>
       {(props) => (
@@ -460,6 +513,7 @@ function UriList({
   error,
   placeholder,
   empty,
+  add = "Add URI",
 }: {
   legend: string;
   values: string[];
@@ -468,6 +522,7 @@ function UriList({
   error?: string;
   placeholder: string;
   empty: string;
+  add?: string;
 }) {
   const id = useId();
   return (
@@ -504,7 +559,7 @@ function UriList({
       ) : null}
       <Button size="sm" variant="quiet" className="self-start" onClick={() => onChange([...values, ""])}>
         <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-        Add URI
+        {add}
       </Button>
     </fieldset>
   );

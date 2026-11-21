@@ -364,6 +364,13 @@ func claimsFor(a Application) []Claim {
 	if a.Protocol == "bookmark" {
 		return []Claim{}
 	}
+	if a.Protocol == "forward-auth" {
+		headers := []Claim{{Name: "X-Halo-User", Source: "user.id"}, {Name: "X-Halo-Email", Source: "user.email"}, {Name: "X-Halo-Name", Source: "user.name"}, {Name: "X-Halo-Groups", Source: "user.groups"}}
+		if len(a.Roles) > 0 {
+			headers = append(headers, Claim{Name: "X-Halo-Roles", Source: "user.roles"})
+		}
+		return MapClaims(headers, a.ClaimMappings)
+	}
 	if a.Type == "service" {
 		return []Claim{{Name: "sub", Source: "client.id"}, {Name: "scope", Source: "granted scopes"}}
 	}

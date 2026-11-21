@@ -22,7 +22,6 @@ import (
 	"net/url"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -565,7 +564,7 @@ func (f *flow) attributes(ctx context.Context) ([]saml.Attribute, error) {
 	}
 	for _, m := range f.app.ClaimMappings {
 		attributes = slices.DeleteFunc(attributes, func(a attribute) bool { return a.name == m.Name })
-		attributes = append(attributes, attribute{m.Name, claimStrings(f.user.ClaimValue(m.Source, groups, roles))})
+		attributes = append(attributes, attribute{m.Name, store.ClaimStrings(f.user.ClaimValue(m.Source, groups, roles))})
 	}
 	var out []saml.Attribute
 	for _, a := range attributes {
@@ -583,28 +582,6 @@ func (f *flow) attributes(ctx context.Context) ([]saml.Attribute, error) {
 		out = append(out, attr)
 	}
 	return out, nil
-}
-
-func claimStrings(v any) []string {
-	switch v := v.(type) {
-	case nil:
-		return nil
-	case string:
-		return []string{v}
-	case bool:
-		return []string{strconv.FormatBool(v)}
-	case float64:
-		return []string{strconv.FormatFloat(v, 'f', -1, 64)}
-	case []string:
-		return v
-	case []any:
-		var out []string
-		for _, item := range v {
-			out = append(out, claimStrings(item)...)
-		}
-		return out
-	}
-	return []string{fmt.Sprint(v)}
 }
 
 func (f *flow) refuse(w http.ResponseWriter, r *http.Request, reason, title, message, detail string) {
@@ -635,6 +612,10 @@ func unreadable(w http.ResponseWriter, err error) {
 func internal(w http.ResponseWriter, r *http.Request, err error) {
 	slog.ErrorContext(r.Context(), "saml request failed", "path", r.URL.Path, "error", err)
 	page(w, http.StatusInternalServerError, "Halo couldn't finish signing you in", "Try again in a minute. If it keeps failing, contact your administrator.", "")
+}
+
+func Page(w http.ResponseWriter, status int, title, message, detail string) {
+	page(w, status, title, message, detail)
 }
 
 func page(w http.ResponseWriter, status int, title, message, detail string) {

@@ -98,7 +98,7 @@ export type JoinableGroup = Group & { requested: boolean };
 export type JoinRequest = { user: NamedRef; createdAt: string };
 export type OwnedGroupDetail = { group: OwnedGroup; members: Required<NamedRef>[]; requests: JoinRequest[]; people: Required<NamedRef>[] };
 
-export type Protocol = "oidc" | "saml" | "oauth" | "bookmark";
+export type Protocol = "oidc" | "saml" | "oauth" | "bookmark" | "forward-auth";
 export type AppType = "web" | "spa" | "native" | "service";
 
 export type Credential = {

@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -144,4 +146,26 @@ func MapClaims(claims, mappings []Claim) []Claim {
 		}
 	}
 	return out
+}
+
+func ClaimStrings(v any) []string {
+	switch v := v.(type) {
+	case nil:
+		return nil
+	case string:
+		return []string{v}
+	case bool:
+		return []string{strconv.FormatBool(v)}
+	case float64:
+		return []string{strconv.FormatFloat(v, 'f', -1, 64)}
+	case []string:
+		return v
+	case []any:
+		var out []string
+		for _, item := range v {
+			out = append(out, ClaimStrings(item)...)
+		}
+		return out
+	}
+	return []string{fmt.Sprint(v)}
 }

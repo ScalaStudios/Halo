@@ -18,7 +18,7 @@ export function statusKey(app: Pick<Application, "status" | "awaitingApproval">)
   return app.awaitingApproval ? "awaiting" : app.status;
 }
 
-export const PROTOCOL_LABEL = { oidc: "OpenID Connect", saml: "SAML 2.0", oauth: "OAuth 2.0", bookmark: "Bookmark" } as const;
+export const PROTOCOL_LABEL = { oidc: "OpenID Connect", saml: "SAML 2.0", oauth: "OAuth 2.0", "forward-auth": "Forward auth", bookmark: "Bookmark" } as const;
 export const TYPE_LABEL = { web: "Web", spa: "Single-page", native: "Native / CLI", service: "Service" } as const;
 
 export const TYPE_ICON: Record<AppType, LucideIcon> = { web: AppWindow, spa: PanelsTopLeft, native: Terminal, service: ServerCog };
