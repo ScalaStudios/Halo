@@ -23,6 +23,7 @@ type storage struct {
 	dev    bool
 	policy access.Engine
 	issuer string
+	keys   keyCache
 }
 
 type authRequest struct {
@@ -92,16 +93,30 @@ func (s *storage) GetClientByClientID(ctx context.Context, clientID string) (op.
 }
 
 func (s *storage) AuthorizeClientIDSecret(ctx context.Context, clientID, clientSecret string) error {
-	_, err := usable(s.st.VerifyClientSecret(ctx, clientID, clientSecret))
+	_, err := s.authenticated(ctx, clientID, clientSecret)
 	return err
 }
 
 func (s *storage) ClientCredentials(ctx context.Context, clientID, clientSecret string) (op.Client, error) {
-	app, err := usable(s.st.VerifyClientSecret(ctx, clientID, clientSecret))
+	app, err := s.authenticated(ctx, clientID, clientSecret)
 	if err != nil {
 		return nil, err
 	}
 	return s.client(ctx, app)
+}
+
+func (s *storage) authenticated(ctx context.Context, clientID, clientSecret string) (store.Application, error) {
+	if asserted := assertedClient(ctx); asserted != "" {
+		if asserted != clientID {
+			return store.Application{}, oidc.ErrInvalidClient().WithDescription("client_id must match the iss claim of client_assertion.")
+		}
+		return s.app(ctx, clientID)
+	}
+	app, err := usable(s.st.VerifyClientSecret(ctx, clientID, clientSecret))
+	if err == nil && (app.TokenEndpointAuthMethod == PrivateKeyJWT || app.FAPI2Profile) {
+		return store.Application{}, oidc.ErrInvalidClient().WithDescription("%s authenticates with private_key_jwt. Send client_assertion instead of the client secret.", app.Name)
+	}
+	return app, err
 }
 
 func (s *storage) ClientCredentialsTokenRequest(ctx context.Context, clientID string, scopes []string) (op.TokenRequest, error) {
@@ -129,7 +144,7 @@ func (s *storage) CreateAuthRequest(ctx context.Context, req *oidc.AuthRequest, 
 	if err := checkPKCE(app, req); err != nil {
 		return nil, err
 	}
-	if _, pushed := ctx.Value(pushedKey{}).(bool); app.RequirePAR && !pushed {
+	if _, pushed := ctx.Value(pushedKey{}).(bool); (app.RequirePAR || app.FAPI2Profile) && !pushed {
 		return nil, oidc.ErrInvalidRequest().WithDescription("This application must push its authorization request to /oauth2/par first and send only client_id and request_uri here.")
 	}
 	var maxAge *int
@@ -157,7 +172,10 @@ func (s *storage) CreateAuthRequest(ctx context.Context, req *oidc.AuthRequest, 
 	}
 	values, essential := req.ACRValues, false
 	if r, ok := ctx.Value(requestKey{}).(*http.Request); ok {
-		a.DomainHint = r.Form.Get("domain_hint")
+		a.DomainHint, a.DPoPJKT = r.Form.Get("domain_hint"), r.Form.Get("dpop_jkt")
+		if err := checkThumbprint(a.DPoPJKT); err != nil {
+			return nil, err
+		}
 		values, essential = requestedACR(r.Form.Get("claims"), values)
 	}
 	known, err := s.st.RequestedAuthContexts(ctx, values)
@@ -187,7 +205,7 @@ func (s *storage) CreateAuthRequest(ctx context.Context, req *oidc.AuthRequest, 
 }
 
 func checkPKCE(app store.Application, req *oidc.AuthRequest) error {
-	if ((client{app: app}).public() || app.RequirePKCE) && (req.CodeChallenge == "" || req.CodeChallengeMethod != oidc.CodeChallengeMethodS256) {
+	if ((client{app: app}).public() || app.RequirePKCE || app.FAPI2Profile) && (req.CodeChallenge == "" || req.CodeChallengeMethod != oidc.CodeChallengeMethodS256) {
 		return oidc.ErrInvalidRequest().WithDescription("This application must use PKCE: send code_challenge with code_challenge_method=S256.")
 	}
 	return nil
@@ -237,7 +255,19 @@ func (s *storage) AuthRequestByCode(ctx context.Context, code string) (op.AuthRe
 }
 
 func (s *storage) SaveAuthCode(ctx context.Context, requestID, code string) error {
-	return s.st.SaveAuthCode(ctx, requestID, code)
+	a, err := s.st.GetAuthRequest(ctx, requestID)
+	if err != nil {
+		return err
+	}
+	app, err := s.app(ctx, a.ClientID)
+	if err != nil {
+		return err
+	}
+	lifetime := store.AuthRequestLifetime
+	if app.FAPI2Profile {
+		lifetime = fapiCodeLifetime
+	}
+	return s.st.SaveAuthCode(ctx, requestID, code, lifetime)
 }
 
 func (s *storage) DeleteAuthRequest(ctx context.Context, requestID string) error {

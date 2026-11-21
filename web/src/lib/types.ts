@@ -189,6 +189,10 @@ export type Application = {
   requirePkce: boolean;
   requireDpop: boolean;
   kerberosSignIn: boolean;
+  tokenEndpointAuthMethod: "client_secret_basic" | "private_key_jwt";
+  jwks?: { keys: unknown[] };
+  jwksUri: string;
+  fapi2Profile: boolean;
   radiusPort?: number;
 };
 

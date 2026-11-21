@@ -132,6 +132,11 @@ type Application struct {
 
 	KerberosSignIn bool `json:"kerberosSignIn"`
 
+	TokenEndpointAuthMethod string          `json:"tokenEndpointAuthMethod"`
+	JWKS                    json.RawMessage `json:"jwks,omitempty"`
+	JWKSURI                 string          `json:"jwksUri"`
+	FAPI2Profile            bool            `json:"fapi2Profile"`
+
 	RegisteredDynamically bool   `json:"registeredDynamically"`
 	AwaitingApproval      bool   `json:"awaitingApproval"`
 	RequiresConsent       bool   `json:"requiresConsent"`

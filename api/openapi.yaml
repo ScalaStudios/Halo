@@ -43,9 +43,14 @@ tags:
   - name: Groups
     description: Assigned and rule-based groups and their members.
   - name: Applications
-    description: OpenID Connect, OAuth, SAML, forward-auth, RADIUS and LDAP applications, bookmarks, their secrets and group assignments, and the collections that group them in the account portal.
+    description: |
+      OpenID Connect, OAuth, SAML, forward-auth, RADIUS and LDAP applications, bookmarks, their secrets and group assignments, and the collections that group them in the account portal.
+
+      **private_key_jwt.** A web or service application with `tokenEndpointAuthMethod` `private_key_jwt` authenticates at `/oauth2/token`, `/oauth2/par`, `/oauth2/introspect` and `/oauth2/revoke` with `client_assertion_type` `urn:ietf:params:oauth:client-assertion-type:jwt-bearer` and a `client_assertion` (RFC 7523), never with a client secret, and never with both. The assertion is a JWT signed with one of `token_endpoint_auth_signing_alg_values_supported` from discovery (never `none` or HMAC) by a key in the application's `jwks`, or published at its `jwksUri`, which Halo fetches from public addresses only, caches for an hour and fetches again when an assertion names a key it doesn't know, at most once a minute. `iss` and `sub` are the client ID; `aud` is the issuer, `{issuer}/oauth2/token` or the URL of the endpoint called; `exp` is at most an hour away; `nbf` and `iat`, if present, are not in the future, with a minute of clock skew; and `jti` is new. Halo keeps each `jti` until the assertion expires, shared by every Halo instance, and refuses it a second time.
+
+      **FAPI 2.0 security profile.** `fapi2Profile` makes a web or service application follow the FAPI 2.0 Security Profile: private_key_jwt with `aud` the issuer as a single string and PS256, ES256 or EdDSA signatures (5.3.2.1, 5.4.1), pushed authorization requests, PKCE with S256 and https redirect URIs (5.3.2.2), DPoP-bound tokens (5.3.2.1), ES256 or EdDSA ID tokens (5.4.1), and authorization codes that expire a minute after they are issued (5.3.2.1). Turning it on also turns on `requirePar`, `requirePkce` and `requireDpop` and moves RS256 ID tokens to ES256; while it is on, Halo enforces these even if those fields say otherwise, and refuses a change that loosens them. The authorization code flow is the only one Halo offers, and every authorization response carries `iss` (RFC 9207), in the query, the fragment or the `form_post` form. A code is bound to a DPoP key when the pushed request carries a DPoP proof or the authorization request carries `dpop_jkt`, and the token request must then prove that key.
   - name: Authorization
-    description: 'Relationship-based permissions for applications, in the style of Zanzibar. An application administrator gives a web or service application a model of types and relations. The application then writes tuples such as `document:readme#viewer@user:usr_…` and asks whether a person has a relation on an object. Groups expand to their members, relations combine other relations, application roles and relations of a parent object, and suspended or deprovisioned people are always denied. Tuples can name only the people and groups assigned to the application, the same ones who can sign in to it, and a person or group that is later unassigned is ignored until assigned again, so an application never learns about anyone outside it. Routes under `/authz` authenticate as the application with HTTP Basic, its client ID and a client secret, and only ever see that application''s tuples. Tuples that name a person or group are deleted with them. Model changes are in the audit log; tuple writes are not.'
+    description: 'Relationship-based permissions for applications, in the style of Zanzibar. An application administrator gives a web or service application a model of types and relations. The application then writes tuples such as `document:readme#viewer@user:usr_…` and asks whether a person has a relation on an object. Groups expand to their members, relations combine other relations, application roles and relations of a parent object, and suspended or deprovisioned people are always denied. Tuples can name only the people and groups assigned to the application, the same ones who can sign in to it, and a person or group that is later unassigned is ignored until assigned again, so an application never learns about anyone outside it. Routes under `/authz` use the application''s configured client authentication method and only see that application''s tuples. Tuples that name a person or group are deleted with them. Model changes are in the audit log; tuple writes are not.'
   - name: Forward auth
     description: 'The check that Traefik `forwardAuth`, nginx `auth_request` and Caddy `forward_auth` run before every request to a forward-auth application, outside `/api/v1`, and the sign-in it sends people to.'
   - name: Activity
@@ -162,7 +167,7 @@ paths:
       tags: [Client registration]
       operationId: updateClientRegistration
       summary: Replace a client's metadata
-      description: 'Send every field, with `client_id`; omitted fields are cleared. The client keeps its `token_endpoint_auth_method` and `application_type`, and its scopes can only narrow to `openid`, `profile`, `email` and those an administrator added. When `clientRegistration` is `approval` or the client is assigned to groups, a change disables the client and sets `awaitingApproval` until an application administrator approves it again. Recorded as `application.registration.update`.'
+      description: 'Send every field, with `client_id`; omitted fields are cleared. The client keeps its `token_endpoint_auth_method` and `application_type` but can replace `jwks` or `jwks_uri`, and its scopes can only narrow to `openid`, `profile`, `email` and those an administrator added. When `clientRegistration` is `approval` or the client is assigned to groups, a change disables the client and sets `awaitingApproval` until an application administrator approves it again. Recorded as `application.registration.update`.'
       security:
         - registrationAccessToken: []
       requestBody:
@@ -204,7 +209,7 @@ paths:
       tags: [Service accounts]
       operationId: exchangeWorkloadToken
       summary: Exchange a workload's token for a short-lived API key
-      description: 'The client credentials grant at `/oauth2/token` with a JWT client assertion (RFC 7523) from an issuer that one of the service account''s federated credentials trusts, as in Microsoft Entra workload identity federation. The assertion''s `sub` is the workload, not the client. Halo reads the issuer''s signing keys from its discovery document, caches them for an hour and fetches them again when a token names a key it doesn''t know, at most once a minute. The token must be signed with RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384 or ES512, have `exp` and `iat`, be valid within one minute of clock skew, and match the credential''s issuer, subject, audience and claim conditions exactly. The API key acts with the service account''s current roles, carries the credential''s scopes, expires after one hour, counts toward one rate limit with the other keys of the same credential, and stops working when the credential is removed or the account is disabled. Each exchange is recorded as `federated_credential.exchange` and in the sign-in log with the method `federated`, and so are refusals of tokens whose signature and subject checked out.'
+      description: 'The client credentials grant at `/oauth2/token` with a JWT client assertion (RFC 7523) from an issuer that one of the service account''s federated credentials trusts, as in Microsoft Entra workload identity federation. When `client_id` is an application''s client ID or is left out, the assertion is that application''s private_key_jwt authentication instead (see Applications). The assertion''s `sub` is the workload, not the client. Halo reads the issuer''s signing keys from its discovery document, caches them for an hour and fetches them again when a token names a key it doesn''t know, at most once a minute. The token must be signed with RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384 or ES512, have `exp` and `iat`, be valid within one minute of clock skew, and match the credential''s issuer, subject, audience and claim conditions exactly. The API key acts with the service account''s current roles, carries the credential''s scopes, expires after one hour, counts toward one rate limit with the other keys of the same credential, and stops working when the credential is removed or the account is disabled. Each exchange is recorded as `federated_credential.exchange` and in the sign-in log with the method `federated`, and so are refusals of tokens whose signature and subject checked out.'
       security:
         - {}
       requestBody:
@@ -254,7 +259,7 @@ paths:
       tags: [Applications]
       operationId: pushAuthorizationRequest
       summary: Push an authorization request
-      description: 'Pushed authorization requests (RFC 9126). The application posts the parameters it would send to `/oauth2/authorize`, authenticated like at the token endpoint, and Halo checks them as the authorization endpoint does. It then sends the person to `/oauth2/authorize?client_id=…&request_uri=…`. Halo uses only the pushed parameters, ignores any others in that URL, and accepts each `request_uri` once, within 60 seconds. A used, expired or unknown `request_uri`, or one sent with another `client_id`, ends with a `400` page and no redirect. Discovery lists the endpoint in `pushed_authorization_request_endpoint`.'
+      description: 'Pushed authorization requests (RFC 9126). The application posts the parameters it would send to `/oauth2/authorize`, authenticated like at the token endpoint, optionally with a `DPoP` proof for `POST {issuer}/oauth2/par` that binds the code to its key, and Halo checks them as the authorization endpoint does. It then sends the person to `/oauth2/authorize?client_id=…&request_uri=…`. Halo uses only the pushed parameters, ignores any others in that URL, and accepts each `request_uri` once, within 60 seconds. A used, expired or unknown `request_uri`, or one sent with another `client_id`, ends with a `400` page and no redirect. Discovery lists the endpoint in `pushed_authorization_request_endpoint`.'
       security:
         - {}
       requestBody:
@@ -265,8 +270,11 @@ paths:
               type: object
               required: [response_type, redirect_uri, scope]
               properties:
-                client_id: {type: string, description: Required unless the application authenticates with HTTP Basic.}
+                client_id: {type: string, description: Required unless the application authenticates with HTTP Basic or a client assertion.}
                 client_secret: {type: string, description: 'Web applications authenticate with this or with HTTP Basic. Single-page and native applications send only `client_id`.'}
+                client_assertion_type: {type: string, enum: ['urn:ietf:params:oauth:client-assertion-type:jwt-bearer'], description: 'With `client_assertion`, for applications using `private_key_jwt`.'}
+                client_assertion: {type: string, description: 'A JWT signed by the application''s key. Its `aud` may also be `{issuer}/oauth2/par`, except under the FAPI 2.0 profile.'}
+                dpop_jkt: {type: string, description: 'The JWK SHA-256 thumbprint of the DPoP key the code will be bound to (RFC 9449). A `DPoP` header on this request binds the code to its key instead, and `dpop_jkt` must then match it.'}
                 response_type: {type: string, enum: [code]}
                 redirect_uri: {type: string}
                 scope: {type: string, examples: [openid email offline_access]}
@@ -287,12 +295,12 @@ paths:
                   request_uri: {type: string, examples: ['urn:ietf:params:oauth:request_uri:…']}
                   expires_in: {type: integer, examples: [60]}
         '400':
-          description: '`invalid_request`: a parameter would fail at `/oauth2/authorize`, such as an unregistered `redirect_uri` or missing PKCE, the body has `request_uri` or a `client_id` other than the authenticated one. `unauthorized_client`: the HTTP Basic secret is wrong.'
+          description: '`invalid_request`: a parameter would fail at `/oauth2/authorize`, such as an unregistered `redirect_uri`, missing PKCE or a malformed `dpop_jkt`, the body has `request_uri` or a `client_id` other than the authenticated one, or the client sent a client assertion together with a secret. `invalid_dpop_proof`: the `DPoP` proof is invalid or names another key than `dpop_jkt`. `unauthorized_client`: the HTTP Basic secret is wrong, or the application uses `private_key_jwt`.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OAuthError'}
         '401':
-          description: '`invalid_client`: a web or service application did not authenticate, or its `client_secret` is wrong.'
+          description: '`invalid_client`: a web or service application did not authenticate, its `client_secret` is wrong or not accepted, or its client assertion is invalid, expired, replayed, or signed with another algorithm or key.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OAuthError'}
@@ -3935,6 +3943,10 @@ paths:
                 requirePkce: {type: boolean, description: 'Only for OpenID Connect and OAuth applications other than the Halo CLI, and not for service applications.'}
                 requireDpop: {type: boolean, description: Only for OpenID Connect and OAuth applications other than the Halo CLI.}
                 kerberosSignIn: {type: boolean, description: 'Not for bookmarks, RADIUS, LDAP or service applications.'}
+                tokenEndpointAuthMethod: {type: string, enum: [client_secret_basic, private_key_jwt], description: 'Only for web and service applications. `private_key_jwt` needs `jwks` or `jwksUri`, not both. Recorded as `application.update` with a diff.'}
+                jwks: {type: [object, 'null'], description: 'A JSON Web Key Set of 1 to 20 public signing keys: RSA of 2048 bits or more, EC on P-256, P-384 or P-521, or Ed25519. `null` removes it.'}
+                jwksUri: {type: string, description: 'An https:// URL on a public address that serves the application''s JSON Web Key Set, or an empty string.'}
+                fapi2Profile: {type: boolean, description: 'Only for web and service applications using `private_key_jwt`, with only https redirect URIs. See the FAPI 2.0 security profile in Applications.'}
       responses:
         '200': {$ref: '#/components/responses/ApplicationResponse'}
         '400': {$ref: '#/components/responses/BadJSON'}
@@ -4237,6 +4249,7 @@ paths:
       description: 'The calling application''s model and tuples answer. People who don''t exist, are suspended or deprovisioned, or aren''t assigned to the application are denied, and tuples naming groups the application isn''t assigned are ignored. `path` shows the relations that granted it, ending with the person, group or role, such as `["document:readme#viewer", "folder:eng#viewer", "group:grp_…"]`.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       requestBody:
         required: true
         content:
@@ -4260,6 +4273,7 @@ paths:
       description: 'For debugging. Each node lists the people, groups and roles that hold the relation directly, and children for the usersets, unions and parents it follows. A node already shown elsewhere in the tree appears again without children. People and groups no longer assigned to the application are left out.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       requestBody:
         required: true
         content:
@@ -4283,6 +4297,7 @@ paths:
       description: 'Groups and roles expand to their current members and holders. Suspended and deprovisioned people and people not assigned to the application are left out, and groups the application isn''t assigned don''t expand. Up to 1,000 people; `truncated` says whether there were more.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       requestBody:
         required: true
         content:
@@ -4313,6 +4328,7 @@ paths:
       description: 'Halo checks the first 1,000 objects of the type that appear in the application''s tuples, in order of their ids; `truncated` says whether there were more.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       requestBody:
         required: true
         content:
@@ -4349,6 +4365,7 @@ paths:
       description: 'Up to 1,000 tuples in order of object, relation and subject; `truncated` says whether there were more. Every filter is optional.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       parameters:
         - {name: object, in: query, schema: {type: string, examples: [document, 'document:readme']}, description: A type, or an object as `type:id`.}
         - {name: relation, in: query, schema: {type: string}}
@@ -4376,6 +4393,7 @@ paths:
       description: 'Up to 100 writes and deletes together. Deletes run first. Writing a tuple that exists does nothing, and neither does deleting one that doesn''t. Each written tuple must fit the model: its relation takes the kind of subject, such as `user`, `group`, `folder` or `team#member`. People and groups are named by their Halo ids and must be assigned to the application: one of its groups or a member of one. Others are refused with `422`. Deletes don''t check the model, so tuples a changed model no longer takes can still be removed.'
       security:
         - applicationClient: []
+        - applicationAssertion: []
       requestBody:
         required: true
         content:
@@ -7907,6 +7925,11 @@ components:
       type: http
       scheme: basic
       description: The application's client ID as the user name and one of its client secrets as the password. Accepted only on routes under `/authz`, for active web and service applications with an authorization model.
+    applicationAssertion:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 'For applications using private_key_jwt, send `Authorization: PrivateKeyJWT <assertion>`. The audience is the issuer or the requested endpoint URL. FAPI 2.0 applications send only the issuer as a string. Use a new assertion ID for each request.'
     receiverAccessToken:
       type: http
       scheme: bearer
@@ -8393,7 +8416,7 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
     ApplicationUnauthenticated:
-      description: '`ERR_UNAUTHENTICATED`: no client ID and secret, a wrong or expired secret, or a disabled application.'
+      description: '`ERR_UNAUTHENTICATED`: the configured client credentials are missing or invalid, or the application is disabled.'
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
@@ -9223,8 +9246,7 @@ components:
           items: {type: string}
     Application:
       type: object
-      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent, backchannelLogoutUri, backchannelLogoutSessionRequired, requirePar, requirePkce, requireDpop, kerberosSignIn]
-      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, roles, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent]
+      required: [id, name, description, protocol, type, status, clientId, homepage, redirectUris, postLogoutUris, scopes, claims, claimMappings, groupIds, userCount, credentials, owner, createdAt, signIns7d, failureRate7d, tokenPolicy, maxAuthAge, setupGuide, logoUrl, registeredDynamically, awaitingApproval, requiresConsent, backchannelLogoutUri, backchannelLogoutSessionRequired, requirePar, requirePkce, requireDpop, kerberosSignIn, tokenEndpointAuthMethod, jwksUri, fapi2Profile, roles]
       properties:
         id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
@@ -9281,6 +9303,10 @@ components:
         requirePkce: {type: boolean, description: 'Every authorization request must send `code_challenge` with `code_challenge_method=S256`. Single-page and native applications always must, whatever this says.'}
         requireDpop: {type: boolean, description: 'Every token request must carry a DPoP proof (RFC 9449), so its access and refresh tokens only work with the key that signed the proof. A token request without one ends with `invalid_dpop_proof`. Refresh tokens issued without a proof stop working once this is on, and access tokens already issued last until they expire.'}
         kerberosSignIn: {type: boolean, description: 'Whether people can reach this application with Windows sign-in (Kerberos). On by default. When off, a Kerberos sign-in to it, or single sign-on from a session that started with one, is blocked like an access policy block, and the sign-in page doesn''t offer or try Windows sign-in for it.'}
+        tokenEndpointAuthMethod: {type: string, enum: [client_secret_basic, private_key_jwt], description: '`client_secret_basic` accepts the application''s client secrets with HTTP Basic or `client_secret_post`. `private_key_jwt` accepts only client assertions signed by its `jwks` or `jwksUri` keys. Single-page and native applications have no client authentication, whatever this says.'}
+        jwks: {type: object, description: 'The JSON Web Key Set that signs the application''s client assertions. Absent when it has none.'}
+        jwksUri: {type: string, description: 'Where Halo fetches the keys that sign the application''s client assertions. Empty when it has none.'}
+        fapi2Profile: {type: boolean, description: 'The application follows the FAPI 2.0 security profile. See Applications.'}
         saml: {$ref: '#/components/schemas/SAMLView'}
         ldap:
           type: object
@@ -10458,7 +10484,11 @@ components:
         response_types:
           type: array
           items: {type: string, enum: [code]}
-        token_endpoint_auth_method: {type: string, enum: [client_secret_basic, client_secret_post, none], default: client_secret_basic, description: '`none` registers a public client that must use PKCE.'}
+        token_endpoint_auth_method: {type: string, enum: [client_secret_basic, client_secret_post, private_key_jwt, none], default: client_secret_basic, description: '`none` registers a public client that must use PKCE. `private_key_jwt` registers a web client without a client secret that authenticates with client assertions signed by `jwks` or `jwks_uri`.'}
+        jwks: {type: object, description: 'Only with `private_key_jwt`, instead of `jwks_uri`. 1 to 20 public signing keys.'}
+        jwks_uri: {type: string, format: uri, description: 'Only with `private_key_jwt`, instead of `jwks`. An https:// URL on a public address.'}
+        dpop_bound_access_tokens: {type: boolean, description: 'RFC 9449. Every token request must carry a DPoP proof. A client can turn this on in an update but not off.'}
+        require_pushed_authorization_requests: {type: boolean, description: 'RFC 9126. Every authorization request must be pushed to `/oauth2/par`. A client can turn this on in an update but not off.'}
         application_type: {type: string, enum: [web, native], default: web, description: '`native` needs `token_endpoint_auth_method` `none`.'}
         scope: {type: string, description: 'Space-separated. Halo keeps only `openid`, `profile` and `email` and always includes `openid`.', examples: [openid profile email]}
         id_token_signed_response_alg: {type: string, enum: [RS256, ES256, EdDSA], default: RS256, description: 'Any other value is refused with `invalid_client_metadata`.'}

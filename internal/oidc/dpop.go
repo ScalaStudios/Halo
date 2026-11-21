@@ -39,6 +39,13 @@ func invalidProof(description string) *oidc.Error {
 	return &oidc.Error{ErrorType: "invalid_dpop_proof", Description: description}
 }
 
+func checkThumbprint(jkt string) error {
+	if hash, err := base64.RawURLEncoding.DecodeString(jkt); jkt != "" && (err != nil || len(hash) != sha256.Size) {
+		return oidc.ErrInvalidRequest().WithDescription("dpop_jkt must be the base64url SHA-256 JWK thumbprint of the DPoP key.")
+	}
+	return nil
+}
+
 func confirm(ctx context.Context, claims map[string]any) {
 	if jkt := dpopJKT(ctx); jkt != "" {
 		claims["cnf"] = map[string]any{"jkt": jkt}

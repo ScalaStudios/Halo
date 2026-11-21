@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"cmp"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"halo/internal/config"
 	"halo/internal/httpx"
 	"halo/internal/kms"
+	"halo/internal/oidc"
 	"halo/internal/secret"
 	"halo/internal/store"
 )
@@ -46,6 +48,11 @@ type clientMetadata struct {
 	ApplicationType         string   `json:"application_type"`
 	Scope                   string   `json:"scope"`
 	IDTokenSignedAlg        string   `json:"id_token_signed_response_alg"`
+
+	JWKS                  json.RawMessage `json:"jwks,omitempty"`
+	JWKSURI               string          `json:"jwks_uri,omitempty"`
+	DPoPBoundAccessTokens bool            `json:"dpop_bound_access_tokens,omitempty"`
+	RequirePushedRequests bool            `json:"require_pushed_authorization_requests,omitempty"`
 }
 
 type registeredClient struct {
@@ -145,12 +152,24 @@ func (m *clientMetadata) check(allowed []string, keys *kms.Keys) (string, []stri
 			return "", nil, invalid(`Native clients can't keep a secret. Register with token_endpoint_auth_method "none" and use PKCE.`)
 		}
 		appType = "web"
+	case oidc.PrivateKeyJWT:
+		if m.ApplicationType == "native" {
+			return "", nil, invalid(`Native clients can't keep a private key. Register with token_endpoint_auth_method "none" and use PKCE.`)
+		}
+		appType = "web"
 	case "none":
 		if m.ApplicationType == "native" {
 			appType = "native"
 		}
 	default:
-		return "", nil, invalid(`Set token_endpoint_auth_method to "client_secret_basic", "client_secret_post" or "none".`)
+		return "", nil, invalid(`Set token_endpoint_auth_method to "client_secret_basic", "client_secret_post", "private_key_jwt" or "none".`)
+	}
+	if m.TokenEndpointAuthMethod != oidc.PrivateKeyJWT && (len(m.JWKS) > 0 || m.JWKSURI != "") {
+		return "", nil, invalid(`Halo only uses jwks and jwks_uri to check private_key_jwt client assertions. Leave them out, or set token_endpoint_auth_method to "private_key_jwt".`)
+	}
+	m.JWKS = compactJSON(m.JWKS)
+	if err := clientKeys(m.TokenEndpointAuthMethod, m.JWKS, m.JWKSURI); err != nil {
+		return "", nil, metadataError("invalid_client_metadata", err)
 	}
 	m.IDTokenSignedAlg = cmp.Or(m.IDTokenSignedAlg, "RS256")
 	if !slices.Contains(store.SigningAlgorithms, m.IDTokenSignedAlg) {
@@ -201,10 +220,18 @@ func (m *clientMetadata) check(allowed []string, keys *kms.Keys) (string, []stri
 	return appType, scopes, nil
 }
 
+func (m clientMetadata) registered(app *store.Application) {
+	if m.TokenEndpointAuthMethod == oidc.PrivateKeyJWT {
+		app.TokenEndpointAuthMethod = oidc.PrivateKeyJWT
+	}
+	app.JWKS, app.JWKSURI = m.JWKS, m.JWKSURI
+	app.RequireDPoP, app.RequirePAR = app.RequireDPoP || m.DPoPBoundAccessTokens, app.RequirePAR || m.RequirePushedRequests
+}
+
 func (h *registrar) describe(app store.Application) registeredClient {
 	method, kind := "none", "web"
 	if app.Type == "web" {
-		method = "client_secret_basic"
+		method = app.TokenEndpointAuthMethod
 	}
 	if app.Type == "native" {
 		kind = "native"
@@ -224,6 +251,10 @@ func (h *registrar) describe(app store.Application) registeredClient {
 			ApplicationType:         kind,
 			Scope:                   strings.Join(app.Scopes, " "),
 			IDTokenSignedAlg:        app.TokenPolicy.IDTokenAlg,
+			JWKS:                    app.JWKS,
+			JWKSURI:                 app.JWKSURI,
+			DPoPBoundAccessTokens:   app.RequireDPoP,
+			RequirePushedRequests:   app.RequirePAR,
 		},
 	}
 }
@@ -279,9 +310,15 @@ func (h *registrar) register(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
+		if in.TokenEndpointAuthMethod == oidc.PrivateKeyJWT || in.DPoPBoundAccessTokens || in.RequirePushedRequests {
+			in.registered(&app)
+			if err := tx.UpdateApplication(ctx, app); err != nil {
+				return err
+			}
+		}
 		out = h.describe(app)
 		out.RegistrationAccessToken = token
-		if appType == "web" {
+		if appType == "web" && app.TokenEndpointAuthMethod != oidc.PrivateKeyJWT {
 			credential, value, err := tx.AddClientSecret(ctx, app.ID, "Registration", secretLifetime)
 			if err != nil {
 				return err
@@ -343,13 +380,20 @@ func (h *registrar) update(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if appType != app.Type {
+	if appType != app.Type || appType == "web" && (in.TokenEndpointAuthMethod == oidc.PrivateKeyJWT) != (app.TokenEndpointAuthMethod == oidc.PrivateKeyJWT) {
 		return httpx.Fail(http.StatusBadRequest, "invalid_client_metadata", "A registered client keeps its token_endpoint_auth_method and application_type. Register a new client to change them.")
 	}
 	next := app
 	next.Name, next.Homepage, next.RedirectURIs, next.PostLogoutURIs, next.Scopes = in.ClientName, in.ClientURI, in.RedirectURIs, nonNil(in.PostLogoutRedirectURIs), scopes
 	next.TokenPolicy.IDTokenAlg = in.IDTokenSignedAlg
-	if next.TokenPolicy.IDTokenAlg == app.TokenPolicy.IDTokenAlg && next.Name == app.Name && next.Homepage == app.Homepage && slices.Equal(next.RedirectURIs, app.RedirectURIs) && slices.Equal(next.PostLogoutURIs, app.PostLogoutURIs) && slices.Equal(next.Scopes, app.Scopes) {
+	in.registered(&next)
+	if next.FAPI2Profile {
+		if _, err := fapi2(app, &next); err != nil {
+			return metadataError("invalid_client_metadata", err)
+		}
+	}
+	if next.TokenPolicy.IDTokenAlg == app.TokenPolicy.IDTokenAlg && next.Name == app.Name && next.Homepage == app.Homepage && slices.Equal(next.RedirectURIs, app.RedirectURIs) && slices.Equal(next.PostLogoutURIs, app.PostLogoutURIs) && slices.Equal(next.Scopes, app.Scopes) &&
+		bytes.Equal(next.JWKS, app.JWKS) && next.JWKSURI == app.JWKSURI && next.RequireDPoP == app.RequireDPoP && next.RequirePAR == app.RequirePAR {
 		return httpx.JSON(w, http.StatusOK, h.describe(app))
 	}
 	err = h.st.Tx(ctx, func(tx *store.Store) error {

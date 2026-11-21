@@ -59,13 +59,16 @@ func (s *storage) grant(ctx context.Context, req op.TokenRequest) (store.OIDCTok
 		return t, app, err
 	}
 	t.DPoPJKT = dpopJKT(ctx)
+	if code, ok := req.(*authRequest); ok && code.DPoPJKT != "" && code.DPoPJKT != t.DPoPJKT {
+		return t, app, oidc.ErrInvalidGrant().WithDescription("The authorization code is bound to a DPoP key with dpop_jkt. Send a DPoP proof signed by that key.")
+	}
 	if prev, ok := req.(*refreshRequest); ok && prev.DPoPJKT != t.DPoPJKT {
 		if prev.DPoPJKT == "" {
 			return t, app, oidc.ErrInvalidGrant().WithDescription("The refresh token was issued without a DPoP proof, so it can't be bound to a key now. Sign the person in again with a DPoP proof on the token request.")
 		}
 		return t, app, oidc.ErrInvalidGrant().WithDescription("The refresh token is bound to a DPoP key. Send a DPoP proof signed by that key.")
 	}
-	if app.RequireDPoP && t.DPoPJKT == "" {
+	if (app.RequireDPoP || app.FAPI2Profile) && t.DPoPJKT == "" {
 		return t, app, invalidProof("This application must send a DPoP proof with every token request.")
 	}
 	var person store.User
