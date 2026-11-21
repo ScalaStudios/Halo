@@ -1,19 +1,25 @@
 <h1><img src=".github/assets/banner.png" alt="Halo: open-source identity and access management" width="100%"></h1>
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ScalaStudios/Halo/ci.yml?branch=main&style=flat&label=ci&labelColor=2a2724)](https://github.com/ScalaStudios/Halo/actions/workflows/ci.yml)
-[![Status: pre-release](https://img.shields.io/badge/status-pre--release-fa7e26?style=flat&labelColor=2a2724)](CHANGELOG.md)
+[![Latest release](https://img.shields.io/github/v/release/ScalaStudios/Halo?style=flat&label=release&labelColor=2a2724)](https://github.com/ScalaStudios/Halo/releases/latest)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-57534d?style=flat&labelColor=2a2724)](LICENSE)
 
-**Halo is an open-source identity and access management (IAM) platform that you host yourself.** It is where your organization decides who can sign in to which applications, how they prove who they are, and how long their access lasts.
+**Halo is an open-source identity and access management (IAM) platform from Scala Studios.** It gives your organization one place to manage who can sign in to which applications, how they prove who they are, and when their access ends. Self-host Halo or use Scala Studios' managed Halo Cloud.
 
-In identity terms, Halo is an identity provider (IdP) for single sign-on (SSO) over OpenID Connect (OIDC) and SAML 2.0, with passwordless sign-in through passkeys, SCIM 2.0 provisioning, conditional access policies and identity governance. It comes with its own directory, admin console and account portal: it is not an authentication library or a proxy in front of your applications.
+Halo provides single sign-on over OpenID Connect (OIDC) and SAML 2.0, passkey sign-in, SCIM 2.0 provisioning, conditional access, and identity governance. It includes a directory, an admin console, and an account portal.
 
-[Website](https://halo.scala.gg) · [Quick start](#quick-start) · [Documentation](https://halo.scala.gg/docs) · [Integrations](#connect-your-first-application) · [Security](SECURITY.md)
+[Halo Cloud](https://halo.scala.gg/cloud) · [Self-host](#quick-start) · [Documentation](https://halo.scala.gg/docs) · [Releases](https://github.com/ScalaStudios/Halo/releases) · [Security](SECURITY.md)
 
 > [!NOTE]
-> Halo is pre-release. The current release is 0.1.1, which the install script installs, and the API and configuration may change before 1.0. [CHANGELOG.md](CHANGELOG.md) lists what is included.
+> Halo is in active development. The API and configuration may change before 1.0. See the [latest release](https://github.com/ScalaStudios/Halo/releases/latest) for release notes and container image versions.
 
 ![The Halo console home page, with the organization's users, groups, devices and applications, the signed-in administrator's roles, open risk events and shortcuts](.github/assets/console-overview.png)
+
+## Halo Cloud
+
+Scala Studios runs Halo Cloud as a managed service. We operate your Halo installation, PostgreSQL database, backups, and upgrades. You manage your directory, applications, and access policies. Cloud organization and billing accounts are separate from the identity directory in your tenant.
+
+Halo Cloud is currently invite-only. [See plans and sign in](https://halo.scala.gg/cloud). You can also [self-host Halo](#quick-start) under Apache-2.0.
 
 ## Why Halo
 
@@ -31,14 +37,14 @@ Halo works in the same space as hosted services such as Microsoft Entra ID, Okta
 | --- | --- |
 | **Sign-in** | Passkeys and security keys (WebAuthn), authenticator apps (TOTP), single-use recovery codes, and magic links or one-time codes by email. Sign-in through Google, Microsoft Entra ID, GitHub or any OpenID Connect provider, with account linking and accounts created on first sign-in, and Windows sign-in with the Kerberos ticket of a computer joined to Active Directory. |
 | **Single sign-on** | An OpenID Connect provider and OAuth 2.0 authorization server for web, single-page, native and machine-to-machine applications. A SAML 2.0 identity provider with service provider metadata import and IdP-initiated sign-in. Forward auth for Traefik, nginx and Caddy in front of applications that support neither, and a read-only LDAP directory for applications that only speak LDAP. |
-| **Directory** | People with profiles and managers, assigned groups with owners and self-service joining, rule-based groups such as `user.department == "Engineering"`, service accounts, devices, and six administrative roles. |
+| **Directory** | People with profiles and managers, assigned and rule-based groups, service accounts, devices, and scoped administrative roles. Organizations can require an identity check before an invitation or self-service sign-up becomes active. |
 | **Provisioning** | A SCIM 2.0 server, tested with the request formats of Okta and Microsoft Entra ID, so either of them or an HR system can provision people into Halo; LDAP directory sync that reads people and groups from Active Directory or OpenLDAP on a schedule and suspends people who leave; and outbound SCIM that creates, updates and deactivates accounts in your applications and keeps the groups you choose in step. |
 | **Access policies** | Conditional access by person, group, application, network zone, device trust, device compliance from Microsoft Intune or a device agent, sign-in risk and sign-in method, with effects that allow, block, require a passkey or security key, or require accepting versioned terms of use, report-only mode and a simulator. |
 | **Governance** | Access packages that people request, with approvers, justifications and time limits; access reviews that can remove access automatically when they complete; administrator roles that eligible people activate for a few hours with a reason; guest accounts with a sponsor and an end date; and joiner, mover and leaver rules, plus rules that run on a date such as a contract end date or after a number of days without signing in. |
 | **Infrastructure access** | An SSH certificate authority that issues short-lived certificates to people in mapped groups, through `halo login` and `halo ssh-cert`, and a host certificate authority that signs registered servers' host keys with `halo ssh-host`, so people connect without the first-connection prompt; Linux accounts and sudo rules from Halo groups on your servers through `halo-hostd`; and a RADIUS server that signs people in to VPNs and network devices with their Halo password. |
 | **Monitoring** | A sign-in log, an audit log of every administrative change, risk events for risky networks, repeated failures, new devices and new networks, signed webhooks for audit and sign-in events, and streaming of both to syslog or OpenTelemetry. |
 | **Administration** | An admin console whose home page shows the directory, which features are on, your roles, open risk events and shortcuts, a self-service account portal with profile pictures, organization branding, sign-in methods you can switch off, optional areas you can switch off with their routes and background jobs (SAML, SCIM in either direction, SSH certificates, governance, webhooks, forward auth, RADIUS, the LDAP server, Kerberos sign-in and log streaming), email over SMTP with retries, JSON export with scheduled exports to an S3-compatible bucket, import of configuration from an export with a dry run, and rotation of client secrets, signing keys and `HALO_SECRET_KEY`. |
-| **Developers** | A REST API described by an OpenAPI 3.1 document, API keys for service accounts, API resources with their own scopes and JWT access tokens, and setup guides with ready-made configuration for common applications. |
+| **Developers** | An OpenAPI 3.1 REST API, service accounts and API keys, scoped API resources and JWT access tokens, a relationship-based authorization API, and setup guides for common applications. |
 
 ## Supported standards
 
@@ -86,6 +92,13 @@ When it finishes, create the first administrator with the command it prints:
 ```
 
 Open the link it prints and register a passkey. The console is at `https://auth.example.com/admin`. To install step by step instead, and for backups, upgrades and email, follow the [self-hosting guide](https://halo.scala.gg/docs/self-hosting).
+
+The public installer currently uses `v0.1.1`. To upgrade to [`v0.2.0`](https://github.com/ScalaStudios/Halo/releases/tag/v0.2.0), [back up PostgreSQL and `HALO_SECRET_KEY`](https://halo.scala.gg/docs/self-hosting), then set both Halo image tags in your installed `compose.yml` to `0.2.0`. Run these commands from the installation directory:
+
+```bash
+docker compose pull halo-server halo-web
+docker compose up -d --no-deps halo-server halo-web
+```
 
 ### Run from source
 
@@ -502,21 +515,11 @@ PKCS #11 needs cgo and a server built with `CGO_ENABLED=1 go build -tags pkcs11 
 - `HALO_PKCS11_WRAPPING_KEY`: the label of an RSA private key on the token that may decrypt. `HALO_SECRET_KEY` then holds 32 random bytes encrypted with RSA-OAEP and SHA-256 to its public key, base64 encoded: `openssl rand 32 | openssl pkeyutl -encrypt -pubin -inkey halo-wrapping-key.pem -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 | base64 -w0`. SoftHSM 2.6 can't decrypt RSA-OAEP with SHA-256.
 - `HALO_PKCS11_SIGNING=1`: create new signing key pairs on the token, labelled `halo-key_` and an ID, with a sensitive private key that can't be extracted. Halo refuses keys the token lets be extracted. Halo uses one session, opens a new one after the token drops it, and signs one request at a time.
 
-## Halo Cloud
+## Roadmap and limitations
 
-A hosted version of Halo is planned for teams that would rather not run it themselves. Follow [halo.scala.gg](https://halo.scala.gg) for news. Self-hosting is meant to stay complete, with no paid tier for core features and no dependency on proprietary infrastructure.
-
-## Roadmap
-
-Planned:
-
-- Halo Cloud, the hosted version
-
-Known limitations today:
-
-- One organization per installation.
-- Run a single Halo server; see [Self-hosting](#self-hosting).
-- Halo is not OpenID Certified and has not had an independent security audit. [CONFORMANCE.md](CONFORMANCE.md) lists the OpenID Foundation conformance suite plans it passes when we run them, and the profiles it doesn't meet.
+- Each Halo installation serves one organization. You can run [several server instances](#running-several-instances) against the same database. Follow [multi-organization support](https://github.com/ScalaStudios/Halo/issues/25) for shared installations.
+- FAPI 2.0 support is partial. Mutual TLS client authentication and organization-wide client policies are tracked in [#76](https://github.com/ScalaStudios/Halo/issues/76).
+- The [conformance report](CONFORMANCE.md) records the OpenID Foundation test results. OpenID certification and the [independent security audit](https://github.com/ScalaStudios/Halo/issues/28) remain open.
 
 [CHANGELOG.md](CHANGELOG.md) records what has shipped.
 
