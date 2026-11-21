@@ -59,41 +59,38 @@ export function SignUpQueue({ signUps, groups, canDecide, proofingRequired }: { 
       />
       <CardBody>
         <ul className="flex flex-col">
-          {signUps.map((signUp) => {
-            const unchecked = proofingRequired && signUp.identityProof !== "verified";
-            return (
-              <li key={signUp.id} className="flex items-start gap-3 border-t border-border py-4 first:border-t-0 first:pt-0 last:pb-0">
-                <Avatar name={signUp.name} size="md" />
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <p className="truncate text-body-sm font-semibold text-fg">{signUp.name}</p>
-                  <p className="text-caption break-all text-fg-3">
-                    {signUp.email} · <RelativeTime iso={signUp.verifiedAt} />
-                  </p>
-                  {proofingRequired || signUp.identityProof ? (
-                    <Badge tone={IDENTITY[signUp.identityProof].tone} className="w-fit">
-                      {IDENTITY[signUp.identityProof].label}
-                    </Badge>
-                  ) : null}
-                  {canDecide ? (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {unchecked ? (
-                        <CheckIdentityButton name={signUp.name} endpoint={`/sign-ups/${signUp.id}/identity-proofs`} />
-                      ) : (
-                        <Button size="sm" variant="secondary" onClick={() => setDeciding({ signUp, approve: true })}>
-                          <Check aria-hidden="true" size={16} strokeWidth={1.75} />
-                          Approve
-                        </Button>
-                      )}
-                      <Button size="sm" variant="quiet" onClick={() => setDeciding({ signUp, approve: false })}>
-                        <X aria-hidden="true" size={16} strokeWidth={1.75} />
-                        Reject
+          {signUps.map((signUp) => (
+            <li key={signUp.id} className="flex items-start gap-3 border-t border-border py-4 first:border-t-0 first:pt-0 last:pb-0">
+              <Avatar name={signUp.name} size="md" />
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <p className="truncate text-body-sm font-semibold text-fg">{signUp.name}</p>
+                <p className="text-caption break-all text-fg-3">
+                  {signUp.email} · <RelativeTime iso={signUp.verifiedAt} />
+                </p>
+                {proofingRequired || signUp.identityProof ? (
+                  <Badge tone={IDENTITY[signUp.identityProof].tone} className="w-fit">
+                    {IDENTITY[signUp.identityProof].label}
+                  </Badge>
+                ) : null}
+                {canDecide ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {proofingRequired && signUp.identityProof !== "verified" ? (
+                      <CheckIdentityButton name={signUp.name} endpoint={`/sign-ups/${signUp.id}/identity-proofs`} />
+                    ) : (
+                      <Button size="sm" variant="secondary" onClick={() => setDeciding({ signUp, approve: true })}>
+                        <Check aria-hidden="true" size={16} strokeWidth={1.75} />
+                        Approve
                       </Button>
-                    </div>
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
+                    )}
+                    <Button size="sm" variant="quiet" onClick={() => setDeciding({ signUp, approve: false })}>
+                      <X aria-hidden="true" size={16} strokeWidth={1.75} />
+                      Reject
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            </li>
+          ))}
         </ul>
       </CardBody>
       <Dialog
