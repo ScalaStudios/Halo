@@ -15,7 +15,7 @@ import type { PolicyWithActivity } from "@/lib/policy-types";
 import { activityText, describePolicy, policyState, type Names } from "./shared";
 
 function payload(p: PolicyWithActivity, change: { enabled?: boolean; mode?: PolicyWithActivity["mode"] }) {
-  return { name: p.name, description: p.description, enabled: p.enabled, mode: p.mode, effect: p.effect, termsId: p.termsId, conditions: p.conditions, ...change };
+  return { name: p.name, description: p.description, enabled: p.enabled, mode: p.mode, effect: p.effect, termsId: p.termsId, contextId: p.contextId, conditions: p.conditions, ...change };
 }
 
 export function ReportInsights({ policies }: { policies: PolicyWithActivity[] }) {

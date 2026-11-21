@@ -36,19 +36,19 @@ const UNITS = [
 ] as const;
 
 type Unit = (typeof UNITS)[number][0];
-type Duration = { amount: string; unit: Unit };
+export type Duration = { amount: string; unit: Unit };
 type Details = Pick<Application, "id" | "name" | "description" | "homepage" | "owner"> & { bookmark?: boolean };
 
-function split(seconds: number): Duration {
+export function split(seconds: number): Duration {
   const [unit, size] = [...UNITS].reverse().find(([, size]) => seconds % size === 0) ?? UNITS[0];
   return { amount: String(seconds / size), unit };
 }
 
-function toSeconds({ amount, unit }: Duration): number {
+export function toSeconds({ amount, unit }: Duration): number {
   return Number(amount) * (UNITS.find(([u]) => u === unit)?.[1] ?? 1);
 }
 
-const wholeNumber = (d: Duration) => (/^\d+$/.test(d.amount.trim()) ? undefined : "Enter a whole number.");
+export const wholeNumber = (d: Duration) => (/^\d+$/.test(d.amount.trim()) ? undefined : "Enter a whole number.");
 
 export function EditDetailsDialog({ app, directory, open, onOpenChange }: { app: Details; directory: User[]; open: boolean; onOpenChange: (open: boolean) => void }) {
   const formId = useId();
@@ -432,6 +432,7 @@ export function BackchannelLogoutForm({ app }: { app: Pick<Application, "id" | "
 }
 
 function DurationField({ label, hint, value, onChange, error }: { label: string; hint: string; value: Duration; onChange: (value: Duration) => void; error?: string }) {
+export function DurationField({ label, hint, value, onChange, error }: { label: string; hint: string; value: Duration; onChange: (value: Duration) => void; error?: string }) {
   return (
     <Field label={label} hint={hint} error={error}>
       {(props) => (

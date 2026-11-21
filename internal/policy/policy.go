@@ -22,7 +22,7 @@ import (
 var (
 	readers     = []string{"security_admin", "user_admin", "helpdesk_admin", "app_admin", "auditor"}
 	writers     = []string{"security_admin"}
-	effectNames = map[string]string{"allow": "allow", "require-phishing-resistant": "require a passkey or security key", "require-terms": "require accepting terms of use", "block": "block"}
+	effectNames = map[string]string{"allow": "allow", "require-phishing-resistant": "require a passkey or security key", "require-terms": "require accepting terms of use", "require-context": "require an authentication context", "block": "block"}
 	riskTitles  = map[string]string{"risky-network": "Sign-in from a risky network", "failed-sign-ins": "Repeated failed sign-ins", "new-device": "Sign-in from a new device"}
 	methodNames = strings.Join(store.MethodKinds[:len(store.MethodKinds)-1], ", ") + " or " + store.MethodKinds[len(store.MethodKinds)-1]
 	errLockout  = httpx.Fail(http.StatusConflict, "ERR_LOCKOUT", "This would stop every global administrator, including you, from signing in to Halo from this network and device. Exclude yourself or a break-glass group, or name an emergency access account under Approvals first. Blocking policies never apply to emergency access accounts.")
@@ -62,6 +62,11 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("DELETE /api/v1/terms/{id}", writers, h.deleteTerms)
 	mux.Handle("GET /api/v1/me/terms", httpx.Handle(h.myTerms))
 	mux.Handle("POST /api/v1/me/terms/{id}/accept", httpx.Handle(h.acceptTerms))
+
+	route("GET /api/v1/authentication-contexts", readers, h.listContexts)
+	route("POST /api/v1/authentication-contexts", writers, h.createContext)
+	route("PUT /api/v1/authentication-contexts/{id}", writers, h.updateContext)
+	route("DELETE /api/v1/authentication-contexts/{id}", writers, h.deleteContext)
 
 	route("GET /api/v1/network-zones", readers, h.listZones)
 	route("POST /api/v1/network-zones", writers, h.createZone)
@@ -143,6 +148,7 @@ func (h *handlers) readPolicy(r *http.Request) (store.AccessPolicy, error) {
 		Mode        string                 `json:"mode"`
 		Effect      string                 `json:"effect"`
 		TermsID     *string                `json:"termsId"`
+		ContextID   *string                `json:"contextId"`
 		Conditions  store.PolicyConditions `json:"conditions"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
@@ -152,6 +158,10 @@ func (h *handlers) readPolicy(r *http.Request) (store.AccessPolicy, error) {
 	terms := []string{}
 	if p.Effect == access.RequireTerms && in.TermsID != nil {
 		p.TermsID, terms = in.TermsID, []string{*in.TermsID}
+	}
+	contexts := []string{}
+	if p.Effect == access.RequireContext && in.ContextID != nil {
+		p.ContextID, contexts = in.ContextID, []string{*in.ContextID}
 	}
 	c := p.Conditions
 	_, effect := severity[p.Effect]
@@ -163,9 +173,11 @@ func (h *handlers) readPolicy(r *http.Request) (store.AccessPolicy, error) {
 	case p.Mode != "enforce" && p.Mode != "report":
 		return p, httpx.Invalid(`Choose a mode: "enforce" applies the policy, "report" only records what it would do.`)
 	case !effect:
-		return p, httpx.Invalid(`Choose an effect: "allow", "require-phishing-resistant", "require-terms" or "block".`)
+		return p, httpx.Invalid(`Choose an effect: "allow", "require-phishing-resistant", "require-terms", "require-context" or "block".`)
 	case p.Effect == access.RequireTerms && p.TermsID == nil:
 		return p, httpx.Invalid("Choose the terms of use people must accept.")
+	case p.Effect == access.RequireContext && p.ContextID == nil:
+		return p, httpx.Invalid("Choose the authentication context sign-ins must meet.")
 	case !c.AllUsers && len(c.GroupIDs)+len(c.UserIDs) == 0:
 		return p, httpx.Invalid("Choose who the policy applies to: all users, or at least one group or person.")
 	case !c.AllApps && len(c.AppIDs) == 0:
@@ -193,6 +205,7 @@ func (h *handlers) readPolicy(r *http.Request) (store.AccessPolicy, error) {
 		{"applications", "applications", apps},
 		{"network_zones", "networks", c.ZoneIDs},
 		{"terms", "terms of use", terms},
+		{"authentication_contexts", "authentication contexts", contexts},
 	} {
 		existing, err := h.st.ExistingIDs(r.Context(), ref.table, ref.ids)
 		if err != nil {
@@ -248,7 +261,7 @@ func changes(old, updated store.AccessPolicy) string {
 	if old.Mode != updated.Mode {
 		parts = append(parts, map[string]string{"report": "switched to report-only", "enforce": "switched to enforced"}[updated.Mode])
 	}
-	if old.Effect != updated.Effect || !reflect.DeepEqual(old.TermsID, updated.TermsID) {
+	if old.Effect != updated.Effect || !reflect.DeepEqual(old.TermsID, updated.TermsID) || !reflect.DeepEqual(old.ContextID, updated.ContextID) {
 		parts = append(parts, "changed the effect to "+effectNames[updated.Effect])
 	}
 	if !reflect.DeepEqual(old.Conditions, updated.Conditions) {
@@ -329,7 +342,7 @@ func enforced(p store.AccessPolicy) bool {
 }
 
 func restricts(p store.AccessPolicy) bool {
-	return enforced(p) && (p.Effect == access.Block || p.Effect == access.RequirePhishingResistant)
+	return enforced(p) && (p.Effect == access.Block || p.Effect == access.RequirePhishingResistant || p.Effect == access.RequireContext)
 }
 
 func (h *handlers) refuseLockout(r *http.Request, tx *store.Store, actor store.User) error {

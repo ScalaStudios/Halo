@@ -31,6 +31,7 @@ const (
 var ReservedClaims = []string{"sub", "iss", "aud", "exp", "iat", "nbf", "jti", "nonce", "azp", "acr", "amr", "sid", "auth_time", "at_hash", "c_hash", "act", "client_id", "scope"}
 
 var supportedClaims = []string{"sub", "aud", "exp", "iat", "iss", "auth_time", "nonce", "amr", "at_hash", "azp", "client_id", "scope", "sid", "email", "email_verified", "name", "preferred_username", "picture", groupsScope, "roles"}
+var supportedClaims = []string{"sub", "aud", "exp", "iat", "iss", "auth_time", "nonce", "acr", "amr", "at_hash", "azp", "client_id", "scope", "sid", "email", "email_verified", "name", "preferred_username", "picture", groupsScope}
 
 func New(d httpx.Deps) (http.Handler, error) {
 	config := &op.Config{
@@ -91,6 +92,11 @@ func New(d httpx.Deps) (http.Handler, error) {
 			c.GrantTypesSupported = slices.DeleteFunc(c.GrantTypesSupported, func(g oidc.GrantType) bool { return g == oidc.GrantTypeImplicit || g == oidc.GrantTypeBearer })
 			c.IntrospectionEndpointAuthSigningAlgValuesSupported, c.RevocationEndpointAuthSigningAlgValuesSupported = nil, nil
 			c.BackChannelLogoutSupported, c.BackChannelLogoutSessionSupported = true, true
+			if contexts, err := d.Store.ListAuthContexts(r.Context()); err == nil {
+				for _, ac := range contexts {
+					c.ACRValuesSupported = append(c.ACRValuesSupported, ac.ID)
+				}
+			}
 			if settings, err := d.Store.Settings(r.Context()); err == nil && settings.ClientRegistrationOn() {
 				c.RegistrationEndpoint = d.Config.Issuer() + "/oauth2/register"
 			}

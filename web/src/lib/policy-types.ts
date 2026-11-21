@@ -1,7 +1,7 @@
 import type { MethodKind, RiskLevel } from "./types";
 
 export type PolicyMode = "enforce" | "report";
-export type PolicyEffect = "allow" | "require-phishing-resistant" | "require-terms" | "block";
+export type PolicyEffect = "allow" | "require-phishing-resistant" | "require-terms" | "require-context" | "block";
 export type NetworkCondition = "any" | "in" | "not-in";
 export type DeviceCondition = "any" | "trusted" | "untrusted";
 export type DeviceTrust = "unknown" | "trusted" | "blocked";
@@ -35,6 +35,7 @@ export type AccessPolicy = {
   mode: PolicyMode;
   effect: PolicyEffect;
   termsId: string | null;
+  contextId: string | null;
   conditions: PolicyConditions;
   createdAt: string;
   updatedAt: string;
@@ -47,6 +48,15 @@ export type NetworkZone = {
   name: string;
   kind: "trusted" | "risky";
   cidrs: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AuthContext = {
+  id: string;
+  name: string;
+  methods: MethodKind[];
+  maxAge: number;
   createdAt: string;
   updatedAt: string;
 };

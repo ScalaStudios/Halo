@@ -126,7 +126,7 @@ func TestAuthorizationCodeFlow(t *testing.T) {
 		}
 		sess, token, err := st.CreateSession(ctx, store.NewSession{UserID: user.ID, Method: "passkey"})
 		must(err)
-		must(st.CompleteAuthRequest(ctx, requestID, user.ID, sess.ID, []string{"hwk", "mfa"}, time.Now()))
+		must(st.CompleteAuthRequest(ctx, requestID, user.ID, sess.ID, []string{"hwk", "mfa"}, time.Now(), ""))
 		if r := send(http.MethodGet, store.AuthorizeCallbackPath(requestID), nil, nil); r.status != http.StatusForbidden {
 			t.Fatalf("callback without the signing-in session: want 403, got %d", r.status)
 		}

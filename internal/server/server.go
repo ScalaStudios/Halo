@@ -46,6 +46,8 @@ var sensitiveRoutes = []string{
 	"PUT /api/v1/policies/order",
 	"PUT /api/v1/policies/{id}",
 	"DELETE /api/v1/policies/{id}",
+	"PUT /api/v1/authentication-contexts/{id}",
+	"DELETE /api/v1/authentication-contexts/{id}",
 	"PUT /api/v1/methods/{method}",
 	"PATCH /api/v1/settings",
 	"POST /api/v1/users/{id}/reset-authentication",

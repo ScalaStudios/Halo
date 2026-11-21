@@ -11,6 +11,7 @@ const (
 	Block                    = "block"
 	RequirePhishingResistant = "require-phishing-resistant"
 	RequireTerms             = "require-terms"
+	RequireContext           = "require-context"
 )
 
 type Input struct {
@@ -24,13 +25,34 @@ type Input struct {
 }
 
 type Decision struct {
-	Effect  string
-	Policy  string
-	Reason  string
-	Risk    string
-	EventID string
-	Terms   []store.Terms
-	Signals []string
+	Effect   string
+	Policy   string
+	Reason   string
+	Risk     string
+	EventID  string
+	Terms    []store.Terms
+	Contexts []store.AuthContext
+	Signals  []string
+}
+
+func (d Decision) StepUp(requested []store.AuthContext, sess store.Session) (string, *store.AuthContext) {
+	for i, c := range d.Contexts {
+		if !c.SatisfiedBy(sess) {
+			return "", &d.Contexts[i]
+		}
+	}
+	for _, c := range requested {
+		if c.SatisfiedBy(sess) {
+			return c.ID, nil
+		}
+	}
+	if len(requested) > 0 {
+		return "", &requested[0]
+	}
+	if len(d.Contexts) > 0 {
+		return d.Contexts[0].ID, nil
+	}
+	return "", nil
 }
 
 type Engine interface {
