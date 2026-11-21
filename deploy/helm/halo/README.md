@@ -63,6 +63,26 @@ helm upgrade halo deploy/helm/halo -n halo --reuse-values \
 
 A running server reads the Secret only when it starts, so after adding or changing `HALO_METRICS_TOKEN` restart it with `kubectl -n halo rollout restart deployment/halo-server`, then check that a scrape without the token gets 401.
 
+## Keys in HashiCorp Vault
+
+To keep `HALO_SECRET_KEY` wrapped by, and the signing keys inside, HashiCorp Vault Transit, put the Vault-encrypted key in the Secret as `HALO_SECRET_KEY`, add `HALO_VAULT_TOKEN` to it, and set the `vault` values:
+
+```sh
+kubectl -n halo create secret generic halo \
+  --from-literal=HALO_SECRET_KEY="$(vault write -field=ciphertext transit/encrypt/halo-secret-key plaintext="$(openssl rand -base64 32)")" \
+  --from-literal=HALO_VAULT_TOKEN='TOKEN' \
+  --from-literal=HALO_DATABASE_URL='postgres://halo:PASSWORD@db.example.internal:5432/halo'
+
+helm install halo deploy/helm/halo -n halo \
+  --set publicUrl=https://auth.example.com \
+  --set existingSecret=halo \
+  --set vault.address=https://vault.example.com:8200 \
+  --set vault.wrappingKey=halo-secret-key \
+  --set vault.signing=true
+```
+
+The server doesn't start while Vault is unreachable. The [main README](../../../README.md#keys-in-hashicorp-vault) lists the Vault policy, how to move existing keys and how to keep the token renewed with Vault Proxy.
+
 ## Upgrades
 
 Change the image tags, or upgrade to a newer chart, then run `helm upgrade`. The server applies database migrations when it starts and reports ready only afterwards. It runs as a single replica that is stopped before the new one starts, because background jobs run in every server process. Back up the database and `HALO_SECRET_KEY` first.
@@ -85,6 +105,11 @@ Change the image tags, or upgrade to a newer chart, then run `helm upgrade`. The
 | `radius.enabled` | `false` | Run Halo's RADIUS server, `HALO_RADIUS_LISTEN`, on its own UDP container port and a separate `<release>-radius` Service. |
 | `radius.port` | `1812` | RADIUS port. The Service also forwards the next port, 1813 by default, to it for accounting. |
 | `radius.serviceType` | `LoadBalancer` | Type of the RADIUS Service. `LoadBalancer` and `NodePort` get `externalTrafficPolicy: Local`, because Halo recognizes RADIUS clients by their source address. |
+| `vault.address` | | `HALO_VAULT_ADDR`. Put `HALO_VAULT_TOKEN` in `existingSecret`. |
+| `vault.namespace` | | `HALO_VAULT_NAMESPACE`, on Vault Enterprise and HCP Vault Dedicated. |
+| `vault.transitMount` | | `HALO_VAULT_TRANSIT_MOUNT`, `transit` when empty. |
+| `vault.wrappingKey` | | `HALO_VAULT_WRAPPING_KEY`. `HALO_SECRET_KEY` in `existingSecret` then holds the key encrypted by Vault. |
+| `vault.signing` | `false` | `HALO_VAULT_SIGNING`: create new signing keys in Vault. |
 | `metrics.enabled` | `false` | Serve Prometheus metrics on their own container and Service port, `HALO_METRICS_LISTEN`. The ingress never routes to it. |
 | `metrics.port` | `9090` | Metrics port. |
 | `metrics.serviceMonitor.enabled` | `false` | Create a Prometheus Operator ServiceMonitor. |

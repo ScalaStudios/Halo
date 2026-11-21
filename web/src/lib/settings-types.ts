@@ -213,6 +213,7 @@ export type OIDCSigningKey = {
   createdAt: string;
   retiresAt: string | null;
   retiredAt: string | null;
+  externalKey: string | null;
 };
 
 export type SAMLCertificate = {
@@ -221,6 +222,7 @@ export type SAMLCertificate = {
   notAfter: string;
   createdAt: string;
   retiredAt: string | null;
+  externalKey: string | null;
 };
 
 export type SigningKeys = { oidc: OIDCSigningKey[]; saml: SAMLCertificate[] };

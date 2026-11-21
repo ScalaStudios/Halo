@@ -63,6 +63,13 @@ radius:
   port: 1812
   serviceType: LoadBalancer
 
+vault:
+  address: ""
+  namespace: ""
+  transitMount: ""
+  wrappingKey: ""
+  signing: false
+
 metrics:
   enabled: false
   port: 9090

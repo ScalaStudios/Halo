@@ -36,6 +36,18 @@ const ROTATION: Record<Rotation, { path: string; title: string; description: str
   },
 };
 
+function storedIn(externalKey: string | null) {
+  return externalKey ? (
+    <span key="l" className="whitespace-nowrap" title={externalKey}>
+      Vault Transit
+    </span>
+  ) : (
+    <span key="l" className="whitespace-nowrap text-fg-3">
+      Halo database
+    </span>
+  );
+}
+
 export function SigningKeys({ keys, canRotate }: { keys: Keys; canRotate: boolean }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [confirming, setConfirming] = useState<Rotation | null>(null);
@@ -85,12 +97,13 @@ export function SigningKeys({ keys, canRotate }: { keys: Keys; canRotate: boolea
           ) : (
             <SimpleTable
               caption="OpenID Connect signing keys"
-              head={["Key ID", "Algorithm", "Created", "Status"]}
+              head={["Key ID", "Algorithm", "Stored in", "Created", "Status"]}
               rows={keys.oidc.map((key) => [
                 <span key="k" className="font-mono text-code-sm text-fg">
                   {key.kid}
                 </span>,
                 key.algorithm,
+                storedIn(key.externalKey),
                 <span key="c" className="tnum whitespace-nowrap">
                   {formatDate(key.createdAt)}
                 </span>,
@@ -129,12 +142,13 @@ export function SigningKeys({ keys, canRotate }: { keys: Keys; canRotate: boolea
           ) : (
             <SimpleTable
               caption="SAML signing certificates"
-              head={canRotate ? ["SHA-256 fingerprint", "Expires", "Status", "Actions"] : ["SHA-256 fingerprint", "Expires", "Status"]}
+              head={canRotate ? ["SHA-256 fingerprint", "Stored in", "Expires", "Status", "Actions"] : ["SHA-256 fingerprint", "Stored in", "Expires", "Status"]}
               rows={keys.saml.map((cert) => {
                 const row = [
                   <span key="f" className="block max-w-80 truncate font-mono text-code-sm text-fg" title={cert.fingerprint}>
                     {cert.fingerprint}
                   </span>,
+                  storedIn(cert.externalKey),
                   <span key="e" className="tnum whitespace-nowrap">
                     {formatDate(cert.notAfter)}
                   </span>,

@@ -265,6 +265,7 @@ Labels never hold people, email addresses, IP addresses or client IDs, and HTTP 
 | `halo_rate_limited_requests_total` | `scope`: `api`, `scim`, `bulk`, `radius` |
 | `halo_radius_requests_total` | `outcome`: `accept`, `reject`, `challenge`, `accounting`, `dropped` (no reply: unknown client, missing or wrong Message-Authenticator, malformed packet, rate limit or server error) |
 | `halo_http_requests_total`, `halo_http_request_duration_seconds` | `route`, plus `status` on the counter |
+| `halo_kms_request_duration_seconds`, `halo_kms_errors_total` | `operation`: `decrypt`, `create`, `read`, `sign`, `ping`; requests to Vault Transit |
 | `halo_db_pool_acquired_connections`, `_idle_`, `_total_`, `_max_connections` | |
 | `go_goroutines`, `go_memstats_heap_alloc_bytes`, `go_memstats_sys_bytes`, `go_gc_cycles_completed` | |
 
@@ -284,6 +285,8 @@ groups:
         expr: sum(increase(halo_log_export_events_total{outcome=~"failed|rejected|dropped"}[15m])) > 0
       - alert: HaloLockouts
         expr: sum(increase(halo_lockouts_total[15m])) > 10
+      - alert: HaloVaultFailing
+        expr: sum(increase(halo_kms_errors_total[5m])) > 0
 ```
 
 ### Log streaming
@@ -296,6 +299,39 @@ Halo can stream every sign-in event and audit event, with the audit event's chan
 - `HALO_LOG_EXPORT_ALLOW_PRIVATE=1`: send to private, loopback and link-local addresses, and allow `http://` for OTLP. Without it Halo only connects to public addresses.
 
 Each event is the same JSON as a webhook's, in the syslog message or the OTLP log record body, with secret values already redacted from audit changes. Syslog messages use the `authpriv` facility, the `halo` app name and the event type as the message ID. Halo sends new events every 10 seconds, starting with those recorded after the exporter is first saved. When the collector is down, events wait in the database and Halo retries with a growing delay, up to 5 minutes, so sign-ins never wait for the collector. The console shows the last successful send and how many events are waiting. When more than 100,000 events of one kind are waiting, the oldest are dropped, and an outage longer than the log retention loses the events the retention deletes. To trust a private certificate authority for syslog over TLS, point `SSL_CERT_FILE` at a bundle that holds the system certificates and your authority, since it replaces the system bundle for every connection Halo makes.
+
+### Keys in HashiCorp Vault
+
+Halo can use the [Transit secrets engine](https://developer.hashicorp.com/vault/docs/secrets/transit) of HashiCorp Vault in two ways, separately or together:
+
+- **Wrap `HALO_SECRET_KEY`.** The environment then holds only the key encrypted by Vault, so a copy of the environment and a database backup are not enough to read stored secrets. Halo decrypts it once when it starts and doesn't start while Vault is unreachable. Restoring a backup then also needs the wrapping key in Vault.
+- **Sign inside Vault.** New OpenID Connect, SAML and SSH user and host certificate authority keys are created in Transit as keys that can't be exported. Halo sends Vault what it needs signed, never holds the private key, and publishes the public key it reads from Vault. Halo starts only when it can reach Vault and read every Vault key it signs with. While Vault is unreachable, requests that need a signature fail; Halo never falls back to a key of its own.
+
+Set these on the server:
+
+- `HALO_VAULT_ADDR`: Vault's address, such as `https://vault.example.com:8200`. Plain `http` is accepted only to the loopback address, such as a Vault Proxy at `http://127.0.0.1:8100`, or with `HALO_DEV=1`. Halo doesn't follow redirects.
+- `HALO_VAULT_TOKEN`: a token with the policy below. Halo doesn't renew it, and Vault revokes a token whose TTL runs out. To keep it renewed, run [Vault Proxy](https://developer.hashicorp.com/vault/docs/agent-and-proxy/proxy/apiproxy) next to Halo with auto-auth and `api_proxy { use_auto_auth_token = true }`, point `HALO_VAULT_ADDR` at it and leave `HALO_VAULT_TOKEN` unset.
+- `HALO_VAULT_NAMESPACE`: the namespace, on Vault Enterprise and HCP Vault Dedicated.
+- `HALO_VAULT_TRANSIT_MOUNT`: where Transit is mounted, `transit` by default.
+- `HALO_VAULT_WRAPPING_KEY`: a Transit encryption key, such as `halo-secret-key`. `HALO_SECRET_KEY` then holds the key encrypted by Vault. Create a new one with `vault write -field=ciphertext transit/encrypt/halo-secret-key plaintext="$(openssl rand -base64 32)"`, or wrap the key of an existing installation with `plaintext="$HALO_SECRET_KEY"`. To rotate the wrapping key, run `vault write -f transit/keys/halo-secret-key/rotate`, then replace `HALO_SECRET_KEY` with the output of `vault write -field=ciphertext transit/rewrap/halo-secret-key ciphertext=<current value>`; stored secrets stay as they are. `halo rotate-secret-key` reads `HALO_NEW_SECRET_KEY` in the same encrypted form.
+- `HALO_VAULT_SIGNING=1`: create new signing keys in Vault, named `halo-key_` and an ID. Existing keys stay in the database until they are rotated: rotate the OpenID Connect keys and the SAML certificate under Settings, Security defaults, and the console shows where each of those keys lives. The SSH user and host certificate authorities have no rotation, so each is created in Vault only on an installation that doesn't have it yet. While the SAML key is in Vault, Halo sends unsigned authentication requests to upstream SAML identity providers.
+
+The token needs this policy, with the wrapping key's name in the first path:
+
+```hcl
+path "transit/decrypt/halo-secret-key" {
+  capabilities = ["update"]
+}
+path "transit/keys/halo-key_*" {
+  capabilities = ["create", "read", "update"]
+}
+path "transit/sign/halo-key_*" {
+  capabilities = ["update"]
+}
+path "auth/token/lookup-self" {
+  capabilities = ["read"]
+}
+```
 
 ## Halo Cloud
 
@@ -337,7 +373,7 @@ Bug reports, fixes, documentation and features are welcome. Report bugs and prop
 
 Report vulnerabilities privately through [GitHub's private vulnerability reporting](https://github.com/ScalaStudios/Halo/security/advisories/new), never in a public issue. [SECURITY.md](SECURITY.md) lists what to include and the response times to expect.
 
-Halo stores session tokens, client secrets, API keys and refresh tokens only as SHA-256 hashes, encrypts signing keys and other stored secrets with AES-256-GCM, writes every administrative change to the audit log in the same transaction, and refuses to start without HTTPS outside development. The [security model](https://halo.scala.gg/docs/security-model) explains each of these and lists the known limitations.
+Halo stores session tokens, client secrets, API keys and refresh tokens only as SHA-256 hashes, encrypts signing keys and other stored secrets with AES-256-GCM, can keep that key wrapped by and the signing keys inside [HashiCorp Vault](#keys-in-hashicorp-vault), writes every administrative change to the audit log in the same transaction, and refuses to start without HTTPS outside development. The [security model](https://halo.scala.gg/docs/security-model) explains each of these and lists the known limitations.
 
 ## License
 
