@@ -1,6 +1,6 @@
 alter table applications
   add column token_endpoint_auth_method text not null default 'client_secret_basic' check (token_endpoint_auth_method in ('client_secret_basic', 'private_key_jwt')),
-  add column jwks jsonb,
+  add column jwks text,
   add column jwks_uri text not null default '',
   add column fapi2_profile boolean not null default false;
 

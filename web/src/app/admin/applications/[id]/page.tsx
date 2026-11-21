@@ -4,6 +4,7 @@ import { AvatarEditor } from "@/components/account/avatar-editor";
 import { AppActions, DangerZone } from "@/components/applications/app-actions";
 import { AuthorizationCheckForm, AuthorizationModelForm } from "@/components/applications/authorization";
 import { ClaimMappingsForm } from "@/components/applications/claim-mappings";
+import { ClientAuthenticationForm } from "@/components/applications/client-authentication";
 import { CredentialList } from "@/components/applications/credentials";
 import { AuthenticationForm, BackchannelLogoutForm, ProtectedAddressesForm, ScopesForm, SenderConstraintForm, SignInFrequencyForm } from "@/components/applications/edit-application";
 import { HookForm } from "@/components/applications/hook-form";
@@ -203,6 +204,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         {tab === "authentication" ? (
           <div className="flex flex-col gap-6">
             {forward || radius ? <ProtectedAddressesForm key={app.redirectUris.join()} app={app} /> : <AuthenticationTab app={app} resources={resources} />}
+            {modelled ? <ClientAuthenticationForm key={`${app.tokenEndpointAuthMethod}:${app.jwksUri}:${JSON.stringify(app.jwks)}:${app.fapi2Profile}`} app={app} /> : null}
             {constrainable ? <SenderConstraintForm key={`${app.requirePar}:${app.requirePkce}:${app.requireDpop}`} app={app} /> : null}
             {service ? null : <SignInFrequencyForm key={app.maxAuthAge} app={app} />}
             {hookable ? <HookForm key={JSON.stringify(hook)} appId={app.id} appName={app.name} hook={hook} /> : null}

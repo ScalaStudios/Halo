@@ -175,6 +175,10 @@ export type Application = {
   requirePar: boolean;
   requirePkce: boolean;
   requireDpop: boolean;
+  tokenEndpointAuthMethod: "client_secret_basic" | "private_key_jwt";
+  jwks?: { keys: unknown[] };
+  jwksUri: string;
+  fapi2Profile: boolean;
   radiusPort?: number;
 };
 
