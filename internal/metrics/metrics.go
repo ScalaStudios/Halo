@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"maps"
@@ -149,6 +150,9 @@ func Write(w io.Writer, gauges []Gauge) {
 	for _, g := range gauges {
 		fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s gauge\n%s %s\n", g.Name, g.Help, g.Name, g.Name, number(g.Value))
 	}
+	var buf bytes.Buffer
+	defer buf.WriteTo(w)
+	w = &buf
 	mu.Lock()
 	defer mu.Unlock()
 	for _, f := range families {
