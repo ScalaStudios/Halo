@@ -59,6 +59,41 @@ func (s *Store) ListSignIns(ctx context.Context, f SignInFilter) ([]SignInEvent,
 	return events, rows.Err()
 }
 
+type SignInCount struct {
+	SignIns      int        `json:"signIns"`
+	People       int        `json:"people"`
+	LastSignInAt *time.Time `json:"lastSignInAt"`
+}
+
+func (s *Store) SignInsByMethod(ctx context.Context, from, to time.Time) (map[string]SignInCount, error) {
+	return s.countSignIns(ctx, "method", from, to)
+}
+
+func (s *Store) SignInsByApp(ctx context.Context, from, to time.Time) (map[string]SignInCount, error) {
+	return s.countSignIns(ctx, "app_id", from, to)
+}
+
+func (s *Store) countSignIns(ctx context.Context, key string, from, to time.Time) (map[string]SignInCount, error) {
+	rows, err := s.db.Query(ctx, `select e.key, sum(e.n)::bigint, count(*), max(e.last) from (
+			select coalesce(`+key+`, '') as key, user_id, count(*) as n, max(time) as last from sign_in_events
+			where result = 'success' and impersonator_id is null and time >= $1 and time < $2 group by 1, 2
+		) e join users u on u.id = e.user_id and u.kind = 'person' group by e.key`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := map[string]SignInCount{}
+	for rows.Next() {
+		var k string
+		var c SignInCount
+		if err := rows.Scan(&k, &c.SignIns, &c.People, &c.LastSignInAt); err != nil {
+			return nil, err
+		}
+		counts[k] = c
+	}
+	return counts, rows.Err()
+}
+
 func (s *Store) RecordAudit(ctx context.Context, e AuditEvent) error {
 	if e.ID == "" {
 		e.ID = id.New("aud")

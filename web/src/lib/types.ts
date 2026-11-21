@@ -200,6 +200,30 @@ export type Overview = {
   counts: { users: number; activeUsers: number; applications: number; activeApplications: number };
 };
 
+export type RegistrationFilter = "no-passkey" | "password-only" | "authenticator-only" | "no-method";
+
+export type MethodRegistrationReport = {
+  people: { id: string; name: string; email: string; department: string; methods: MethodKind[]; strength: AuthStrength; lastSignInAt: string | null }[];
+  methods: { method: MethodKind; people: number }[];
+  counts: { people: number; filters: Partial<Record<RegistrationFilter, number>> };
+};
+
+export type SignInCount = { signIns: number; people: number; lastSignInAt: string | null };
+
+export type ReportPeriod = { from: string; to: string; retentionDays: number; limitedByRetention: boolean };
+
+export type MethodUsageReport = { period: ReportPeriod; methods: (SignInCount & { method: MethodKind })[] };
+
+export type ApplicationUsageReport = {
+  period: ReportPeriod;
+  applications: (SignInCount & { id: string; name: string; status: "active" | "disabled"; assigned: number })[];
+};
+
+export type InactivePeopleReport = {
+  days: number;
+  people: { id: string; name: string; email: string; status: UserStatus; department: string; lastSignInAt: string | null; manager: NamedRef | null; groups: NamedRef[] }[];
+};
+
 export type Recommendation = {
   id: string;
   title: string;

@@ -44,6 +44,8 @@ tags:
     description: OpenID Connect, OAuth and SAML applications, bookmarks, their secrets and group assignments, and the collections that group them in the account portal.
   - name: Activity
     description: Sessions, the sign-in log, the audit log, the overview and security recommendations.
+  - name: Reports
+    description: 'Sign-in method registration and usage, inactive people and application usage, as JSON or, with `format=csv`, as a CSV file. Usage counts successful sign-ins by people in the sign-in log, including sign-ins to applications with an existing Halo session, and leaves out impersonation and service accounts. Cells that start with `=`, `+`, `-`, `@`, a tab or a carriage return get a leading `''` so spreadsheets do not run them as formulas.'
   - name: Access packages
     description: Bundles of groups that people can request.
   - name: Access requests
@@ -3422,6 +3424,145 @@ paths:
               schema: {$ref: '#/components/schemas/Overview'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /reports/method-registration:
+    get:
+      tags: [Reports]
+      operationId: getMethodRegistrationReport
+      summary: Get sign-in method registration
+      description: 'Roles: any administrator. The sign-in methods each active person has registered. `methods` and `counts` cover everyone in `group`, and `people` lists those that also match `filter`. Identity provider links are not counted as methods.'
+      parameters:
+        - name: filter
+          in: query
+          description: '`no-passkey`: no passkey or security key. `password-only`: a password and no passkey, security key or authenticator app. `authenticator-only`: an authenticator app and no passkey, security key or password. `no-method`: none of these, so the person signs in with email or an identity provider.'
+          schema: {type: string, enum: [no-passkey, password-only, authenticator-only, no-method]}
+        - {$ref: '#/components/parameters/ReportGroup'}
+        - {$ref: '#/components/parameters/ReportFormat'}
+      responses:
+        '200':
+          description: The report.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MethodRegistrationReport'}
+            text/csv:
+              schema: {type: string, description: 'Columns: name, email, department, methods, strength, last_sign_in, user_id.'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /reports/method-usage:
+    get:
+      tags: [Reports]
+      operationId: getMethodUsageReport
+      summary: Get sign-in method usage
+      description: 'Roles: any administrator. Successful sign-ins and distinct people per sign-in method over a period, with every method listed.'
+      parameters:
+        - {$ref: '#/components/parameters/ReportFrom'}
+        - {$ref: '#/components/parameters/ReportTo'}
+        - {$ref: '#/components/parameters/ReportFormat'}
+      responses:
+        '200':
+          description: The report.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [period, methods]
+                properties:
+                  period: {$ref: '#/components/schemas/ReportPeriod'}
+                  methods:
+                    type: array
+                    items:
+                      allOf:
+                        - {$ref: '#/components/schemas/SignInCount'}
+                        - type: object
+                          required: [method]
+                          properties:
+                            method: {type: string}
+            text/csv:
+              schema: {type: string, description: 'Columns: method, sign_ins, people, last_sign_in.'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /reports/inactive-people:
+    get:
+      tags: [Reports]
+      operationId: getInactivePeopleReport
+      summary: Get inactive people
+      description: 'Roles: any administrator. Active and invited people whose last sign-in, or creation when they never signed in, is more than `days` days ago, never signed in first, with their manager and groups. Reads each person''s last sign-in, so log retention does not change it.'
+      parameters:
+        - {name: days, in: query, description: Days without a sign-in., schema: {type: integer, minimum: 1, maximum: 3650, default: 90}}
+        - {$ref: '#/components/parameters/ReportGroup'}
+        - {$ref: '#/components/parameters/ReportFormat'}
+      responses:
+        '200':
+          description: The report.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [days, people]
+                properties:
+                  days: {type: integer}
+                  people:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name, email, status, department, lastSignInAt, manager, groups]
+                      properties:
+                        id: {type: string}
+                        name: {type: string}
+                        email: {type: string}
+                        status: {type: string, enum: [active, invited]}
+                        department: {type: string}
+                        lastSignInAt: {type: [string, 'null'], format: date-time, description: Null when the person never signed in.}
+                        manager:
+                          oneOf:
+                            - {$ref: '#/components/schemas/NamedRef'}
+                            - {type: 'null'}
+                        groups:
+                          type: array
+                          items: {$ref: '#/components/schemas/NamedRef'}
+            text/csv:
+              schema: {type: string, description: 'Columns: name, email, status, department, last_sign_in, manager, manager_email, groups, user_id. Groups are separated by semicolons.'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /reports/application-usage:
+    get:
+      tags: [Reports]
+      operationId: getApplicationUsageReport
+      summary: Get application usage
+      description: 'Roles: any administrator. Successful sign-ins and distinct people per application over a period, most used first, including applications nobody signed in to. Bookmarks and service applications are left out because they have no sign-ins.'
+      parameters:
+        - {$ref: '#/components/parameters/ReportFrom'}
+        - {$ref: '#/components/parameters/ReportTo'}
+        - {$ref: '#/components/parameters/ReportFormat'}
+      responses:
+        '200':
+          description: The report.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [period, applications]
+                properties:
+                  period: {$ref: '#/components/schemas/ReportPeriod'}
+                  applications:
+                    type: array
+                    items:
+                      allOf:
+                        - {$ref: '#/components/schemas/SignInCount'}
+                        - type: object
+                          required: [id, name, status, assigned]
+                          properties:
+                            id: {type: string}
+                            name: {type: string}
+                            status: {type: string, enum: [active, disabled]}
+                            assigned: {type: integer, description: People assigned through the application's groups.}
+            text/csv:
+              schema: {type: string, description: 'Columns: application, status, sign_ins, people, assigned_people, last_sign_in, application_id.'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /recommendations:
     get:
       tags: [Activity]
@@ -5448,6 +5589,26 @@ components:
       in: query
       description: How many events to return, 1 to 1000. Defaults to 500.
       schema: {type: integer, minimum: 1, maximum: 1000, default: 500}
+    ReportFrom:
+      name: from
+      in: query
+      description: Start of the period, as a date such as `2026-11-01` (midnight UTC) or an RFC 3339 time. Defaults to 30 days ago. A start before the sign-in log retention moves to the oldest kept time.
+      schema: {type: string}
+    ReportTo:
+      name: to
+      in: query
+      description: End of the period, not included, in the same formats as `from`. Defaults to now.
+      schema: {type: string}
+    ReportGroup:
+      name: group
+      in: query
+      description: Only members of this group.
+      schema: {type: string}
+    ReportFormat:
+      name: format
+      in: query
+      description: '`csv` returns the rows as a CSV file instead of JSON.'
+      schema: {type: string, enum: [json, csv], default: json}
   requestBodies:
     BulkUserIds:
       required: true
@@ -6097,6 +6258,53 @@ components:
         id: {type: string}
         name: {type: string}
         email: {type: string}
+    ReportPeriod:
+      type: object
+      required: [from, to, retentionDays, limitedByRetention]
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        retentionDays: {type: integer, description: Days the sign-in log keeps. 0 keeps everything.}
+        limitedByRetention: {type: boolean, description: True when `from` was moved later because older sign-ins are no longer kept.}
+    SignInCount:
+      type: object
+      required: [signIns, people, lastSignInAt]
+      properties:
+        signIns: {type: integer}
+        people: {type: integer}
+        lastSignInAt: {type: [string, 'null'], format: date-time, description: The latest sign-in in the period.}
+    MethodRegistrationReport:
+      type: object
+      required: [people, methods, counts]
+      properties:
+        people:
+          type: array
+          items:
+            type: object
+            required: [id, name, email, department, methods, strength, lastSignInAt]
+            properties:
+              id: {type: string}
+              name: {type: string}
+              email: {type: string}
+              department: {type: string}
+              methods: {type: array, items: {type: string, enum: [passkey, security-key, totp, password, recovery-codes]}}
+              strength: {type: string, enum: [phishing-resistant, multi-factor, single-factor]}
+              lastSignInAt: {type: [string, 'null'], format: date-time}
+        methods:
+          type: array
+          description: How many people have registered each method.
+          items:
+            type: object
+            required: [method, people]
+            properties:
+              method: {type: string}
+              people: {type: integer}
+        counts:
+          type: object
+          required: [people, filters]
+          properties:
+            people: {type: integer}
+            filters: {type: object, description: People matching each filter., additionalProperties: {type: integer}}
     Organization:
       type: object
       required: [name, issuer, contactEmail, signInMessage, logoUrl, theme, customCss, consoleBranding]

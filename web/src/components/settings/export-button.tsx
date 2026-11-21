@@ -18,12 +18,14 @@ export function ExportButton({
   label = "Download export",
   variant = "primary",
   size,
+  recorded = true,
 }: {
   disabled?: boolean;
   path?: string;
   label?: string;
   variant?: ButtonVariant;
   size?: ButtonSize;
+  recorded?: boolean;
 }) {
   const { pending, run, errorFor, toast } = useMutation();
 
@@ -32,7 +34,7 @@ export function ExportButton({
       const url = URL.createObjectURL(blob);
       Object.assign(document.createElement("a"), { href: url, download: name }).click();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      toast({ title: "Export downloaded", description: `Saved as ${name}. The export is recorded in the audit log.` });
+      toast({ title: "Export downloaded", description: `Saved as ${name}.${recorded ? " The export is recorded in the audit log." : ""}` });
     }, "inline");
   }
 
