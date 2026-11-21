@@ -59,6 +59,8 @@ var variables = map[string]Variable{
 	"Person":         {"Person", "The person whose account was locked.", "Sam Lee"},
 	"PersonEmail":    {"PersonEmail", "The email address of the person whose account was locked.", "sam@example.com"},
 	"Purpose":        {"Purpose", "What the administrator is helping with.", "Can't open Grafana"},
+	"Risk":           {"Risk", "What made the sign-in risky.", "203.0.113.24 is in the risky network “Tor exit nodes”."},
+	"Response":       {"Response", "What Halo did about it. Empty when it only tells the person.", "Halo ended your sessions, so you need to sign in again."},
 }
 
 func uses(names ...string) []Variable {
@@ -189,6 +191,13 @@ var Templates = []Template{
 		Default: store.EmailTemplate{Subject: "{{.Administrator}} is viewing Halo as you", Body: greetingLine +
 			"{{.Administrator}} started viewing your Halo account as you, to help with: {{.Purpose}}\n\n" +
 			"They can look but not change anything, and their access ends by {{.Until}}. If you did not expect this, tell your IT team, or end it now by signing out of your other sessions:\n\n{{.Link}}"},
+	},
+	{
+		Kind: "risk_response", Label: "Risky sign-in", Description: "Sent to a person when an automatic risk response under Risk events tells them about a risky sign-in to their account.", Security: true,
+		Variables: uses("Name", "Time", "Risk", "Response", "Link", "Organization"),
+		Default: store.EmailTemplate{Subject: "A risky sign-in to your Halo account", Body: greetingLine +
+			"Halo noticed a risky sign-in to your account on {{.Time}}: {{.Risk}}\n\n{{if .Response}}{{.Response}}\n\n{{end}}" +
+			"If this was you, you don't need to do anything. If it wasn't, replace your passkeys, review your recent sign-ins and tell your administrator:\n\n{{.Link}}"},
 	},
 	{
 		Kind: "guest_expiring", Label: "Guest access ending", Description: "Sent to a guest's sponsor before the guest's access ends, or to global administrators when the sponsor is no longer active.",

@@ -473,6 +473,9 @@ func TestTemporaryPassword(t *testing.T) {
 	expect(t, call(t, h, helpdesk, "PUT", "/api/v1/users/"+security.ID+"/password", map[string]any{"password": "temporary passphrase"}), 403)
 	expect(t, call(t, h, helpdesk, "PUT", path, map[string]any{"password": "too short"}), 422)
 	expect(t, call(t, h, helpdesk, "PUT", path, map[string]any{"password": "temporary passphrase"}), 204)
+	if sessions, err := st.ListSessions(ctx, ada.ID); err != nil || len(sessions) != 0 {
+		t.Fatalf("a temporary password must end the person's sessions: %+v %v", sessions, err)
+	}
 
 	stored, err := st.GetPassword(ctx, ada.ID)
 	if err != nil || !stored.MustChange || !secret.PasswordMatches(stored.Hash, "temporary passphrase") {

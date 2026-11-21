@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -139,13 +140,22 @@ var eventSources = []struct{ name, table, columns string }{
 		'result', result, 'method', method, 'ip', ip, 'location', location, 'device', device, 'risk', risk, 'reason', reason, 'challenge', challenge, 'impersonatorId', impersonator_id, 'hook', hook)`},
 }
 
-func (s *Store) PollWebhookEvents(ctx context.Context, before time.Time, limit int) ([]WebhookEvent, error) {
-	return s.pollEvents(ctx, "", before, limit)
+var revocationSource = []struct{ name, table, columns string }{
+	{"token", `(select min(t.id) as id, 'token.revoke' as type, t.revoked_at as time, jsonb_build_object('id', min(t.id), 'time', t.revoked_at,
+		'userId', t.user_id, 'email', coalesce(min(u.email), ''), 'summary', 'Revoked ' || count(*) || case when count(*) = 1 then ' access token' else ' access tokens' end,
+		'tokenIds', jsonb_agg(t.id order by t.id), 'clientIds', jsonb_agg(distinct t.client_id), 'sessionIds', coalesce(jsonb_agg(distinct t.session_id) filter (where t.session_id is not null), '[]'),
+		'expiresAt', max(t.expires_at)) as data
+		from oidc_tokens t left join users u on u.id = t.user_id
+		where t.kind = 'access' and not t.rotated and t.revoked_at >= $1 and t.revoked_at < $3 and t.expires_at > t.revoked_at group by t.revoked_at, t.user_id) revoked`, `id, type, time, data`},
 }
 
-func (s *Store) pollEvents(ctx context.Context, cursor string, before time.Time, limit int) ([]WebhookEvent, error) {
+func (s *Store) PollWebhookEvents(ctx context.Context, before time.Time, limit int) ([]WebhookEvent, error) {
+	return s.pollEvents(ctx, "", slices.Concat(eventSources, revocationSource), before, limit)
+}
+
+func (s *Store) pollEvents(ctx context.Context, cursor string, sources []struct{ name, table, columns string }, before time.Time, limit int) ([]WebhookEvent, error) {
 	var events []WebhookEvent
-	for _, source := range eventSources {
+	for _, source := range sources {
 		var cursorTime time.Time
 		var cursorID string
 		if err := s.db.QueryRow(ctx, `select time, id from webhook_cursors where source = $1 for update`, cursor+source.name).Scan(&cursorTime, &cursorID); err != nil {

@@ -81,6 +81,7 @@ var fields = []struct {
 	{"signUpGroupIds", "groups for people who sign up", false},
 	{"securityEmailsOff", "security emails turned off", false},
 	{"lockoutEmailAdmins", "lockout emails to administrators", false},
+	{"riskResponses", "automatic risk responses", false},
 }
 
 type handler struct {
@@ -200,6 +201,7 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	next.SignUpDomains = slices.Clone(before.SignUpDomains)
 	next.SignUpGroupIDs = slices.Clone(before.SignUpGroupIDs)
 	next.SecurityEmailsOff = slices.Clone(before.SecurityEmailsOff)
+	next.RiskResponses = slices.Clone(before.RiskResponses)
 	var rules []store.AuthenticatorRule
 	in := struct {
 		store.Settings
@@ -260,6 +262,9 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	next.SecurityEmailsOff = slices.Compact(slices.Sorted(slices.Values(next.SecurityEmailsOff)))
 	if next.SecurityEmailsOff == nil {
 		next.SecurityEmailsOff = []string{}
+	}
+	if next.RiskResponses == nil {
+		next.RiskResponses = []store.RiskResponse{}
 	}
 	if err := validate(next); err != nil {
 		return err
@@ -492,10 +497,24 @@ func validate(s store.Settings) error {
 		return httpx.Invalid(`Set sign-up to "off", "open" or "approval".`)
 	case len(s.SignUpDomains) > 100:
 		return httpx.Invalid("List at most 100 email domains for sign-up.")
+	case len(s.RiskResponses) > 20:
+		return httpx.Invalid("Add at most 20 automatic risk responses.")
+	}
+	for i, r := range s.RiskResponses {
+		switch {
+		case !slices.Contains([]string{"", "risky-network", "failed-sign-ins", "new-device"}, r.Signal):
+			return httpx.Invalid(`Choose the signal of each risk response from "risky-network", "failed-sign-ins" or "new-device", or leave it empty for any signal.`)
+		case r.Level != "medium" && r.Level != "high":
+			return httpx.Invalid(`Set the level of each risk response to "medium" or "high".`)
+		case !slices.Contains([]string{"revoke-sessions", "require-passkey", "suspend", "notify"}, r.Action):
+			return httpx.Invalid(`Choose the action of each risk response from "revoke-sessions", "require-passkey", "suspend" or "notify".`)
+		case slices.Index(s.RiskResponses, r) != i:
+			return httpx.Invalid("Each risk response must be different. Remove the repeated one and save again.")
+		}
 	}
 	for _, kind := range s.SecurityEmailsOff {
 		if t, ok := halomail.Lookup(kind); !ok || !t.Security {
-			return httpx.Invalid("“" + kind + "” is not a security email. Use new_sign_in, method_added, method_removed, recovery_codes, email_changed, account_locked, access_pass or impersonation.")
+			return httpx.Invalid("“" + kind + "” is not a security email. Use new_sign_in, method_added, method_removed, recovery_codes, email_changed, account_locked, access_pass, impersonation or risk_response.")
 		}
 	}
 	for _, d := range s.SignUpDomains {

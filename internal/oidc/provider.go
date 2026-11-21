@@ -126,6 +126,14 @@ func New(d httpx.Deps) (http.Handler, error) {
 		serve(w, r)
 	})
 	mux.HandleFunc("GET /oauth2/logout/return", st.logoutReturn)
+	mux.Handle("GET /oauth2/revoked", httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
+		revoked, err := d.Store.RevokedAccessTokens(r.Context())
+		if err != nil {
+			return err
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		return httpx.JSON(w, http.StatusOK, map[string]any{"revoked": revoked})
+	}))
 	mux.HandleFunc("/oauth2/authorize/callback", func(w http.ResponseWriter, r *http.Request) {
 		req, err := d.Store.GetAuthRequest(r.Context(), r.FormValue("id"))
 		if err != nil && !errors.Is(err, store.ErrNotFound) {

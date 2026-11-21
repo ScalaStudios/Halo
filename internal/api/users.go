@@ -415,7 +415,11 @@ func (h *handlers) setTemporaryPassword(w http.ResponseWriter, r *http.Request, 
 		if err := tx.SetPassword(r.Context(), target.ID, hash, true); err != nil {
 			return err
 		}
-		return record(r, tx, actor, store.AuditEvent{Action: "user.password.set", Summary: "Set a temporary password that must be changed at the next sign-in", TargetType: "user", TargetID: target.ID, TargetLabel: target.Name})
+		revoked, err := tx.RevokeUserSessions(r.Context(), target.ID, "")
+		if err != nil {
+			return err
+		}
+		return record(r, tx, actor, store.AuditEvent{Action: "user.password.set", Summary: "Set a temporary password that must be changed at the next sign-in and ended " + plural(revoked, "session"), TargetType: "user", TargetID: target.ID, TargetLabel: target.Name})
 	})
 	if err != nil {
 		return err

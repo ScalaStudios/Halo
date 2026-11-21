@@ -59,7 +59,7 @@ func TestNewSignInEmail(t *testing.T) {
 	box.empty(t)
 
 	var prefs []securityEmail
-	if status := e.do(bobSession, "GET", "/api/v1/me/security-emails", nil, &prefs); status != http.StatusOK || len(prefs) != 8 || prefs[0].Kind != "access_pass" || !prefs[0].On || prefs[0].CanTurnOff {
+	if status := e.do(bobSession, "GET", "/api/v1/me/security-emails", nil, &prefs); status != http.StatusOK || len(prefs) != 9 || prefs[0].Kind != "access_pass" || !prefs[0].On || prefs[0].CanTurnOff {
 		t.Fatalf("preferences: %d %+v", status, prefs)
 	}
 	e.expect(bobSession, "PUT", "/api/v1/me/security-emails", map[string]any{"off": []string{"method_added"}}, http.StatusUnprocessableEntity, "ERR_INVALID")

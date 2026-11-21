@@ -87,6 +87,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 
 	if d.Jobs != nil {
 		d.Jobs.Every("purge policy evaluations", 24*time.Hour, h.st.PurgePolicyEvaluations)
+		d.Jobs.Every("respond to risk events", 10*time.Second, func(ctx context.Context) error { return respond(ctx, d.Store, d.Mailer, d.Config.Issuer(), time.Now()) })
 	}
 	return nil
 }

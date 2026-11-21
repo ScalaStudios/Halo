@@ -195,7 +195,12 @@ func (s *Store) MakeRoomForSession(ctx context.Context, u User, cli bool, replac
 }
 
 func (s *Store) RevokeUserSessions(ctx context.Context, userID, exceptSessionID string) (int, error) {
-	return s.revokeSessions(ctx, `user_id = $1 and id <> $2`, userID, exceptSessionID)
+	n, err := s.revokeSessions(ctx, `user_id = $1 and id <> $2`, userID, exceptSessionID)
+	if err != nil {
+		return n, err
+	}
+	_, err = s.db.Exec(ctx, `update oidc_tokens set revoked_at = now(), rotated = false where user_id = $1 and session_id is null and `+revocable, userID)
+	return n, err
 }
 
 func (s *Store) revokeTokensForSessions(ctx context.Context, sessionIDs []string) error {
@@ -205,7 +210,7 @@ func (s *Store) revokeTokensForSessions(ctx context.Context, sessionIDs []string
 	if err := s.queueLogouts(ctx, `s.id = any($1)`, sessionIDs); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(ctx, `update oidc_tokens set revoked_at = now() where session_id = any($1) and revoked_at is null`, sessionIDs)
+	_, err := s.db.Exec(ctx, `update oidc_tokens set revoked_at = now(), rotated = false where session_id = any($1) and `+revocable, sessionIDs)
 	return err
 }
 

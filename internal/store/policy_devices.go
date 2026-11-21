@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"halo/internal/id"
 	"halo/internal/secret"
 )
@@ -209,4 +211,29 @@ func (s *Store) SetRiskEventStatus(ctx context.Context, eventID, status, actorID
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (s *Store) ClaimRiskEvents(ctx context.Context, before time.Time, limit int) ([]RiskEvent, error) {
+	rows, err := s.db.Query(ctx, `update risk_events set responded_at = now() where id in (
+		select id from risk_events where responded_at is null and time < $1 order by time limit $2 for update skip locked)
+		returning id, time, type, level, user_id, ip, detail`, before, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (RiskEvent, error) {
+		var e RiskEvent
+		err := row.Scan(&e.ID, &e.Time, &e.Type, &e.Level, &e.UserID, &e.IP, &e.Detail)
+		return e, err
+	})
+}
+
+func (s *Store) SetPasskeyRequired(ctx context.Context, userID string, required bool) error {
+	_, err := s.db.Exec(ctx, `update users set passkey_required = $2 where id = $1`, userID, required)
+	return err
+}
+
+func (s *Store) PasskeyRequired(ctx context.Context, userID string) (bool, error) {
+	var required bool
+	err := s.db.QueryRow(ctx, `select coalesce((select passkey_required from users where id = $1), false)`, userID).Scan(&required)
+	return required, err
 }
