@@ -22,7 +22,6 @@ type pushedKey struct{}
 
 func (s *storage) pushAuthRequest(provider *op.Provider) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 		requestURI, err := s.push(r.WithContext(op.ContextWithIssuer(r.Context(), s.issuer)), provider)
 		var oidcErr *oidc.Error
 		if err != nil && !errors.As(err, &oidcErr) {
@@ -76,6 +75,19 @@ func (s *storage) push(r *http.Request, provider *op.Provider) (string, error) {
 		}
 	}
 	params.Set("client_id", clientID)
+	if len(r.Header.Values(oidc.DPoPHeader)) > 0 {
+		jkt, err := s.proof(r, "")
+		if err != nil {
+			return "", err
+		}
+		if params.Has("dpop_jkt") && params.Get("dpop_jkt") != jkt {
+			return "", invalidProof("dpop_jkt must be the thumbprint of the key that signed the DPoP proof.")
+		}
+		params.Set("dpop_jkt", jkt)
+	}
+	if err := checkThumbprint(params.Get("dpop_jkt")); err != nil {
+		return "", err
+	}
 	req := new(oidc.AuthRequest)
 	if err := provider.Decoder().Decode(req, params); err != nil {
 		return "", oidc.ErrInvalidRequest().WithDescription("The pushed authorization request has malformed parameters.")

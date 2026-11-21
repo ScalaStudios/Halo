@@ -706,6 +706,8 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		RequirePAR  *bool `json:"requirePar"`
 		RequirePKCE *bool `json:"requirePkce"`
 		RequireDPoP *bool `json:"requireDpop"`
+
+		clientAuthChange
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -841,6 +843,11 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 			changed = append(changed, f.label)
 		}
 	}
+	more, err := in.clientAuthChange.apply(app, &next)
+	if err != nil {
+		return err
+	}
+	changed = append(changed, more...)
 	if in.BackchannelLogoutSessionRequired != nil && *in.BackchannelLogoutSessionRequired != app.BackchannelLogoutSessionRequired {
 		next.BackchannelLogoutSessionRequired = *in.BackchannelLogoutSessionRequired
 		changed = append(changed, "back-channel logout session requirement")

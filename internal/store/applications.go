@@ -14,13 +14,13 @@ import (
 const CLIClientID = "halo-cli"
 
 const appColumns = `id, name, description, protocol, app_type, status, client_id, homepage, redirect_uris, post_logout_uris, scopes, access_token_ttl, refresh_token_ttl, id_token_ttl, id_token_alg, refresh_rotation, token_exchange,
-	array(select x.resource_id from app_exchange_sources x where x.app_id = applications.id order by x.resource_id), setup_guide, owner_id, created_at, logo_updated_at, registration_hash, awaiting_approval, max_auth_age, requires_consent, claim_mappings, backchannel_logout_uri, backchannel_logout_session_required, require_par, require_pkce, require_dpop`
+	array(select x.resource_id from app_exchange_sources x where x.app_id = applications.id order by x.resource_id), setup_guide, owner_id, created_at, logo_updated_at, registration_hash, awaiting_approval, max_auth_age, requires_consent, claim_mappings, backchannel_logout_uri, backchannel_logout_session_required, require_par, require_pkce, require_dpop, token_endpoint_auth_method, jwks, jwks_uri, fapi2_profile`
 
 func scanApp(row rowScanner) (Application, error) {
 	var a Application
 	var logo *time.Time
 	err := row.Scan(&a.ID, &a.Name, &a.Description, &a.Protocol, &a.Type, &a.Status, &a.ClientID, &a.Homepage, &a.RedirectURIs, &a.PostLogoutURIs, &a.Scopes,
-		&a.TokenPolicy.AccessTokenTTL, &a.TokenPolicy.RefreshTokenTTL, &a.TokenPolicy.IDTokenTTL, &a.TokenPolicy.IDTokenAlg, &a.TokenPolicy.Rotation, &a.TokenPolicy.Exchange, &a.TokenPolicy.ExchangeFrom, &a.SetupGuide, &a.Owner, &a.CreatedAt, &logo, &a.RegistrationHash, &a.AwaitingApproval, &a.MaxAuthAge, &a.RequiresConsent, &a.ClaimMappings, &a.BackchannelLogoutURI, &a.BackchannelLogoutSessionRequired, &a.RequirePAR, &a.RequirePKCE, &a.RequireDPoP)
+		&a.TokenPolicy.AccessTokenTTL, &a.TokenPolicy.RefreshTokenTTL, &a.TokenPolicy.IDTokenTTL, &a.TokenPolicy.IDTokenAlg, &a.TokenPolicy.Rotation, &a.TokenPolicy.Exchange, &a.TokenPolicy.ExchangeFrom, &a.SetupGuide, &a.Owner, &a.CreatedAt, &logo, &a.RegistrationHash, &a.AwaitingApproval, &a.MaxAuthAge, &a.RequiresConsent, &a.ClaimMappings, &a.BackchannelLogoutURI, &a.BackchannelLogoutSessionRequired, &a.RequirePAR, &a.RequirePKCE, &a.RequireDPoP, &a.TokenEndpointAuthMethod, &a.JWKS, &a.JWKSURI, &a.FAPI2Profile)
 	a.RegisteredDynamically = a.RegistrationHash != nil
 	if logo != nil {
 		path := AppLogos.Path(a.ID, *logo)

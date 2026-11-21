@@ -97,7 +97,6 @@ func New(d httpx.Deps) (http.Handler, error) {
 			}
 			c.ResponseTypesSupported = []string{string(oidc.ResponseTypeCode)}
 			c.GrantTypesSupported = slices.DeleteFunc(c.GrantTypesSupported, func(g oidc.GrantType) bool { return g == oidc.GrantTypeImplicit || g == oidc.GrantTypeBearer })
-			c.IntrospectionEndpointAuthSigningAlgValuesSupported, c.RevocationEndpointAuthSigningAlgValuesSupported = nil, nil
 			c.BackChannelLogoutSupported, c.BackChannelLogoutSessionSupported = true, true
 			if contexts, err := d.Store.ListAuthContexts(r.Context()); err == nil {
 				for _, ac := range contexts {
@@ -107,11 +106,20 @@ func New(d httpx.Deps) (http.Handler, error) {
 			if settings, err := d.Store.Settings(r.Context()); err == nil && settings.ClientRegistrationOn() {
 				c.RegistrationEndpoint = d.Config.Issuer() + "/oauth2/register"
 			}
+			methods := []oidc.AuthMethod{oidc.AuthMethodNone, oidc.AuthMethodBasic, oidc.AuthMethodPost, oidc.AuthMethodPrivateKeyJWT}
+			c.TokenEndpointAuthMethodsSupported, c.RevocationEndpointAuthMethodsSupported = methods, methods
+			c.IntrospectionEndpointAuthMethodsSupported = []oidc.AuthMethod{oidc.AuthMethodBasic, oidc.AuthMethodPrivateKeyJWT}
+			algs := []string{}
+			for _, alg := range assertionAlgorithms {
+				algs = append(algs, string(alg))
+			}
+			c.TokenEndpointAuthSigningAlgValuesSupported, c.IntrospectionEndpointAuthSigningAlgValuesSupported, c.RevocationEndpointAuthSigningAlgValuesSupported = algs, algs, algs
 			body, _ = json.Marshal(struct {
 				oidc.DiscoveryConfiguration
 				PushedAuthorizationRequestEndpoint string                    `json:"pushed_authorization_request_endpoint"`
 				DPoPSigningAlgValuesSupported      []jose.SignatureAlgorithm `json:"dpop_signing_alg_values_supported"`
-			}{c, d.Config.Issuer() + "/oauth2/par", dpopAlgorithms})
+				AuthorizationResponseIssSupported  bool                      `json:"authorization_response_iss_parameter_supported"`
+			}{c, d.Config.Issuer() + "/oauth2/par", dpopAlgorithms, true})
 			return body
 		})
 	})
@@ -126,13 +134,8 @@ func New(d httpx.Deps) (http.Handler, error) {
 		}
 		serve(w, r)
 	})
-	workload := &workloads{st: d.Store, dev: d.Config.Dev, issuers: map[string]*issuerKeys{}}
-	mux.HandleFunc("POST /oauth2/token", func(w http.ResponseWriter, r *http.Request) {
-		_ = r.ParseForm()
-		if r.PostForm.Get("grant_type") == string(oidc.GrantTypeClientCredentials) && r.PostForm.Get("client_assertion_type") == oidc.ClientAssertionTypeJWTAssertion {
-			workload.ServeHTTP(w, r)
-			return
-		}
+	workload := &workloads{st: d.Store, dev: d.Config.Dev}
+	token := st.authenticateClient(func(w http.ResponseWriter, r *http.Request) {
 		if len(r.Header.Values(oidc.DPoPHeader)) == 0 {
 			serve(w, r)
 			return
@@ -152,6 +155,16 @@ func New(d httpx.Deps) (http.Handler, error) {
 			return body
 		})
 	})
+	mux.HandleFunc("POST /oauth2/token", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if r.PostForm.Get("grant_type") == string(oidc.GrantTypeClientCredentials) && r.PostForm.Get("client_assertion_type") == oidc.ClientAssertionTypeJWTAssertion && !st.application(r.Context(), r.PostForm.Get("client_id")) {
+			workload.ServeHTTP(w, r)
+			return
+		}
+		token(w, r)
+	})
+	mux.HandleFunc("POST /oauth2/introspect", st.authenticateClient(serve))
+	mux.HandleFunc("POST /oauth2/revoke", st.authenticateClient(serve))
 	mux.HandleFunc("/oauth2/userinfo", func(w http.ResponseWriter, r *http.Request) {
 		scheme, token, _ := strings.Cut(r.Header.Get("Authorization"), " ")
 		if !strings.EqualFold(scheme, dpopTokenType) {
@@ -180,9 +193,9 @@ func New(d httpx.Deps) (http.Handler, error) {
 				return
 			}
 		}
-		serve(w, r)
+		serve(withIssuer(w, st.issuer, r.FormValue("redirect_uri")), r)
 	})
-	mux.Handle("POST /oauth2/par", cors.New(*provider.CORSOptions()).Handler(st.pushAuthRequest(provider)))
+	mux.Handle("POST /oauth2/par", cors.New(*provider.CORSOptions()).Handler(http.MaxBytesHandler(st.authenticateClient(st.pushAuthRequest(provider)), 64<<10)))
 	mux.HandleFunc("GET /oauth2/logout/return", st.logoutReturn)
 	registerTransmitter(mux, d.Store, d.Config.Issuer())
 	mux.Handle("GET /oauth2/revoked", httpx.Handle(func(w http.ResponseWriter, r *http.Request) error {
@@ -204,7 +217,13 @@ func New(d httpx.Deps) (http.Handler, error) {
 			http.Error(w, "This sign-in was completed in a different browser session. Start again from the application.", http.StatusForbidden)
 			return
 		}
+		if err == nil {
+			w = withIssuer(w, st.issuer, req.RedirectURI)
+		}
 		if err == nil && req.Done && st.awaitConsent(w, r, req, provider) {
+			return
+		}
+		if err == nil && req.Done && req.ResponseMode == string(oidc.ResponseModeFormPost) && st.formPost(w, r, req, provider) {
 			return
 		}
 		provider.ServeHTTP(w, r)
