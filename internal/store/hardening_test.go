@@ -46,6 +46,7 @@ func TestRotateSecretKey(t *testing.T) {
 	approvalID, err := st.CreateApprovalRequest(ctx, store.ApprovalRequest{Action: "global-admin", Summary: "Set roles", TargetType: "user", TargetLabel: "Ada", Method: "PUT", Path: "/api/v1/users/x/roles", Body: []byte("approval-body"), State: "null", Requester: store.NamedRef{ID: u.ID}, ExpiresAt: time.Now().Add(time.Hour)})
 	must(err)
 	must(st.SetBotProtectionSecret(ctx, "bot-secret"))
+	must(st.SetProofingSecrets(ctx, "proofing-key", "proofing-hook"))
 	must(st.SaveLogExport(ctx, store.LogExport{Protocol: "otlp-http", Endpoint: "https://otel.example.com/v1/logs"}, "Authorization=Bearer otel"))
 	nas, err := st.CreateApplication(ctx, store.NewApplication{Name: "NAS", Protocol: "ldap", Type: "web"})
 	must(err)
@@ -71,7 +72,7 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	rotation, err := st.RotateSecretKey(ctx, next)
 	must(err)
-	if len(rotation.Resealed) != 22 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
+	if len(rotation.Resealed) != 24 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
 		t.Fatalf("resealed: %+v", rotation.Resealed)
 	}
 	if !slices.Equal(rotation.RecoveryCodeUsers, []string{"ada@example.com"}) {
@@ -132,6 +133,9 @@ func TestRotateSecretKey(t *testing.T) {
 	}
 	if string(keys[0].PrivateKey) != "oidc-key" || mail[0].Text != "mail body" || string(saml.PrivateKey) != "saml-key" || string(ssh.Seed) != "ssh-seed" || string(hostCA.Seed) != "host-seed" || string(pending.Body) != "approval-body" || bot != "bot-secret" {
 		t.Fatalf("rotated values: %q %q %q %q %q %q %q", keys[0].PrivateKey, mail[0].Text, saml.PrivateKey, ssh.Seed, hostCA.Seed, pending.Body, bot)
+	}
+	if apiKey, hook, err := rotated.ProofingSecrets(ctx); err != nil || apiKey != "proofing-key" || hook != "proofing-hook" {
+		t.Fatalf("identity verification secrets with the new key: %q %q %v", apiKey, hook, err)
 	}
 	if matched, err := rotated.LDAPSecretMatches(ctx, nas.ID, bindPassword); err != nil || !matched {
 		t.Fatalf("LDAP bind password: %v %v", matched, err)

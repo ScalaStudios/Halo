@@ -67,6 +67,13 @@ type Settings struct {
 	SignUpDomains  []string `json:"signUpDomains"`
 	SignUpGroupIDs []string `json:"signUpGroupIds"`
 
+	IdentityProofingInvites  bool     `json:"identityProofingInvites"`
+	IdentityProofingSignUps  bool     `json:"identityProofingSignUps"`
+	IdentityProofingGroupIDs []string `json:"identityProofingGroupIds"`
+	IdentityProofingProvider string   `json:"identityProofingProvider"`
+	IdentityProofingName     string   `json:"identityProofingName"`
+	IdentityProofingEndpoint string   `json:"identityProofingEndpoint"`
+
 	SecurityEmailsOff  []string `json:"securityEmailsOff"`
 	LockoutEmailAdmins bool     `json:"lockoutEmailAdmins"`
 
@@ -105,33 +112,34 @@ type AuthenticatorRule struct {
 }
 
 var DefaultSettings = Settings{
-	SessionHours:         int(SessionLifetime / time.Hour),
-	LockoutThreshold:     5,
-	LockoutMinutes:       15,
-	InviteDays:           int(EnrollmentLifetime / (24 * time.Hour)),
-	AccessTokenMinutes:   15,
-	IDTokenMinutes:       15,
-	RefreshTokenHours:    8,
-	PasswordSecondFactor: true,
-	PasswordGroupIDs:     []string{},
-	PasswordBreachCheck:  true,
-	EmailSignIn:          "link",
-	SessionLimitAction:   "refuse",
-	SessionLimitGroups:   []GroupSessionLimit{},
-	AuthenticatorRules:   []AuthenticatorRule{},
-	ApprovalActions:      []string{},
-	EmergencyAccessIDs:   []string{},
-	ImpersonationGroups:  []string{},
-	ReauthMinutes:        10,
-	ClientRegistration:   "off",
-	SignUp:               "off",
-	SignUpDomains:        []string{},
-	SignUpGroupIDs:       []string{},
-	SecurityEmailsOff:    []string{},
-	RiskResponses:        []RiskResponse{},
-	ExportSchedule:       "off",
-	ExportKeep:           7,
-	FeaturesOff:          []string{},
+	SessionHours:             int(SessionLifetime / time.Hour),
+	LockoutThreshold:         5,
+	LockoutMinutes:           15,
+	InviteDays:               int(EnrollmentLifetime / (24 * time.Hour)),
+	AccessTokenMinutes:       15,
+	IDTokenMinutes:           15,
+	RefreshTokenHours:        8,
+	PasswordSecondFactor:     true,
+	PasswordGroupIDs:         []string{},
+	PasswordBreachCheck:      true,
+	EmailSignIn:              "link",
+	SessionLimitAction:       "refuse",
+	SessionLimitGroups:       []GroupSessionLimit{},
+	AuthenticatorRules:       []AuthenticatorRule{},
+	ApprovalActions:          []string{},
+	EmergencyAccessIDs:       []string{},
+	ImpersonationGroups:      []string{},
+	ReauthMinutes:            10,
+	ClientRegistration:       "off",
+	SignUp:                   "off",
+	SignUpDomains:            []string{},
+	SignUpGroupIDs:           []string{},
+	IdentityProofingGroupIDs: []string{},
+	SecurityEmailsOff:        []string{},
+	RiskResponses:            []RiskResponse{},
+	ExportSchedule:           "off",
+	ExportKeep:               7,
+	FeaturesOff:              []string{},
 }
 
 const settingsTTL = 30 * time.Second
@@ -286,6 +294,14 @@ func (s Settings) AuthenticatorRulesFor(u User) []AuthenticatorRule {
 
 func (s Settings) ClientRegistrationOn() bool {
 	return slices.Contains([]string{"open", "token", "approval"}, s.ClientRegistration)
+}
+
+func (s Settings) ProofingRequired(groupIDs []string, signUp bool) bool {
+	on := s.IdentityProofingInvites
+	if signUp {
+		on = s.IdentityProofingSignUps
+	}
+	return on && (len(s.IdentityProofingGroupIDs) == 0 || slices.ContainsFunc(groupIDs, func(g string) bool { return slices.Contains(s.IdentityProofingGroupIDs, g) }))
 }
 
 func (s Settings) PasswordAllowed(u User) bool {

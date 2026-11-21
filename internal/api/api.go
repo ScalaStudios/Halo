@@ -100,6 +100,8 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	scoped("PUT /api/v1/users/{id}/posix", []string{"user_admin"}, h.setPOSIX)
 	signedIn("PUT /api/v1/users/{id}/guest", h.updateGuest)
 	signedIn("GET /api/v1/me/guests", h.mySponsoredGuests)
+	scoped("GET /api/v1/users/{id}/identity-proofs", readers, h.userIdentityProofs)
+	scoped("POST /api/v1/users/{id}/identity-proofs", []string{"user_admin", "helpdesk_admin"}, h.checkIdentity)
 	route("POST /api/v1/users/{id}/impersonations", []string{"helpdesk_admin"}, h.requestImpersonation)
 	route("DELETE /api/v1/users/{id}", nil, h.deleteUser)
 	route("GET /api/v1/impersonations", readers, h.listImpersonations)
@@ -108,6 +110,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("GET /api/v1/sign-ups", readers, h.listSignUps)
 	route("POST /api/v1/sign-ups/{id}/approve", []string{"user_admin"}, h.approveSignUp)
 	route("DELETE /api/v1/sign-ups/{id}", []string{"user_admin"}, h.rejectSignUp)
+	route("POST /api/v1/sign-ups/{id}/identity-proofs", []string{"user_admin"}, h.checkSignUpIdentity)
 
 	scoped("GET /api/v1/groups", readers, h.listGroups)
 	route("POST /api/v1/groups", []string{"user_admin"}, h.createGroup)
