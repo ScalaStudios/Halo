@@ -29,8 +29,7 @@ import type { ApiResource } from "@/lib/infra-types";
 import type { SamlApplication } from "@/lib/saml-types";
 import type { WebhookDelivery } from "@/lib/settings-types";
 import { endpoints, proxyGuides, setupGuide } from "@/lib/setup-guides";
-import type { Application, ApplicationHook, Attribute, AuthorizationModel, Group, Organization, Session, SignInEvent, User } from "@/lib/types";
-import type { Application, ApplicationHook, Attribute, Group, Organization, Session, SignalReceiver, SignInEvent, User } from "@/lib/types";
+import type { Application, ApplicationHook, Attribute, AuthorizationModel, Group, Organization, Session, SignalReceiver, SignInEvent, User } from "@/lib/types";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -40,8 +39,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function ApplicationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { id } = await params;
   const { tab = "overview" } = await searchParams;
-  const [app, groups, users, sessions, appSignIns, org, resources, hook, attributes, logouts, model] = await Promise.all([
-  const [app, groups, users, sessions, appSignIns, org, resources, hook, attributes, logouts, signals] = await Promise.all([
+  const [app, groups, users, sessions, appSignIns, org, resources, hook, attributes, logouts, signals, model] = await Promise.all([
     apiGet<SamlApplication>(`/applications/${encodeURIComponent(id)}`),
     apiGet<Group[]>("/groups"),
     apiGet<User[]>("/users"),
@@ -52,8 +50,8 @@ export default async function ApplicationPage({ params, searchParams }: { params
     tab === "authentication" ? apiGet<ApplicationHook | null>(`/applications/${encodeURIComponent(id)}/hook`) : null,
     tab === "claims" ? apiGet<Attribute[]>("/attributes") : [],
     tab === "authentication" ? apiGet<WebhookDelivery[]>(`/applications/${encodeURIComponent(id)}/logout-deliveries`) : [],
-    tab === "authorization" ? apiGet<AuthorizationModel>(`/applications/${encodeURIComponent(id)}/authorization`) : null,
     tab === "authentication" ? apiGet<{ receiver: SignalReceiver | null; deliveries: WebhookDelivery[] }>(`/applications/${encodeURIComponent(id)}/shared-signals`) : null,
+    tab === "authorization" ? apiGet<AuthorizationModel>(`/applications/${encodeURIComponent(id)}/authorization`) : null,
   ]);
 
   const saml = app.protocol === "saml";
