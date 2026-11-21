@@ -2,8 +2,11 @@ package store
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"halo/internal/id"
 	"halo/internal/secret"
@@ -74,5 +77,28 @@ func (s *Store) RADIUSClients(ctx context.Context) ([]RADIUSClient, error) {
 
 func (s *Store) TouchCredential(ctx context.Context, credentialID string) error {
 	_, err := s.db.Exec(ctx, `update app_credentials set last_used_at = now() where id = $1`, credentialID)
+	return err
+}
+
+func (s *Store) ClaimRADIUSRequest(ctx context.Context, key []byte, window time.Duration) ([]byte, bool, error) {
+	tag, err := s.db.Exec(ctx, `insert into radius_replies (key) values ($1)
+		on conflict (key) do update set reply = null, created_at = now() where radius_replies.created_at < now() - make_interval(secs => $2)`, key, window.Seconds())
+	if err != nil || tag.RowsAffected() > 0 {
+		return nil, err == nil, err
+	}
+	var reply []byte
+	err = s.db.QueryRow(ctx, `select reply from radius_replies where key = $1`, key).Scan(&reply)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	return reply, false, err
+}
+
+func (s *Store) KeepRADIUSReply(ctx context.Context, key, reply []byte) error {
+	if reply == nil {
+		_, err := s.db.Exec(ctx, `delete from radius_replies where key = $1`, key)
+		return err
+	}
+	_, err := s.db.Exec(ctx, `update radius_replies set reply = $2 where key = $1`, key, reply)
 	return err
 }

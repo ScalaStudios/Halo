@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -113,6 +114,75 @@ func (s *Store) Ping(ctx context.Context) error {
 
 func (s *Store) PoolStat() *pgxpool.Stat {
 	return s.pool.Stat()
+}
+
+const leaseCheck = 2 * time.Second
+
+func (s *Store) connect(ctx context.Context) (*pgx.Conn, error) {
+	conn, err := pgx.ConnectConfig(ctx, s.pool.Config().ConnConfig.Copy())
+	if err != nil {
+		return nil, err
+	}
+	if _, err := conn.Exec(ctx, `select set_config('tcp_keepalives_idle', '10', false), set_config('tcp_keepalives_interval', '5', false), set_config('tcp_keepalives_count', '3', false)`); err != nil {
+		conn.Close(context.Background())
+		return nil, err
+	}
+	return conn, nil
+}
+
+func (s *Store) Lock(ctx context.Context, name string) (func(), error) {
+	conn, err := s.connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := conn.Exec(ctx, `select pg_advisory_lock(hashtextextended($1, 0))`, name); err != nil {
+		conn.Close(context.Background())
+		return nil, err
+	}
+	return func() { conn.Close(context.Background()) }, nil
+}
+
+func (s *Store) Lead(ctx context.Context, run func(context.Context)) error {
+	conn, err := s.connect(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close(context.Background())
+	for held := false; !held; {
+		if err := conn.QueryRow(ctx, `select pg_try_advisory_lock(hashtextextended('halo:jobs', 0))`).Scan(&held); err != nil {
+			return err
+		}
+		if !held {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(leaseCheck):
+			}
+		}
+	}
+	leading, stop := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		run(leading)
+	}()
+	defer func() {
+		stop()
+		<-done
+	}()
+	for {
+		select {
+		case <-done:
+			return nil
+		case <-time.After(leaseCheck):
+			check, cancel := context.WithTimeout(ctx, leaseCheck)
+			err := conn.Ping(check)
+			cancel()
+			if err != nil {
+				return err
+			}
+		}
+	}
 }
 
 func notFound(err error) error {

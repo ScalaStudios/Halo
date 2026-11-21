@@ -6,9 +6,16 @@ metadata:
   labels:
     {{- include "halo.labels" $ctx | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.server.replicaCount }}
   strategy:
+    {{- if gt (int .Values.server.replicaCount) 1 }}
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    {{- else }}
     type: Recreate
+    {{- end }}
   selector:
     matchLabels:
       {{- include "halo.selectorLabels" $ctx | nindent 6 }}
@@ -117,7 +124,7 @@ spec:
             failureThreshold: 60
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             periodSeconds: 10
           livenessProbe:
@@ -146,6 +153,20 @@ spec:
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+{{- if gt (int .Values.server.replicaCount) 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "halo.fullname" . }}-server
+  labels:
+    {{- include "halo.labels" $ctx | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "halo.selectorLabels" $ctx | nindent 6 }}
+{{- end }}
 ---
 apiVersion: v1
 kind: Service

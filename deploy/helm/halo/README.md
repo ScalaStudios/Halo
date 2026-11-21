@@ -97,7 +97,7 @@ The server runs without root and with every capability dropped, so keep the port
 
 ## Upgrades
 
-Change the image tags, or upgrade to a newer chart, then run `helm upgrade`. The server applies database migrations when it starts and reports ready only afterwards. It runs as a single replica that is stopped before the new one starts, because background jobs run in every server process. Back up the database and `HALO_SECRET_KEY` first.
+Change the image tags, or upgrade to a newer chart, then run `helm upgrade`. The server applies database migrations when it starts and reports ready on `/readyz` only afterwards. With one replica, the old pod stops before the new one starts. With `server.replicaCount` above 1, the chart replaces pods one at a time, starting each new pod before it stops an old one, and adds a PodDisruptionBudget that keeps all but one running during node drains. Back up the database and `HALO_SECRET_KEY` first.
 
 ## Values
 
@@ -108,6 +108,7 @@ Change the image tags, or upgrade to a newer chart, then run `helm upgrade`. The
 | `organization` | | `HALO_ORGANIZATION`. |
 | `trustedProxies` | `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16` | `HALO_TRUSTED_PROXIES`. Narrow it to your pod CIDR. |
 | `imagePullSecrets` | `[]` | Pull secrets for every pod. |
+| `server.replicaCount` | `1` | Server replicas. Above 1, upgrades roll one pod at a time and a PodDisruptionBudget allows one pod down; see [Running several instances](../../../README.md#running-several-instances). |
 | `server.image.*` | `ghcr.io/scalastudios/halo-server`, chart `appVersion` | Server image. |
 | `server.env` | `{}` | Other non-secret server variables, such as `HALO_SMTP_HOST`, `HALO_SMTP_FROM` or `HALO_S3_ENDPOINT`. |
 | `server.resources`, `server.podSecurityContext`, `server.securityContext`, `server.nodeSelector`, `server.tolerations`, `server.affinity` | | Server pod settings. |
@@ -144,4 +145,3 @@ Change the image tags, or upgrade to a newer chart, then run `helm upgrade`. The
 ## Limitations
 
 - The published web image proxies API requests to `http://halo-server:8080`, so the server Service is always named `halo-server` and a namespace holds one Halo release.
-- The server always runs one replica.
