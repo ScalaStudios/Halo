@@ -95,6 +95,10 @@ func (s *Store) Ping(ctx context.Context) error {
 	return s.pool.Ping(ctx)
 }
 
+func (s *Store) PoolStat() *pgxpool.Stat {
+	return s.pool.Stat()
+}
+
 func notFound(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound

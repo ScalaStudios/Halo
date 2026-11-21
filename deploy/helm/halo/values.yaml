@@ -58,6 +58,14 @@ web:
   tolerations: []
   affinity: {}
 
+metrics:
+  enabled: false
+  port: 9090
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    tokenKey: ""
+
 ingress:
   enabled: false
   className: ""

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"halo/internal/id"
+	"halo/internal/metrics"
 )
 
 func (s *Store) RecordSignIn(ctx context.Context, e SignInEvent) error {
@@ -25,6 +26,9 @@ func (s *Store) RecordSignIn(ctx context.Context, e SignInEvent) error {
 	}
 	_, err := s.db.Exec(ctx, `insert into sign_in_events (id, time, user_id, email, app_id, result, method, ip, location, device, risk, reason, challenge, impersonator_id) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
 		e.ID, e.Time, e.UserID, e.Email, e.AppID, e.Result, e.Method, e.IP, e.Location, e.Device, e.Risk, e.Reason, e.Challenge, e.ImpersonatorID)
+	if err == nil {
+		metrics.SignIns.Inc(e.Method, e.Result, e.Risk)
+	}
 	return err
 }
 

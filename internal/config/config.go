@@ -18,6 +18,8 @@ type Config struct {
 	CertHeader     string
 	PublicURL      *url.URL
 	Listen         string
+	MetricsListen  string
+	MetricsToken   string
 	SecretKey      []byte
 	Dev            bool
 	NoCustomCSS    bool
@@ -73,6 +75,12 @@ func Load() (Config, error) {
 	cfg.Listen = os.Getenv("HALO_LISTEN")
 	if cfg.Listen == "" {
 		cfg.Listen = ":8080"
+	}
+
+	cfg.MetricsListen = os.Getenv("HALO_METRICS_LISTEN")
+	cfg.MetricsToken = os.Getenv("HALO_METRICS_TOKEN")
+	if cfg.MetricsListen != "" && cfg.MetricsListen == cfg.Listen {
+		problems = append(problems, "HALO_METRICS_LISTEN must differ from HALO_LISTEN, for example :9090, so metrics stay off the public port")
 	}
 
 	cfg.Dev = os.Getenv("HALO_DEV") == "1"

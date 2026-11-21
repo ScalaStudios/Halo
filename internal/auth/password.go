@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"halo/internal/httpx"
+	"halo/internal/metrics"
 	"halo/internal/secret"
 	"halo/internal/store"
 )
@@ -68,6 +69,7 @@ func (h *handler) passwordSignIn(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if sprayed >= addressLockoutFactor*settings.LockoutThreshold {
+		metrics.Lockouts.Inc("address")
 		return h.reject(r, a, "Too many failed passwords from this IP address.", tooManyAttempts("passwords", settings))
 	}
 	if err := h.challenge(r, &a, in.Challenge, settings, false); err != nil {

@@ -19,6 +19,7 @@ import (
 
 	"halo/internal/config"
 	"halo/internal/httpx"
+	"halo/internal/metrics"
 	halooidc "halo/internal/oidc"
 	"halo/internal/store"
 	"halo/internal/testdb"
@@ -184,6 +185,7 @@ func TestAuthorizationCodeFlow(t *testing.T) {
 		t.Fatalf("introspection: %v", introspection.body)
 	}
 
+	issuedBefore, refusedBefore := metrics.TokensIssued.Value("refresh_token"), metrics.RefreshRefused.Value()
 	refreshed := refresh(refreshToken)
 	nextRefresh, _ := refreshed.body["refresh_token"].(string)
 	nextAccess, _ := refreshed.body["access_token"].(string)
@@ -192,6 +194,9 @@ func TestAuthorizationCodeFlow(t *testing.T) {
 	}
 	if r := refresh(refreshToken); r.status != http.StatusBadRequest {
 		t.Fatalf("rotated refresh token must stop working, got %d", r.status)
+	}
+	if issued, refused := metrics.TokensIssued.Value("refresh_token")-issuedBefore, metrics.RefreshRefused.Value()-refusedBefore; issued != 1 || refused != 1 {
+		t.Fatalf("refresh counters: %v issued, %v refused", issued, refused)
 	}
 	if r := send(http.MethodGet, "/oauth2/userinfo", nil, bearer(nextAccess)); r.status != http.StatusOK {
 		t.Fatalf("userinfo after refresh: %d", r.status)

@@ -20,6 +20,7 @@ import (
 
 	"halo/internal/httpx"
 	"halo/internal/id"
+	"halo/internal/metrics"
 	"halo/internal/store"
 )
 
@@ -165,6 +166,7 @@ func (h *handler) attempt(ctx context.Context, d store.WebhookDelivery, now time
 	if code > 0 {
 		response = &code
 	}
+	metrics.WebhookDeliveries.Inc(status)
 	return h.st.RecordWebhookAttempt(ctx, d.ID, status, response, message, now, next)
 }
 

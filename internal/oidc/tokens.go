@@ -13,6 +13,7 @@ import (
 
 	"halo/internal/httpx"
 	"halo/internal/id"
+	"halo/internal/metrics"
 	"halo/internal/secret"
 	"halo/internal/store"
 )
@@ -108,7 +109,7 @@ func (s *storage) CreateAccessToken(ctx context.Context, req op.TokenRequest) (s
 		return "", time.Time{}, err
 	}
 	if access.SubjectID == nil {
-		return access.ID, access.ExpiresAt, s.st.CreateOIDCTokens(ctx, access)
+		return access.ID, access.ExpiresAt, issued(req, s.st.CreateOIDCTokens(ctx, access))
 	}
 	u, err := s.st.GetUser(ctx, *access.UserID)
 	if err != nil {
@@ -119,12 +120,31 @@ func (s *storage) CreateAccessToken(ctx context.Context, req op.TokenRequest) (s
 	if r, ok := ctx.Value(requestKey{}).(*http.Request); ok {
 		event.IP = httpx.ClientIP(r)
 	}
-	return access.ID, access.ExpiresAt, s.st.Tx(ctx, func(tx *store.Store) error {
+	return access.ID, access.ExpiresAt, issued(req, s.st.Tx(ctx, func(tx *store.Store) error {
 		if err := tx.CreateOIDCTokens(ctx, access); err != nil {
 			return err
 		}
 		return tx.RecordAudit(ctx, event)
-	})
+	}))
+}
+
+func issued(req op.TokenRequest, err error) error {
+	if err != nil {
+		return err
+	}
+	grant := "client_credentials"
+	switch req.(type) {
+	case *authRequest:
+		grant = "authorization_code"
+	case *refreshRequest:
+		grant = "refresh_token"
+	case *op.DeviceAuthorizationState:
+		grant = "device_code"
+	case op.TokenExchangeRequest:
+		grant = "token_exchange"
+	}
+	metrics.TokensIssued.Inc(grant)
+	return nil
 }
 
 func (s *storage) CreateAccessAndRefreshTokens(ctx context.Context, req op.TokenRequest, current string) (string, string, time.Time, error) {
@@ -135,7 +155,7 @@ func (s *storage) CreateAccessAndRefreshTokens(ctx context.Context, req op.Token
 	prev, refreshing := req.(*refreshRequest)
 	if refreshing && !app.TokenPolicy.Rotation {
 		access.RefreshID = &prev.ID
-		return access.ID, current, access.ExpiresAt, s.st.CreateOIDCTokens(ctx, access)
+		return access.ID, current, access.ExpiresAt, issued(req, s.st.CreateOIDCTokens(ctx, access))
 	}
 	value := secret.Token(32)
 	refresh := access
@@ -146,6 +166,7 @@ func (s *storage) CreateAccessAndRefreshTokens(ctx context.Context, req op.Token
 		if refreshing {
 			refresh.Scopes = prev.Scopes
 			if err := tx.RevokeOIDCToken(ctx, prev.ID); errors.Is(err, store.ErrNotFound) {
+				metrics.RefreshRefused.Inc()
 				return oidc.ErrInvalidGrant().WithDescription("The refresh token was already used.")
 			} else if err != nil {
 				return err
@@ -153,7 +174,7 @@ func (s *storage) CreateAccessAndRefreshTokens(ctx context.Context, req op.Token
 		}
 		return tx.CreateOIDCTokens(ctx, refresh, access)
 	})
-	if err != nil {
+	if err = issued(req, err); err != nil {
 		return "", "", time.Time{}, err
 	}
 	return access.ID, value, access.ExpiresAt, nil
@@ -161,6 +182,9 @@ func (s *storage) CreateAccessAndRefreshTokens(ctx context.Context, req op.Token
 
 func (s *storage) TokenRequestByRefreshToken(ctx context.Context, value string) (op.RefreshTokenRequest, error) {
 	t, err := s.st.GetActiveRefreshToken(ctx, secret.Hash(value))
+	if errors.Is(err, store.ErrNotFound) {
+		metrics.RefreshRefused.Inc()
+	}
 	if err != nil {
 		return nil, err
 	}

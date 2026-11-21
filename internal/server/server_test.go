@@ -24,22 +24,27 @@ import (
 )
 
 type env struct {
-	t  *testing.T
-	st *store.Store
-	h  http.Handler
+	t   *testing.T
+	st  *store.Store
+	h   http.Handler
+	app *App
 }
 
-func setup(t *testing.T) *env {
+func setup(t *testing.T, configure ...func(*config.Config)) *env {
 	t.Helper()
 	st := testdb.New(t)
 	public, _ := url.Parse("http://localhost:3200")
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
-	app, err := New(config.Config{Organization: "Test", PublicURL: public, SecretKey: key, Dev: true}, st)
+	cfg := config.Config{Organization: "Test", PublicURL: public, SecretKey: key, Dev: true}
+	for _, fn := range configure {
+		fn(&cfg)
+	}
+	app, err := New(cfg, st)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &env{t: t, st: st, h: app.Handler}
+	return &env{t: t, st: st, h: app.Handler, app: app}
 }
 
 func (e *env) person(email, method string, withTOTP bool, roles ...string) (store.User, string, string) {
