@@ -40,6 +40,8 @@ type issuerKeys struct {
 	sync.Mutex
 	keys    []jose.JSONWebKey
 	fetched time.Time
+	failed  time.Time
+	err     error
 }
 
 type keyCache struct {
@@ -206,11 +208,15 @@ func (c *keyCache) get(ctx context.Context, key string, stale bool, fetch func(c
 	if !k.fetched.IsZero() && age < issuerKeyLifetime && (!stale || age < issuerKeyRefetch) {
 		return k.keys, nil
 	}
+	if time.Since(k.failed) < issuerKeyRefetch {
+		return nil, k.err
+	}
 	keys, err := fetch(ctx)
 	if err != nil {
+		k.failed, k.err = time.Now(), err
 		return nil, err
 	}
-	k.keys, k.fetched = keys, time.Now()
+	k.keys, k.fetched, k.failed, k.err = keys, time.Now(), time.Time{}, nil
 	return k.keys, nil
 }
 

@@ -8,6 +8,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -145,6 +146,11 @@ func TestPrivateKeyJWT(t *testing.T) {
 			t.Errorf("%s: %d %v", name, r.status, r.body)
 		}
 	}
+	for name, assertion := range map[string]string{"HS256": hs256, "none": unsigned} {
+		if r, _ := h.do(http.MethodPost, "/oauth2/token", asserted(codeGrant(code), assertion)); !strings.Contains(fmt.Sprint(r.body["error_description"]), "refuses none and HMAC") {
+			t.Errorf("%s is not refused by the algorithm allowlist: %d %v", name, r.status, r.body)
+		}
+	}
 	if r, _ := h.do(http.MethodPost, "/oauth2/token", asserted(codeGrant(code), signer.sign(id, issuer, nil)), basicAuth(id, h.secret)); r.status != http.StatusBadRequest || r.body["error"] != "invalid_request" {
 		t.Errorf("assertion together with Basic authentication: %d %v", r.status, r.body)
 	}
@@ -191,8 +197,13 @@ func TestPrivateKeyJWT(t *testing.T) {
 	rotated := newAssertionSigner(t, "key-2")
 	var served atomic.Value
 	served.Store(signer.jwks())
-	var fetches atomic.Int32
+	var fetches, broken atomic.Int32
 	keys := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/broken" {
+			broken.Add(1)
+			http.Error(w, "down", http.StatusInternalServerError)
+			return
+		}
 		fetches.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(served.Load().(json.RawMessage))
@@ -230,6 +241,20 @@ func TestPrivateKeyJWT(t *testing.T) {
 	served.Store(keySet(t, rotated, weak))
 	if r, _ := h.do(http.MethodPost, "/oauth2/par", asserted(authorization(id, true), weak.sign(id, issuer, nil))); r.status != http.StatusUnauthorized {
 		t.Fatalf("assertion signed with a 1024-bit RSA key from jwks_uri: %d %v", r.status, r.body)
+	}
+
+	*halooidc.IssuerKeyRefetch = refetch
+	remote.JWKSURI = keys.URL + "/broken"
+	if err := h.st.UpdateApplication(ctx, remote); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if r, _ := h.do(http.MethodPost, "/oauth2/par", asserted(authorization(id, true), rotated.sign(id, issuer, nil))); r.status != http.StatusUnauthorized {
+			t.Fatalf("assertion while jwks_uri fails: %d %v", r.status, r.body)
+		}
+	}
+	if broken.Load() != 1 {
+		t.Fatalf("a failing jwks_uri was fetched %d times within a minute, want once", broken.Load())
 	}
 
 	back := h.app
@@ -283,6 +308,13 @@ func TestFAPI2Profile(t *testing.T) {
 	}
 	if r, _ := h.do(http.MethodPost, "/oauth2/par", asserted(authorization(id, false), signer.sign(id, issuer, nil))); r.status != http.StatusBadRequest || r.body["error"] != "invalid_request" {
 		t.Fatalf("pushed request without PKCE: %d %v", r.status, r.body)
+	}
+	for _, responseType := range []string{"token", "id_token", "code id_token"} {
+		params := authorization(id, true)
+		params.Set("response_type", responseType)
+		if r, _ := h.do(http.MethodPost, "/oauth2/par", asserted(params, signer.sign(id, issuer, nil))); r.status != http.StatusBadRequest {
+			t.Errorf("pushed request with response_type %q: %d %v", responseType, r.status, r.body)
+		}
 	}
 	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
