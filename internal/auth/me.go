@@ -151,6 +151,9 @@ func (h *handler) myApplications(ctx context.Context, u store.User) ([]myApplica
 			if a.Protocol == "saml" {
 				launch = "/saml/launch/" + a.ID
 			}
+			if a.Protocol == "remote" {
+				launch = "/account/applications/" + a.ID + "/connect"
+			}
 			roles := []string{}
 			for _, r := range a.RolesOf(u) {
 				roles = append(roles, r.Name)

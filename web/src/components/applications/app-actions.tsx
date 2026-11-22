@@ -28,6 +28,7 @@ type AppSummary = {
   bookmark: boolean;
   radius: boolean;
   ldap?: boolean;
+  remote?: boolean;
   disabled: boolean;
   awaitingApproval: boolean;
   redirectUris: string[];
@@ -62,7 +63,7 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
           Approve
         </Button>
       ) : null}
-      {app.bookmark || app.radius || app.ldap ? null : (
+      {app.bookmark || app.radius || app.ldap || app.remote ? null : (
         <Link href={`/admin/applications/${app.id}#setup-guide`} className={buttonClasses("secondary", "sm")}>
           <BookOpen aria-hidden="true" size={16} strokeWidth={1.75} />
           View setup guide
@@ -89,7 +90,7 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
               Open {new URL(app.homepage).host}
             </MenuItem>
           ) : null}
-          {app.bookmark || app.radius || app.ldap ? null : (
+          {app.bookmark || app.radius || app.ldap || app.remote ? null : (
             <MenuItem
               icon={Copy}
               onSelect={() => {

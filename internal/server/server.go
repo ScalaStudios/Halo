@@ -31,6 +31,7 @@ import (
 	"halo/internal/proofing"
 	"halo/internal/provisioning"
 	"halo/internal/radius"
+	"halo/internal/remote"
 	"halo/internal/saml"
 	"halo/internal/scim"
 	"halo/internal/settings"
@@ -100,6 +101,10 @@ var sensitiveRoutes = []string{
 	"PUT /api/v1/ssh/host-groups/{id}",
 	"PUT /api/v1/applications/{id}/shared-signals",
 	"DELETE /api/v1/applications/{id}/shared-signals",
+	"PUT /api/v1/applications/{id}/remote",
+	"POST /api/v1/outposts",
+	"POST /api/v1/outposts/{id}/enrollment-token",
+	"DELETE /api/v1/outposts/{id}",
 }
 
 var ownMethodRoutes = []string{
@@ -162,7 +167,7 @@ func New(cfg config.Config, st *store.Store) (*App, error) {
 	})
 
 	apiMux := http.NewServeMux()
-	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, authz.Register, governance.Register, policy.Register, compliance.Register, proofing.Register, apikeys.Register, provisioning.Register, ldapsync.Register, settings.Register, webhooks.Register, logexport.Register, oidc.Register, sshca.Register, avatars.Register, approval.Register, features.Register} {
+	for _, register := range []func(*http.ServeMux, httpx.Deps) error{auth.Register, api.Register, authz.Register, governance.Register, policy.Register, compliance.Register, proofing.Register, apikeys.Register, provisioning.Register, ldapsync.Register, settings.Register, webhooks.Register, logexport.Register, oidc.Register, sshca.Register, remote.Register, avatars.Register, approval.Register, features.Register} {
 		if err := register(apiMux, deps); err != nil {
 			return nil, err
 		}

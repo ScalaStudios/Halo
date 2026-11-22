@@ -1,5 +1,6 @@
 import { Fingerprint, IdCard, KeyRound, ListOrdered, Mail, Monitor, Network, RectangleEllipsis, Smartphone, TicketCheck, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/badge";
+import type { RemoteAuth } from "./infra-types";
 import type { LogExportProtocol, NotificationDestination } from "./settings-types";
 import type { AttributeType, AuthStrength, Group, JoinPolicy, MethodKind, RiskLevel, Scope, SignInEvent, SignInResult, UserStatus } from "./types";
 
@@ -66,6 +67,8 @@ export const DESTINATIONS: Record<NotificationDestination, { label: string; plac
 };
 
 export const GROUP_KIND: Record<Group["kind"], string> = { assigned: "Assigned", dynamic: "Rule-based" };
+
+export const REMOTE_AUTH: Record<RemoteAuth, string> = { certificate: "Certificate from Halo's SSH CA", password: "Stored password", key: "Stored private key" };
 
 export const JOIN_POLICY: Record<JoinPolicy, { label: string; description: string }> = {
   closed: { label: "Closed", description: "owners add members" },

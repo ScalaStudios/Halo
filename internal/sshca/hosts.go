@@ -2,6 +2,7 @@ package sshca
 
 import (
 	"cmp"
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -311,11 +312,11 @@ func hostDirectory(rules []store.HostRule, users []store.User, groups []store.Gr
 	return d
 }
 
-func (h *handlers) hostPrincipal(r *http.Request, u store.User) (string, error) {
+func (h *handlers) hostPrincipal(ctx context.Context, u store.User) (string, error) {
 	if u.POSIX == nil {
 		return "", nil
 	}
-	rules, err := h.st.HostRules(r.Context())
+	rules, err := h.st.HostRules(ctx)
 	if err != nil {
 		return "", err
 	}

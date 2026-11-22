@@ -1,5 +1,6 @@
 import type { NamedRef } from "./governance-types";
 import type { RoleKey } from "./provisioning-types";
+import type { RemoteTarget } from "./infra-types";
 
 export type UserStatus = "active" | "suspended" | "invited" | "deprovisioned";
 export type AuthStrength = "phishing-resistant" | "multi-factor" | "single-factor";
@@ -116,7 +117,7 @@ export type JoinableGroup = Group & { requested: boolean };
 export type JoinRequest = { user: NamedRef; createdAt: string };
 export type OwnedGroupDetail = { group: OwnedGroup; members: Required<NamedRef>[]; requests: JoinRequest[]; people: Required<NamedRef>[] };
 
-export type Protocol = "oidc" | "saml" | "oauth" | "bookmark" | "forward-auth" | "radius" | "ldap";
+export type Protocol = "oidc" | "saml" | "oauth" | "bookmark" | "forward-auth" | "radius" | "ldap" | "remote";
 export type AppType = "web" | "spa" | "native" | "service";
 
 export type Credential = {
@@ -181,6 +182,7 @@ export type Application = {
   logoUrl: string | null;
   registeredDynamically: boolean;
   ldap?: { url: string; baseDn: string; bindDn: string; peopleDn: string; groupsDn: string };
+  remote?: RemoteTarget;
   awaitingApproval: boolean;
   requiresConsent: boolean;
   backchannelLogoutUri: string;

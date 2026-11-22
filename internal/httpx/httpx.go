@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"bufio"
 	"bytes"
 	"cmp"
 	"context"
@@ -474,4 +475,9 @@ func (s *statusRecorder) WriteHeader(code int) {
 
 func (s *statusRecorder) Unwrap() http.ResponseWriter {
 	return s.ResponseWriter
+}
+
+func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	s.status = http.StatusSwitchingProtocols
+	return http.NewResponseController(s.ResponseWriter).Hijack()
 }

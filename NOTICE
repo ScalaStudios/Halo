@@ -23,6 +23,12 @@ React Bits
   a fully OSI-licensed tree can replace them: Halo uses them only through
   web/src/components/ui/code-input.tsx and hold-to-confirm.tsx.
 
+xterm.js
+  Packages: @xterm/xterm and @xterm/addon-fit, installed from npm, not vendored
+  Source:   https://github.com/xtermjs/xterm.js
+  License:  MIT
+  Use:      The terminal of remote access sessions in the account portal.
+
 Fonts (installed from npm, not vendored)
   Archivo, Inter and JetBrains Mono via @fontsource-variable packages,
   licensed under the SIL Open Font License 1.1.
