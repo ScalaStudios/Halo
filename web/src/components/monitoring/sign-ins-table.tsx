@@ -13,86 +13,25 @@ import { Dialog } from "@/components/ui/dialog";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { cn } from "@/lib/cn";
 import { formatDateTime } from "@/lib/format";
-import { RESULT, RISK, SIGN_IN_METHOD, signInApp, signInUser } from "@/lib/labels";
+import { useLocale } from "@/lib/i18n/client";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { monitoringMessages } from "@/lib/i18n/console/monitoring";
+import type { Locale } from "@/lib/i18n/locale";
+import { RESULT, RISK, signInApp, signInUser } from "@/lib/labels";
 import type { SignInEvent } from "@/lib/types";
 
 type Row = SignInEvent & { user: string; app: string };
 
-const CHALLENGE = { passed: "Passed", failed: "Failed", unavailable: "Provider unreachable" };
+type Messages = (typeof monitoringMessages)[Locale];
 
-const HOOK = { allowed: "Allowed", denied: "Denied", failed_open: "Failed, allowed because it fails open", failed_closed: "Failed, blocked because it fails closed" };
-
-const GUIDANCE: Record<string, { why: string; next: string }> = {
-  "The bot check failed.": {
-    why: "Bot protection is on, and the provider did not confirm that a person completed the check.",
-    next: "If this was a person, ask them to complete the check again or sign in with a passkey. Many failures from one IP address point to automated traffic.",
-  },
-  "The bot check service could not be reached.": {
-    why: "Halo could not verify the check with the bot protection provider, so it refused the request.",
-    next: "Check that Halo can reach the provider and that the secret key under Security defaults is right. Passkey sign-in still works.",
-  },
-  "User is not assigned to this application.": {
-    why: "None of the user's groups is assigned to this application.",
-    next: "Add the user to a group that is assigned to the application, or assign one of their groups to it.",
-  },
-  "The account is suspended.": {
-    why: "An administrator suspended this account, so every sign-in is refused.",
-    next: "Restore the account from the user's profile if they should have access again.",
-  },
-  "No account uses this email address.": {
-    why: "Someone tried to sign in with an email address that doesn't belong to anyone in Halo.",
-    next: "Check for a typo in the address. Repeated attempts for many addresses can mean someone is probing for accounts.",
-  },
-  "Too many failed attempts.": {
-    why: "Halo locked password and code sign-in for this account after repeated wrong passwords or codes.",
-    next: "The lock lifts on its own. If the user didn't make these attempts, revoke their sessions and reset their authentication.",
-  },
-  "The code did not match.": {
-    why: "The authenticator code was wrong or had already expired, often because the phone clock is out of sync.",
-    next: "Ask the user to turn on automatic time on their phone. Consider moving them to a passkey.",
-  },
-  "The code was already used.": {
-    why: "Each authenticator code works once. This one had already been used to sign in.",
-    next: "No action needed for a single attempt. If it repeats, the code may have been intercepted.",
-  },
-  "The recovery code did not match an unused code.": {
-    why: "The recovery code was wrong or had already been used.",
-    next: "If the user has lost their codes and methods, reset their authentication and send them a new setup link.",
-  },
-  "The passkey prompt expired or was already used.": {
-    why: "The passkey prompt was dismissed or timed out before the user confirmed it.",
-    next: "No action needed for a single attempt. If it repeats, ask the user whether the prompt appears on their device.",
-  },
-  "The passkey is not registered with Halo.": {
-    why: "The passkey presented belongs to a different account or was removed.",
-    next: "Ask the user to sign in with another method, or reset their authentication so they can enroll again.",
-  },
-  "The passkey's signature counter went backwards, so it may have been cloned.": {
-    why: "Halo saw a counter value lower than the last one, which happens when a credential is copied to another device.",
-    next: "Treat it as a possible compromise: revoke the user's sessions, remove the passkey and confirm with the user out of band.",
-  },
-  "Reached the session limit.": {
-    why: "The user already had as many sessions as their session limit allows, and Halo is set to refuse new sign-ins at the limit.",
-    next: "End a session the user no longer needs from their profile, or raise the limit under Security defaults. If the user doesn't recognise their sessions, revoke them all and reset their authentication.",
-  },
-  "Ended the oldest session to stay within the session limit.": {
-    why: "The user signed in again while holding as many sessions as their limit allows, so Halo ended their oldest session.",
-    next: "No action needed if the user changed devices. If sessions keep ending, the account may be shared or a session may have been stolen: revoke all sessions and reset the user's authentication.",
-  },
-  "Authenticator code did not match. Sign-in blocked by risk policy.": {
-    why: "The attempt came from a Tor exit node with no prior history for this user, and the code was wrong.",
-    next: "Treat it as a possible credential attack: confirm with the user out of band, revoke their sessions and reset their authenticator.",
-  },
-};
-
-const columns: ColumnDef<Row, any>[] = [
+const columns = (t: Messages, locale: Locale): ColumnDef<Row, any>[] => [
   {
     id: "time",
     accessorFn: (e) => new Date(e.time).getTime(),
-    header: "Time",
-    meta: { label: "Time", hideable: false },
+    header: t.time,
+    meta: { label: t.time, hideable: false },
     cell: ({ row }) => (
-      <span className="tnum whitespace-nowrap text-fg-3" title={formatDateTime(row.original.time)}>
+      <span className="tnum whitespace-nowrap text-fg-3" title={formatDateTime(row.original.time, locale)}>
         <RelativeTime iso={row.original.time} />
       </span>
     ),
@@ -100,8 +39,8 @@ const columns: ColumnDef<Row, any>[] = [
   {
     id: "user",
     accessorFn: (e) => e.user,
-    header: "User",
-    meta: { label: "User", hideable: false },
+    header: t.user,
+    meta: { label: t.user, hideable: false },
     cell: ({ row }) =>
       row.original.userId ? (
         <Link
@@ -118,74 +57,74 @@ const columns: ColumnDef<Row, any>[] = [
   {
     id: "application",
     accessorFn: (e) => e.app,
-    header: "Application",
+    header: t.application,
     filterFn: facetFilter,
-    meta: { label: "Application" },
+    meta: { label: t.application },
     cell: ({ row }) => <span className="whitespace-nowrap">{row.original.app}</span>,
   },
   {
     id: "result",
     accessorFn: (e) => e.result,
-    header: "Result",
+    header: t.result,
     filterFn: facetFilter,
-    meta: { label: "Result" },
+    meta: { label: t.result },
     cell: ({ row }) => (
       <span className="inline-flex items-center gap-2 whitespace-nowrap">
         <StatusDot tone={RESULT[row.original.result].tone} />
-        {RESULT[row.original.result].label}
+        {t.results[row.original.result]}
       </span>
     ),
   },
   {
     id: "method",
     accessorFn: (e) => e.method,
-    header: "Method",
+    header: t.method,
     filterFn: facetFilter,
-    meta: { label: "Method" },
+    meta: { label: t.method },
     cell: ({ row }) => (
       <span className="inline-flex items-center gap-2 whitespace-nowrap">
-        {SIGN_IN_METHOD[row.original.method].label}
-        {row.original.impersonatorId ? <Badge tone="warning">Impersonation</Badge> : null}
+        {t.methods[row.original.method]}
+        {row.original.impersonatorId ? <Badge tone="warning">{t.impersonation}</Badge> : null}
       </span>
     ),
   },
   {
     id: "risk",
     accessorFn: (e) => e.risk,
-    header: "Risk",
+    header: t.risk,
     filterFn: facetFilter,
     sortingFn: (a, b) => Object.keys(RISK).indexOf(a.original.risk) - Object.keys(RISK).indexOf(b.original.risk),
-    meta: { label: "Risk" },
+    meta: { label: t.risk },
     cell: ({ row }) =>
-      row.original.risk === "none" ? <span className="text-fg-3">—</span> : <Badge tone={RISK[row.original.risk].tone}>{RISK[row.original.risk].label}</Badge>,
+      row.original.risk === "none" ? <span className="text-fg-3">—</span> : <Badge tone={RISK[row.original.risk].tone}>{t.risks[row.original.risk]}</Badge>,
   },
   {
     id: "location",
     accessorFn: (e) => e.location,
-    header: "Location",
-    meta: { label: "Location" },
+    header: t.location,
+    meta: { label: t.location },
     cell: ({ row }) => <span className="whitespace-nowrap text-fg-3">{row.original.location}</span>,
   },
   {
     id: "ip",
     accessorFn: (e) => e.ip,
-    header: "IP address",
-    meta: { label: "IP address" },
+    header: t.ipAddress,
+    meta: { label: t.ipAddress },
     cell: ({ row }) => <span className="font-mono text-code-sm whitespace-nowrap text-fg-3">{row.original.ip}</span>,
   },
   {
     id: "device",
     accessorFn: (e) => e.device,
-    header: "Device",
-    meta: { label: "Device" },
+    header: t.device,
+    meta: { label: t.device },
     cell: ({ row }) => <span className="whitespace-nowrap text-fg-3">{row.original.device}</span>,
   },
 ];
 
-const views: SavedView[] = [
-  { id: "all", label: "All sign-ins", filters: [] },
-  { id: "failures", label: "Failures", filters: [{ id: "result", value: ["failure", "interrupted"] }] },
-  { id: "risky", label: "High and medium risk", filters: [{ id: "risk", value: ["high", "medium"] }] },
+const views = (t: Messages): SavedView[] => [
+  { id: "all", label: t.signInLog.views.all, filters: [] },
+  { id: "failures", label: t.signInLog.views.failures, filters: [{ id: "result", value: ["failure", "interrupted"] }] },
+  { id: "risky", label: t.signInLog.views.risky, filters: [{ id: "risk", value: ["high", "medium"] }] },
 ];
 
 function csv(events: Row[]) {
@@ -220,6 +159,8 @@ export function SignInsTable({
   initialEventId?: string;
   initialView?: string;
 }) {
+  const locale = useLocale();
+  const t = monitoringMessages[locale];
   const [openId, setOpenId] = useState(initialEventId);
   const rows = events.map((e) => ({ ...e, user: signInUser(e, userNames), app: signInApp(e, appNames) }));
   const selected = rows.find((e) => e.id === openId);
@@ -235,27 +176,27 @@ export function SignInsTable({
     <>
       <DataTable
         data={rows}
-        columns={columns}
+        columns={columns(t, locale)}
         getRowId={(e) => e.id}
-        label="Sign-in logs"
-        noun={["sign-in", "sign-ins"]}
+        label={frameMessages[locale].nav.items.signIns.label}
+        noun={t.signInLog.noun}
         storageKey="sign-ins"
         searchText={(e) => `${e.user} ${e.email} ${e.app} ${e.ip} ${e.location} ${e.id}`}
-        searchPlaceholder="Search user, application, IP or event ID"
-        views={views}
+        searchPlaceholder={t.signInLog.searchPlaceholder}
+        views={views(t)}
         initialViewId={initialView}
         initialVisibility={{ device: false }}
         facets={[
-          { column: "result", label: "Result", options: Object.entries(RESULT).map(([value, r]) => ({ value, label: r.label })) },
-          { column: "risk", label: "Risk", options: Object.entries(RISK).map(([value, r]) => ({ value, label: r.label })) },
-          { column: "application", label: "Application", options: apps.map((app) => ({ value: app, label: app })) },
-          { column: "method", label: "Method", options: methods.map((m) => ({ value: m, label: SIGN_IN_METHOD[m].label })) },
+          { column: "result", label: t.result, options: Object.entries(t.results).map(([value, label]) => ({ value, label })) },
+          { column: "risk", label: t.risk, options: Object.entries(t.risks).map(([value, label]) => ({ value, label })) },
+          { column: "application", label: t.application, options: apps.map((app) => ({ value: app, label: app })) },
+          { column: "method", label: t.method, options: methods.map((m) => ({ value: m, label: t.methods[m] })) },
         ]}
         onRowOpen={(e) => open(e.id)}
         toolbarEnd={(rows) => (
           <Button size="sm" variant="secondary" onClick={() => download(rows)}>
             <Download aria-hidden="true" size={16} strokeWidth={1.75} />
-            Export CSV
+            {t.exportCsv}
           </Button>
         )}
       />
@@ -265,17 +206,18 @@ export function SignInsTable({
           if (!next) open(undefined);
         }}
         width="wide"
-        title={selected?.result === "ended" ? "Session ended" : selected ? `Sign-in to ${selected.app}` : "Sign-in"}
-        description={selected ? `${selected.user} · ${formatDateTime(selected.time)}` : undefined}
+        title={selected?.result === "ended" ? t.results.ended : selected ? t.signInLog.signInTo(selected.app) : t.signInLog.signIn}
+        description={selected ? `${selected.user} · ${formatDateTime(selected.time, locale)}` : undefined}
       >
-        {selected ? <SignInDetail event={selected} /> : null}
+        {selected ? <SignInDetail event={selected} t={t} /> : null}
       </Dialog>
     </>
   );
 }
 
-function SignInDetail({ event }: { event: Row }) {
-  const guidance = event.reason ? GUIDANCE[event.reason] : undefined;
+function SignInDetail({ event, t }: { event: Row; t: Messages }) {
+  const copy = t.signInLog;
+  const guidance = event.reason ? (copy.guidance as Record<string, { why: string; next: string }>)[event.reason] : undefined;
   const failed = event.result === "failure";
 
   return (
@@ -284,7 +226,9 @@ function SignInDetail({ event }: { event: Row }) {
         <div className="flex items-center gap-3 rounded-md border border-success/20 bg-success-container p-4">
           <CircleCheck aria-hidden="true" size={20} strokeWidth={1.75} className="shrink-0 text-success" />
           <p className="text-body-sm text-fg">
-            <span className="font-semibold">Signed in</span> with {SIGN_IN_METHOD[event.method].label.toLowerCase()}.{event.impersonatorId ? ` ${event.reason}` : null}
+            <span className="font-semibold">{copy.signedIn}</span>
+            {copy.withMethod(t.methods[event.method])}
+            {event.impersonatorId ? <span lang="en"> {event.reason}</span> : null}
           </p>
         </div>
       ) : (
@@ -292,17 +236,17 @@ function SignInDetail({ event }: { event: Row }) {
           <TriangleAlert aria-hidden="true" size={20} strokeWidth={1.75} className={cn("mt-px shrink-0", failed ? "text-danger" : "text-warning")} />
           <dl className="flex min-w-0 flex-col gap-3">
             <div className="flex flex-col gap-1">
-              <dt className="text-label text-fg-3">{failed ? "Sign-in failed" : event.result === "ended" ? "Session ended" : "Sign-in interrupted"}</dt>
-              <dd className="text-body-sm font-semibold text-fg">{event.reason}</dd>
+              <dt className="text-label text-fg-3">{failed ? copy.failed : event.result === "ended" ? t.results.ended : copy.interrupted}</dt>
+              <dd lang="en" className="text-body-sm font-semibold text-fg">{event.reason}</dd>
             </div>
             {guidance ? (
               <>
                 <div className="flex flex-col gap-1">
-                  <dt className="text-label text-fg-3">Why</dt>
+                  <dt className="text-label text-fg-3">{copy.why}</dt>
                   <dd className="text-body-sm text-fg-2">{guidance.why}</dd>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <dt className="text-label text-fg-3">What to do</dt>
+                  <dt className="text-label text-fg-3">{copy.next}</dt>
                   <dd className="text-body-sm text-fg-2">{guidance.next}</dd>
                 </div>
               </>
@@ -315,7 +259,7 @@ function SignInDetail({ event }: { event: Row }) {
         columns={2}
         items={[
           {
-            label: "User",
+            label: t.user,
             value: event.userId ? (
               <Link href={`/admin/users/${event.userId}`} className="font-medium text-link hover:underline">
                 {event.user}
@@ -324,31 +268,31 @@ function SignInDetail({ event }: { event: Row }) {
               event.email
             ),
           },
-          { label: "Application", value: event.app },
-          { label: "Method", value: SIGN_IN_METHOD[event.method].label },
+          { label: t.application, value: event.app },
+          { label: t.method, value: t.methods[event.method] },
           {
-            label: "Risk",
-            value: event.risk === "none" ? "None detected" : <Badge tone={RISK[event.risk].tone}>{RISK[event.risk].label}</Badge>,
+            label: t.risk,
+            value: event.risk === "none" ? copy.noneDetected : <Badge tone={RISK[event.risk].tone}>{t.risks[event.risk]}</Badge>,
           },
           {
-            label: "IP address",
+            label: t.ipAddress,
             value: (
               <span className="-my-2 flex items-center gap-2">
                 <span className="font-mono text-code-sm">{event.ip}</span>
-                <CopyButton value={event.ip} label="Copy IP" />
+                <CopyButton value={event.ip} label={t.copyIp} />
               </span>
             ),
           },
-          { label: "Location", value: event.location },
-          { label: "Device", value: event.device },
-          ...(event.challenge ? [{ label: "Bot check", value: CHALLENGE[event.challenge] }] : []),
-          ...(event.hook ? [{ label: "Hook", value: HOOK[event.hook] }] : []),
+          { label: t.location, value: event.location },
+          { label: t.device, value: event.device },
+          ...(event.challenge ? [{ label: copy.botCheck, value: copy.challenge[event.challenge] }] : []),
+          ...(event.hook ? [{ label: copy.hook, value: copy.hooks[event.hook] }] : []),
           {
-            label: "Event ID",
+            label: t.eventId,
             value: (
               <span className="-my-2 flex items-center gap-2">
                 <span className="font-mono text-code-sm break-all">{event.id}</span>
-                <CopyButton value={event.id} label="Copy ID" />
+                <CopyButton value={event.id} label={t.copyId} />
               </span>
             ),
           },

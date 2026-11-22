@@ -7,62 +7,64 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable, facetFilter } from "@/components/ui/data-table";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { api } from "@/lib/api/client";
-import { formatDateTime, pluralize } from "@/lib/format";
-import { METHOD } from "@/lib/labels";
+import { formatDateTime } from "@/lib/format";
+import { useLocale } from "@/lib/i18n/client";
+import { monitoringMessages } from "@/lib/i18n/console/monitoring";
+import type { Locale } from "@/lib/i18n/locale";
 import type { Session } from "@/lib/types";
 
 type Row = Session & { userName: string };
 
-const columns: ColumnDef<Row, any>[] = [
+const columns = (t: (typeof monitoringMessages)[Locale], locale: Locale): ColumnDef<Row, any>[] => [
   {
     id: "user",
     accessorFn: (s) => s.userName,
-    header: "User",
-    meta: { label: "User", hideable: false },
+    header: t.user,
+    meta: { label: t.user, hideable: false },
     cell: ({ getValue }) => <span className="font-medium whitespace-nowrap text-fg">{getValue<string>()}</span>,
   },
   {
     id: "device",
     accessorFn: (s) => `${s.device} · ${s.browser}`,
-    header: "Device",
-    meta: { label: "Device" },
+    header: t.device,
+    meta: { label: t.device },
     cell: ({ row, getValue }) => (
       <span className="inline-flex items-center gap-2 whitespace-nowrap">
         {getValue<string>()}
-        {row.original.current ? <Badge tone="success">This browser</Badge> : null}
-        {row.original.impersonationId ? <Badge tone="warning">Impersonation</Badge> : null}
+        {row.original.current ? <Badge tone="success">{t.sessions.thisBrowser}</Badge> : null}
+        {row.original.impersonationId ? <Badge tone="warning">{t.impersonation}</Badge> : null}
       </span>
     ),
   },
   {
     id: "ip",
     accessorFn: (s) => s.ip,
-    header: "IP address",
-    meta: { label: "IP address" },
+    header: t.ipAddress,
+    meta: { label: t.ipAddress },
     cell: ({ getValue }) => <span className="font-mono text-code-sm whitespace-nowrap text-fg-3">{getValue<string>()}</span>,
   },
   {
     id: "location",
     accessorFn: (s) => s.location,
-    header: "Location",
-    meta: { label: "Location" },
+    header: t.location,
+    meta: { label: t.location },
     cell: ({ getValue }) => <span className="whitespace-nowrap text-fg-3">{getValue<string>()}</span>,
   },
   {
     id: "method",
     accessorFn: (s) => s.method,
-    header: "Method",
+    header: t.method,
     filterFn: facetFilter,
-    meta: { label: "Method" },
-    cell: ({ row }) => <span className="whitespace-nowrap">{METHOD[row.original.method].label}</span>,
+    meta: { label: t.method },
+    cell: ({ row }) => <span className="whitespace-nowrap">{t.methods[row.original.method]}</span>,
   },
   {
     id: "created",
     accessorFn: (s) => new Date(s.createdAt).getTime(),
-    header: "Signed in",
-    meta: { label: "Signed in", align: "right" },
+    header: t.sessions.signedIn,
+    meta: { label: t.sessions.signedIn, align: "right" },
     cell: ({ row }) => (
-      <span className="tnum whitespace-nowrap text-fg-3" title={formatDateTime(row.original.createdAt)}>
+      <span className="tnum whitespace-nowrap text-fg-3" title={formatDateTime(row.original.createdAt, locale)}>
         <RelativeTime iso={row.original.createdAt} />
       </span>
     ),
@@ -70,10 +72,10 @@ const columns: ColumnDef<Row, any>[] = [
   {
     id: "lastActive",
     accessorFn: (s) => new Date(s.lastActiveAt).getTime(),
-    header: "Last active",
-    meta: { label: "Last active", align: "right" },
+    header: t.sessions.lastActive,
+    meta: { label: t.sessions.lastActive, align: "right" },
     cell: ({ row }) => (
-      <span className="tnum whitespace-nowrap text-fg-3" title={formatDateTime(row.original.lastActiveAt)}>
+      <span className="tnum whitespace-nowrap text-fg-3" title={formatDateTime(row.original.lastActiveAt, locale)}>
         <RelativeTime iso={row.original.lastActiveAt} />
       </span>
     ),
@@ -81,14 +83,16 @@ const columns: ColumnDef<Row, any>[] = [
 ];
 
 export function SessionsTable({ sessions, userNames }: { sessions: Session[]; userNames: Record<string, string> }) {
+  const locale = useLocale();
+  const t = monitoringMessages[locale];
   const { run, toast } = useMutation();
-  const rows = sessions.map((s) => ({ ...s, userName: userNames[s.userId] ?? "Unknown user" }));
+  const rows = sessions.map((s) => ({ ...s, userName: userNames[s.userId] ?? t.unknownUser }));
   const methods = [...new Set(sessions.map((s) => s.method))];
 
   function revoke(selected: Row[]) {
     const targets = selected.filter((s) => !s.current);
     if (targets.length === 0) {
-      toast({ title: "This is your current session", description: "Sign out from the account menu instead." });
+      toast({ title: t.sessions.current, description: t.sessions.currentHint });
       return;
     }
     return run(
@@ -96,8 +100,8 @@ export function SessionsTable({ sessions, userNames }: { sessions: Session[]; us
       () => Promise.all(targets.map((s) => api(`/sessions/${s.id}`, { method: "DELETE" }))),
       () =>
         toast({
-          title: `${pluralize(targets.length, "session")} revoked`,
-          description: targets.length < selected.length ? "Your current session was skipped. Sign out from the account menu instead." : "Those devices are signed out of Halo.",
+          title: t.sessions.revoked(targets.length),
+          description: targets.length < selected.length ? t.sessions.skipped : t.sessions.signedOut,
         }),
     );
   }
@@ -105,16 +109,16 @@ export function SessionsTable({ sessions, userNames }: { sessions: Session[]; us
   return (
     <DataTable
       data={rows}
-      columns={columns}
+      columns={columns(t, locale)}
       getRowId={(s) => s.id}
-      label="Active sessions"
-      noun={["session", "sessions"]}
+      label={t.sessions.label}
+      noun={t.sessions.noun}
       storageKey="sessions"
       searchText={(s) => `${s.userName} ${s.device} ${s.browser} ${s.ip} ${s.location}`}
-      searchPlaceholder="Search user, device, IP or location"
-      facets={[{ column: "method", label: "Method", options: methods.map((m) => ({ value: m, label: METHOD[m].label })) }]}
-      rowActions={[{ label: "Revoke", icon: MonitorX, danger: true, onSelect: (s) => revoke([s]) }]}
-      bulkActions={[{ label: "Revoke sessions", icon: MonitorX, danger: true, onSelect: revoke }]}
+      searchPlaceholder={t.sessions.searchPlaceholder}
+      facets={[{ column: "method", label: t.method, options: methods.map((m) => ({ value: m, label: t.methods[m] })) }]}
+      rowActions={[{ label: t.sessions.revoke, icon: MonitorX, danger: true, onSelect: (s) => revoke([s]) }]}
+      bulkActions={[{ label: t.revokeSessions, icon: MonitorX, danger: true, onSelect: revoke }]}
     />
   );
 }
