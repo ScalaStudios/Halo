@@ -70,7 +70,7 @@ When it finishes, create the first administrator with the command it prints:
 
 Open the link it prints and register a passkey. The console is at `https://auth.example.com/admin`. To install step by step instead, and for backups, upgrades and email, follow the [self-hosting guide](https://halo.scala.gg/docs/self-hosting).
 
-The public installer currently uses `v0.1.1`. To upgrade to [`v0.3.0`](https://github.com/ScalaStudios/Halo/releases/tag/v0.3.0), [back up PostgreSQL and `HALO_SECRET_KEY`](https://halo.scala.gg/docs/self-hosting), then set both Halo image tags in your installed `compose.yml` to `0.3.0`. Run these commands from the installation directory:
+The public installer currently uses `v0.1.1`. To upgrade to [`v0.5.0`](https://github.com/ScalaStudios/Halo/releases/tag/v0.5.0), [back up PostgreSQL and `HALO_SECRET_KEY`](https://halo.scala.gg/docs/self-hosting), then set both Halo image tags in your installed `compose.yml` to `0.5.0`. Run these commands from the installation directory:
 
 ```bash
 docker compose pull halo-server halo-web
