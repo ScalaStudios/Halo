@@ -8,33 +8,37 @@ import { Button, buttonClasses } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { api, ApiError } from "@/lib/api/client";
+import { authMessages, type SignInMessages } from "@/lib/i18n/auth";
+import type { Locale } from "@/lib/i18n/locale";
 import { createCredential } from "@/lib/webauthn";
 import { cancelled, describeFailure, deviceLabel, usePasskeySupport, type Ceremony } from "./passkey";
 import type { Problem } from "@/lib/api/server";
 
 export type IdentityProofState = { required: boolean; status: "" | "pending" | "verified" | "failed"; provider: string };
 export type Enrollee = { user: { name: string; email: string }; purpose: string; identityProof?: IdentityProofState };
-type Stop = { icon: LucideIcon; title: string; body: string };
+type Stop = { icon: LucideIcon; title: string; body: string; bodyLocale?: Locale };
 
 const TERMINAL = ["ERR_LINK_EXPIRED", "ERR_ACCOUNT_SUSPENDED", "ERR_ACCOUNT_EXISTS", "ERR_SIGN_UP_OFF", "ERR_SIGN_UP_DOMAIN"];
 const RESUME_KEY = "halo.identity-check.return";
 
-function stopFor(problem: Problem, signUp: boolean): Stop {
+function stopFor(problem: Problem, signUp: boolean, messages: SignInMessages["enrollment"]): Stop {
   if (problem.code === "ERR_LINK_EXPIRED" && signUp) {
-    return { icon: Clock, title: "This sign-up link has expired", body: "It may have been used already, or a newer link replaced it. Sign up again to get a new one." };
+    return { icon: Clock, title: messages.expiredSignUp, body: messages.expiredSignUpHint };
   }
   if (problem.code === "ERR_LINK_EXPIRED") {
-    return { icon: Clock, title: "This setup link has expired", body: "It may have been used already. Ask an administrator to send you a new link." };
+    return { icon: Clock, title: messages.expired, body: messages.expiredHint };
   }
-  if (problem.code === "ERR_ACCOUNT_SUSPENDED") return { icon: CircleAlert, title: "This account is suspended", body: problem.message };
-  if (problem.code === "ERR_ACCOUNT_EXISTS") return { icon: CircleUserRound, title: "You already have an account", body: problem.message };
-  return { icon: CircleAlert, title: "Halo couldn't open this link", body: problem.message };
+  if (problem.code === "ERR_ACCOUNT_SUSPENDED") return { icon: CircleAlert, title: messages.suspended, body: problem.message, bodyLocale: "en" };
+  if (problem.code === "ERR_ACCOUNT_EXISTS") return { icon: CircleUserRound, title: messages.existing, body: problem.message, bodyLocale: "en" };
+  return { icon: CircleAlert, title: messages.openFailed, body: problem.message, bodyLocale: "en" };
 }
 
-export function EnrollFlow({ token, enrollee, problem, signUp = false }: { token: string; enrollee: Enrollee | null; problem: Problem | null; signUp?: boolean }) {
+export function EnrollFlow({ token, enrollee, problem, signUp = false, locale = "en" }: { token: string; enrollee: Enrollee | null; problem: Problem | null; signUp?: boolean; locale?: Locale }) {
+  const copy = authMessages(locale);
+  const messages = copy.enrollment;
   const supported = usePasskeySupport();
   const base = signUp ? "/auth/sign-up" : "/auth/enroll";
-  const [stop, setStop] = useState(() => (problem ? stopFor(problem, signUp) : null));
+  const [stop, setStop] = useState(() => (problem ? stopFor(problem, signUp, messages) : null));
   const [label, setLabel] = useState("");
   const [labelError, setLabelError] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +67,7 @@ export function EnrollFlow({ token, enrollee, problem, signUp = false }: { token
       } catch {}
       window.location.assign(url);
     } catch (error) {
-      if (error instanceof ApiError && TERMINAL.includes(error.code)) setStop(stopFor(error, signUp));
+      if (error instanceof ApiError && TERMINAL.includes(error.code)) setStop(stopFor(error, signUp, messages));
       else setError(describeFailure(error));
       setBusy(false);
     }
@@ -84,7 +88,7 @@ export function EnrollFlow({ token, enrollee, problem, signUp = false }: { token
       setDone(result.identityCheck ? "identity" : result.pending ? "pending" : "signed-in");
       if (result.redirect) window.location.assign(result.redirect);
     } catch (error) {
-      if (error instanceof ApiError && TERMINAL.includes(error.code)) setStop(stopFor(error, signUp));
+      if (error instanceof ApiError && TERMINAL.includes(error.code)) setStop(stopFor(error, signUp, messages));
       else if (error instanceof ApiError && error.code === "ERR_IDENTITY_CHECK_REQUIRED") router.refresh();
       else if (!cancelled(error)) setError(describeFailure(error));
     } finally {
@@ -93,17 +97,17 @@ export function EnrollFlow({ token, enrollee, problem, signUp = false }: { token
   }
 
   if (stop || !enrollee) {
-    const { icon: Icon, title, body } = stop ?? stopFor({ code: "", message: "Reload the page to try again." }, signUp);
+    const { icon: Icon, title, body, bodyLocale } = stop ?? { icon: CircleAlert, title: messages.openFailed, body: messages.reload, bodyLocale: locale };
     return (
-      <div className="flex animate-enter flex-col items-center gap-6 text-center">
+      <div lang={locale} className="flex animate-enter flex-col items-center gap-6 text-center">
         <div className="flex flex-col items-center gap-3">
           <Icon aria-hidden="true" size={24} strokeWidth={1.75} className="text-fg-3" />
           <h1 className="text-h3 text-fg">{title}</h1>
-          <p className="text-body text-fg-3">{body}</p>
+          <p lang={bodyLocale} className="text-body text-fg-3">{body}</p>
         </div>
         {signUp ? (
           <Link href="/sign-in" className={buttonClasses("secondary", "lg", "w-full")}>
-            Back to sign in
+            {copy.backToSignIn}
           </Link>
         ) : null}
       </div>
@@ -112,18 +116,18 @@ export function EnrollFlow({ token, enrollee, problem, signUp = false }: { token
 
   if (done === "pending" || done === "identity") {
     return (
-      <div role="status" className="flex animate-enter flex-col items-center gap-6 text-center">
+      <div lang={locale} role="status" className="flex animate-enter flex-col items-center gap-6 text-center">
         <div className="flex flex-col items-center gap-3">
           <Clock aria-hidden="true" size={24} strokeWidth={1.75} className="text-fg-3" />
-          <h1 className="text-h3 text-fg">{done === "identity" ? "Waiting for an identity check" : "Waiting for approval"}</h1>
+          <h1 className="text-h3 text-fg">{done === "identity" ? messages.identityWaiting : messages.approvalWaiting}</h1>
           <p className="text-body text-fg-3">
             {done === "identity"
-              ? "Your email address is confirmed and your passkey is ready. An administrator checks your identity before your account is activated. Once they have, sign in with your passkey."
-              : "Your email address is confirmed and your passkey is ready. An administrator approves each new account. Once they approve yours, sign in with your passkey."}
+              ? messages.identityWaitingHint
+              : messages.approvalWaitingHint}
           </p>
         </div>
         <Link href="/sign-in" className={buttonClasses("secondary", "lg", "w-full")}>
-          Back to sign in
+          {copy.backToSignIn}
         </Link>
       </div>
     );
@@ -131,10 +135,10 @@ export function EnrollFlow({ token, enrollee, problem, signUp = false }: { token
 
   if (done) {
     return (
-      <div role="status" className="flex animate-enter flex-col items-center gap-3 text-center">
+      <div lang={locale} role="status" className="flex animate-enter flex-col items-center gap-3 text-center">
         <CircleCheck aria-hidden="true" size={24} strokeWidth={1.75} className="text-success" />
-        <h1 className="text-h3 text-fg">Passkey created</h1>
-        <p className="text-body text-fg-3">Opening your Halo account…</p>
+        <h1 className="text-h3 text-fg">{messages.created}</h1>
+        <p className="text-body text-fg-3">{copy.openingAccount}</p>
       </div>
     );
   }
@@ -146,7 +150,7 @@ export function EnrollFlow({ token, enrollee, problem, signUp = false }: { token
     </div>
   );
   const alert = error ? (
-    <div role="alert" className="flex items-start gap-3 rounded-md border border-danger/20 bg-danger-container p-4">
+    <div role="alert" lang="en" className="flex items-start gap-3 rounded-md border border-danger/20 bg-danger-container p-4">
       <CircleAlert aria-hidden="true" size={20} strokeWidth={1.75} className="mt-px shrink-0 text-danger" />
       <p className="text-body-sm text-fg-2">{error}</p>
     </div>
@@ -154,14 +158,14 @@ export function EnrollFlow({ token, enrollee, problem, signUp = false }: { token
 
   if (checking && proof) {
     return (
-      <div className="flex animate-enter flex-col gap-8">
+      <div lang={locale} className="flex animate-enter flex-col gap-8">
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-3 text-center">
-            <h1 className="text-h3 text-fg">Confirm who you are, {enrollee.user.name}</h1>
+            <h1 className="text-h3 text-fg">{messages.confirmIdentity(enrollee.user.name)}</h1>
             <p className="text-body text-fg-3">
               {proof.provider
-                ? `Your organization checks each new person's identity before their account is activated. ${proof.provider} asks for a photo of an identity document and of your face. Halo keeps only the result.`
-                : "Your organization checks each new person's identity before their account is activated. Ask your administrator to check yours in person or on a video call, with an identity document that has your photo."}
+                ? messages.providerProof(proof.provider)
+                : messages.proofInPerson}
             </p>
           </div>
           {email}
@@ -169,14 +173,14 @@ export function EnrollFlow({ token, enrollee, problem, signUp = false }: { token
         {proof.status === "pending" ? (
           <div role="status" className="flex items-start gap-3 rounded-md border border-border bg-surface p-4">
             <Spinner className="mt-0.5 shrink-0 text-fg-3" />
-            <p className="text-body-sm text-fg-2">Waiting for the result from {proof.provider || "the provider"}. This page updates by itself.</p>
+            <p className="text-body-sm text-fg-2">{messages.providerWaiting(proof.provider)}</p>
           </div>
         ) : null}
         {proof.status === "failed" ? (
           <div role="alert" className="flex items-start gap-3 rounded-md border border-danger/20 bg-danger-container p-4">
             <CircleAlert aria-hidden="true" size={20} strokeWidth={1.75} className="mt-px shrink-0 text-danger" />
             <p className="text-body-sm text-fg-2">
-              {proof.provider || "The provider"} couldn&apos;t confirm your identity. Try again with a valid document in good light, or ask your administrator to check you in person.
+              {messages.providerFailed(proof.provider)}
             </p>
           </div>
         ) : null}
@@ -185,17 +189,17 @@ export function EnrollFlow({ token, enrollee, problem, signUp = false }: { token
           {proof.provider ? (
             <Button variant="primary" size="lg" className="w-full" loading={busy} onClick={() => void verify()}>
               <ScanFace aria-hidden="true" size={20} strokeWidth={1.75} />
-              {proof.status === "failed" ? "Try again" : `Verify with ${proof.provider}`}
+              {proof.status === "failed" ? messages.tryAgain : messages.verifyWith(proof.provider)}
             </Button>
           ) : null}
           {signUp ? (
             <Button variant={proof.provider ? "quiet" : "primary"} size="lg" className="w-full" onClick={() => setInPerson(true)}>
               <IdCard aria-hidden="true" size={20} strokeWidth={1.75} />
-              {proof.provider ? "Have my identity checked in person instead" : "Continue and wait for the check"}
+              {proof.provider ? messages.verifyInPerson : messages.waitForCheck}
             </Button>
           ) : (
             <Button variant={proof.provider ? "quiet" : "secondary"} size="lg" className="w-full" onClick={() => router.refresh()}>
-              {proof.provider ? "My administrator checked me in person" : "My administrator has checked me"}
+              {proof.provider ? messages.checkedInPerson : messages.checked}
             </Button>
           )}
         </div>
@@ -204,19 +208,19 @@ export function EnrollFlow({ token, enrollee, problem, signUp = false }: { token
   }
 
   return (
-    <div className="flex animate-enter flex-col gap-8">
+    <div lang={locale} className="flex animate-enter flex-col gap-8">
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 text-center">
-          <h1 className="text-h3 text-fg">Set up your passkey, {enrollee.user.name}</h1>
+          <h1 className="text-h3 text-fg">{messages.setUpFor(enrollee.user.name)}</h1>
           <p className="text-body text-fg-3">
             {enrollee.purpose === "reset"
-              ? "An administrator reset how you sign in, so your old sign-in methods were removed. Create a new passkey to get back into your account."
+              ? messages.reset
               : enrollee.purpose === "sign-up"
-                ? "Last step: create the passkey you'll use to sign in to Halo with your fingerprint, face or screen lock. Your biometrics never leave your device."
+                ? messages.signUp
                 : enrollee.purpose === "access-pass"
-                  ? "Your temporary access pass worked. Create a passkey in the next 15 minutes to finish signing in."
-                  : "You'll use it to sign in to Halo with your fingerprint, face or screen lock. Your biometrics never leave your device."}
-            {proof?.required && proof.status !== "verified" ? " An administrator checks your identity before your account is activated." : ""}
+                  ? messages.accessPass
+                  : messages.invite}
+            {proof?.required && proof.status !== "verified" ? messages.identityRequired : ""}
           </p>
         </div>
         {email}
@@ -225,9 +229,9 @@ export function EnrollFlow({ token, enrollee, problem, signUp = false }: { token
       {supported ? (
         <form noValidate className="flex flex-col gap-6" onSubmit={create}>
           <Field
-            label="Passkey name"
-            hint="Helps you tell your passkeys apart later, for example the browser and device."
-            error={labelError ? "Give it a name you'll recognise, like “Firefox on Linux”." : undefined}
+            label={messages.name}
+            hint={messages.nameHint}
+            error={labelError ? messages.nameRequired : undefined}
           >
             {(field) => (
               <Input
@@ -243,17 +247,18 @@ export function EnrollFlow({ token, enrollee, problem, signUp = false }: { token
           </Field>
           <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy}>
             <Fingerprint aria-hidden="true" size={20} strokeWidth={1.75} />
-            Create passkey
+            {messages.create}
           </Button>
         </form>
       ) : (
-        <p className="text-center text-body text-fg-3">This browser can&apos;t create passkeys. Open this link in an up-to-date browser to continue.</p>
+        <p className="text-center text-body text-fg-3">{messages.unavailable}</p>
       )}
     </div>
   );
 }
 
-export function ResumeAfterCheck({ signUp = false }: { signUp?: boolean }) {
+export function ResumeAfterCheck({ signUp = false, locale = "en" }: { signUp?: boolean; locale?: Locale }) {
+  const messages = authMessages(locale).enrollment;
   const [lost, setLost] = useState(false);
 
   useEffect(() => {
@@ -269,19 +274,19 @@ export function ResumeAfterCheck({ signUp = false }: { signUp?: boolean }) {
 
   if (!lost) {
     return (
-      <div role="status" className="flex animate-enter flex-col items-center gap-3 text-center">
+      <div lang={locale} role="status" className="flex animate-enter flex-col items-center gap-3 text-center">
         <Spinner className="text-fg-3" size={24} />
-        <p className="text-body text-fg-3">Returning to your setup…</p>
+        <p className="text-body text-fg-3">{messages.resume}</p>
       </div>
     );
   }
   return (
-    <div className="flex animate-enter flex-col items-center gap-6 text-center">
+    <div lang={locale} className="flex animate-enter flex-col items-center gap-6 text-center">
       <div className="flex flex-col items-center gap-3">
         <CircleCheck aria-hidden="true" size={24} strokeWidth={1.75} className="text-fg-3" />
-        <h1 className="text-h3 text-fg">Identity check sent</h1>
+        <h1 className="text-h3 text-fg">{messages.identitySent}</h1>
         <p className="text-body text-fg-3">
-          {signUp ? "Open the sign-up link from your email again to see the result and create your passkey." : "Open your setup link again to see the result and create your passkey."}
+          {signUp ? messages.signUpResumeHint : messages.resumeHint}
         </p>
       </div>
     </div>

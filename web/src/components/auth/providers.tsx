@@ -52,12 +52,12 @@ export function providerStartUrl(id: string, authRequest?: string, next?: string
   return `/api/v1/auth/federated/${encodeURIComponent(id)}/start${query ? `?${query}` : ""}`;
 }
 
-export function ProviderButtons({ providers, authRequest, next }: { providers: SignInProvider[]; authRequest?: string; next?: string }) {
+export function ProviderButtons({ providers, authRequest, next, label }: { providers: SignInProvider[]; authRequest?: string; next?: string; label: (name: string) => string }) {
   const Icon = METHOD.federated.icon;
   return providers.map((provider) => (
     <a key={provider.id} href={providerStartUrl(provider.id, authRequest, next)} className={buttonClasses("secondary", "lg", "w-full animate-enter")}>
       <Icon aria-hidden="true" size={20} strokeWidth={1.75} className="text-fg-3" />
-      Continue with {provider.name}
+      {label(provider.name)}
     </a>
   ));
 }

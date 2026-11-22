@@ -4,7 +4,10 @@ import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { Input, type InputProps } from "./input";
 
-export function PasswordInput(props: Omit<InputProps, "type" | "trailing">) {
+export function PasswordInput({
+  visibilityLabels = { show: "Show password", hide: "Hide password" },
+  ...props
+}: Omit<InputProps, "type" | "trailing"> & { visibilityLabels?: { show: string; hide: string } }) {
   const [shown, setShown] = useState(false);
   return (
     <Input
@@ -16,7 +19,7 @@ export function PasswordInput(props: Omit<InputProps, "type" | "trailing">) {
         <button
           type="button"
           onClick={() => setShown((current) => !current)}
-          aria-label={shown ? "Hide password" : "Show password"}
+          aria-label={shown ? visibilityLabels.hide : visibilityLabels.show}
           className="grid size-8 place-items-center rounded-md text-fg-3 transition-colors duration-fast hover:bg-hover hover:text-fg"
         >
           {shown ? <EyeOff aria-hidden="true" size={16} strokeWidth={1.75} /> : <Eye aria-hidden="true" size={16} strokeWidth={1.75} />}

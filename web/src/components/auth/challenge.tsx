@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { authMessages } from "@/lib/i18n/auth";
+import type { Locale } from "@/lib/i18n/locale";
 import type { Challenge } from "@/lib/settings-types";
 
 type WidgetApi = { render: (container: HTMLElement, params: Record<string, unknown>) => string; remove?: (id: string) => void };
@@ -29,7 +31,9 @@ function load(provider: Challenge["provider"]) {
   return script;
 }
 
-export function ChallengeCheck({ challenge, onToken, onCancel }: { challenge: Challenge; onToken: (token: string) => void; onCancel: () => void }) {
+export function ChallengeCheck({ challenge, locale, onToken, onCancel }: { challenge: Challenge; locale: Locale; onToken: (token: string) => void; onCancel: () => void }) {
+  const messages = authMessages(locale);
+  const copy = messages.challenge;
   const panel = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const solved = useRef(onToken);
@@ -55,37 +59,37 @@ export function ChallengeCheck({ challenge, onToken, onCancel }: { challenge: Ch
           size: (element.parentElement?.clientWidth ?? 0) < 300 ? "compact" : "normal",
           callback: (token: string) => solved.current(token),
           "error-callback": () => {
-            setProblem("The check couldn't finish. Try it again, or use a different way to sign in.");
+            setProblem(copy.failed);
             return true;
           },
         });
         remove = () => api.remove?.(id);
         setReady(true);
       })
-      .catch(() => active && setProblem("The check didn't load. Check your connection, or use a different way to sign in."));
+      .catch(() => active && setProblem(copy.unavailable));
     return () => {
       active = false;
       remove();
     };
-  }, [challenge.provider, challenge.siteKey]);
+  }, [challenge.provider, challenge.siteKey, copy]);
 
   return (
     <div
       ref={panel}
       tabIndex={-1}
       role="group"
-      aria-label="Check that you're a person"
+      aria-label={copy.label}
       className="flex animate-enter flex-col items-center gap-3 rounded-lg border border-border bg-surface p-4 text-center outline-none"
     >
       <p role="status" className={problem ? "text-body-sm text-danger" : "text-body-sm text-fg-2"}>
-        {problem ?? "Confirm you're a person to continue."}
+        {problem ?? copy.confirm}
       </p>
       <div className="flex min-h-16 w-full items-center justify-center">
         {ready || problem ? null : <Spinner size={20} />}
         <div ref={host} />
       </div>
       <Button variant="quiet" size="sm" onClick={onCancel}>
-        Cancel
+        {messages.cancel}
       </Button>
     </div>
   );

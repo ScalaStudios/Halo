@@ -2,9 +2,11 @@ import type { ReactNode } from "react";
 import { BrandStyle } from "@/components/brand-style";
 import { HaloLogo, HaloMark } from "@/components/halo-mark";
 import { apiGet } from "@/lib/api/server";
+import type { Locale } from "@/lib/i18n/locale";
+import { authMessages } from "@/lib/i18n/auth";
 import type { OrganizationProfile } from "@/lib/settings-types";
 
-export async function AuthFrame({ children }: { children: ReactNode }) {
+export async function AuthFrame({ children, locale = "en" }: { children: ReactNode; locale?: Locale }) {
   const org = await apiGet<OrganizationProfile>("/organization");
   return (
     <div className="relative isolate flex min-h-dvh flex-col overflow-hidden">
@@ -34,8 +36,8 @@ export async function AuthFrame({ children }: { children: ReactNode }) {
         {org.contactEmail ? (
           <>
             <span aria-hidden="true">·</span>
-            <a href={`mailto:${org.contactEmail}`} className="inline-flex min-h-12 items-center underline-offset-3 transition-colors duration-fast ease-brand hover:text-fg hover:underline">
-              Get help
+            <a lang={locale} href={`mailto:${org.contactEmail}`} className="inline-flex min-h-12 items-center underline-offset-3 transition-colors duration-fast ease-brand hover:text-fg hover:underline">
+              {authMessages(locale).help}
             </a>
           </>
         ) : null}

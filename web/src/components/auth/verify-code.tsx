@@ -5,7 +5,7 @@ import { CodeInput } from "@/components/ui/code-input";
 import { cn } from "@/lib/cn";
 import { describeFailure } from "./passkey";
 
-export function VerifyCode({ verify, hint, label }: { verify: (code: string) => Promise<unknown>; hint: string; label?: string }) {
+export function VerifyCode({ verify, hint, label, accepted = "Code accepted." }: { verify: (code: string) => Promise<unknown>; hint: string; label?: string; accepted?: string }) {
   const [code, setCode] = useState("");
   const [status, setStatus] = useState<"idle" | "error" | "success">("idle");
   const [problem, setProblem] = useState<string | null>(null);
@@ -30,7 +30,7 @@ export function VerifyCode({ verify, hint, label }: { verify: (code: string) => 
     <div className="flex flex-col items-center gap-3 text-center">
       <CodeInput value={code} onChange={change} onComplete={complete} status={status} label={label} autoFocus />
       <p aria-live="polite" className={cn("text-body-sm", problem ? "text-danger" : status === "success" ? "text-success" : "text-fg-3")}>
-        {problem ?? (status === "success" ? "Code accepted." : hint)}
+        {problem ? <span lang="en">{problem}</span> : status === "success" ? accepted : hint}
       </p>
     </div>
   );

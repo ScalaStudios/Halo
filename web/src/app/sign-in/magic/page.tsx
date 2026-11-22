@@ -1,17 +1,19 @@
 import type { Metadata } from "next";
 import { AuthFrame } from "@/components/auth/auth-frame";
 import { MagicLinkRedeem } from "@/components/auth/magic-link";
+import { authMessages } from "@/lib/i18n/auth";
+import { requestLocale } from "@/lib/i18n/server";
 
-export const metadata: Metadata = {
-  title: "Signing in",
-  description: "Finish signing in to Halo with the link from your email.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { title, description } = authMessages(await requestLocale()).magicLink;
+  return { title, description };
+}
 
 export default async function MagicLinkPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { token } = await searchParams;
+  const [{ token }, locale] = await Promise.all([searchParams, requestLocale()]);
   return (
-    <AuthFrame>
-      <MagicLinkRedeem token={typeof token === "string" ? token : ""} />
+    <AuthFrame locale={locale}>
+      <MagicLinkRedeem locale={locale} token={typeof token === "string" ? token : ""} />
     </AuthFrame>
   );
 }

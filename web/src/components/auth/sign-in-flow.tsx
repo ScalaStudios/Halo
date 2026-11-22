@@ -3,7 +3,7 @@
 import { ChevronDown, CircleAlert, CircleCheck, CircleUserRound, Clock, Fingerprint, Monitor } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
@@ -12,6 +12,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { api, ApiError } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
 import type { SignInProvider } from "@/lib/federation-types";
+import type { Locale } from "@/lib/i18n/locale";
+import { authMessages, type SignInMessages } from "@/lib/i18n/auth";
 import { METHOD } from "@/lib/labels";
 import type { Challenge, Settings } from "@/lib/settings-types";
 import { getAssertion } from "@/lib/webauthn";
@@ -29,15 +31,23 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const linkButton =
   "inline-flex min-h-12 items-center self-center rounded-sm text-body-sm text-link underline underline-offset-3 transition-colors duration-fast ease-brand hover:text-ember-hover";
 
-export function emailProblem(value: string) {
-  if (!value.trim()) return "Enter your work email address, for example name@example.com.";
-  if (!EMAIL.test(value.trim())) return "That doesn't look like an email address. Check it has an @ and a domain, like name@example.com.";
+export function emailProblem(value: string, messages = authMessages("en")) {
+  if (!value.trim()) return messages.emailRequired;
+  if (!EMAIL.test(value.trim())) return messages.emailInvalid;
   return null;
 }
 
-function choiceLabel(kind: Choice, emailed: string) {
-  if (kind === "magic-link") return `Email me a sign-in ${emailed}`;
-  return kind === "recovery-codes" ? "Recovery code" : METHOD[kind].label;
+function choiceLabel(kind: Choice, emailed: "link" | "code", messages: SignInMessages) {
+  if (kind === "magic-link") return messages.emailMe(emailed);
+  return {
+    passkey: messages.passkey,
+    "security-key": messages.securityKey,
+    totp: messages.authenticator,
+    password: messages.password,
+    "recovery-codes": messages.recoveryCode,
+    "access-pass": messages.accessPass,
+    certificate: messages.certificate,
+  }[kind];
 }
 
 function expired(error: unknown) {
@@ -55,6 +65,7 @@ export function sameOrigin(path: string | undefined) {
 }
 
 export function SignInFlow({
+  locale,
   authRequest,
   app,
   appLogo,
@@ -69,6 +80,7 @@ export function SignInFlow({
   loginHint,
   route,
 }: {
+  locale: Locale;
   authRequest?: string;
   app: string | null;
   appLogo: string | null;
@@ -83,6 +95,7 @@ export function SignInFlow({
   loginHint?: string;
   route: SignInProvider | null;
 }) {
+  const messages = authMessages(locale);
   const optionsId = useId();
   const emailRef = useRef<HTMLInputElement>(null);
   const attempt = useRef<AbortController | null>(null);
@@ -98,16 +111,16 @@ export function SignInFlow({
   const [email, setEmail] = useState(loginHint && EMAIL.test(loginHint) ? loginHint : "");
   const [routed, setRouted] = useState(route?.name ?? "");
   const [methods, setMethods] = useState<Choice[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ReactNode>(null);
   const [notice, setNotice] = useState<string | null>(() => federationProblem(failure));
   const [options, setOptions] = useState(false);
   const [focus, setFocus] = useState<"passkey" | "email" | null>(null);
   const [busy, setBusy] = useState(false);
   const [recovery, setRecovery] = useState("");
-  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [recoveryError, setRecoveryError] = useState<ReactNode>(null);
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<ReactNode>(null);
   const [sending, setSending] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [resent, setResent] = useState(false);
@@ -167,7 +180,7 @@ export function SignInFlow({
     solver.current = null;
     setChecking(false);
     if (token) pending?.resolve(token);
-    else pending?.reject(new DOMException("Complete the check to continue, or use a different way to sign in.", "AbortError"));
+    else pending?.reject(new DOMException(messages.completeCheck, "AbortError"));
   }
 
   function solve() {
@@ -303,7 +316,7 @@ export function SignInFlow({
   }
 
   function validEmail() {
-    const problem = emailProblem(email);
+    const problem = emailProblem(email, messages);
     setError(problem);
     if (problem) emailRef.current?.focus();
     else setEmail(email.trim());
@@ -325,7 +338,7 @@ export function SignInFlow({
       setNotice(null);
       setStep("choose");
     } catch (error) {
-      setError(describeFailure(error));
+      setError(<span lang="en">{describeFailure(error)}</span>);
     } finally {
       setBusy(false);
     }
@@ -349,7 +362,7 @@ export function SignInFlow({
   async function submitRecovery(event: FormEvent) {
     event.preventDefault();
     if (!recovery.trim()) {
-      setRecoveryError(pass ? "Enter the temporary access pass your administrator gave you, like abcd-efgh-ijkl-mnop." : "Enter one of your recovery codes, like abcd-efgh-ijkl-mnop.");
+      setRecoveryError(pass ? messages.accessPassRequired : messages.recoveryRequired);
       return;
     }
     setBusy(true);
@@ -357,7 +370,7 @@ export function SignInFlow({
       if (pass) await redeemPass(recovery.trim());
       else await signInWithCode("/auth/recovery", recovery.trim());
     } catch (error) {
-      setRecoveryError(describeFailure(error));
+      setRecoveryError(<span lang="en">{describeFailure(error)}</span>);
     } finally {
       setBusy(false);
     }
@@ -377,14 +390,14 @@ export function SignInFlow({
   async function submitPassword(event: FormEvent) {
     event.preventDefault();
     if (!(changing ? newPassword : password)) {
-      setPasswordError(changing ? "Enter a new password of at least 15 characters." : "Enter your password.");
+      setPasswordError(changing ? messages.newPasswordRequired : messages.passwordRequired);
       return;
     }
     setBusy(true);
     try {
       await signInWithPassword();
     } catch (error) {
-      setPasswordError(describeFailure(error));
+      setPasswordError(<span lang="en">{describeFailure(error)}</span>);
     } finally {
       setBusy(false);
     }
@@ -397,13 +410,13 @@ export function SignInFlow({
         <span className="truncate text-body-sm text-fg">{email}</span>
       </span>
       <button type="button" onClick={forget} className={cn(linkButton, "shrink-0 px-1")}>
-        Not you?
+        {messages.notYou}
       </button>
     </div>
   );
 
   const alert = notice ? (
-    <div role="alert" className="flex items-start gap-3 rounded-md border border-danger/20 bg-danger-container p-4">
+    <div role="alert" lang="en" className="flex items-start gap-3 rounded-md border border-danger/20 bg-danger-container p-4">
       <CircleAlert aria-hidden="true" size={20} strokeWidth={1.75} className="mt-px shrink-0 text-danger" />
       <p className="text-body-sm text-fg-2">{notice}</p>
     </div>
@@ -415,11 +428,11 @@ export function SignInFlow({
   const choices: Choice[] = ([...methods, "magic-link"] as Choice[]).filter(permitted);
 
   return (
-    <div key={step} className="flex animate-enter flex-col gap-8">
+    <div key={step} lang={locale} className="flex animate-enter flex-col gap-8">
       {step === "loading" || step === "enroll" || step === "redirect" ? (
         <div role="status" className="flex items-center justify-center gap-3 text-body-sm text-fg-3">
           <Spinner size={20} />
-          {step === "enroll" ? "Opening passkey setup" : step === "redirect" ? `Continuing to ${routed}` : app ? `Continuing to ${app}` : "Checking your session"}
+          {step === "enroll" ? messages.passkeySetup : step === "redirect" ? messages.continuingTo(routed) : app ? messages.continuingTo(app) : messages.checkingSession}
         </div>
       ) : null}
 
@@ -427,8 +440,8 @@ export function SignInFlow({
         <>
           <div className="flex flex-col gap-3 text-center">
             {app ? <Avatar name={app} src={appLogo} size="lg" square className="self-center" /> : null}
-            <h1 className="text-h3 text-fg">{app ? `Sign in to continue to ${app}` : "Sign in to continue"}</h1>
-            {supported ? null : <p className="text-body-sm text-fg-3">This browser can&apos;t use passkeys, so sign in with your email instead.</p>}
+            <h1 className="text-h3 text-fg">{app ? messages.welcomeTo(app) : messages.welcome}</h1>
+            {supported ? null : <p className="text-body-sm text-fg-3">{messages.passkeyUnavailable}</p>}
           </div>
           {alert}
           <div className="flex flex-col gap-6">
@@ -438,26 +451,26 @@ export function SignInFlow({
                   {passkeys ? (
                     <Button variant="primary" size="lg" className="w-full" autoFocus={focus === "passkey"} onClick={() => passkey("passkey")}>
                       <Fingerprint aria-hidden="true" size={20} strokeWidth={1.75} />
-                      Continue with passkey
+                      {messages.usePasskey}
                     </Button>
                   ) : null}
                   {windows ? (
                     <Button variant={passkeys ? "secondary" : "primary"} size="lg" className="w-full" loading={negotiating} onClick={() => windowsSignIn()}>
                       <Monitor aria-hidden="true" size={20} strokeWidth={1.75} className={passkeys ? "text-fg-3" : undefined} />
-                      Sign in with Windows
+                      {messages.useWindows}
                     </Button>
                   ) : null}
-                  <ProviderButtons providers={providers} authRequest={authRequest} next={next} />
+                  <ProviderButtons providers={providers} authRequest={authRequest} next={next} label={messages.useProvider} />
                 </div>
                 <div className="flex items-center gap-3 text-caption text-fg-3">
                   <span aria-hidden="true" className="h-px flex-1 bg-border" />
-                  or
+                  {messages.or}
                   <span aria-hidden="true" className="h-px flex-1 bg-border" />
                 </div>
               </>
             ) : null}
             <form noValidate className="flex flex-col gap-4" onSubmit={identify}>
-              <Field label="Email" error={error}>
+              <Field label={messages.email} error={error}>
                 {(field) => (
                   <Input
                     {...field}
@@ -480,7 +493,7 @@ export function SignInFlow({
                 )}
               </Field>
               <Button type="submit" variant={passkeys ? "secondary" : "primary"} size="lg" className="w-full" loading={busy}>
-                Continue
+                {messages.continue}
               </Button>
             </form>
             <div className="flex flex-col gap-2">
@@ -492,7 +505,7 @@ export function SignInFlow({
                 aria-controls={options ? optionsId : undefined}
                 onClick={() => setOptions((open) => !open)}
               >
-                Other options
+                {messages.options}
                 <ChevronDown aria-hidden="true" size={16} strokeWidth={1.75} className={cn("transition-transform duration-fast ease-brand", options && "rotate-180")} />
               </Button>
               {options ? (
@@ -503,7 +516,7 @@ export function SignInFlow({
                       <li key={kind}>
                         <Button size="lg" className="w-full" loading={(kind === "magic-link" && sending) || (kind === "certificate" && certifying)} onClick={() => other(kind)}>
                           <Icon aria-hidden="true" size={20} strokeWidth={1.75} className="text-fg-3" />
-                          {choiceLabel(kind, emailed)}
+                          {choiceLabel(kind, emailed, messages)}
                         </Button>
                       </li>
                     );
@@ -513,7 +526,7 @@ export function SignInFlow({
             </div>
             {signUp ? (
               <Link href="/sign-up" className={linkButton}>
-                Create an account
+                {messages.signUp}
               </Link>
             ) : null}
           </div>
@@ -523,7 +536,7 @@ export function SignInFlow({
       {step === "choose" ? (
         <>
           <div className="flex flex-col gap-4">
-            <h1 className="text-center text-h3 text-fg">Choose how to sign in</h1>
+            <h1 className="text-center text-h3 text-fg">{messages.choose}</h1>
             {account}
           </div>
           {alert}
@@ -541,7 +554,7 @@ export function SignInFlow({
                     onClick={() => pick(kind)}
                   >
                     <Icon aria-hidden="true" size={20} strokeWidth={1.75} className={index === 0 ? undefined : "text-fg-3"} />
-                    {choiceLabel(kind, emailed)}
+                    {choiceLabel(kind, emailed, messages)}
                   </Button>
                 </li>
               );
@@ -553,29 +566,29 @@ export function SignInFlow({
       {step === "inbox" ? (
         <>
           <div className="flex flex-col gap-4">
-            <h1 className="text-center text-h3 text-fg">Check your inbox</h1>
+            <h1 className="text-center text-h3 text-fg">{messages.inbox}</h1>
             {account}
           </div>
           {alert}
           <p className="text-center text-body text-fg-3">
             {emailSignIn === "both"
-              ? "If this address has a Halo account, an email with a sign-in code and link is on its way. Each works once and expires in 10 minutes."
-              : `If this address has a Halo account, a sign-in ${emailed} is on its way. It works once and expires in 10 minutes.`}
-            {app && emailSignIn !== "code" ? ` Open the link in this browser to continue to ${app}.` : null}
+              ? messages.sentBoth
+              : messages.sent(emailed)}
+            {app && emailSignIn !== "code" ? messages.openLink(app) : null}
           </p>
           {emailSignIn === "link" ? null : (
-            <VerifyCode verify={(code) => signInWithCode("/auth/magic-link/code", code)} hint="Enter the 6-digit code from the email. You can read it on any device." />
+            <VerifyCode verify={(code) => signInWithCode("/auth/magic-link/code", code)} hint={messages.emailCodeHint} label={messages.codeLabel} accepted={messages.codeAccepted} />
           )}
           <div className="flex flex-col gap-2">
             <Button size="lg" className="w-full" loading={sending} disabled={cooldown > 0} onClick={sendLink}>
-              {cooldown > 0 ? `Resend ${emailed} in ${cooldown}s` : `Resend ${emailed}`}
+              {messages.resend(emailed, cooldown)}
             </Button>
             <p aria-live="polite" className="text-center text-caption text-fg-3">
-              {resent ? `New ${emailed} requested.` : null}
+              {resent ? messages.resent(emailed) : null}
             </p>
           </div>
           <button type="button" onClick={differentMethod} className={linkButton}>
-            Use a different method
+            {messages.differentMethod}
           </button>
         </>
       ) : null}
@@ -583,19 +596,19 @@ export function SignInFlow({
       {step === "passkey" || step === "security-key" ? (
         <>
           <div className="flex flex-col gap-3 text-center">
-            <h1 className="text-h3 text-fg">{step === "passkey" ? "Waiting for your passkey" : "Waiting for your security key"}</h1>
+            <h1 className="text-h3 text-fg">{step === "passkey" ? messages.passkeyWaiting : messages.securityKeyWaiting}</h1>
             <p className="text-body text-fg-3">
               {step === "passkey"
-                ? "Your browser will ask you to confirm with your fingerprint, face, screen lock or phone. Your biometrics never leave your device."
-                : "Insert your security key and touch it when it flashes. For an NFC key, hold it against the back of your phone."}
+                ? messages.passkeyHint
+                : messages.securityKeyHint}
             </p>
           </div>
           <div role="status" className="flex items-center justify-center gap-3 rounded-lg border border-border bg-surface p-4 text-body-sm text-fg-2">
             <Spinner size={20} />
-            Waiting for your browser
+            {messages.browserWaiting}
           </div>
           <Button size="lg" className="w-full" autoFocus onClick={cancelPasskey}>
-            Cancel
+            {messages.cancel}
           </Button>
         </>
       ) : null}
@@ -603,15 +616,15 @@ export function SignInFlow({
       {step === "code" ? (
         <>
           <div className="flex flex-col gap-4">
-            <h1 className="text-center text-h3 text-fg">Enter the code from your authenticator app</h1>
+            <h1 className="text-center text-h3 text-fg">{messages.authenticatorCode}</h1>
             {account}
           </div>
           <VerifyCode
             verify={(code) => signInWithCode("/auth/totp", code)}
-            hint="Open your authenticator app and enter the 6-digit code shown for Halo."
+            hint={messages.authenticatorHint} label={messages.codeLabel} accepted={messages.codeAccepted}
           />
           <button type="button" onClick={differentMethod} className={linkButton}>
-            Use a different method
+            {messages.differentMethod}
           </button>
         </>
       ) : null}
@@ -619,13 +632,13 @@ export function SignInFlow({
       {step === "recovery" || pass ? (
         <>
           <div className="flex flex-col gap-4">
-            <h1 className="text-center text-h3 text-fg">{pass ? "Enter your temporary access pass" : "Enter a recovery code"}</h1>
+            <h1 className="text-center text-h3 text-fg">{pass ? messages.accessPassTitle : messages.recoveryTitle}</h1>
             {account}
           </div>
           <form noValidate className="flex flex-col gap-4" onSubmit={submitRecovery}>
             <Field
-              label={pass ? "Temporary access pass" : "Recovery code"}
-              hint={pass ? "The pass your administrator gave you. Next you'll set up a new passkey and sign in with it." : "One of the codes you saved when you set up Halo. Each code works once."}
+              label={pass ? messages.accessPass : messages.recoveryCode}
+              hint={pass ? messages.accessPassHint : messages.recoveryHint}
               error={recoveryError}
             >
               {(field) => (
@@ -647,11 +660,11 @@ export function SignInFlow({
               )}
             </Field>
             <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy}>
-              {pass ? "Continue" : "Sign in"}
+              {pass ? messages.continue : messages.signIn}
             </Button>
           </form>
           <button type="button" onClick={differentMethod} className={linkButton}>
-            Use a different method
+            {messages.differentMethod}
           </button>
         </>
       ) : null}
@@ -659,16 +672,16 @@ export function SignInFlow({
       {step === "password" || step === "new-password" ? (
         <>
           <div className="flex flex-col gap-4">
-            <h1 className="text-center text-h3 text-fg">{changing ? "Choose a new password" : "Enter your password"}</h1>
+            <h1 className="text-center text-h3 text-fg">{changing ? messages.newPasswordTitle : messages.passwordTitle}</h1>
             {account}
           </div>
           {changing ? (
-            <p className="text-center text-body text-fg-3">Your administrator gave you a temporary password. Choose your own to finish signing in.</p>
+            <p className="text-center text-body text-fg-3">{messages.temporaryPasswordHint}</p>
           ) : null}
           <form noValidate className="flex flex-col gap-4" onSubmit={submitPassword}>
             <input type="email" name="email" autoComplete="username" value={email} readOnly hidden />
             <Field
-              label={changing ? "New password" : "Password"}
+              label={changing ? messages.newPassword : messages.password}
               hint={changing ? "At least 15 characters. A few unrelated words make a password that is long and easy to remember." : undefined}
               error={passwordError}
             >
@@ -676,6 +689,7 @@ export function SignInFlow({
                 <PasswordInput
                   {...field}
                   autoFocus
+                  visibilityLabels={{ show: messages.showPassword, hide: messages.hidePassword }}
                   name={changing ? "new-password" : "password"}
                   autoComplete={changing ? "new-password" : "current-password"}
                   value={changing ? newPassword : password}
@@ -688,11 +702,11 @@ export function SignInFlow({
               )}
             </Field>
             <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy}>
-              {changing ? "Save password and sign in" : "Sign in"}
+              {changing ? messages.savePassword : messages.signIn}
             </Button>
           </form>
           <button type="button" onClick={differentMethod} className={linkButton}>
-            Use a different method
+            {messages.differentMethod}
           </button>
         </>
       ) : null}
@@ -700,38 +714,38 @@ export function SignInFlow({
       {step === "second-factor" ? (
         <>
           <div className="flex flex-col gap-4">
-            <h1 className="text-center text-h3 text-fg">Enter the code from your authenticator app</h1>
+            <h1 className="text-center text-h3 text-fg">{messages.authenticatorCode}</h1>
             {account}
           </div>
           <VerifyCode
             verify={signInWithPassword}
-            hint="Your organization asks for a code from your authenticator app as well as your password."
+            hint={messages.secondFactorHint} label={messages.codeLabel} accepted={messages.codeAccepted}
           />
           <button type="button" onClick={differentMethod} className={linkButton}>
-            Use a different method
+            {messages.differentMethod}
           </button>
         </>
       ) : null}
 
-      {step === "terms" ? <TermsStep key={termsCeremony} ceremony={termsCeremony} app={app} onAccepted={finish} onLeave={forget} /> : null}
+      {step === "terms" ? <div lang="en"><TermsStep key={termsCeremony} ceremony={termsCeremony} app={app} onAccepted={finish} onLeave={forget} /></div> : null}
 
       {step === "done" ? (
         <div role="status" className="flex flex-col items-center gap-3 text-center">
           <CircleCheck aria-hidden="true" size={24} strokeWidth={1.75} className="text-success" />
-          <h1 className="text-h3 text-fg">Signed in</h1>
-          <p className="text-body text-fg-3">{app ? `Returning you to ${app}…` : "Opening your Halo account…"}</p>
+          <h1 className="text-h3 text-fg">{messages.signedIn}</h1>
+          <p className="text-body text-fg-3">{app ? messages.returning(app) : messages.openingAccount}</p>
         </div>
       ) : null}
 
       {step === "expired" ? (
         <div className="flex flex-col items-center gap-3 text-center">
           <Clock aria-hidden="true" size={24} strokeWidth={1.75} className="text-fg-3" />
-          <h1 className="text-h3 text-fg">This sign-in request expired</h1>
-          <p className="text-body text-fg-3">Go back to the application and start again.</p>
+          <h1 className="text-h3 text-fg">{messages.expired}</h1>
+          <p className="text-body text-fg-3">{messages.expiredHint}</p>
         </div>
       ) : null}
 
-      {checking && challenge ? <ChallengeCheck challenge={challenge} onToken={settle} onCancel={() => settle()} /> : null}
+      {checking && challenge ? <ChallengeCheck locale={locale} challenge={challenge} onToken={settle} onCancel={() => settle()} /> : null}
     </div>
   );
 }
