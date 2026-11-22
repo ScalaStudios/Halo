@@ -113,5 +113,9 @@ func fapi2(app store.Application, next *store.Application) ([]string, error) {
 		next.TokenPolicy.IDTokenAlg = "ES256"
 		changed = append(changed, "ID token signing algorithm")
 	}
+	if next.TokenPolicy.Rotation {
+		next.TokenPolicy.Rotation = false
+		changed = append(changed, "refresh token rotation")
+	}
 	return changed, nil
 }

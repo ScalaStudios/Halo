@@ -164,7 +164,8 @@ export function AuthenticationForm({ app, resources, children }: { app: Applicat
   const [idToken, setIdToken] = useState(split(policy.idTokenTtl));
   const [idTokenAlg, setIdTokenAlg] = useState(policy.idTokenAlg);
   const [refresh, setRefresh] = useState(split(policy.refreshTokenTtl));
-  const [rotation, setRotation] = useState(policy.rotation);
+  const [rotateRefresh, setRotation] = useState(policy.rotation);
+  const rotation = !app.fapi2Profile && rotateRefresh;
   const [exchange, setExchange] = useState(policy.exchange);
   const [exchangeFrom, setExchangeFrom] = useState(policy.exchangeFrom);
   const sourcesId = useId();
@@ -217,10 +218,10 @@ export function AuthenticationForm({ app, resources, children }: { app: Applicat
               <DurationField label="Refresh token" hint="Up to 90 days. Set 0 to stop issuing them." value={refresh} onChange={setRefresh} error={errors.refresh} />
               <Field
                 label="Refresh token rotation"
-                hint={refreshOff ? "Not used while refresh tokens are off." : rotation ? "Each refresh revokes the previous token." : "The same refresh token works until it expires."}
+                hint={app.fapi2Profile ? "The FAPI 2.0 profile keeps the same sender-bound refresh token until it expires." : refreshOff ? "Not used while refresh tokens are off." : rotation ? "Each refresh revokes the previous token." : "The same refresh token works until it expires."}
               >
                 {(props) => (
-                  <Select {...props} disabled={refreshOff} value={rotation ? "on" : "off"} onChange={(event) => setRotation(event.target.value === "on")}>
+                  <Select {...props} disabled={refreshOff || app.fapi2Profile} value={rotation ? "on" : "off"} onChange={(event) => setRotation(event.target.value === "on")}>
                     <option value="on">On</option>
                     <option value="off">Off</option>
                   </Select>

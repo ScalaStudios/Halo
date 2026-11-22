@@ -896,6 +896,9 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	}
 	changed = append(changed, more...)
 	if next.FAPI2Profile {
+		if in.TokenPolicy != nil && in.TokenPolicy.Rotation != nil && *in.TokenPolicy.Rotation {
+			return httpx.Invalid("Turn off the FAPI 2.0 security profile before enabling refresh token rotation.")
+		}
 		if err := h.st.Keys.Supports(next.TokenPolicy.IDTokenAlg); err != nil {
 			return httpx.Invalid(err.Error() + ".")
 		}

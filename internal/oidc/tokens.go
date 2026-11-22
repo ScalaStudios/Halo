@@ -204,7 +204,7 @@ func (s *storage) CreateAccessAndRefreshTokens(ctx context.Context, req op.Token
 		return "", "", time.Time{}, err
 	}
 	prev, refreshing := req.(*refreshRequest)
-	if refreshing && !app.TokenPolicy.Rotation {
+	if refreshing && (!app.TokenPolicy.Rotation || app.FAPI2Profile) {
 		access.RefreshID = &prev.ID
 		return access.ID, current, access.ExpiresAt, issued(req, s.st.CreateOIDCTokens(ctx, access))
 	}
