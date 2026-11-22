@@ -13,7 +13,8 @@ import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input"
 import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
-import { formatDuration, pluralize } from "@/lib/format";
+import { useMessages } from "@/lib/i18n/client";
+import { infrastructureMessages } from "@/lib/i18n/console/infrastructure";
 import type { ApiResource, ApiScope } from "@/lib/infra-types";
 import { SIGNING_ALGORITHMS, type Application, type SigningAlgorithm } from "@/lib/types";
 
@@ -23,11 +24,12 @@ type GrantTarget = Pick<Application, "id" | "name">;
 
 export function NewResourceButton() {
   const [open, setOpen] = useState(false);
+  const t = useMessages(infrastructureMessages).apiResources;
   return (
     <>
       <Button size="sm" variant="primary" onClick={() => setOpen(true)}>
         <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-        Add API
+        {t.add}
       </Button>
       {open ? <ResourceDialog resource={null} onClose={() => setOpen(false)} /> : null}
     </>
@@ -38,10 +40,12 @@ export function ResourceActions({ resource }: { resource: ApiResource }) {
   const { pending, run, errorFor, clearError, toast, router } = useMutation();
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const messages = useMessages(infrastructureMessages);
+  const t = messages.apiResources;
 
   function remove() {
     void run("delete", () => api(`/api-resources/${resource.id}`, { method: "DELETE" }), () => {
-      toast({ title: `${resource.name} deleted`, description: `${pluralize(resource.grants.length, "application")} lost access. Recorded in the audit log.` });
+      toast({ title: messages.deleted(resource.name), description: t.deletedHint(resource.grants.length) });
       router.push("/admin/api-resources");
     }, "inline");
   }
@@ -50,11 +54,11 @@ export function ResourceActions({ resource }: { resource: ApiResource }) {
     <div className="flex flex-wrap gap-2">
       <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
         <Pencil aria-hidden="true" size={16} strokeWidth={1.75} />
-        Edit API
+        {t.edit}
       </Button>
       <Button size="sm" variant="secondary" onClick={() => setDeleting(true)}>
         <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
-        Delete
+        {t.delete}
       </Button>
       {editing ? <ResourceDialog resource={resource} onClose={() => setEditing(false)} /> : null}
       <Dialog
@@ -64,15 +68,15 @@ export function ResourceActions({ resource }: { resource: ApiResource }) {
           setDeleting(next);
         }}
         error={errorFor("delete")}
-        title={`Delete ${resource.name}?`}
-        description={`Halo stops issuing tokens for ${resource.identifier} and removes its grants to ${pluralize(resource.grants.length, "application")}. Tokens already issued stay valid until they expire.`}
+        title={t.deleteTitle(resource.name)}
+        description={t.deleteHint(resource.identifier, resource.grants.length)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleting(false)}>
-              Cancel
+              {messages.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "delete"} onClick={remove}>
-              Delete API
+              {t.deleteConfirm}
             </Button>
           </>
         }
@@ -91,6 +95,8 @@ function ResourceDialog({ resource, onClose }: { resource: ApiResource | null; o
   const [scopes, setScopes] = useState<ApiScope[]>(resource?.scopes ?? [{ name: "", description: "" }]);
   const [errors, setErrors] = useState<{ name?: string; identifier?: string; scopes?: string }>({});
   const lifetimes = LIFETIMES.includes(ttl) ? LIFETIMES : [...LIFETIMES, ttl].sort((a, b) => a - b);
+  const messages = useMessages(infrastructureMessages);
+  const t = messages.apiResources;
 
   function update(index: number, change: Partial<ApiScope>) {
     setScopes((current) => current.map((scope, i) => (i === index ? { ...scope, ...change } : scope)));
@@ -99,9 +105,9 @@ function ResourceDialog({ resource, onClose }: { resource: ApiResource | null; o
   function save() {
     const named = scopes.map((s) => ({ name: s.name.trim(), description: s.description.trim() })).filter((s) => s.name);
     const next = {
-      name: name.trim() ? undefined : "Enter a name, for example “Billing API”.",
-      identifier: identifier.trim() ? undefined : "Enter the identifier the API checks in the aud claim, for example https://billing.example.com.",
-      scopes: named.length ? undefined : "Add at least one scope, such as billing:read.",
+      name: name.trim() ? undefined : t.nameError,
+      identifier: identifier.trim() ? undefined : t.identifierError,
+      scopes: named.length ? undefined : t.scopesError,
     };
     setErrors(next);
     if (next.name || next.identifier || next.scopes) return;
@@ -110,7 +116,7 @@ function ResourceDialog({ resource, onClose }: { resource: ApiResource | null; o
       "save",
       () => (resource ? api<ApiResource>(`/api-resources/${resource.id}`, { method: "PUT", body }) : api<ApiResource>("/api-resources", { body })),
       (saved) => {
-        toast({ title: resource ? `${saved.name} saved` : `${saved.name} added`, description: `${pluralize(saved.scopes.length, "scope")}. Recorded in the audit log.` });
+        toast({ title: resource ? messages.saved(saved.name) : t.added(saved.name), description: t.savedHint(saved.scopes.length) });
         onClose();
         if (!resource) router.push(`/admin/api-resources/${saved.id}`);
       },
@@ -126,15 +132,15 @@ function ResourceDialog({ resource, onClose }: { resource: ApiResource | null; o
         if (!open) onClose();
       }}
       error={errorFor("save")}
-      title={resource ? `Edit ${resource.name}` : "Add API"}
-      description="An API is a resource server that accepts Halo access tokens. Applications you grant its scopes get tokens addressed to it."
+      title={resource ? messages.edit(resource.name) : t.add}
+      description={t.dialogHint}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {messages.cancel}
           </Button>
           <Button variant="primary" loading={pending === "save"} onClick={save}>
-            {resource ? "Save API" : "Add API"}
+            {resource ? t.save : t.add}
           </Button>
         </>
       }
@@ -147,21 +153,21 @@ function ResourceDialog({ resource, onClose }: { resource: ApiResource | null; o
         }}
       >
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-          <Field label="Name" error={errors.name}>
-            {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder="Billing API" />}
+          <Field label={messages.name} error={errors.name}>
+            {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder={t.namePlaceholder} />}
           </Field>
-          <Field label="Access token lifetime" hint="Overrides the application's lifetime for tokens addressed to this API. An API that checks tokens itself keeps accepting a revoked one until it expires, so keep it at 15 minutes or less and have the API poll /oauth2/revoked.">
+          <Field label={t.lifetime} hint={t.lifetimeHint}>
             {(props) => (
               <Select {...props} value={ttl} onChange={(event) => setTtl(Number(event.target.value))}>
                 {lifetimes.map((seconds) => (
                   <option key={seconds} value={seconds}>
-                    {formatDuration(seconds)}
+                    {messages.duration(seconds)}
                   </option>
                 ))}
               </Select>
             )}
           </Field>
-          <Field label="Access token signing" hint={alg === "RS256" ? "Every JWT library accepts RS256." : `Check that the API accepts ${alg} first. Tokens it already has keep verifying.`}>
+          <Field label={t.signing} hint={alg === "RS256" ? t.rs256Hint : t.algHint(alg)}>
             {(props) => (
               <Select {...props} value={alg} onChange={(event) => setAlg(event.target.value as SigningAlgorithm)}>
                 {SIGNING_ALGORITHMS.map(([value, label]) => (
@@ -173,22 +179,22 @@ function ResourceDialog({ resource, onClose }: { resource: ApiResource | null; o
             )}
           </Field>
         </div>
-        <Field label="Identifier" error={errors.identifier} hint="An absolute URI. Tokens carry it in the aud claim, and the API rejects tokens without it.">
+        <Field label={t.identifier} error={errors.identifier} hint={t.identifierHint}>
           {(props) => (
             <Input {...props} mono autoComplete="off" spellCheck={false} value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder="https://billing.example.com" />
           )}
         </Field>
-        <Field label="Description">
-          {(props) => <Textarea {...props} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What the API does and who runs it." />}
+        <Field label={messages.description}>
+          {(props) => <Textarea {...props} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} placeholder={t.descriptionPlaceholder} />}
         </Field>
         <fieldset className="flex flex-col gap-3" aria-describedby={errors.scopes ? "scopes-error" : undefined}>
-          <legend className="mb-1 text-label text-fg">Scopes</legend>
-          <p className="text-caption text-fg-3">Names are unique across every API, so prefix them with the API, such as billing:read.</p>
+          <legend className="mb-1 text-label text-fg">{t.scopes}</legend>
+          <p className="text-caption text-fg-3">{t.scopesHint}</p>
           {scopes.map((scope, index) => (
             <div key={index} className="flex items-start gap-2">
               <Input
                 mono
-                aria-label={`Scope ${index + 1} name`}
+                aria-label={t.scopeName(index + 1)}
                 autoComplete="off"
                 spellCheck={false}
                 value={scope.name}
@@ -197,16 +203,16 @@ function ResourceDialog({ resource, onClose }: { resource: ApiResource | null; o
                 className="sm:w-56"
               />
               <Input
-                aria-label={`Scope ${index + 1} description`}
+                aria-label={t.scopeDescription(index + 1)}
                 autoComplete="off"
                 value={scope.description}
                 onChange={(event) => update(index, { description: event.target.value })}
-                placeholder="Read invoices and usage records."
+                placeholder={t.scopeDescriptionPlaceholder}
               />
               <Button
                 size="icon"
                 variant="quiet"
-                aria-label={`Remove scope ${scope.name || index + 1}`}
+                aria-label={t.removeScope(scope.name || index + 1)}
                 disabled={scopes.length === 1}
                 onClick={() => setScopes((current) => current.filter((_, i) => i !== index))}
               >
@@ -221,7 +227,7 @@ function ResourceDialog({ resource, onClose }: { resource: ApiResource | null; o
           ) : null}
           <Button size="sm" variant="secondary" className="self-start" onClick={() => setScopes((current) => [...current, { name: "", description: "" }])}>
             <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-            Add scope
+            {t.addScope}
           </Button>
         </fieldset>
         <button type="submit" hidden />
@@ -234,7 +240,9 @@ export function GrantsSection({ resource, applications }: { resource: ApiResourc
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [editing, setEditing] = useState<{ appId: string; scopes: string[] } | "new" | null>(null);
   const [removing, setRemoving] = useState<GrantTarget | null>(null);
-  const appName = (id: string) => applications.find((a) => a.id === id)?.name ?? "Deleted application";
+  const messages = useMessages(infrastructureMessages);
+  const t = messages.apiResources;
+  const appName = (id: string) => applications.find((a) => a.id === id)?.name ?? t.deletedApplication;
   const ungranted = applications.filter((a) => !resource.grants.some((g) => g.appId === a.id));
 
   function revoke() {
@@ -242,26 +250,26 @@ export function GrantsSection({ resource, applications }: { resource: ApiResourc
     if (!app) return;
     void run("remove", () => api(`/api-resources/${resource.id}/grants/${app.id}`, { method: "PUT", body: { scopes: [] } }), () => {
       setRemoving(null);
-      toast({ title: `${app.name} no longer has access to ${resource.name}`, description: "Its next token leaves out these scopes. Tokens already issued stay valid until they expire." });
+      toast({ title: t.revokedToast(app.name, resource.name), description: t.revokedHint });
     }, "inline");
   }
 
   return (
     <div className="flex flex-col gap-6">
       <SectionTitle
-        title="Applications"
-        description="Applications granted scopes get JWT access tokens with this API's identifier in aud when they request a granted scope or send resource=<identifier>."
+        title={t.applications}
+        description={t.applicationsHint}
         action={
           <Button size="sm" variant="primary" disabled={ungranted.length === 0} onClick={() => setEditing("new")}>
             <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-            Grant access
+            {t.grant}
           </Button>
         }
       />
       {resource.grants.length ? (
         <SimpleTable
-          caption={`Applications with access to ${resource.name}`}
-          head={["Application", "Granted scopes", "Actions"]}
+          caption={t.caption(resource.name)}
+          head={t.head}
           rows={resource.grants.map((grant) => [
             <Link key="app" href={`/admin/applications/${grant.appId}`} className="font-medium whitespace-nowrap text-fg underline-offset-3 hover:underline">
               {appName(grant.appId)}
@@ -272,10 +280,10 @@ export function GrantsSection({ resource, applications }: { resource: ApiResourc
               ))}
             </span>,
             <span key="actions" className="flex gap-1">
-              <Button size="icon-sm" variant="quiet" aria-label={`Edit the scopes of ${appName(grant.appId)}`} onClick={() => setEditing(grant)}>
+              <Button size="icon-sm" variant="quiet" aria-label={t.editScopes(appName(grant.appId))} onClick={() => setEditing(grant)}>
                 <Pencil aria-hidden="true" size={16} strokeWidth={1.75} />
               </Button>
-              <Button size="icon-sm" variant="quiet" aria-label={`Remove access for ${appName(grant.appId)}`} onClick={() => setRemoving({ id: grant.appId, name: appName(grant.appId) })}>
+              <Button size="icon-sm" variant="quiet" aria-label={t.removeAccess(appName(grant.appId))} onClick={() => setRemoving({ id: grant.appId, name: appName(grant.appId) })}>
                 <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
               </Button>
             </span>,
@@ -285,8 +293,8 @@ export function GrantsSection({ resource, applications }: { resource: ApiResourc
         <Card>
           <EmptyState
             icon={AppWindow}
-            title="No application has access yet"
-            description="Grant scopes to the applications that call this API. Until then, Halo issues no token addressed to it."
+            title={t.noGrants}
+            description={t.noGrantsHint}
           />
         </Card>
       )}
@@ -307,15 +315,15 @@ export function GrantsSection({ resource, applications }: { resource: ApiResourc
           clearError();
         }}
         error={errorFor("remove")}
-        title={`Remove access for ${removing?.name ?? "this application"}?`}
-        description="Its next token leaves out every scope of this API. Tokens already issued stay valid until they expire."
+        title={t.removeTitle(removing?.name ?? null)}
+        description={t.removeHint}
         footer={
           <>
             <Button variant="secondary" onClick={() => setRemoving(null)}>
-              Cancel
+              {messages.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "remove"} onClick={revoke}>
-              Remove access
+              {t.removeConfirm}
             </Button>
           </>
         }
@@ -339,17 +347,19 @@ function GrantDialog({
   const [appId, setAppId] = useState(grant?.appId ?? "");
   const [scopes, setScopes] = useState<string[]>(grant?.scopes ?? []);
   const [errors, setErrors] = useState<{ app?: string; scopes?: string }>({});
+  const messages = useMessages(infrastructureMessages);
+  const t = messages.apiResources;
 
   function save() {
     const next = {
-      app: appId ? undefined : "Choose the application that calls this API.",
-      scopes: scopes.length ? undefined : "Choose at least one scope. To take every scope away, remove the grant instead.",
+      app: appId ? undefined : t.applicationError,
+      scopes: scopes.length ? undefined : t.grantScopesError,
     };
     setErrors(next);
     if (next.app || next.scopes) return;
     void run("save", () => api<ApiResource>(`/api-resources/${resource.id}/grants/${appId}`, { method: "PUT", body: { scopes } }), () => {
-      const name = applications.find((a) => a.id === appId)?.name ?? "The application";
-      toast({ title: `${name} can use ${scopes.join(", ")}`, description: "Applies to the next token it requests. Recorded in the audit log." });
+      const name = applications.find((a) => a.id === appId)?.name ?? t.theApplication;
+      toast({ title: t.granted(name, scopes.join(", ")), description: t.grantedHint });
       onClose();
     }, "inline");
   }
@@ -361,15 +371,15 @@ function GrantDialog({
         if (!open) onClose();
       }}
       error={errorFor("save")}
-      title={grant ? `Edit access for ${applications[0]?.name ?? "application"}` : `Grant access to ${resource.name}`}
-      description="The application receives only the scopes you check here, and only when it asks for them."
+      title={grant ? t.editAccess(applications[0]?.name ?? null) : t.grantTitle(resource.name)}
+      description={t.grantHint}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {messages.cancel}
           </Button>
           <Button variant="primary" loading={pending === "save"} onClick={save}>
-            {grant ? "Save access" : "Grant access"}
+            {grant ? t.saveAccess : t.grant}
           </Button>
         </>
       }
@@ -381,11 +391,11 @@ function GrantDialog({
           save();
         }}
       >
-        <Field label="Application" error={errors.app}>
+        <Field label={t.application} error={errors.app}>
           {(props) => (
             <Select {...props} value={appId} disabled={grant !== null} onChange={(event) => setAppId(event.target.value)}>
               <option value="" disabled>
-                Choose an application
+                {t.chooseApplication}
               </option>
               {applications.map((a) => (
                 <option key={a.id} value={a.id}>
@@ -396,7 +406,7 @@ function GrantDialog({
           )}
         </Field>
         <fieldset className="flex flex-col gap-3" aria-describedby={errors.scopes ? "grant-scopes-error" : undefined}>
-          <legend className="mb-3 text-label text-fg">Scopes</legend>
+          <legend className="mb-3 text-label text-fg">{t.scopes}</legend>
           {resource.scopes.map((scope) => (
             <label key={scope.name} className="flex cursor-pointer items-start gap-3">
               <Checkbox

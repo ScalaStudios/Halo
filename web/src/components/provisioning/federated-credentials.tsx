@@ -13,15 +13,17 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
+import { useMessages } from "@/lib/i18n/client";
+import { provisioningMessages } from "@/lib/i18n/console/infrastructure/provisioning";
 import type { FederatedCredential, KeyScope, ServiceAccount } from "@/lib/provisioning-types";
 import { ScopeFieldset } from "./account-actions";
 import { ScopeTags } from "./shared";
 
 const ISSUERS = {
-  github: { label: "GitHub Actions", issuer: "https://token.actions.githubusercontent.com", subject: "repo:acme/infra:ref:refs/heads/main" },
-  gitlab: { label: "GitLab CI/CD", issuer: "https://gitlab.com", subject: "project_path:acme/infra:ref_type:branch:ref:main" },
-  kubernetes: { label: "Kubernetes service account", issuer: "", subject: "system:serviceaccount:ci:deployer" },
-  other: { label: "Other OpenID Connect issuer", issuer: "", subject: "" },
+  github: { issuer: "https://token.actions.githubusercontent.com", subject: "repo:acme/infra:ref:refs/heads/main" },
+  gitlab: { issuer: "https://gitlab.com", subject: "project_path:acme/infra:ref_type:branch:ref:main" },
+  kubernetes: { issuer: "", subject: "system:serviceaccount:ci:deployer" },
+  other: { issuer: "", subject: "" },
 };
 
 type IssuerKind = keyof typeof ISSUERS;
@@ -30,6 +32,7 @@ export function FederatedCredentials({ account, issuer }: { account: ServiceAcco
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<FederatedCredential | null>(null);
   const { pending, run, errorFor, clearError, toast } = useMutation();
+  const t = useMessages(provisioningMessages);
   const credentials = account.federatedCredentials;
 
   function remove() {
@@ -40,7 +43,7 @@ export function FederatedCredentials({ account, issuer }: { account: ServiceAcco
       () => api(`/service-accounts/${account.id}/federated-credentials/${credential.id}`, { method: "DELETE" }),
       () => {
         setRemoving(null);
-        toast({ title: `“${credential.name}” removed`, description: "Tokens issued through it stopped working. Recorded in the audit log." });
+        toast({ title: t.federated.removed(credential.name), description: t.federated.removedHint });
       },
       "inline",
     );
@@ -49,21 +52,21 @@ export function FederatedCredentials({ account, issuer }: { account: ServiceAcco
   const add = (
     <Button size="sm" variant="secondary" onClick={() => setAdding(true)}>
       <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-      Add federated credential
+      {t.federated.add}
     </Button>
   );
 
   return (
     <section className="flex flex-col gap-6">
       <SectionTitle
-        title="Federated credentials"
-        description="Workloads such as GitHub Actions or Kubernetes pods sign in with a token from their own identity provider instead of an API key, and get a key that expires after 1 hour."
+        title={t.federated.title}
+        description={t.federated.hint}
         action={credentials.length ? add : null}
       />
       {credentials.length ? (
         <SimpleTable
-          caption="Federated credentials"
-          head={["Credential", "Subject", "Audience", "Scopes", "Last used", "Actions"]}
+          caption={t.federated.title}
+          head={t.federated.head}
           rows={credentials.map((credential) => [
             <span key="n" className="flex flex-col">
               <span className="font-medium text-fg">{credential.name}</span>
@@ -82,10 +85,10 @@ export function FederatedCredentials({ account, issuer }: { account: ServiceAcco
             </span>,
             <ScopeTags key="t" scopes={credential.scopes} />,
             <span key="u" className="whitespace-nowrap">
-              {credential.lastUsedAt ? <RelativeTime iso={credential.lastUsedAt} /> : "Never"}
+              {credential.lastUsedAt ? <RelativeTime iso={credential.lastUsedAt} /> : t.never}
             </span>,
             <span key="r" className="flex justify-end">
-              <Button size="icon-sm" variant="quiet" aria-label={`Remove ${credential.name}`} onClick={() => setRemoving(credential)}>
+              <Button size="icon-sm" variant="quiet" aria-label={t.federated.remove(credential.name)} onClick={() => setRemoving(credential)}>
                 <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
               </Button>
             </span>,
@@ -95,8 +98,8 @@ export function FederatedCredentials({ account, issuer }: { account: ServiceAcco
         <Card>
           <EmptyState
             icon={Workflow}
-            title="No federated credentials"
-            description={`Trust a CI pipeline or cluster so it signs in as ${account.name} without storing an API key.`}
+            title={t.federated.empty}
+            description={t.federated.emptyHint(account.name)}
             action={add}
           />
         </Card>
@@ -110,8 +113,8 @@ export function FederatedCredentials({ account, issuer }: { account: ServiceAcco
           setRemoving(null);
         }}
         error={errorFor("remove")}
-        title={`Remove “${removing?.name ?? ""}”?`}
-        description={`Workloads that match it can no longer sign in as ${account.name}, and the keys they got through it stop working immediately.`}
+        title={t.federated.removeTitle(removing?.name ?? "")}
+        description={t.federated.removeHint(account.name)}
         footer={
           <>
             <Button
@@ -121,10 +124,10 @@ export function FederatedCredentials({ account, issuer }: { account: ServiceAcco
                 setRemoving(null);
               }}
             >
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "remove"} onClick={remove}>
-              Remove credential
+              {t.federated.removeConfirm}
             </Button>
           </>
         }
@@ -144,6 +147,7 @@ function AddCredentialDialog({ account, issuer, open, onOpenChange }: { account:
   const [errors, setErrors] = useState<{ name?: string; issuer?: string; subject?: string; conditions?: string; scopes?: string }>({});
   const [created, setCreated] = useState<FederatedCredential | null>(null);
   const { pending, run, errorFor, clearError } = useMutation();
+  const t = useMessages(provisioningMessages);
 
   function close() {
     onOpenChange(false);
@@ -166,11 +170,11 @@ function AddCredentialDialog({ account, issuer, open, onOpenChange }: { account:
       .filter(Boolean);
     const parsed = lines.map((line) => [line.slice(0, line.indexOf("=")).trim(), line.slice(line.indexOf("=") + 1).trim()]);
     const next = {
-      name: name.trim() ? undefined : "Enter a name that says which workload signs in.",
-      issuer: trusted.trim() ? undefined : "Enter the issuer URL, such as https://token.actions.githubusercontent.com.",
-      subject: subject.trim() ? undefined : "Enter the subject exactly as it appears in the token.",
-      conditions: lines.every((line) => line.indexOf("=") > 0) && parsed.every(([claim, value]) => claim && value) ? undefined : "Write each condition on its own line as claim=value.",
-      scopes: scopes.length ? undefined : "Choose at least one scope.",
+      name: name.trim() ? undefined : t.federated.nameError,
+      issuer: trusted.trim() ? undefined : t.federated.issuerError,
+      subject: subject.trim() ? undefined : t.federated.subjectError,
+      conditions: lines.every((line) => line.indexOf("=") > 0) && parsed.every(([claim, value]) => claim && value) ? undefined : t.federated.conditionsError,
+      scopes: scopes.length ? undefined : t.account.scopesError,
     };
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
@@ -190,24 +194,20 @@ function AddCredentialDialog({ account, issuer, open, onOpenChange }: { account:
       open={open}
       onOpenChange={(next) => (next ? onOpenChange(true) : close())}
       error={errorFor("create")}
-      title={created ? "Federated credential added" : "Add federated credential"}
-      description={
-        created
-          ? "Post the workload's token to the token endpoint with grant_type=client_credentials, this client_id, client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer and the token as client_assertion."
-          : `Tokens that match every field sign in as ${account.name}, with its roles. Halo checks their signature against the issuer's published keys.`
-      }
+      title={created ? t.federated.added : t.federated.add}
+      description={created ? t.federated.addedHint : t.federated.addHint(account.name)}
       footer={
         created ? (
           <Button variant="primary" onClick={close}>
-            Done
+            {t.done}
           </Button>
         ) : (
           <>
             <Button variant="secondary" onClick={close}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="primary" loading={pending === "create"} onClick={submit}>
-              Add federated credential
+              {t.federated.add}
             </Button>
           </>
         )
@@ -215,9 +215,9 @@ function AddCredentialDialog({ account, issuer, open, onOpenChange }: { account:
     >
       {created ? (
         <div className="flex animate-enter flex-col gap-4">
-          <CopyField label="Token endpoint" value={`${issuer}/oauth2/token`} />
+          <CopyField label={t.federated.tokenEndpoint} value={`${issuer}/oauth2/token`} />
           <CopyField label="client_id" value={account.id} />
-          <CopyField label="Audience to request from the issuer" value={created.audience} />
+          <CopyField label={t.federated.audienceToRequest} value={created.audience} />
         </div>
       ) : (
         <form
@@ -227,10 +227,10 @@ function AddCredentialDialog({ account, issuer, open, onOpenChange }: { account:
             submit();
           }}
         >
-          <Field label="Name" error={errors.name}>
-            {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder="Deploy workflow" />}
+          <Field label={t.name} error={errors.name}>
+            {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder={t.federated.namePlaceholder} />}
           </Field>
-          <Field label="Workload">
+          <Field label={t.federated.workload}>
             {(props) => (
               <Select
                 {...props}
@@ -243,22 +243,22 @@ function AddCredentialDialog({ account, issuer, open, onOpenChange }: { account:
               >
                 {(Object.keys(ISSUERS) as IssuerKind[]).map((key) => (
                   <option key={key} value={key}>
-                    {ISSUERS[key].label}
+                    {t.federated.issuers[key]}
                   </option>
                 ))}
               </Select>
             )}
           </Field>
-          <Field label="Issuer" hint="The iss claim of the workload's tokens, exactly. Halo reads its signing keys from the issuer's discovery document." error={errors.issuer}>
+          <Field label={t.federated.issuer} hint={t.federated.issuerHint} error={errors.issuer}>
             {(props) => <Input {...props} autoComplete="off" className="font-mono" value={trusted} onChange={(event) => setTrusted(event.target.value)} placeholder="https://kubernetes.example.com" />}
           </Field>
-          <Field label="Subject" hint="The sub claim, exactly. Halo compares it character by character." error={errors.subject}>
+          <Field label={t.federated.subject} hint={t.federated.subjectHint} error={errors.subject}>
             {(props) => <Input {...props} autoComplete="off" className="font-mono" value={subject} onChange={(event) => setSubject(event.target.value)} placeholder={ISSUERS[kind].subject || "workload-name"} />}
           </Field>
-          <Field label="Audience" hint="The aud the workload asks its issuer for. Halo's own URL unless you change it.">
+          <Field label={t.federated.audience} hint={t.federated.audienceHint}>
             {(props) => <Input {...props} autoComplete="off" className="font-mono" value={audience} onChange={(event) => setAudience(event.target.value)} />}
           </Field>
-          <Field label="Claim conditions" hint="Optional. One per line as claim=value, such as repository_owner_id=1342004. Each claim must have exactly that value." error={errors.conditions}>
+          <Field label={t.federated.conditions} hint={t.federated.conditionsHint} error={errors.conditions}>
             {(props) => <Textarea {...props} mono rows={2} value={conditions} onChange={(event) => setConditions(event.target.value)} />}
           </Field>
           <ScopeFieldset account={account} scopes={scopes} onChange={setScopes} error={errors.scopes} />

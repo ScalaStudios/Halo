@@ -16,53 +16,41 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
-import { formatDateTime, pluralize } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
+import { useLocale, useMessages } from "@/lib/i18n/client";
+import { provisioningMessages } from "@/lib/i18n/console/infrastructure/provisioning";
+import type { Locale } from "@/lib/i18n/locale";
 import type { LDAPCounts, LDAPDirectory, LDAPMapping, LDAPSecurity, LDAPSync, LDAPSyncReport } from "@/lib/provisioning-types";
 import type { Attribute } from "@/lib/types";
 import { StatusLabel } from "./shared";
 
-const SECURITY: Record<LDAPSecurity, string> = {
-  ldaps: "LDAPS (ldaps://)",
-  starttls: "StartTLS (ldap://)",
-  none: "None: sends the bind password unencrypted",
-};
-
-const INTERVAL: Record<number, string> = { 15: "15 minutes", 30: "30 minutes", 60: "hour", 240: "4 hours", 720: "12 hours", 1440: "day" };
+type Messages = (typeof provisioningMessages)[Locale];
 
 const DEFAULT_MAPPING: LDAPMapping = { id: "objectGUID", email: "mail", name: "displayName", title: "title", department: "department", location: "l", manager: "manager", groupName: "cn", member: "member", attributes: {} };
 
-const PERSON_FIELDS: { key: "id" | "email" | "name" | "title" | "department" | "location" | "manager"; label: string; hint?: string }[] = [
-  { key: "id", label: "Entry ID", hint: "objectGUID in Active Directory, entryUUID in OpenLDAP." },
-  { key: "email", label: "Email" },
-  { key: "name", label: "Name" },
-  { key: "title", label: "Title" },
-  { key: "department", label: "Department" },
-  { key: "location", label: "Location" },
-  { key: "manager", label: "Manager DN" },
+const PERSON_FIELDS = (t: Messages): { key: "id" | "email" | "name" | "title" | "department" | "location" | "manager"; label: string; hint?: string }[] => [
+  { key: "id", label: t.ldap.entryId, hint: t.ldap.entryIdHint },
+  { key: "email", label: t.ldap.email },
+  { key: "name", label: t.name },
+  { key: "title", label: t.ldap.title },
+  { key: "department", label: t.ldap.department },
+  { key: "location", label: t.ldap.location },
+  { key: "manager", label: t.ldap.manager },
 ];
 
-function interval(minutes: number) {
-  return INTERVAL[minutes] ?? pluralize(minutes, "minute");
+function interval(minutes: number, t: Messages) {
+  return t.ldap.interval[minutes] ?? t.ldap.minutes(minutes);
 }
 
-function status(d: LDAPDirectory) {
-  if (d.syncError) return { label: "Failing", tone: "danger" as const };
-  if (!d.enabled) return { label: "Manual", tone: "neutral" as const };
-  return { label: `Every ${interval(d.intervalMinutes)}`, tone: "success" as const };
+function status(d: LDAPDirectory, t: Messages) {
+  if (d.syncError) return { label: t.ldap.failing, tone: "danger" as const };
+  if (!d.enabled) return { label: t.ldap.manual, tone: "neutral" as const };
+  return { label: t.ldap.every(interval(d.intervalMinutes, t)), tone: "success" as const };
 }
 
-function summary(c: LDAPCounts) {
-  const parts = [
-    [c.created, "created"],
-    [c.updated, "updated"],
-    [c.suspended, "suspended"],
-    [c.restored, "restored"],
-    [c.groupsCreated, c.groupsCreated === 1 ? "group created" : "groups created"],
-    [c.groupsRenamed, c.groupsRenamed === 1 ? "group renamed" : "groups renamed"],
-    [c.membersAdded, c.membersAdded === 1 ? "member added" : "members added"],
-    [c.membersRemoved, c.membersRemoved === 1 ? "member removed" : "members removed"],
-  ].filter(([n]) => n);
-  return parts.length ? parts.map(([n, label]) => `${n} ${label}`).join(" · ") : "No changes";
+function summary(c: LDAPCounts, t: Messages) {
+  const parts = (Object.keys(t.ldap.counts) as (keyof Messages["ldap"]["counts"])[]).filter((key) => c[key]).map((key) => t.ldap.counts[key](c[key]));
+  return parts.length ? parts.join(" · ") : t.ldap.noChanges;
 }
 
 export function LDAPDirectories({ directories, attributes }: { directories: LDAPDirectory[]; attributes: Attribute[] }) {
@@ -71,6 +59,8 @@ export function LDAPDirectories({ directories, attributes }: { directories: LDAP
   const [deleting, setDeleting] = useState<LDAPDirectory | null>(null);
   const [preview, setPreview] = useState<{ directory: LDAPDirectory; report: LDAPSyncReport } | null>(null);
   const [history, setHistory] = useState<{ directory: LDAPDirectory; syncs: LDAPSync[] } | null>(null);
+  const locale = useLocale();
+  const t = provisioningMessages[locale];
 
   function showPreview(directory: LDAPDirectory) {
     void run(`preview:${directory.id}`, () => api<LDAPSyncReport>(`/ldap-directories/${directory.id}/sync?dryRun=true`, { method: "POST" }), (report) => setPreview({ directory, report }));
@@ -90,8 +80,8 @@ export function LDAPDirectories({ directories, attributes }: { directories: LDAP
         setPreview(null);
         toast(
           report.result === "failed"
-            ? { title: `${directory.name} didn't sync`, description: report.error, tone: "danger" }
-            : { title: `${directory.name} synced`, description: `${summary(report.counts)}. Every change is in the audit log.` },
+            ? { title: t.ldap.syncFailed(directory.name), description: report.error, tone: "danger" }
+            : { title: t.ldap.synced(directory.name), description: t.ldap.syncedHint(summary(report.counts, t)) },
         );
       },
       "inline",
@@ -106,7 +96,7 @@ export function LDAPDirectories({ directories, attributes }: { directories: LDAP
       () => api(`/ldap-directories/${directory.id}`, { method: "DELETE" }),
       () => {
         setDeleting(null);
-        toast({ title: `${directory.name} deleted`, description: "The people and groups it synced stay in Halo and can be edited there." });
+        toast({ title: t.deleted(directory.name), description: t.ldap.deletedHint });
       },
       "inline",
     );
@@ -115,33 +105,33 @@ export function LDAPDirectories({ directories, attributes }: { directories: LDAP
   return (
     <section className="flex flex-col gap-6">
       <SectionTitle
-        title="LDAP directories"
-        description="Halo reads people and groups from Active Directory or OpenLDAP, keeps their profiles and group members in step, and suspends people who leave or are disabled. It never writes to the directory."
+        title={t.ldap.heading}
+        description={t.ldap.headingHint}
         action={
           <Button size="sm" variant="primary" onClick={() => setEditing("new")}>
             <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-            Add directory
+            {t.ldap.add}
           </Button>
         }
       />
       {directories.length ? (
         <SimpleTable
-          caption="LDAP directories"
-          head={["Directory", "Schedule", "Synced", "Last sync", "Actions"]}
+          caption={t.ldap.heading}
+          head={t.ldap.head}
           rows={directories.map((d) => [
             <span key="name" className="flex flex-col">
               <span className="font-medium whitespace-nowrap text-fg">{d.name}</span>
               <span className="font-mono text-caption whitespace-nowrap text-fg-3">{d.url}</span>
             </span>,
-            <StatusLabel key="status" {...status(d)} />,
+            <StatusLabel key="status" {...status(d, t)} />,
             <span key="synced" className="flex flex-col whitespace-nowrap">
-              <span className="tnum">{pluralize(d.people, "person", "people")}</span>
-              <span className="tnum text-caption text-fg-3">{pluralize(d.groups, "group")}</span>
+              <span className="tnum">{t.people(d.people)}</span>
+              <span className="tnum text-caption text-fg-3">{t.groups(d.groups)}</span>
             </span>,
             <span key="last" className="flex max-w-80 flex-col">
-              <span className="whitespace-nowrap text-fg-3">{d.syncedAt ? <RelativeTime iso={d.syncedAt} /> : "Never"}</span>
+              <span className="whitespace-nowrap text-fg-3">{d.syncedAt ? <RelativeTime iso={d.syncedAt} /> : t.never}</span>
               {d.syncError ? (
-                <span className="line-clamp-2 text-caption text-danger" title={d.syncError}>
+                <span lang="en" className="line-clamp-2 text-caption text-danger" title={d.syncError}>
                   {d.syncError}
                 </span>
               ) : null}
@@ -149,15 +139,15 @@ export function LDAPDirectories({ directories, attributes }: { directories: LDAP
             <span key="actions" className="flex justify-end gap-1">
               <Button size="sm" variant="quiet" loading={pending === `preview:${d.id}`} onClick={() => showPreview(d)}>
                 <Eye aria-hidden="true" size={16} strokeWidth={1.75} />
-                Preview sync
+                {t.ldap.preview}
               </Button>
-              <Button size="icon-sm" variant="quiet" aria-label={`Sync history of ${d.name}`} loading={pending === `history:${d.id}`} onClick={() => showHistory(d)}>
+              <Button size="icon-sm" variant="quiet" aria-label={t.ldap.history(d.name)} loading={pending === `history:${d.id}`} onClick={() => showHistory(d)}>
                 <History aria-hidden="true" size={16} strokeWidth={1.75} />
               </Button>
-              <Button size="icon-sm" variant="quiet" aria-label={`Edit ${d.name}`} onClick={() => setEditing(d)}>
+              <Button size="icon-sm" variant="quiet" aria-label={t.edit(d.name)} onClick={() => setEditing(d)}>
                 <Pencil aria-hidden="true" size={16} strokeWidth={1.75} />
               </Button>
-              <Button size="icon-sm" variant="quiet" aria-label={`Delete ${d.name}`} onClick={() => setDeleting(d)}>
+              <Button size="icon-sm" variant="quiet" aria-label={t.delete(d.name)} onClick={() => setDeleting(d)}>
                 <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
               </Button>
             </span>,
@@ -167,8 +157,8 @@ export function LDAPDirectories({ directories, attributes }: { directories: LDAP
         <Card>
           <EmptyState
             icon={FolderTree}
-            title="No LDAP directories yet"
-            description="Add Active Directory or OpenLDAP with a read-only bind account, preview the first sync, then turn on scheduled syncs."
+            title={t.ldap.empty}
+            description={t.ldap.emptyHint}
           />
         </Card>
       )}
@@ -182,16 +172,16 @@ export function LDAPDirectories({ directories, attributes }: { directories: LDAP
         }}
         width="wide"
         error={errorFor("sync")}
-        title={`Preview sync of ${preview?.directory.name ?? "directory"}`}
-        description="What a sync would change now. Nothing has changed yet."
+        title={t.ldap.previewTitle(preview?.directory.name ?? null)}
+        description={t.ldap.previewHint}
         footer={
           <>
             <Button variant="secondary" onClick={() => setPreview(null)}>
-              Cancel
+              {t.cancel}
             </Button>
             {preview?.report.result === "succeeded" ? (
               <Button variant="primary" loading={pending === "sync"} onClick={sync}>
-                Sync now
+                {t.ldap.syncNow}
               </Button>
             ) : null}
           </>
@@ -203,11 +193,11 @@ export function LDAPDirectories({ directories, attributes }: { directories: LDAP
         open={history !== null}
         onOpenChange={(open) => (open ? undefined : setHistory(null))}
         width="wide"
-        title={`Sync history of ${history?.directory.name ?? "directory"}`}
-        description="The 50 most recent syncs from the last 90 days. Previews aren't recorded."
+        title={t.ldap.historyTitle(history?.directory.name ?? null)}
+        description={t.ldap.historyHint}
         footer={
           <Button variant="secondary" onClick={() => setHistory(null)}>
-            Close
+            {t.ldap.close}
           </Button>
         }
       >
@@ -216,18 +206,18 @@ export function LDAPDirectories({ directories, attributes }: { directories: LDAP
             {history.syncs.map((s) => (
               <li key={s.id} className="flex flex-col gap-1 border-t border-border px-4 py-3 first:border-t-0">
                 <span className="flex flex-wrap items-center justify-between gap-2">
-                  <StatusLabel label={s.result === "failed" ? "Failed" : "Succeeded"} tone={s.result === "failed" ? "danger" : "success"} />
-                  <span className="text-caption text-fg-3" title={formatDateTime(s.startedAt)}>
+                  <StatusLabel label={s.result === "failed" ? t.ldap.failed : t.ldap.succeeded} tone={s.result === "failed" ? "danger" : "success"} />
+                  <span className="text-caption text-fg-3" title={formatDateTime(s.startedAt, locale)}>
                     <RelativeTime iso={s.startedAt} />
                   </span>
                 </span>
-                <span className="text-body-sm text-fg-2">{s.error || summary(s.counts)}</span>
-                {s.skipped.length ? <span className="text-caption text-fg-3">{pluralize(s.skipped.length, "entry", "entries")} left alone</span> : null}
+                <span className="text-body-sm text-fg-2">{s.error ? <span lang="en">{s.error}</span> : summary(s.counts, t)}</span>
+                {s.skipped.length ? <span className="text-caption text-fg-3">{t.ldap.leftAlone(s.skipped.length)}</span> : null}
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-body-sm text-fg-3">No syncs yet. Preview a sync to run the first one.</p>
+          <p className="text-body-sm text-fg-3">{t.ldap.noSyncs}</p>
         )}
       </Dialog>
       <Dialog
@@ -238,15 +228,15 @@ export function LDAPDirectories({ directories, attributes }: { directories: LDAP
           clearError();
         }}
         error={errorFor("delete")}
-        title={`Delete ${deleting?.name ?? "directory"}?`}
-        description={`Halo stops syncing and deletes its sync history. The ${pluralize(deleting?.people ?? 0, "person", "people")} and ${pluralize(deleting?.groups ?? 0, "group")} it synced stay in Halo with their status and members, and can be edited in Halo again.`}
+        title={t.ldap.deleteTitle(deleting?.name ?? null)}
+        description={t.ldap.deleteHint(deleting?.people ?? 0, deleting?.groups ?? 0)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleting(null)}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "delete"} onClick={remove}>
-              Delete directory
+              {t.ldap.deleteConfirm}
             </Button>
           </>
         }
@@ -256,6 +246,7 @@ export function LDAPDirectories({ directories, attributes }: { directories: LDAP
 }
 
 function SyncResult({ report }: { report: LDAPSyncReport }) {
+  const t = useMessages(provisioningMessages);
   if (report.result === "failed") return <ActionError message={report.error} />;
   const c = report.counts;
   return (
@@ -263,27 +254,27 @@ function SyncResult({ report }: { report: LDAPSyncReport }) {
       <DescriptionList
         columns={2}
         items={[
-          { label: "People", value: `${c.created} created · ${c.updated} updated · ${c.suspended} suspended · ${c.restored} restored` },
-          { label: "Groups", value: `${c.groupsCreated} created · ${c.groupsRenamed} renamed · ${c.membersAdded} members added · ${c.membersRemoved} removed` },
+          { label: t.ldap.people, value: t.ldap.peopleCounts(c) },
+          { label: t.ldap.groupsLabel, value: t.ldap.groupCounts(c) },
         ]}
       />
       {report.changes.length ? (
-        <ul aria-label="Changes" className="flex max-h-72 flex-col overflow-y-auto rounded-md border border-border">
+        <ul aria-label={t.ldap.changes} className="flex max-h-72 flex-col overflow-y-auto rounded-md border border-border">
           {report.changes.map((change, i) => (
             <li key={i} className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-2 first:border-t-0">
               <Tag>{change.action}</Tag>
               <span className="font-medium text-fg">{change.target}</span>
-              <span className="text-body-sm text-fg-3">{change.detail}</span>
+              <span lang="en" className="text-body-sm text-fg-3">{change.detail}</span>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="text-body-sm text-fg-3">Halo is already in step with the directory.</p>
+        <p className="text-body-sm text-fg-3">{t.ldap.inStep}</p>
       )}
       {report.skipped.length ? (
         <div className="flex flex-col gap-2">
-          <h3 className="text-label text-fg">Left alone</h3>
-          <ul className="flex max-h-56 flex-col gap-2 overflow-y-auto rounded-md border border-border p-4 text-body-sm text-warning">
+          <h3 className="text-label text-fg">{t.ldap.leftAloneTitle}</h3>
+          <ul lang="en" className="flex max-h-56 flex-col gap-2 overflow-y-auto rounded-md border border-border p-4 text-body-sm text-warning">
             {report.skipped.map((s, i) => (
               <li key={i}>{s}</li>
             ))}
@@ -296,6 +287,7 @@ function SyncResult({ report }: { report: LDAPSyncReport }) {
 
 function DirectoryDialog({ directory, attributes, onClose }: { directory: LDAPDirectory | null; attributes: Attribute[]; onClose: () => void }) {
   const { pending, run, errorFor, toast } = useMutation();
+  const t = useMessages(provisioningMessages);
   const [form, setForm] = useState({
     name: directory?.name ?? "",
     url: directory?.url ?? "",
@@ -320,11 +312,11 @@ function DirectoryDialog({ directory, attributes, onClose }: { directory: LDAPDi
 
   function save() {
     const next = {
-      name: form.name.trim() ? undefined : "Enter a name, for example “Active Directory”.",
-      url: /^ldaps?:\/\/\S+$/.test(form.url.trim()) ? undefined : "Enter the server as ldaps://host or ldap://host.",
-      bindDn: form.bindDn.trim() ? undefined : "Enter the DN of a read-only account.",
-      password: directory || form.password ? undefined : "Enter the bind account's password.",
-      userBaseDn: form.userBaseDn.trim() ? undefined : "Enter where to search for people.",
+      name: form.name.trim() ? undefined : t.ldap.nameError,
+      url: /^ldaps?:\/\/\S+$/.test(form.url.trim()) ? undefined : t.ldap.urlError,
+      bindDn: form.bindDn.trim() ? undefined : t.ldap.bindDnError,
+      password: directory || form.password ? undefined : t.ldap.passwordError,
+      userBaseDn: form.userBaseDn.trim() ? undefined : t.ldap.userBaseDnError,
     };
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
@@ -334,8 +326,8 @@ function DirectoryDialog({ directory, attributes, onClose }: { directory: LDAPDi
       () => (directory ? api<LDAPDirectory>(`/ldap-directories/${directory.id}`, { method: "PUT", body }) : api<LDAPDirectory>("/ldap-directories", { body })),
       (saved) => {
         toast({
-          title: `${saved.name} ${directory ? "saved" : "added"}`,
-          description: saved.enabled ? `Halo syncs it every ${interval(saved.intervalMinutes)}.` : "Preview a sync to check the mapping before the first one.",
+          title: directory ? t.ldap.saved(saved.name) : t.ldap.added(saved.name),
+          description: saved.enabled ? t.ldap.syncsEvery(interval(saved.intervalMinutes, t)) : t.ldap.previewFirst,
         });
         onClose();
       },
@@ -351,15 +343,15 @@ function DirectoryDialog({ directory, attributes, onClose }: { directory: LDAPDi
       }}
       width="wide"
       error={errorFor("save")}
-      title={directory ? `Edit ${directory.name}` : "Add LDAP directory"}
-      description="Halo binds with a read-only account and searches with paged results. People synced from the directory can only be changed there."
+      title={directory ? t.edit(directory.name) : t.ldap.addTitle}
+      description={t.ldap.dialogHint}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {t.cancel}
           </Button>
           <Button variant="primary" loading={pending === "save"} onClick={save}>
-            {directory ? "Save directory" : "Add directory"}
+            {directory ? t.ldap.save : t.ldap.add}
           </Button>
         </>
       }
@@ -373,18 +365,18 @@ function DirectoryDialog({ directory, attributes, onClose }: { directory: LDAPDi
         }}
       >
         <fieldset className="flex flex-col gap-6">
-          <legend className="mb-4 text-label text-fg">Connection</legend>
-          <Field label="Name" error={errors.name}>
+          <legend className="mb-4 text-label text-fg">{t.ldap.connection}</legend>
+          <Field label={t.name} error={errors.name}>
             {(props) => <Input {...props} autoFocus autoComplete="off" maxLength={100} placeholder="Active Directory" {...text("name")} />}
           </Field>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <Field label="Server" error={errors.url}>
+            <Field label={t.ldap.server} error={errors.url}>
               {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} placeholder="ldaps://dc1.example.com" {...text("url")} />}
             </Field>
-            <Field label="Connection security">
+            <Field label={t.ldap.connectionSecurity}>
               {(props) => (
                 <Select {...props} value={form.security} onChange={(event) => setForm({ ...form, security: event.target.value as LDAPSecurity })}>
-                  {Object.entries(SECURITY).map(([value, label]) => (
+                  {Object.entries(t.ldap.security).map(([value, label]) => (
                     <option key={value} value={value}>
                       {label}
                     </option>
@@ -393,51 +385,51 @@ function DirectoryDialog({ directory, attributes, onClose }: { directory: LDAPDi
               )}
             </Field>
           </div>
-          <Field label="Certificate authority" hint="Optional. PEM certificates to trust for this server instead of the system's.">
+          <Field label={t.ldap.certificateAuthority} hint={t.ldap.certificateAuthorityHint}>
             {(props) => <Textarea {...props} mono rows={3} spellCheck={false} placeholder="-----BEGIN CERTIFICATE-----" {...text("caCertificate")} />}
           </Field>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <Field label="Bind DN" error={errors.bindDn}>
+            <Field label={t.ldap.bindDn} error={errors.bindDn}>
               {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} placeholder="CN=halo-sync,OU=Service Accounts,DC=example,DC=com" {...text("bindDn")} />}
             </Field>
-            <Field label="Bind password" error={errors.password} hint={directory ? "Leave empty to keep the current password. Stored sealed." : "Stored sealed and never shown again."}>
+            <Field label={t.ldap.bindPassword} error={errors.password} hint={directory ? t.ldap.keepPassword : t.ldap.passwordHint}>
               {(props) => <PasswordInput {...props} autoComplete="new-password" {...text("password")} />}
             </Field>
           </div>
         </fieldset>
         <fieldset className="flex flex-col gap-6">
-          <legend className="mb-4 text-label text-fg">What to sync</legend>
+          <legend className="mb-4 text-label text-fg">{t.ldap.whatToSync}</legend>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <Field label="People base DN" error={errors.userBaseDn}>
+            <Field label={t.ldap.peopleBaseDn} error={errors.userBaseDn}>
               {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} placeholder="OU=Staff,DC=example,DC=com" {...text("userBaseDn")} />}
             </Field>
-            <Field label="People filter" hint="People outside the filter are suspended.">
+            <Field label={t.ldap.peopleFilter} hint={t.ldap.peopleFilterHint}>
               {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} {...text("userFilter")} />}
             </Field>
-            <Field label="Group base DN" hint="Optional. Leave empty to sync people only.">
+            <Field label={t.ldap.groupBaseDn} hint={t.ldap.groupBaseDnHint}>
               {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} placeholder="OU=Groups,DC=example,DC=com" {...text("groupBaseDn")} />}
             </Field>
-            <Field label="Group filter">
+            <Field label={t.ldap.groupFilter}>
               {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} placeholder="(|(objectClass=group)(objectClass=groupOfNames))" {...text("groupFilter")} />}
             </Field>
           </div>
         </fieldset>
         <fieldset className="flex flex-col gap-6">
-          <legend className="mb-4 text-label text-fg">Attribute mapping</legend>
+          <legend className="mb-4 text-label text-fg">{t.ldap.mapping}</legend>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            {PERSON_FIELDS.map((f) => (
+            {PERSON_FIELDS(t).map((f) => (
               <Field key={f.key} label={f.label} hint={f.hint}>
                 {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={mapping[f.key]} onChange={(event) => setMapping({ ...mapping, [f.key]: event.target.value.trim() })} />}
               </Field>
             ))}
-            <Field label="Group name">
+            <Field label={t.ldap.groupName}>
               {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={mapping.groupName} onChange={(event) => setMapping({ ...mapping, groupName: event.target.value.trim() })} />}
             </Field>
-            <Field label="Group members">
+            <Field label={t.ldap.groupMembers}>
               {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={mapping.member} onChange={(event) => setMapping({ ...mapping, member: event.target.value.trim() })} />}
             </Field>
             {mappable.map((a) => (
-              <Field key={a.id} label={a.label} hint="Optional. A custom user attribute.">
+              <Field key={a.id} label={a.label} hint={t.ldap.customAttributeHint}>
                 {(props) => (
                   <Input
                     {...props}
@@ -456,15 +448,15 @@ function DirectoryDialog({ directory, attributes, onClose }: { directory: LDAPDi
           <label className="flex cursor-pointer items-start gap-3">
             <Checkbox className="mt-0.5" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} />
             <span className="flex flex-col">
-              <span className="text-body-sm text-fg">Sync on a schedule</span>
-              <span className="text-caption text-fg-3">Leave off until a preview shows the changes you expect.</span>
+              <span className="text-body-sm text-fg">{t.ldap.schedule}</span>
+              <span className="text-caption text-fg-3">{t.ldap.scheduleHint}</span>
             </span>
           </label>
           {form.enabled ? (
-            <Field label="Sync every">
+            <Field label={t.ldap.syncEvery}>
               {(props) => (
                 <Select {...props} value={form.intervalMinutes} onChange={(event) => setForm({ ...form, intervalMinutes: Number(event.target.value) })}>
-                  {Object.entries({ ...INTERVAL, [form.intervalMinutes]: interval(form.intervalMinutes) }).map(([minutes, label]) => (
+                  {Object.entries({ ...t.ldap.interval, [form.intervalMinutes]: interval(form.intervalMinutes, t) }).map(([minutes, label]) => (
                     <option key={minutes} value={minutes}>
                       {label}
                     </option>

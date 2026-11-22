@@ -1,22 +1,27 @@
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { SectionTitle } from "@/components/ui/section-title";
 import { PageSkeleton, Skeleton, TableSkeleton } from "@/components/ui/skeleton";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { remoteMessages } from "@/lib/i18n/console/infrastructure/remote";
+import { requestLocale } from "@/lib/i18n/server";
 
-export default function Loading() {
+export default async function Loading() {
+  const locale = await requestLocale();
+  const t = remoteMessages[locale];
   return (
-    <PageSkeleton title="Remote access" description={150}>
+    <PageSkeleton title={frameMessages[locale].nav.items.remoteAccess.label} description={150}>
       <div className="flex flex-col gap-6">
         <SectionTitle
-          title="Outposts"
-          description="Agents inside your networks that connect out to Halo and reach hosts for it. Each remote access application names the outpost that reaches its host."
+          title={t.outposts.title}
+          description={t.outposts.hint}
           action={<Skeleton className="h-8 w-36 rounded-md" />}
         />
         <TableSkeleton simple columns={5} rows={2} />
       </div>
       <Card>
         <CardHeader
-          title="Run an outpost"
-          description="Run halo-outpost on a machine that reaches your hosts, with the token from Register outpost. It keeps one HTTPS connection open to Halo and opens a TCP connection to a host only when a session to it starts. Then add a remote access application for each host."
+          title={t.page.guide}
+          description={t.page.guideHint}
         />
         <CardBody>
           <div className="h-40 rounded-md border border-border bg-sunken" />
@@ -24,8 +29,8 @@ export default function Loading() {
       </Card>
       <div className="flex flex-col gap-6">
         <SectionTitle
-          title="Sessions"
-          description="The 200 most recent sessions, newest first. Halo keeps them, with their recordings, for as long as the sign-in log. Ending a session closes it at once."
+          title={t.page.sessions}
+          description={t.page.sessionsHint}
         />
         <TableSkeleton simple columns={6} rows={4} />
       </div>

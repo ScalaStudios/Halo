@@ -5,32 +5,36 @@ import { hasRole } from "@/components/settings/roles";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionTitle } from "@/components/ui/section-title";
 import { apiGet } from "@/lib/api/server";
-import { pluralize } from "@/lib/format";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { remoteMessages } from "@/lib/i18n/console/infrastructure/remote";
+import { requestLocale } from "@/lib/i18n/server";
 import type { Outpost, RemoteSession } from "@/lib/infra-types";
 import type { Organization, User } from "@/lib/types";
 
-export const metadata = { title: "Remote access" };
+export async function generateMetadata() {
+  return { title: frameMessages[await requestLocale()].nav.items.remoteAccess.label };
+}
 
 export default async function RemoteAccessPage() {
-  const [outposts, sessions, org, me] = await Promise.all([apiGet<Outpost[]>("/outposts"), apiGet<RemoteSession[]>("/remote-sessions"), apiGet<Organization>("/organization"), apiGet<User>("/me")]);
+  const [outposts, sessions, org, me, locale] = await Promise.all([apiGet<Outpost[]>("/outposts"), apiGet<RemoteSession[]>("/remote-sessions"), apiGet<Organization>("/organization"), apiGet<User>("/me"), requestLocale()]);
+  const t = remoteMessages[locale].page;
   const live = sessions.filter((s) => s.status === "active").length;
   const connected = outposts.filter((o) => o.connected).length;
 
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        title="Remote access"
-        description={`SSH, RDP, and VNC sessions in the browser to hosts in your networks, started from the account portal under the same checks as an application sign-in. ${pluralize(connected, "outpost is", "outposts are")} connected and ${pluralize(live, "session is", "sessions are")} live.`}
+        title={frameMessages[locale].nav.items.remoteAccess.label}
+        description={t.description(connected, live)}
       />
 
       <OutpostsSection outposts={outposts} issuer={org.issuer} canEdit={hasRole(me, "security_admin")} />
 
       <SetupGuideCard
         guide={{
-          title: "Run an outpost",
-          description:
-            "Run halo-outpost on a machine that reaches your hosts, with the token from Register outpost. It keeps one HTTPS connection open to Halo and opens a TCP connection to a host only when a session to it starts. Then add a remote access application for each host.",
-          file: "Outpost with Docker",
+          title: t.guide,
+          description: t.guideHint,
+          file: t.guideFile,
           code: [
             "docker run -d --name halo-outpost --restart unless-stopped \\",
             "  -v halo-outpost:/home/nonroot \\",
@@ -43,14 +47,14 @@ export default async function RemoteAccessPage() {
 
       <div className="flex flex-col gap-6">
         <SectionTitle
-          title="Sessions"
-          description="The 200 most recent sessions, newest first. Halo keeps them, with their recordings, for as long as the sign-in log. Ending a session closes it at once."
+          title={t.sessions}
+          description={t.sessionsHint}
         />
         <RemoteSessions
           sessions={sessions}
           canEnd={hasRole(me, "security_admin", "app_admin")}
           canDownload={hasRole(me, "security_admin", "auditor")}
-          empty="Sessions appear here when someone opens a remote access application from their account portal."
+          empty={t.empty}
         />
       </div>
     </div>

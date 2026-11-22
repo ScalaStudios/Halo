@@ -1,6 +1,6 @@
 import type { RemoteSession } from "@/lib/infra-types";
 
-export async function remoteDesktop(host: HTMLElement) {
+export async function remoteDesktop(host: HTMLElement, label: (protocol: string) => string) {
   const { default: Guacamole } = await import("@pelotech/guacamole-common-js");
   return (socket: WebSocket, session: RemoteSession) => {
     class DesktopTunnel extends Guacamole.Tunnel {}
@@ -24,7 +24,7 @@ export async function remoteDesktop(host: HTMLElement) {
     const display = client.getDisplay();
     const element = display.getElement();
     element.tabIndex = 0;
-    element.setAttribute("aria-label", `${session.protocol.toUpperCase()} remote desktop. Press Shift and Escape to return to Halo controls.`);
+    element.setAttribute("aria-label", label(session.protocol.toUpperCase()));
     const escape = (event: KeyboardEvent) => {
       if (event.shiftKey && event.key === "Escape") {
         event.preventDefault();

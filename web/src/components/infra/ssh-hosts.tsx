@@ -15,13 +15,15 @@ import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
 import { formatDateTime, now } from "@/lib/format";
+import { useLocale } from "@/lib/i18n/client";
+import { infrastructureMessages } from "@/lib/i18n/console/infrastructure";
 import type { HostGroup, SshHost } from "@/lib/infra-types";
 
 type Enrollment = { host: SshHost; token: string };
 type Issued = { certificate: string; serial: number; validBefore: string };
 
-function hostLabel(host: SshHost) {
-  return host.hostnames[0] ?? "this host";
+function hostLabel(host: SshHost, fallback: string) {
+  return host.hostnames[0] ?? fallback;
 }
 
 export function HostsSection({ hosts, hostGroups, issuer }: { hosts: SshHost[]; hostGroups: HostGroup[]; issuer: string }) {
@@ -30,13 +32,16 @@ export function HostsSection({ hosts, hostGroups, issuer }: { hosts: SshHost[]; 
   const [signing, setSigning] = useState<SshHost | null>(null);
   const [revoking, setRevoking] = useState<SshHost | null>(null);
   const current = now();
+  const locale = useLocale();
+  const t = infrastructureMessages[locale];
+  const label = (host: SshHost) => hostLabel(host, t.hosts.thisHost);
 
   function move(host: SshHost, hostGroupId: string) {
     const group = hostGroups.find((g) => g.id === hostGroupId);
     void run(`move-${host.id}`, () => api(`/ssh/hosts/${host.id}/host-group`, { method: "PUT", body: { hostGroupId: hostGroupId || null } }), () =>
       toast({
-        title: group ? `${hostLabel(host)} moved to ${group.name}` : `${hostLabel(host)} is in no host group`,
-        description: group ? "halo-hostd applies its rules at the next refresh. Recorded in the audit log." : "halo-hostd lets nobody in from the next refresh. Recorded in the audit log.",
+        title: group ? t.hosts.moved(label(host), group.name) : t.hosts.ungrouped(label(host)),
+        description: group ? t.hosts.movedHint : t.hosts.ungroupedHint,
       }),
     );
   }
@@ -46,26 +51,26 @@ export function HostsSection({ hosts, hostGroups, issuer }: { hosts: SshHost[]; 
     if (!host) return;
     void run("revoke", () => api(`/ssh/hosts/${host.id}/revoke`, { method: "POST" }), () => {
       setRevoking(null);
-      toast({ title: `${hostLabel(host)} revoked`, description: "Its key is on the revocation list, and it can no longer renew. Recorded in the audit log." });
+      toast({ title: t.hosts.revokedToast(label(host)), description: t.hosts.revokedHint });
     }, "inline");
   }
 
   return (
     <div className="flex flex-col gap-6">
       <SectionTitle
-        title="Hosts"
-        description="Servers whose host keys Halo signs. A certificate names every hostname of its host, and ssh trusts it only for those names."
+        title={t.hosts.title}
+        description={t.hosts.hint}
         action={
           <Button size="sm" variant="primary" onClick={() => setEnrolling("new")}>
             <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-            Register host
+            {t.hosts.register}
           </Button>
         }
       />
       {hosts.length ? (
         <SimpleTable
-          caption="Hosts"
-          head={["Hostnames", "Host key", "Certificate", "Host group", "Actions"]}
+          caption={t.hosts.title}
+          head={t.hosts.head}
           rows={hosts.map((host) => [
             <span key="hostnames" className="flex flex-wrap gap-1">
               {host.hostnames.map((name) => (
@@ -79,33 +84,38 @@ export function HostsSection({ hosts, hostGroups, issuer }: { hosts: SshHost[]; 
               </span>
             ) : (
               <span key="key" className="flex flex-col whitespace-nowrap">
-                <span className="text-fg-2">Not enrolled</span>
+                <span className="text-fg-2">{t.hosts.notEnrolled}</span>
                 {host.enrollmentExpiresAt && new Date(host.enrollmentExpiresAt) > current ? (
-                  <span className="text-caption text-fg-3">Token works until {formatDateTime(host.enrollmentExpiresAt)}</span>
+                  <span className="text-caption text-fg-3">{t.enrollment.tokenUntil(formatDateTime(host.enrollmentExpiresAt, locale))}</span>
                 ) : null}
               </span>
             ),
             <span key="certificate" className="flex flex-col items-start gap-1 whitespace-nowrap">
               {host.revokedAt ? (
                 <Badge tone="danger" dot>
-                  Revoked
+                  {t.revoked}
                 </Badge>
               ) : !host.validBefore ? (
-                <Badge dot>Waiting for enrollment</Badge>
+                <Badge dot>{t.enrollment.waiting}</Badge>
               ) : new Date(host.validBefore) > current ? (
                 <Badge tone="success" dot>
-                  Valid
+                  {t.valid}
                 </Badge>
               ) : (
                 <Badge tone="warning" dot>
-                  Expired
+                  {t.expired}
                 </Badge>
               )}
               {host.revokedAt ? (
-                <span className="text-caption text-fg-3">{formatDateTime(host.revokedAt)}</span>
+                <span className="text-caption text-fg-3">{formatDateTime(host.revokedAt, locale)}</span>
               ) : host.validBefore ? (
                 <span className="text-caption text-fg-3">
-                  Serial <span className="tnum">{host.serial}</span>, until {formatDateTime(host.validBefore)}
+                  {t.hosts.serialUntil(
+                    <span key="serial" className="tnum">
+                      {host.serial}
+                    </span>,
+                    formatDateTime(host.validBefore, locale),
+                  )}
                 </span>
               ) : null}
             </span>,
@@ -117,12 +127,12 @@ export function HostsSection({ hosts, hostGroups, issuer }: { hosts: SshHost[]; 
               <span key="group" className="block w-48">
                 <Select
                   size="sm"
-                  aria-label={`Host group of ${hostLabel(host)}`}
+                  aria-label={t.hosts.hostGroupOf(label(host))}
                   value={host.hostGroupId ?? ""}
                   disabled={pending === `move-${host.id}`}
                   onChange={(event) => move(host, event.target.value)}
                 >
-                  <option value="">No host group</option>
+                  <option value="">{t.hosts.noHostGroup}</option>
                   {hostGroups.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.name}
@@ -135,13 +145,13 @@ export function HostsSection({ hosts, hostGroups, issuer }: { hosts: SshHost[]; 
               <span key="actions" />
             ) : (
               <span key="actions" className="flex gap-1">
-                <Button size="icon-sm" variant="quiet" aria-label={`New enrollment token for ${hostLabel(host)}`} onClick={() => setEnrolling(host)}>
+                <Button size="icon-sm" variant="quiet" aria-label={t.enrollment.newToken(label(host))} onClick={() => setEnrolling(host)}>
                   <KeyRound aria-hidden="true" size={16} strokeWidth={1.75} />
                 </Button>
-                <Button size="icon-sm" variant="quiet" aria-label={`Sign a host key for ${hostLabel(host)}`} onClick={() => setSigning(host)}>
+                <Button size="icon-sm" variant="quiet" aria-label={t.hosts.signKey(label(host))} onClick={() => setSigning(host)}>
                   <FilePen aria-hidden="true" size={16} strokeWidth={1.75} />
                 </Button>
-                <Button size="icon-sm" variant="quiet" aria-label={`Revoke ${hostLabel(host)}`} onClick={() => setRevoking(host)}>
+                <Button size="icon-sm" variant="quiet" aria-label={t.hosts.revoke(label(host))} onClick={() => setRevoking(host)}>
                   <Ban aria-hidden="true" size={16} strokeWidth={1.75} />
                 </Button>
               </span>
@@ -152,8 +162,8 @@ export function HostsSection({ hosts, hostGroups, issuer }: { hosts: SshHost[]; 
         <Card>
           <EmptyState
             icon={Server}
-            title="No hosts registered yet"
-            description="Register a server to sign its host key, so people connect without the first-connection prompt."
+            title={t.hosts.noHosts}
+            description={t.hosts.noHostsHint}
           />
         </Card>
       )}
@@ -167,15 +177,15 @@ export function HostsSection({ hosts, hostGroups, issuer }: { hosts: SshHost[]; 
           clearError();
         }}
         error={errorFor("revoke")}
-        title={`Revoke ${revoking ? hostLabel(revoking) : "this host"}?`}
-        description="Its key joins the revocation list and it can no longer renew. Clients without RevokedHostKeys keep trusting its current certificate until it expires. A revoked host can't be restored, and its key can't be enrolled again."
+        title={t.hosts.revokeTitle(revoking ? label(revoking) : t.hosts.thisHost)}
+        description={t.hosts.revokeHint}
         footer={
           <>
             <Button variant="secondary" onClick={() => setRevoking(null)}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "revoke"} onClick={revoke}>
-              Revoke host
+              {t.hosts.revokeConfirm}
             </Button>
           </>
         }
@@ -189,6 +199,8 @@ function EnrollmentDialog({ host, issuer, onClose }: { host: SshHost | null; iss
   const [hostnames, setHostnames] = useState("");
   const [error, setError] = useState<string>();
   const [issued, setIssued] = useState<Enrollment | null>(null);
+  const locale = useLocale();
+  const t = infrastructureMessages[locale];
 
   function submit() {
     const list = hostnames
@@ -196,7 +208,7 @@ function EnrollmentDialog({ host, issuer, onClose }: { host: SshHost | null; iss
       .map((value) => value.trim())
       .filter(Boolean);
     if (!host && !list.length) {
-      setError("Add at least one hostname, such as web1.example.com.");
+      setError(t.hosts.hostnamesError);
       return;
     }
     setError(undefined);
@@ -215,26 +227,20 @@ function EnrollmentDialog({ host, issuer, onClose }: { host: SshHost | null; iss
         if (!open) onClose();
       }}
       error={errorFor("enroll")}
-      title={issued ? `Enroll ${hostLabel(issued.host)}` : host ? `New enrollment token for ${hostLabel(host)}` : "Register host"}
-      description={
-        issued
-          ? "Run this command as root on the host. It sends the host's public key with the token and writes the certificate next to the key."
-          : host
-            ? "The new token replaces any unused one. Enrolling again with a new host key replaces the host's key."
-            : "Hostnames are the names people type after ssh. They become the certificate's principals."
-      }
+      title={issued ? t.enrollment.enroll(hostLabel(issued.host, t.hosts.thisHost)) : host ? t.enrollment.newToken(hostLabel(host, t.hosts.thisHost)) : t.hosts.register}
+      description={issued ? t.hosts.enrollHint : host ? t.hosts.tokenHint : t.hosts.registerHint}
       footer={
         issued ? (
           <Button variant="primary" onClick={onClose}>
-            Done
+            {t.done}
           </Button>
         ) : (
           <>
             <Button variant="secondary" onClick={onClose}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="primary" loading={pending === "enroll"} onClick={submit}>
-              {host ? "Create token" : "Register host"}
+              {host ? t.enrollment.createToken : t.hosts.register}
             </Button>
           </>
         )
@@ -242,10 +248,8 @@ function EnrollmentDialog({ host, issuer, onClose }: { host: SshHost | null; iss
     >
       {issued ? (
         <div className="flex animate-enter flex-col gap-4">
-          <CopyField label="Enrollment command" value={`sudo halo ssh-host enroll --server ${issuer} --token ${issued.token}`} secret />
-          <SecretWarning>
-            This is the only time Halo shows this token. It works once, until {issued.host.enrollmentExpiresAt ? formatDateTime(issued.host.enrollmentExpiresAt) : "it expires"}.
-          </SecretWarning>
+          <CopyField label={t.enrollment.command} value={`sudo halo ssh-host enroll --server ${issuer} --token ${issued.token}`} secret />
+          <SecretWarning>{t.enrollment.onlyOnce(issued.host.enrollmentExpiresAt ? formatDateTime(issued.host.enrollmentExpiresAt, locale) : null)}</SecretWarning>
         </div>
       ) : host ? null : (
         <form
@@ -255,7 +259,7 @@ function EnrollmentDialog({ host, issuer, onClose }: { host: SshHost | null; iss
             submit();
           }}
         >
-          <Field label="Hostnames" error={error} hint="Separated by commas or spaces, such as web1.example.com, without wildcards or ports. ssh trusts the certificate without a prompt only for names under a verified domain.">
+          <Field label={t.hosts.hostnames} error={error} hint={t.hosts.hostnamesHint}>
             {(props) => <Input {...props} autoFocus mono autoComplete="off" spellCheck={false} value={hostnames} onChange={(event) => setHostnames(event.target.value)} placeholder="web1.example.com" />}
           </Field>
           <button type="submit" hidden />
@@ -270,10 +274,13 @@ function SignDialog({ host, onClose }: { host: SshHost; onClose: () => void }) {
   const [publicKey, setPublicKey] = useState("");
   const [error, setError] = useState<string>();
   const [issued, setIssued] = useState<Issued | null>(null);
+  const locale = useLocale();
+  const t = infrastructureMessages[locale];
+  const name = hostLabel(host, t.hosts.thisHost);
 
   function submit() {
     if (!publicKey.trim()) {
-      setError("Paste the host's public key, such as the contents of /etc/ssh/ssh_host_ed25519_key.pub.");
+      setError(t.hosts.publicKeyError);
       return;
     }
     setError(undefined);
@@ -287,25 +294,21 @@ function SignDialog({ host, onClose }: { host: SshHost; onClose: () => void }) {
         if (!open) onClose();
       }}
       error={errorFor("sign")}
-      title={issued ? `Certificate ${issued.serial} for ${hostLabel(host)}` : `Sign a host key for ${hostLabel(host)}`}
-      description={
-        issued
-          ? `Valid until ${formatDateTime(issued.validBefore)}. Save it on the host next to the key as ssh_host_ed25519_key-cert.pub and name it in HostCertificate in sshd_config.`
-          : "For hosts that can't reach Halo to enroll. The key becomes the host's key, so the host can renew with halo ssh-host renew later."
-      }
+      title={issued ? t.hosts.certificateTitle(issued.serial, name) : t.hosts.signKey(name)}
+      description={issued ? t.hosts.signedHint(formatDateTime(issued.validBefore, locale)) : t.hosts.signHint}
       width="wide"
       footer={
         issued ? (
           <Button variant="primary" onClick={onClose}>
-            Done
+            {t.done}
           </Button>
         ) : (
           <>
             <Button variant="secondary" onClick={onClose}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="primary" loading={pending === "sign"} onClick={submit}>
-              Sign key
+              {t.hosts.signConfirm}
             </Button>
           </>
         )
@@ -313,10 +316,10 @@ function SignDialog({ host, onClose }: { host: SshHost; onClose: () => void }) {
     >
       {issued ? (
         <div className="animate-enter">
-          <CopyField label="Host certificate" value={issued.certificate} />
+          <CopyField label={t.hosts.hostCertificate} value={issued.certificate} />
         </div>
       ) : (
-        <Field label="Host public key" error={error}>
+        <Field label={t.hosts.hostPublicKey} error={error}>
           {(props) => (
             <Textarea {...props} mono autoFocus rows={4} spellCheck={false} value={publicKey} onChange={(event) => setPublicKey(event.target.value)} placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA…" />
           )}

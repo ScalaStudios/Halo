@@ -12,19 +12,21 @@ import { Checkbox, Field, Input } from "@/components/ui/input";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
-import { formatDateTime, pluralize } from "@/lib/format";
-import { GROUP_KIND } from "@/lib/labels";
+import { formatDateTime } from "@/lib/format";
+import { useLocale, useMessages } from "@/lib/i18n/client";
+import { provisioningMessages } from "@/lib/i18n/console/infrastructure/provisioning";
+import type { Locale } from "@/lib/i18n/locale";
 import type { AppProvisioning } from "@/lib/provisioning-types";
 import type { Group, Protocol } from "@/lib/types";
 import { StatusLabel } from "./shared";
 
 export type OutboundApp = { id: string; name: string; protocol: Protocol; config: AppProvisioning | null };
 
-function status(config: AppProvisioning | null) {
-  if (!config) return { label: "Not set up", tone: "neutral" as const };
-  if (!config.enabled) return { label: "Paused", tone: "neutral" as const };
-  if (config.lastError) return { label: "Failing", tone: "danger" as const };
-  return { label: "On", tone: "success" as const };
+function status(config: AppProvisioning | null, t: (typeof provisioningMessages)[Locale]["outbound"]) {
+  if (!config) return { label: t.notSetUp, tone: "neutral" as const };
+  if (!config.enabled) return { label: t.paused, tone: "neutral" as const };
+  if (config.lastError) return { label: t.failing, tone: "danger" as const };
+  return { label: t.on, tone: "success" as const };
 }
 
 function pushesGroups(config: AppProvisioning) {
@@ -34,16 +36,19 @@ function pushesGroups(config: AppProvisioning) {
 export function OutboundTable({ apps, groups }: { apps: OutboundApp[]; groups: Group[] }) {
   const { pending, run, toast } = useMutation();
   const [configuring, setConfiguring] = useState<OutboundApp | null>(null);
+  const locale = useLocale();
+  const common = provisioningMessages[locale];
+  const t = common.outbound;
 
   if (apps.length === 0) {
-    return <EmptyState icon={RefreshCw} title="No applications to provision" description="Register an OpenID Connect or SAML application, then set up provisioning here." />;
+    return <EmptyState icon={RefreshCw} title={t.empty} description={t.emptyHint} />;
   }
 
   function test(app: OutboundApp) {
     void run(
       `test-${app.id}`,
       () => api(`/provisioning/applications/${app.id}/test`, { method: "POST" }),
-      () => toast({ title: `${app.name} accepted the connection`, description: "Halo reached the SCIM endpoint with the saved bearer token." }),
+      () => toast({ title: t.accepted(app.name), description: t.acceptedHint }),
     );
   }
 
@@ -54,10 +59,10 @@ export function OutboundTable({ apps, groups }: { apps: OutboundApp[]; groups: G
       (result) =>
         toast(
           result.lastError
-            ? { title: `Some changes to ${app.name} failed`, description: result.lastError, tone: "danger" }
+            ? { title: t.syncFailed(app.name), description: result.lastError, tone: "danger" }
             : {
-                title: `${app.name} is up to date`,
-                description: `${result.created} created, ${result.updated} updated, ${result.deactivated} deactivated.${pushesGroups(result) ? ` Groups: ${result.groupsCreated} created, ${result.groupsUpdated} updated, ${result.groupsDeleted} deleted.` : ""}`,
+                title: t.upToDate(app.name),
+                description: `${t.syncCounts(result.created, result.updated, result.deactivated)}${pushesGroups(result) ? t.groupSyncCounts(result.groupsCreated, result.groupsUpdated, result.groupsDeleted) : ""}`,
               },
         ),
     );
@@ -66,8 +71,8 @@ export function OutboundTable({ apps, groups }: { apps: OutboundApp[]; groups: G
   return (
     <>
       <SimpleTable
-        caption="Outbound provisioning"
-        head={["Application", "Status", "People", "Last sync", "Actions"]}
+        caption={t.caption}
+        head={t.head}
         rows={apps.map((app) => {
           const config = app.config;
           return [
@@ -76,32 +81,32 @@ export function OutboundTable({ apps, groups }: { apps: OutboundApp[]; groups: G
               <span className="text-caption text-fg-3">{PROTOCOL_LABEL[app.protocol]}</span>
             </span>,
             <span key="s" className="flex max-w-80 flex-col gap-1">
-              <StatusLabel {...status(config)} />
+              <StatusLabel {...status(config, t)} />
               {config?.lastError ? (
-                <span className="line-clamp-2 text-caption text-danger" title={config.lastError}>
+                <span lang="en" className="line-clamp-2 text-caption text-danger" title={config.lastError}>
                   {config.lastError}
                 </span>
               ) : null}
             </span>,
             <span key="p" className="flex flex-col">
               <span className="tnum">{config ? config.provisioned : "—"}</span>
-              {config && config.groupIds.length > 0 ? <span className="whitespace-nowrap text-caption text-fg-3">{pluralize(config.groupIds.length, "group")}</span> : null}
+              {config && config.groupIds.length > 0 ? <span className="whitespace-nowrap text-caption text-fg-3">{common.groups(config.groupIds.length)}</span> : null}
             </span>,
             config?.lastSyncAt ? (
-              <span key="l" className="flex flex-col whitespace-nowrap" title={formatDateTime(config.lastSyncAt)}>
+              <span key="l" className="flex flex-col whitespace-nowrap" title={formatDateTime(config.lastSyncAt, locale)}>
                 <span><RelativeTime iso={config.lastSyncAt} /></span>
                 <span className="text-caption text-fg-3">
-                  {config.created} created · {config.updated} updated · {config.deactivated} deactivated
+                  {t.counts(config.created, config.updated, config.deactivated)}
                 </span>
                 {pushesGroups(config) ? (
                   <span className="text-caption text-fg-3">
-                    Groups: {config.groupsCreated} created · {config.groupsUpdated} updated · {config.groupsDeleted} deleted
+                    {t.groupCounts(config.groupsCreated, config.groupsUpdated, config.groupsDeleted)}
                   </span>
                 ) : null}
               </span>
             ) : (
               <span key="l" className="text-fg-3">
-                Never
+                {common.never}
               </span>
             ),
             <span key="a" className="flex justify-end gap-2">
@@ -109,17 +114,17 @@ export function OutboundTable({ apps, groups }: { apps: OutboundApp[]; groups: G
                 <>
                   <Button size="sm" variant="quiet" loading={pending === `test-${app.id}`} onClick={() => test(app)}>
                     <PlugZap aria-hidden="true" size={16} strokeWidth={1.75} />
-                    Test
+                    {t.test}
                   </Button>
                   <Button size="sm" variant="quiet" loading={pending === `sync-${app.id}`} onClick={() => sync(app)}>
                     <RefreshCw aria-hidden="true" size={16} strokeWidth={1.75} />
-                    Sync now
+                    {t.syncNow}
                   </Button>
                 </>
               ) : null}
               <Button size="sm" variant="secondary" onClick={() => setConfiguring(app)}>
                 <Settings2 aria-hidden="true" size={16} strokeWidth={1.75} />
-                {config ? "Edit" : "Set up"}
+                {config ? t.edit : t.setUp}
               </Button>
             </span>,
           ];
@@ -138,12 +143,14 @@ function ConfigureDialog({ app, groups, onClose }: { app: OutboundApp | null; gr
   const [groupIds, setGroupIds] = useState<string[]>(app?.config?.groupIds ?? []);
   const [errors, setErrors] = useState<{ baseUrl?: string; token?: string }>({});
   const { pending, run, errorFor, toast } = useMutation();
+  const common = useMessages(provisioningMessages);
+  const t = common.outbound;
 
   function submit() {
     if (!app) return;
     const next = {
-      baseUrl: /^https?:\/\/\S+$/.test(baseUrl.trim()) ? undefined : "Enter the full SCIM base URL, starting with https://.",
-      token: configured || token.trim() ? undefined : `Enter the bearer token ${app.name} issued for provisioning.`,
+      baseUrl: /^https?:\/\/\S+$/.test(baseUrl.trim()) ? undefined : t.baseUrlError,
+      token: configured || token.trim() ? undefined : t.tokenError(app.name),
     };
     setErrors(next);
     if (next.baseUrl || next.token) return;
@@ -153,10 +160,8 @@ function ConfigureDialog({ app, groups, onClose }: { app: OutboundApp | null; gr
       () => {
         onClose();
         toast({
-          title: `Provisioning saved for ${app.name}`,
-          description: enabled
-            ? `Halo pushes assigned people${groupIds.length > 0 ? ` and ${pluralize(groupIds.length, "group")}` : ""} every 2 minutes. Use Test to check the connection.`
-            : "Provisioning is paused. Nothing is pushed until you turn it on.",
+          title: t.saved(app.name),
+          description: enabled ? t.savedHint(groupIds.length) : t.pausedHint,
         });
       },
       "inline",
@@ -168,15 +173,15 @@ function ConfigureDialog({ app, groups, onClose }: { app: OutboundApp | null; gr
       open={app !== null}
       onOpenChange={(next) => (next ? undefined : onClose())}
       error={errorFor("save")}
-      title={configured ? `Edit provisioning for ${app?.name}` : `Set up provisioning for ${app?.name}`}
-      description="Halo creates accounts for people assigned to the application, updates them when their profile changes and deactivates them when they lose access. It can also push the groups you choose."
+      title={configured ? t.editTitle(app?.name) : t.setUpTitle(app?.name)}
+      description={t.dialogHint}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {common.cancel}
           </Button>
           <Button variant="primary" loading={pending === "save"} onClick={submit}>
-            Save provisioning
+            {t.save}
           </Button>
         </>
       }
@@ -188,23 +193,23 @@ function ConfigureDialog({ app, groups, onClose }: { app: OutboundApp | null; gr
           submit();
         }}
       >
-        <Field label="SCIM base URL" error={errors.baseUrl} hint="From the application's SCIM or user provisioning settings.">
+        <Field label={common.page.scimBaseUrl} error={errors.baseUrl} hint={t.baseUrlHint}>
           {(props) => (
             <Input {...props} mono autoFocus autoComplete="off" spellCheck={false} value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://app.example.com/scim/v2" />
           )}
         </Field>
         <Field
-          label="Bearer token"
+          label={t.token}
           error={errors.token}
-          hint={configured ? "Stored encrypted. Leave empty to keep the saved token." : "Stored encrypted. Halo never shows it again."}
+          hint={configured ? t.keepToken : t.tokenHint}
         >
           {(props) => <Input {...props} mono type="password" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} />}
         </Field>
         {groups.length > 0 ? (
           <Checklist
-            legend="Groups to push"
-            hint={`Halo keeps these groups and their members in step in ${app?.name}. People who are not provisioned are left out. Unchecking a group deletes it in ${app?.name} at the next sync.`}
-            items={groups.map((g) => ({ id: g.id, label: g.name, detail: GROUP_KIND[g.kind] }))}
+            legend={t.groupsToPush}
+            hint={t.groupsToPushHint(app?.name)}
+            items={groups.map((g) => ({ id: g.id, label: g.name, detail: t.groupKind[g.kind] }))}
             value={groupIds}
             onChange={setGroupIds}
           />
@@ -212,8 +217,8 @@ function ConfigureDialog({ app, groups, onClose }: { app: OutboundApp | null; gr
         <label className="flex cursor-pointer items-start gap-3">
           <Checkbox className="mt-0.5" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
           <span className="flex flex-col">
-            <span className="text-body-sm text-fg">Push changes every 2 minutes</span>
-            <span className="text-caption text-fg-3">Turn off to pause provisioning without losing the settings.</span>
+            <span className="text-body-sm text-fg">{t.push}</span>
+            <span className="text-caption text-fg-3">{t.pushHint}</span>
           </span>
         </label>
         <button type="submit" hidden />

@@ -10,9 +10,11 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { api } from "@/lib/api/client";
-import { formatDuration } from "@/lib/format";
+import { useLocale } from "@/lib/i18n/client";
+import { infrastructureMessages } from "@/lib/i18n/console/infrastructure";
+import { remoteMessages } from "@/lib/i18n/console/infrastructure/remote";
+import type { Locale } from "@/lib/i18n/locale";
 import type { Outpost, RDPSecurity, RemoteAuth, RemoteProtocol, RemoteTarget } from "@/lib/infra-types";
-import { REMOTE_AUTH } from "@/lib/labels";
 
 export type RemoteDraft = { protocol: RemoteProtocol; rdpSecurity: RDPSecurity; outpostId: string; host: string; port: string; username: string; auth: RemoteAuth; credential: string; hostKey: string; sessionLimit: number; record: boolean };
 export type RemoteErrors = Partial<Record<"outpostId" | "host" | "port" | "username" | "credential" | "hostKey", string>>;
@@ -37,21 +39,22 @@ export function remoteDraft(outposts: Outpost[], target?: RemoteTarget): RemoteD
   };
 }
 
-export function remoteErrors(draft: RemoteDraft, stored: boolean): RemoteErrors {
+export function remoteErrors(draft: RemoteDraft, stored: boolean, locale: Locale = "en"): RemoteErrors {
+  const t = remoteMessages[locale].settings;
   const port = Number(draft.port);
   const keeps = stored && draft.auth !== "certificate";
   return {
-    outpostId: draft.outpostId ? undefined : "Choose the outpost that reaches this host.",
-    host: /^[A-Za-z0-9.:-]+$/.test(draft.host.trim()) ? undefined : "Enter the host name or IP address the outpost connects to, like db1.internal, without a port.",
-    port: Number.isInteger(port) && port >= 1 && port <= 65535 ? undefined : "Enter a port between 1 and 65535.",
-    username: draft.protocol !== "vnc" && draft.auth !== "certificate" && !draft.username.trim() ? "Enter the account Halo signs in as." : undefined,
-    hostKey: draft.protocol === "rdp" && !/^[a-f0-9]{64}$/i.test(draft.hostKey.trim().replaceAll(":", "")) ? "Enter the SHA-256 certificate fingerprint of the RDP server." : undefined,
+    outpostId: draft.outpostId ? undefined : t.outpostError,
+    host: /^[A-Za-z0-9.:-]+$/.test(draft.host.trim()) ? undefined : t.hostError,
+    port: Number.isInteger(port) && port >= 1 && port <= 65535 ? undefined : t.portError,
+    username: draft.protocol !== "vnc" && draft.auth !== "certificate" && !draft.username.trim() ? t.usernameError : undefined,
+    hostKey: draft.protocol === "rdp" && !/^[a-f0-9]{64}$/i.test(draft.hostKey.trim().replaceAll(":", "")) ? t.hostKeyError : undefined,
     credential:
       draft.auth === "certificate" || draft.credential.trim() || keeps
         ? undefined
         : draft.auth === "password"
-          ? "Enter the password Halo signs in with."
-          : "Paste the private key Halo signs in with.",
+          ? t.passwordError
+          : t.keyError,
   };
 }
 
@@ -85,40 +88,40 @@ export function RemoteFields({
   stored?: boolean;
 }) {
   const set = (patch: Partial<RemoteDraft>) => onChange({ ...draft, ...patch });
+  const locale = useLocale();
+  const t = remoteMessages[locale].settings;
   const limits = LIMITS.includes(draft.sessionLimit) ? LIMITS : [...LIMITS, draft.sessionLimit].sort((a, b) => a - b);
 
   return (
     <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
       <Field
-        label="Outpost"
+        label={t.outpost}
         error={errors.outpostId}
         hint={
           outposts.length ? (
-            "The outpost connects to the host for Halo. Halo never connects to it directly."
+            t.outpostHint
           ) : (
-            <>
-              No outpost is registered yet.{" "}
-              <Link href="/admin/remote-access" className="text-link underline underline-offset-3 hover:text-ember">
-                Register one on the Remote access page
-              </Link>{" "}
-              first.
-            </>
+            t.noOutpost((text) => (
+              <Link key="link" href="/admin/remote-access" className="text-link underline underline-offset-3 hover:text-ember">
+                {text}
+              </Link>
+            ))
           )
         }
         className="md:col-span-2"
       >
         {(props) => (
           <Select {...props} value={draft.outpostId} disabled={!outposts.length} onChange={(event) => set({ outpostId: event.target.value })}>
-            {outposts.length ? null : <option value="">No outposts</option>}
+            {outposts.length ? null : <option value="">{t.noOutposts}</option>}
             {outposts.map((o) => (
               <option key={o.id} value={o.id}>
-                {o.name} · {o.connected ? "connected" : "not connected"}
+                {o.name} · {o.connected ? t.connected : t.notConnected}
               </option>
             ))}
           </Select>
         )}
       </Field>
-      <Field label="Protocol">
+      <Field label={t.protocol}>
         {(props) => (
           <Select {...props} value={draft.protocol} onChange={(event) => {
             const protocol = event.target.value as RemoteProtocol;
@@ -131,58 +134,54 @@ export function RemoteFields({
         )}
       </Field>
       {draft.protocol === "rdp" ? (
-        <Field label="RDP security">
+        <Field label={t.rdpSecurity}>
           {(props) => (
             <Select {...props} value={draft.rdpSecurity} onChange={(event) => set({ rdpSecurity: event.target.value as RDPSecurity })}>
-              <option value="nla">Network Level Authentication</option>
+              <option value="nla">{t.nla}</option>
               <option value="tls">TLS</option>
             </Select>
           )}
         </Field>
       ) : null}
-      <Field label="Host" error={errors.host} hint="The name or address as the outpost resolves it.">
+      <Field label={t.host} error={errors.host} hint={t.hostHint}>
         {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={draft.host} onChange={(event) => set({ host: event.target.value })} placeholder="db1.internal" />}
       </Field>
-      <Field label="Port" error={errors.port}>
+      <Field label={t.port} error={errors.port}>
         {(props) => <Input {...props} type="number" min={1} max={65535} inputMode="numeric" className="tnum" value={draft.port} onChange={(event) => set({ port: event.target.value })} />}
       </Field>
       {draft.protocol === "ssh" ? <Field
-        label="Sign in with"
-        hint={
-          draft.auth === "certificate"
-            ? "Halo signs a certificate for each session that lasts one minute and names the person's SSH principals, so nothing is stored. The host must trust Halo's SSH CA."
-            : "Halo stores it encrypted, signs in for the person and never shows it to anyone, in the console or the browser."
-        }
+        label={t.signInWith}
+        hint={draft.auth === "certificate" ? t.certificateHint : t.storedHint}
       >
         {(props) => (
           <Select {...props} value={draft.auth} onChange={(event) => set({ auth: event.target.value as RemoteAuth, credential: "" })}>
-            {(Object.keys(REMOTE_AUTH) as RemoteAuth[]).map((auth) => (
+            {(Object.keys(t.auth) as RemoteAuth[]).map((auth) => (
               <option key={auth} value={auth}>
-                {REMOTE_AUTH[auth]}
+                {t.auth[auth]}
               </option>
             ))}
           </Select>
         )}
       </Field> : null}
       <Field
-        label="Account on the host"
+        label={t.account}
         error={errors.username}
-        hint={draft.auth === "certificate" ? "Leave empty to sign each person in as their first SSH principal." : draft.protocol === "vnc" ? "Optional for password-only VNC servers." : draft.protocol === "rdp" ? "Use DOMAIN\\username for a domain account." : "Everyone who connects signs in as this account."}
+        hint={draft.auth === "certificate" ? t.accountCertificateHint : draft.protocol === "vnc" ? t.accountVncHint : draft.protocol === "rdp" ? t.accountRdpHint : t.accountHint}
       >
         {(props) => (
-          <Input {...props} mono autoComplete="off" spellCheck={false} value={draft.username} onChange={(event) => set({ username: event.target.value })} placeholder={draft.auth === "certificate" ? "Their principal" : "deploy"} />
+          <Input {...props} mono autoComplete="off" spellCheck={false} value={draft.username} onChange={(event) => set({ username: event.target.value })} placeholder={draft.auth === "certificate" ? t.principalPlaceholder : "deploy"} />
         )}
       </Field>
       {draft.auth === "password" ? (
-        <Field label="Password" error={errors.credential} hint={stored ? "Halo has one stored. Leave this empty to keep it." : "Halo stores it encrypted and never shows it again."} className="md:col-span-2">
+        <Field label={t.password} error={errors.credential} hint={stored ? t.keepStored : t.passwordHint} className="md:col-span-2">
           {(props) => <PasswordInput {...props} autoComplete="new-password" value={draft.credential} onChange={(event) => set({ credential: event.target.value })} />}
         </Field>
       ) : null}
       {draft.auth === "key" ? (
         <Field
-          label="Private key"
+          label={t.privateKey}
           error={errors.credential}
-          hint={stored ? "Halo has one stored. Leave this empty to keep it." : "An unencrypted OpenSSH or PEM key. Halo stores it encrypted and never shows it again."}
+          hint={stored ? t.keepStored : t.privateKeyHint}
           className="md:col-span-2"
         >
           {(props) => (
@@ -200,35 +199,35 @@ export function RemoteFields({
         </Field>
       ) : null}
       {draft.protocol === "rdp" ? (
-        <Field label="RDP certificate fingerprint" error={errors.hostKey} hint="SHA-256 fingerprint of the certificate presented by the RDP server." className="md:col-span-2">
+        <Field label={t.fingerprint} error={errors.hostKey} hint={t.fingerprintHint} className="md:col-span-2">
           {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={draft.hostKey} onChange={(event) => set({ hostKey: event.target.value })} />}
         </Field>
       ) : null}
       {draft.protocol === "ssh" ? <Field
-        label="Host key"
-        hint="Paste the output of ssh-keyscan -t ed25519 for the host. Leave it empty only for hosts with a Halo host certificate: Halo connects to nothing else."
+        label={t.hostKey}
+        hint={t.hostKeyHint}
         className="md:col-span-2"
       >
         {(props) => (
           <Textarea {...props} mono rows={3} autoComplete="off" spellCheck={false} value={draft.hostKey} onChange={(event) => set({ hostKey: event.target.value })} placeholder="db1.internal ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA…" />
         )}
       </Field> : null}
-      <Field label="Session time limit" hint="Halo ends every session after this long.">
+      <Field label={t.limit} hint={t.limitHint}>
         {(props) => (
           <Select {...props} value={draft.sessionLimit} onChange={(event) => set({ sessionLimit: Number(event.target.value) })}>
             {limits.map((seconds) => (
               <option key={seconds} value={seconds}>
-                {formatDuration(seconds)}
+                {infrastructureMessages[locale].duration(seconds)}
               </option>
             ))}
           </Select>
         )}
       </Field>
-      {draft.protocol === "ssh" ? <Field label="Recording" hint="Recordings keep the terminal output, not keystrokes, for as long as the sign-in log.">
+      {draft.protocol === "ssh" ? <Field label={t.recording} hint={t.recordingHint}>
         {(props) => (
           <Select {...props} value={draft.record ? "on" : "off"} onChange={(event) => set({ record: event.target.value === "on" })}>
-            <option value="off">Don&apos;t record</option>
-            <option value="on">Record terminal output</option>
+            <option value="off">{t.dontRecord}</option>
+            <option value="on">{t.record}</option>
           </Select>
         )}
       </Field> : null}
@@ -240,11 +239,13 @@ export function RemoteSettingsForm({ appId, appName, target, outposts }: { appId
   const [draft, setDraft] = useState(() => remoteDraft(outposts, target));
   const [errors, setErrors] = useState<RemoteErrors>({});
   const { pending, run, errorFor, toast } = useMutation();
+  const locale = useLocale();
+  const t = remoteMessages[locale].settings;
   const stored = target.hasCredential && draft.protocol === target.protocol && draft.auth === target.auth;
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    const next = remoteErrors(draft, stored);
+    const next = remoteErrors(draft, stored, locale);
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
     void run(
@@ -252,7 +253,7 @@ export function RemoteSettingsForm({ appId, appName, target, outposts }: { appId
       () => api(`/applications/${appId}/remote`, { method: "PUT", body: remoteBody(draft) }),
       () => {
         setDraft((d) => d.credential === draft.credential ? { ...d, credential: "" } : d);
-        toast({ title: "Connection saved", description: `Sessions to ${appName} that start from now on use it. Recorded in the audit log.` });
+        toast({ title: t.saved, description: t.savedHint(appName) });
       },
       "inline",
     );
@@ -260,18 +261,18 @@ export function RemoteSettingsForm({ appId, appName, target, outposts }: { appId
 
   return (
     <Card>
-      <CardHeader title="Connection" description={`Where ${appName} connects and how Halo signs in to the host.`} />
+      <CardHeader title={t.connection} description={t.connectionHint(appName)} />
       <form onSubmit={submit} noValidate>
         <CardBody className="flex flex-col gap-6">
           <RemoteFields draft={draft} onChange={setDraft} errors={errors} outposts={outposts} stored={stored} />
           {draft.protocol === "ssh" && !draft.hostKey.trim() ? (
-            <SecretWarning>Without a host key, Halo only connects when the host presents a Halo host certificate for {draft.host.trim() || "its name"}. Sessions to any other host stop before sign-in.</SecretWarning>
+            <SecretWarning>{t.noHostKey(draft.host.trim() || null)}</SecretWarning>
           ) : null}
         </CardBody>
         <div className="flex flex-wrap items-center justify-end gap-4 border-t border-border px-6 py-4">
           <ActionError message={errorFor("remote")} />
           <Button type="submit" variant="primary" loading={pending === "remote"}>
-            Save connection
+            {t.save}
           </Button>
         </div>
       </form>
