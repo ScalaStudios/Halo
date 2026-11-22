@@ -3,10 +3,14 @@ import { ROLES } from "@/components/provisioning/shared";
 import { CAPABILITIES, ROLE_ORDER } from "@/components/settings/roles";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { PageSkeleton, Skeleton } from "@/components/ui/skeleton";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { policyMessages } from "@/lib/i18n/console/policy";
+import { requestLocale } from "@/lib/i18n/server";
 
-export default function Loading() {
+export default async function Loading() {
+  const locale = await requestLocale();
   return (
-    <PageSkeleton title="Roles" description={214}>
+    <PageSkeleton title={frameMessages[locale].nav.items.roles.label} description={214}>
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         {ROLE_ORDER.map((role) => (
           <Card key={role} className="flex flex-col">
@@ -21,7 +25,7 @@ export default function Loading() {
                 ))}
               </ul>
               <div className="mt-auto flex flex-col gap-3">
-                <h3 className="text-label text-fg-3">Members</h3>
+                <h3 className="text-label text-fg-3">{policyMessages[locale].roles.members}</h3>
                 <div className="h-14 rounded-md border border-border bg-sunken" />
               </div>
             </CardBody>

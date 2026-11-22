@@ -12,11 +12,14 @@ import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
-import { pluralize } from "@/lib/format";
+import { useMessages } from "@/lib/i18n/client";
+import { policyMessages } from "@/lib/i18n/console/policy";
 import type { NetworkZone } from "@/lib/policy-types";
 import { ZONE_KIND, joinList } from "./shared";
 
 export function ZonesSection({ zones, usedBy }: { zones: NetworkZone[]; usedBy: Record<string, string[]> }) {
+  const copy = useMessages(policyMessages);
+  const t = copy.zones;
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [editing, setEditing] = useState<NetworkZone | "new" | null>(null);
   const [deleting, setDeleting] = useState<NetworkZone | null>(null);
@@ -26,49 +29,49 @@ export function ZonesSection({ zones, usedBy }: { zones: NetworkZone[]; usedBy: 
     if (!zone) return;
     void run("delete", () => api(`/network-zones/${zone.id}`, { method: "DELETE" }), () => {
       setDeleting(null);
-      toast({ title: `${zone.name} deleted`, description: "Recorded in the audit log." });
+      toast({ title: copy.deleted(zone.name), description: copy.recorded });
     }, "inline");
   }
 
   return (
     <div className="flex flex-col gap-6">
       <SectionTitle
-        title="Networks"
-        description="Named IP ranges that policies can target. Sign-ins from a risky network are rated high risk."
+        title={t.title}
+        description={t.description}
         action={
           <Button size="sm" variant="primary" onClick={() => setEditing("new")}>
             <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-            Add network
+            {t.add}
           </Button>
         }
       />
       {zones.length ? (
         <SimpleTable
-          caption="Networks"
-          head={["Name", "Type", "Ranges", "Used by", "Actions"]}
+          caption={t.title}
+          head={[copy.name, copy.type, t.ranges, copy.usedBy, copy.actions]}
           rows={zones.map((zone) => [
             <span key="name" className="font-medium whitespace-nowrap text-fg">
               {zone.name}
             </span>,
             <Badge key="kind" tone={ZONE_KIND[zone.kind].tone} dot>
-              {ZONE_KIND[zone.kind].label}
+              {copy.labels.zoneKind[zone.kind].label}
             </Badge>,
             <span key="ranges" className="flex flex-wrap items-center gap-1">
               {zone.cidrs.slice(0, 3).map((cidr) => (
                 <Tag key={cidr}>{cidr}</Tag>
               ))}
-              {zone.cidrs.length > 3 ? <span className="text-caption text-fg-3">and {zone.cidrs.length - 3} more</span> : null}
+              {zone.cidrs.length > 3 ? <span className="text-caption text-fg-3">{t.more(zone.cidrs.length - 3)}</span> : null}
             </span>,
             <span key="used" className="flex flex-col gap-1">
-              {usedBy[zone.id]?.length ? <span>{joinList(usedBy[zone.id]!, "and")}</span> : null}
-              {zone.kind === "risky" ? <span className="text-caption text-fg-3">Rates sign-ins from it high risk</span> : null}
-              {!usedBy[zone.id]?.length && zone.kind === "trusted" ? <span className="text-fg-3">No policy</span> : null}
+              {usedBy[zone.id]?.length ? <span>{joinList(usedBy[zone.id]!, copy.and)}</span> : null}
+              {zone.kind === "risky" ? <span className="text-caption text-fg-3">{t.ratesHigh}</span> : null}
+              {!usedBy[zone.id]?.length && zone.kind === "trusted" ? <span className="text-fg-3">{copy.noPolicy}</span> : null}
             </span>,
             <span key="actions" className="flex gap-1">
-              <Button size="icon-sm" variant="quiet" aria-label={`Edit ${zone.name}`} onClick={() => setEditing(zone)}>
+              <Button size="icon-sm" variant="quiet" aria-label={copy.edit(zone.name)} onClick={() => setEditing(zone)}>
                 <Pencil aria-hidden="true" size={16} strokeWidth={1.75} />
               </Button>
-              <Button size="icon-sm" variant="quiet" aria-label={`Delete ${zone.name}`} onClick={() => setDeleting(zone)}>
+              <Button size="icon-sm" variant="quiet" aria-label={copy.delete(zone.name)} onClick={() => setDeleting(zone)}>
                 <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
               </Button>
             </span>,
@@ -78,8 +81,8 @@ export function ZonesSection({ zones, usedBy }: { zones: NetworkZone[]; usedBy: 
         <Card>
           <EmptyState
             icon={Network}
-            title="No networks yet"
-            description="Add your offices and VPN as trusted networks, and known-bad ranges such as Tor exit nodes as risky ones."
+            title={t.empty}
+            description={t.emptyDescription}
           />
         </Card>
       )}
@@ -92,15 +95,15 @@ export function ZonesSection({ zones, usedBy }: { zones: NetworkZone[]; usedBy: 
           clearError();
         }}
         error={errorFor("delete")}
-        title={`Delete ${deleting?.name ?? "network"}?`}
-        description="Policies can no longer target it. Halo refuses if a policy still uses it."
+        title={copy.confirmDelete(deleting?.name ?? t.deleteFallback)}
+        description={t.deleteDescription}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleting(null)}>
-              Cancel
+              {copy.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "delete"} onClick={remove}>
-              Delete network
+              {t.delete}
             </Button>
           </>
         }
@@ -110,6 +113,8 @@ export function ZonesSection({ zones, usedBy }: { zones: NetworkZone[]; usedBy: 
 }
 
 function ZoneDialog({ zone, onClose }: { zone: NetworkZone | null; onClose: () => void }) {
+  const copy = useMessages(policyMessages);
+  const t = copy.zones;
   const { pending, run, errorFor, toast } = useMutation();
   const [name, setName] = useState(zone?.name ?? "");
   const [kind, setKind] = useState<NetworkZone["kind"]>(zone?.kind ?? "trusted");
@@ -122,8 +127,8 @@ function ZoneDialog({ zone, onClose }: { zone: NetworkZone | null; onClose: () =
       .map((value) => value.trim())
       .filter(Boolean);
     const next = {
-      name: name.trim() ? undefined : "Enter a name, for example “Office”.",
-      ranges: cidrs.length ? undefined : "Add at least one IP address or range, such as 203.0.113.0/24.",
+      name: name.trim() ? undefined : copy.enterName(t.nameExample),
+      ranges: cidrs.length ? undefined : t.rangesRequired,
     };
     setErrors(next);
     if (next.name || next.ranges) return;
@@ -132,7 +137,7 @@ function ZoneDialog({ zone, onClose }: { zone: NetworkZone | null; onClose: () =
       "save",
       () => (zone ? api<NetworkZone>(`/network-zones/${zone.id}`, { method: "PUT", body }) : api<NetworkZone>("/network-zones", { body })),
       (saved) => {
-        toast({ title: zone ? `${saved.name} saved` : `${saved.name} added`, description: `${pluralize(saved.cidrs.length, "range")}. Policies that use it apply the change right away.` });
+        toast({ title: zone ? copy.saved(saved.name) : copy.added(saved.name), description: t.savedDescription(saved.cidrs.length) });
         onClose();
       },
       "inline",
@@ -146,15 +151,15 @@ function ZoneDialog({ zone, onClose }: { zone: NetworkZone | null; onClose: () =
         if (!open) onClose();
       }}
       error={errorFor("save")}
-      title={zone ? `Edit ${zone.name}` : "Add network"}
-      description="Halo matches the sign-in IP address against these ranges."
+      title={zone ? copy.edit(zone.name) : t.add}
+      description={t.dialogDescription}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {copy.cancel}
           </Button>
           <Button variant="primary" loading={pending === "save"} onClick={save}>
-            {zone ? "Save network" : "Add network"}
+            {zone ? t.save : t.add}
           </Button>
         </>
       }
@@ -166,18 +171,18 @@ function ZoneDialog({ zone, onClose }: { zone: NetworkZone | null; onClose: () =
           save();
         }}
       >
-        <Field label="Name" error={errors.name}>
-          {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder="Office" />}
+        <Field label={copy.name} error={errors.name}>
+          {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder={t.nameExample} />}
         </Field>
-        <Field label="Type" hint={ZONE_KIND[kind].description}>
+        <Field label={copy.type} hint={copy.labels.zoneKind[kind].description}>
           {(props) => (
             <Select {...props} value={kind} onChange={(event) => setKind(event.target.value as NetworkZone["kind"])}>
-              <option value="trusted">Trusted</option>
-              <option value="risky">Risky</option>
+              <option value="trusted">{copy.labels.zoneKind.trusted.label}</option>
+              <option value="risky">{copy.labels.zoneKind.risky.label}</option>
             </Select>
           )}
         </Field>
-        <Field label="IP addresses and ranges" error={errors.ranges} hint="One per line, IPv4 or IPv6, such as 203.0.113.0/24 or 2001:db8::/48. A single address counts as one host.">
+        <Field label={t.addresses} error={errors.ranges} hint={t.addressesHint}>
           {(props) => <Textarea {...props} mono rows={5} spellCheck={false} value={ranges} onChange={(event) => setRanges(event.target.value)} placeholder="203.0.113.0/24" />}
         </Field>
         <button type="submit" hidden />

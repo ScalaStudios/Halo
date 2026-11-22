@@ -1,10 +1,15 @@
 import { Card, CardHeader } from "@/components/ui/card";
 import { ListSkeleton, PageSkeleton, Skeleton, TabsSkeleton } from "@/components/ui/skeleton";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { policyMessages } from "@/lib/i18n/console/policy";
+import { requestLocale } from "@/lib/i18n/server";
 
-export default function Loading() {
+export default async function Loading() {
+  const locale = await requestLocale();
+  const t = policyMessages[locale];
   return (
     <PageSkeleton
-      title="Policies"
+      title={frameMessages[locale].nav.items.policies.label}
       description={140}
       actions={
         <>
@@ -13,9 +18,9 @@ export default function Loading() {
         </>
       }
     >
-      <TabsSkeleton labels={["Policies", "Networks", "Terms"]} />
+      <TabsSkeleton labels={[t.page.tabs.policies, t.page.tabs.networks, t.page.tabs.terms]} />
       <Card>
-        <CardHeader title="Report-only insights" description="What report-only policies would have done in the last 24 hours. None of these sign-ins were changed." />
+        <CardHeader title={t.list.insights} description={t.list.insightsDescription} />
         <ListSkeleton rows={2} className="border-t border-border" />
       </Card>
       <Card>

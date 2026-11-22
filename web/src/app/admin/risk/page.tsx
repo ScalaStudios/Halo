@@ -6,27 +6,38 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { apiGet } from "@/lib/api/server";
-import { pluralize } from "@/lib/format";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { policyMessages } from "@/lib/i18n/console/policy";
+import { requestLocale } from "@/lib/i18n/server";
 import type { RiskEvent } from "@/lib/policy-types";
 import type { SettingsResponse } from "@/lib/settings-types";
 import type { User } from "@/lib/types";
 
-export const metadata = { title: "Risk events" };
+export async function generateMetadata() {
+  return { title: frameMessages[await requestLocale()].nav.items.risk.label };
+}
 
 export default async function RiskPage() {
-  const [events, users, { settings }, me] = await Promise.all([apiGet<RiskEvent[]>("/risk-events"), apiGet<User[]>("/users"), apiGet<SettingsResponse>("/settings"), apiGet<User>("/me")]);
+  const [events, users, { settings }, me, locale] = await Promise.all([
+    apiGet<RiskEvent[]>("/risk-events"),
+    apiGet<User[]>("/users"),
+    apiGet<SettingsResponse>("/settings"),
+    apiGet<User>("/me"),
+    requestLocale(),
+  ]);
+  const t = policyMessages[locale].risk;
   const open = events.filter((e) => e.status === "open").length;
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        title="Risk events"
-        description={`${pluralize(open, "open risk event")}. Halo raises one when someone signs in from a risky network, after 5 failed sign-ins in 15 minutes, or from a new device.`}
+        title={frameMessages[locale].nav.items.risk.label}
+        description={t.summary(open)}
       />
       {events.length ? (
         <RiskTable events={events} userNames={Object.fromEntries(users.map((u) => [u.id, u.name]))} />
       ) : (
         <Card>
-          <EmptyState icon={ShieldCheck} title="No risk events" description="Nothing risky has happened yet. Medium and high risk sign-ins appear here so you can resolve or dismiss them." />
+          <EmptyState icon={ShieldCheck} title={t.empty} description={t.emptyDescription} />
         </Card>
       )}
       <RiskResponsesForm settings={settings} canEdit={hasRole(me, "security_admin")} />

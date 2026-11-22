@@ -15,23 +15,20 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
-import { pluralize } from "@/lib/format";
+import { useMessages } from "@/lib/i18n/client";
+import { policyMessages } from "@/lib/i18n/console/policy";
 import type { ComplianceSource } from "@/lib/policy-types";
+import type { PolicyCopy } from "./shared";
 
 type Saved = { source: ComplianceSource; secret?: string };
 
-const KIND: Record<ComplianceSource["kind"], { label: string; description: string }> = {
-  intune: { label: "Microsoft Intune", description: "Halo reads each managed device's compliance state from Microsoft Graph every 30 minutes." },
-  agent: { label: "Device agent", description: "An agent or your own integration sends signed reports with each device's state, OS version, disk encryption and patch level." },
-};
-
-const MAX_AGE: Record<number, string> = { 60: "1 hour", 240: "4 hours", 720: "12 hours", 1440: "24 hours", 4320: "3 days", 10080: "7 days", 43200: "30 days" };
-
-function maxAge(minutes: number) {
-  return MAX_AGE[minutes] ?? pluralize(minutes, "minute");
+function maxAge(minutes: number, t: PolicyCopy["compliance"]) {
+  return t.ages[minutes] ?? t.minutes(minutes);
 }
 
 export function ComplianceSources({ sources, issuer }: { sources: ComplianceSource[]; issuer: string }) {
+  const copy = useMessages(policyMessages);
+  const t = copy.compliance;
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [editing, setEditing] = useState<ComplianceSource | "new" | null>(null);
   const [deleting, setDeleting] = useState<ComplianceSource | null>(null);
@@ -40,8 +37,8 @@ export function ComplianceSources({ sources, issuer }: { sources: ComplianceSour
     void run(`sync:${source.id}`, () => api<Saved>(`/compliance-sources/${source.id}/sync`, { method: "POST" }), ({ source: synced }) =>
       toast(
         synced.syncError
-          ? { title: `${synced.name} didn't sync`, description: synced.syncError, tone: "danger" }
-          : { title: `${synced.name} synced`, description: `${pluralize(synced.records, "device")} reported. Linked devices use the new states at their next sign-in.` },
+          ? { title: t.syncFailed(synced.name), description: synced.syncError, tone: "danger" }
+          : { title: t.synced(synced.name), description: t.syncedDescription(synced.records) },
       ),
     );
   }
@@ -51,52 +48,52 @@ export function ComplianceSources({ sources, issuer }: { sources: ComplianceSour
     if (!source) return;
     void run("delete", () => api(`/compliance-sources/${source.id}`, { method: "DELETE" }), () => {
       setDeleting(null);
-      toast({ title: `${source.name} deleted`, description: "Recorded in the audit log." });
+      toast({ title: copy.deleted(source.name), description: copy.recorded });
     }, "inline");
   }
 
   return (
     <div className="flex flex-col gap-6">
       <SectionTitle
-        title="Compliance sources"
-        description="Device management that tells Halo whether a device is compliant. Link a device to its record on the Devices tab, then require compliant devices in a policy."
+        title={t.title}
+        description={t.description}
         action={
           <Button size="sm" variant="primary" onClick={() => setEditing("new")}>
             <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-            Add source
+            {t.add}
           </Button>
         }
       />
       {sources.length ? (
         <SimpleTable
-          caption="Compliance sources"
-          head={["Name", "Devices", "Reports valid for", "Last report", "Actions"]}
+          caption={t.title}
+          head={[copy.name, t.devices, t.validFor, t.lastReport, copy.actions]}
           rows={sources.map((source) => [
             <span key="name" className="flex flex-col">
               <span className="font-medium whitespace-nowrap text-fg">{source.name}</span>
-              <span className="text-caption whitespace-nowrap text-fg-3">{KIND[source.kind].label}</span>
+              <span className="text-caption whitespace-nowrap text-fg-3">{t.kind[source.kind].label}</span>
             </span>,
             <span key="devices" className="flex flex-col">
-              <span className="tnum whitespace-nowrap">{pluralize(source.records, "device")} reported</span>
-              <span className="tnum text-caption whitespace-nowrap text-fg-3">{source.linked} linked</span>
+              <span className="tnum whitespace-nowrap">{t.reported(source.records)}</span>
+              <span className="tnum text-caption whitespace-nowrap text-fg-3">{t.linked(source.linked)}</span>
             </span>,
             <span key="age" className="whitespace-nowrap">
-              {maxAge(source.maxAgeMinutes)}
+              {maxAge(source.maxAgeMinutes, t)}
             </span>,
             <span key="last" className="flex max-w-80 flex-col">
-              <span className="whitespace-nowrap text-fg-3">{source.reportedAt ? <RelativeTime iso={source.reportedAt} /> : "Never"}</span>
-              {source.syncError ? <span className="text-caption text-danger">{source.syncError}</span> : null}
+              <span className="whitespace-nowrap text-fg-3">{source.reportedAt ? <RelativeTime iso={source.reportedAt} /> : t.never}</span>
+              {source.syncError ? <span lang="en" className="text-caption text-danger">{source.syncError}</span> : null}
             </span>,
             <span key="actions" className="flex gap-1">
               {source.kind === "intune" ? (
-                <Button size="icon-sm" variant="quiet" aria-label={`Sync ${source.name} now`} loading={pending === `sync:${source.id}`} onClick={() => sync(source)}>
+                <Button size="icon-sm" variant="quiet" aria-label={t.sync(source.name)} loading={pending === `sync:${source.id}`} onClick={() => sync(source)}>
                   <RefreshCw aria-hidden="true" size={16} strokeWidth={1.75} />
                 </Button>
               ) : null}
-              <Button size="icon-sm" variant="quiet" aria-label={`Edit ${source.name}`} onClick={() => setEditing(source)}>
+              <Button size="icon-sm" variant="quiet" aria-label={copy.edit(source.name)} onClick={() => setEditing(source)}>
                 <Pencil aria-hidden="true" size={16} strokeWidth={1.75} />
               </Button>
-              <Button size="icon-sm" variant="quiet" aria-label={`Delete ${source.name}`} onClick={() => setDeleting(source)}>
+              <Button size="icon-sm" variant="quiet" aria-label={copy.delete(source.name)} onClick={() => setDeleting(source)}>
                 <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
               </Button>
             </span>,
@@ -106,8 +103,8 @@ export function ComplianceSources({ sources, issuer }: { sources: ComplianceSour
         <Card>
           <EmptyState
             icon={MonitorCheck}
-            title="No compliance sources yet"
-            description="Connect Microsoft Intune, or let a device agent report, so policies can require devices that are managed, encrypted and patched."
+            title={t.empty}
+            description={t.emptyDescription}
           />
         </Card>
       )}
@@ -122,15 +119,15 @@ export function ComplianceSources({ sources, issuer }: { sources: ComplianceSour
           clearError();
         }}
         error={errorFor("delete")}
-        title={`Delete ${deleting?.name ?? "source"}?`}
-        description={`Halo removes its ${pluralize(deleting?.records ?? 0, "device record")} and unlinks ${pluralize(deleting?.linked ?? 0, "device")}, whose compliance becomes unknown. Policies that need compliant devices then refuse them.`}
+        title={copy.confirmDelete(deleting?.name ?? t.deleteFallback)}
+        description={t.deleteDescription(deleting?.records ?? 0, deleting?.linked ?? 0)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleting(null)}>
-              Cancel
+              {copy.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "delete"} onClick={remove}>
-              Delete source
+              {t.delete}
             </Button>
           </>
         }
@@ -140,6 +137,8 @@ export function ComplianceSources({ sources, issuer }: { sources: ComplianceSour
 }
 
 function SourceDialog({ source, issuer, onClose }: { source: ComplianceSource | null; issuer: string; onClose: () => void }) {
+  const copy = useMessages(policyMessages);
+  const t = copy.compliance;
   const { pending, run, errorFor, toast } = useMutation();
   const [name, setName] = useState(source?.name ?? "");
   const [kind, setKind] = useState<ComplianceSource["kind"]>(source?.kind ?? "intune");
@@ -154,10 +153,10 @@ function SourceDialog({ source, issuer, onClose }: { source: ComplianceSource | 
   function save() {
     const intune = kind === "intune";
     const next = {
-      name: name.trim() ? undefined : "Enter a name, for example “Intune”.",
-      tenantId: !intune || tenantId.trim() ? undefined : "Enter the directory (tenant) ID.",
-      clientId: !intune || clientId.trim() ? undefined : "Enter the application (client) ID.",
-      clientSecret: !intune || source || clientSecret.trim() ? undefined : "Enter the client secret.",
+      name: name.trim() ? undefined : copy.enterName(t.nameExample),
+      tenantId: !intune || tenantId.trim() ? undefined : t.tenantRequired,
+      clientId: !intune || clientId.trim() ? undefined : t.clientRequired,
+      clientSecret: !intune || source || clientSecret.trim() ? undefined : t.secretRequired,
     };
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
@@ -173,8 +172,8 @@ function SourceDialog({ source, issuer, onClose }: { source: ComplianceSource | 
         const s = saved.source;
         toast(
           s.syncError
-            ? { title: `${s.name} saved, but didn't sync`, description: s.syncError, tone: "danger" }
-            : { title: `${s.name} ${source ? "saved" : "added"}`, description: s.kind === "intune" ? `${pluralize(s.records, "device")} reported by Intune.` : "Recorded in the audit log." },
+            ? { title: t.savedNoSync(s.name), description: s.syncError, tone: "danger" }
+            : { title: source ? copy.saved(s.name) : copy.added(s.name), description: s.kind === "intune" ? t.reportedByIntune(s.records) : copy.recorded },
         );
         onClose();
       },
@@ -189,18 +188,18 @@ function SourceDialog({ source, issuer, onClose }: { source: ComplianceSource | 
         onOpenChange={(open) => {
           if (!open) onClose();
         }}
-        title={source ? "Signing secret replaced" : `${secret.source.name} added`}
-        description="Agents POST their reports to this URL and sign each one with this secret in the Halo-Signature header, the same way Halo signs webhooks."
+        title={source ? t.secretReplaced : copy.added(secret.source.name)}
+        description={t.secretDescription}
         footer={
           <Button variant="primary" onClick={onClose}>
-            Done
+            {t.done}
           </Button>
         }
       >
         <div className="flex animate-enter flex-col gap-4">
-          <CopyField label="Report URL" value={`${issuer}/api/v1/compliance-sources/${secret.source.id}/reports`} />
-          <CopyField label="Signing secret" value={secret.secret ?? ""} secret />
-          <SecretWarning>This is the only time Halo shows this secret. Store it with your agent before closing this dialog.</SecretWarning>
+          <CopyField label={t.reportUrl} value={`${issuer}/api/v1/compliance-sources/${secret.source.id}/reports`} />
+          <CopyField label={t.signingSecret} value={secret.secret ?? ""} secret />
+          <SecretWarning>{t.secretWarning}</SecretWarning>
         </div>
       </Dialog>
     );
@@ -213,15 +212,15 @@ function SourceDialog({ source, issuer, onClose }: { source: ComplianceSource | 
         if (!open) onClose();
       }}
       error={errorFor("save")}
-      title={source ? `Edit ${source.name}` : "Add compliance source"}
-      description={KIND[kind].description}
+      title={source ? copy.edit(source.name) : t.addTitle}
+      description={t.kind[kind].description}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {copy.cancel}
           </Button>
           <Button variant="primary" loading={pending === "save"} onClick={save}>
-            {source ? "Save source" : "Add source"}
+            {source ? t.save : t.add}
           </Button>
         </>
       }
@@ -234,44 +233,40 @@ function SourceDialog({ source, issuer, onClose }: { source: ComplianceSource | 
           save();
         }}
       >
-        <Field label="Name" error={errors.name}>
-          {(props) => <Input {...props} autoFocus autoComplete="off" maxLength={100} value={name} onChange={(event) => setName(event.target.value)} placeholder="Intune" />}
+        <Field label={copy.name} error={errors.name}>
+          {(props) => <Input {...props} autoFocus autoComplete="off" maxLength={100} value={name} onChange={(event) => setName(event.target.value)} placeholder={t.nameExample} />}
         </Field>
         {source ? null : (
-          <Field label="Kind">
+          <Field label={t.kindLabel}>
             {(props) => (
               <Select {...props} value={kind} onChange={(event) => setKind(event.target.value as ComplianceSource["kind"])}>
-                <option value="intune">{KIND.intune.label}</option>
-                <option value="agent">{KIND.agent.label}</option>
+                <option value="intune">{t.kind.intune.label}</option>
+                <option value="agent">{t.kind.agent.label}</option>
               </Select>
             )}
           </Field>
         )}
         {kind === "intune" ? (
           <>
-            <Field label="Directory (tenant) ID" error={errors.tenantId} hint="From the app registration's overview in Microsoft Entra, or your primary domain.">
+            <Field label={t.tenant} error={errors.tenantId} hint={t.tenantHint}>
               {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={tenantId} onChange={(event) => setTenantId(event.target.value)} placeholder="contoso.onmicrosoft.com" />}
             </Field>
-            <Field label="Application (client) ID" error={errors.clientId}>
+            <Field label={t.client} error={errors.clientId}>
               {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={clientId} onChange={(event) => setClientId(event.target.value)} placeholder="00000000-0000-0000-0000-000000000000" />}
             </Field>
             <Field
-              label="Client secret"
+              label={t.secret}
               error={errors.clientSecret}
-              hint={
-                source
-                  ? "Leave empty to keep the current secret. Halo stores it sealed."
-                  : "Give the app the DeviceManagementManagedDevices.Read.All application permission with admin consent. Halo stores the secret sealed."
-              }
+              hint={source ? t.secretKeep : t.secretHint}
             >
               {(props) => <PasswordInput {...props} autoComplete="off" value={clientSecret} onChange={(event) => setClientSecret(event.target.value)} />}
             </Field>
           </>
         ) : null}
-        <Field label="Reports stay valid for" hint="A device whose last report is older than this counts as unknown, so it no longer meets a compliant-device condition.">
+        <Field label={t.validForLabel} hint={t.validForHint}>
           {(props) => (
             <Select {...props} value={maxAgeMinutes} onChange={(event) => setMaxAgeMinutes(Number(event.target.value))}>
-              {Object.entries({ ...MAX_AGE, [maxAgeMinutes]: maxAge(maxAgeMinutes) }).map(([minutes, label]) => (
+              {Object.entries({ ...t.ages, [maxAgeMinutes]: maxAge(maxAgeMinutes, t) }).map(([minutes, label]) => (
                 <option key={minutes} value={minutes}>
                   {label}
                 </option>
@@ -283,8 +278,8 @@ function SourceDialog({ source, issuer, onClose }: { source: ComplianceSource | 
           <label className="flex cursor-pointer items-start gap-3">
             <Checkbox className="mt-0.5" checked={rotateSecret} onChange={(event) => setRotateSecret(event.target.checked)} />
             <span className="flex flex-col gap-1">
-              <span className="text-body-sm text-fg">Replace the signing secret</span>
-              <span className="text-caption text-fg-3">Halo shows the new secret once. Reports signed with the old one are refused from then on.</span>
+              <span className="text-body-sm text-fg">{t.rotate}</span>
+              <span className="text-caption text-fg-3">{t.rotateHint}</span>
             </span>
           </label>
         ) : null}

@@ -11,6 +11,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
 import { formatDate } from "@/lib/format";
+import { useLocale } from "@/lib/i18n/client";
+import { policyMessages } from "@/lib/i18n/console/policy";
 import type { KerberosRealm, KerberosSource, NetworkZone } from "@/lib/policy-types";
 import { CheckList } from "./policy-form";
 
@@ -21,6 +23,9 @@ async function base64(file: File) {
 }
 
 export function KerberosSettings({ source, zones, host }: { source: KerberosSource | null; zones: NetworkZone[]; host: string }) {
+  const locale = useLocale();
+  const copy = policyMessages[locale];
+  const t = copy.kerberos;
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const file = useRef<HTMLInputElement>(null);
   const [spn, setSpn] = useState(source?.servicePrincipal ?? `HTTP/${host}@`);
@@ -36,9 +41,9 @@ export function KerberosSettings({ source, zones, host }: { source: KerberosSour
 
   function save() {
     const next = {
-      spn: /^HTTP\/[^\s/@]+@[^\s@]+$/i.test(spn.trim()) ? undefined : `Enter HTTP/${host}@ followed by your realm, for example HTTP/${host}@CORP.EXAMPLE.COM.`,
-      realms: realms.length > 0 && realms.every((r) => r.realm.trim() && r.domain.trim()) ? undefined : "Enter a realm and its email domain on every row.",
-      keytab: source || keytab ? undefined : "Choose the keytab file for the service principal.",
+      spn: /^HTTP\/[^\s/@]+@[^\s@]+$/i.test(spn.trim()) ? undefined : t.spnInvalid(host),
+      realms: realms.length > 0 && realms.every((r) => r.realm.trim() && r.domain.trim()) ? undefined : t.realmsRequired,
+      keytab: source || keytab ? undefined : t.keytabRequired,
     };
     setErrors(next);
     if (next.spn || next.realms || next.keytab) return;
@@ -49,7 +54,7 @@ export function KerberosSettings({ source, zones, host }: { source: KerberosSour
         setKeytab(null);
         setSpn(saved.servicePrincipal);
         setRealms(saved.realms);
-        toast({ title: source ? "Windows sign-in saved" : "Windows sign-in set up", description: "It works once Windows sign-in is turned on above. Recorded in the audit log." });
+        toast({ title: source ? t.saved : t.setUp, description: t.savedDescription });
       },
       "inline",
     );
@@ -58,18 +63,18 @@ export function KerberosSettings({ source, zones, host }: { source: KerberosSour
   function remove() {
     void run("remove", () => api("/kerberos", { method: "DELETE" }), () => {
       setRemoving(false);
-      toast({ title: "Windows sign-in removed", description: "Halo deleted the keytab. People already signed in stay signed in. Recorded in the audit log." });
+      toast({ title: t.removed, description: t.removedDescription });
     }, "inline");
   }
 
   return (
     <Card>
       <CardHeader
-        title="Windows sign-in"
-        description={`Browsers on computers joined to your Active Directory domain send Halo a Kerberos ticket for its service principal. Register HTTP/${host} on a service account used only by Halo, export its keytab, and map each realm to the email domain of its people.`}
+        title={t.title}
+        description={t.description(host)}
         actions={
           source ? (
-            <Button size="icon" variant="secondary" aria-label="Remove Windows sign-in" onClick={() => setRemoving(true)}>
+            <Button size="icon" variant="secondary" aria-label={t.removeLabel} onClick={() => setRemoving(true)}>
               <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
             </Button>
           ) : null
@@ -84,17 +89,17 @@ export function KerberosSettings({ source, zones, host }: { source: KerberosSour
             save();
           }}
         >
-          <Field label="Service principal" hint={`HTTP/ and the host name people open Halo at, then @ and the realm in capitals.`} error={errors.spn}>
+          <Field label={t.spn} hint={t.spnHint} error={errors.spn}>
             {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={spn} onChange={(event) => setSpn(event.target.value)} placeholder={`HTTP/${host}@CORP.EXAMPLE.COM`} />}
           </Field>
           <fieldset className="flex flex-col gap-3" aria-describedby={errors.realms ? "realms-error" : undefined}>
-            <legend className="mb-1 text-label text-fg">Realms</legend>
-            <p className="text-caption text-fg-3">A ticket for ada@CORP.EXAMPLE.COM signs in the person whose email address is ada at the realm&apos;s domain. Tickets from other realms are refused.</p>
+            <legend className="mb-1 text-label text-fg">{t.realms}</legend>
+            <p className="text-caption text-fg-3">{t.realmsHint}</p>
             {realms.map((r, index) => (
               <div key={index} className="flex items-start gap-2">
-                <Input mono aria-label={`Realm ${index + 1}`} autoComplete="off" spellCheck={false} value={r.realm} onChange={(event) => update(index, { realm: event.target.value })} placeholder="CORP.EXAMPLE.COM" />
-                <Input mono aria-label={`Email domain for realm ${index + 1}`} autoComplete="off" spellCheck={false} value={r.domain} onChange={(event) => update(index, { domain: event.target.value })} placeholder="example.com" />
-                <Button size="icon" variant="quiet" aria-label={`Remove realm ${r.realm || index + 1}`} disabled={realms.length === 1} onClick={() => setRealms((current) => current.filter((_, i) => i !== index))}>
+                <Input mono aria-label={t.realm(index + 1)} autoComplete="off" spellCheck={false} value={r.realm} onChange={(event) => update(index, { realm: event.target.value })} placeholder="CORP.EXAMPLE.COM" />
+                <Input mono aria-label={t.domain(index + 1)} autoComplete="off" spellCheck={false} value={r.domain} onChange={(event) => update(index, { domain: event.target.value })} placeholder="example.com" />
+                <Button size="icon" variant="quiet" aria-label={t.removeRealm(r.realm || index + 1)} disabled={realms.length === 1} onClick={() => setRealms((current) => current.filter((_, i) => i !== index))}>
                   <X aria-hidden="true" size={16} strokeWidth={1.75} />
                 </Button>
               </div>
@@ -106,18 +111,18 @@ export function KerberosSettings({ source, zones, host }: { source: KerberosSour
             ) : null}
             <Button size="sm" variant="secondary" className="self-start" onClick={() => setRealms((current) => [...current, { realm: "", domain: "" }])}>
               <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-              Add realm
+              {t.addRealm}
             </Button>
           </fieldset>
           <CheckList
-            legend="Try automatically from"
+            legend={t.zones}
             options={zones.filter((z) => z.kind === "trusted").map((z) => ({ id: z.id, name: z.name, detail: z.cidrs.join(", ") }))}
             selected={zoneIds}
             onToggle={(id, on) => setZoneIds((current) => (on ? [...current, id] : current.filter((z) => z !== id)))}
-            empty="No trusted network zones yet. Without one, people choose Sign in with Windows themselves."
+            empty={t.noZones}
             scroll={false}
           />
-          <Field label="Keytab" hint={source ? "Leave it to keep the saved keys. Halo keeps only the keys for the service principal, encrypted." : "The .keytab file from ktpass or ktutil. Halo keeps only the keys for the service principal, encrypted."} error={errors.keytab}>
+          <Field label={t.keytab} hint={source ? t.keytabKeep : t.keytabHint} error={errors.keytab}>
             {(props) => (
               <div className="flex flex-wrap items-center gap-3">
                 <input
@@ -133,7 +138,7 @@ export function KerberosSettings({ source, zones, host }: { source: KerberosSour
                 />
                 <Button {...props} size="sm" variant="secondary" onClick={() => file.current?.click()}>
                   <Upload aria-hidden="true" size={16} strokeWidth={1.75} />
-                  {source ? "Replace keytab" : "Choose keytab"}
+                  {source ? t.replace : t.choose}
                 </Button>
                 {keytab ? <span className="font-mono text-code-sm break-all text-fg-2">{keytab.name}</span> : null}
               </div>
@@ -143,14 +148,14 @@ export function KerberosSettings({ source, zones, host }: { source: KerberosSour
             <DescriptionList
               columns={2}
               items={[
-                { label: "Saved keys", value: source.keys.map((k) => `${k.type}, version ${k.version}`).join("; ") },
-                { label: "Keytab exported", value: formatDate(source.keys[0]!.createdAt) },
+                { label: t.savedKeys, value: source.keys.map((k) => t.key(k.type, k.version)).join("; ") },
+                { label: t.exported, value: formatDate(source.keys[0]!.createdAt, locale) },
               ]}
             />
           ) : null}
           <div className="flex flex-wrap items-center gap-4">
             <Button type="submit" variant="primary" loading={pending === "save"}>
-              {source ? "Save Windows sign-in" : "Set up Windows sign-in"}
+              {source ? t.save : t.setUpButton}
             </Button>
             <ActionError message={errorFor("save")} />
           </div>
@@ -163,15 +168,15 @@ export function KerberosSettings({ source, zones, host }: { source: KerberosSour
           setRemoving(open);
         }}
         error={errorFor("remove")}
-        title="Remove Windows sign-in?"
-        description="Halo deletes the keytab and stops accepting Kerberos tickets from the next attempt. People who already signed in stay signed in."
+        title={t.removeTitle}
+        description={t.removeDescription}
         footer={
           <>
             <Button variant="secondary" onClick={() => setRemoving(false)}>
-              Cancel
+              {copy.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "remove"} onClick={remove}>
-              Remove
+              {copy.remove}
             </Button>
           </>
         }

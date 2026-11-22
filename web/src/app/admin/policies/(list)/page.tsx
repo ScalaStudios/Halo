@@ -10,15 +10,19 @@ import { buttonClasses } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { TabNav } from "@/components/ui/tab-nav";
 import { apiGet } from "@/lib/api/server";
-import { pluralize } from "@/lib/format";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { policyMessages } from "@/lib/i18n/console/policy";
+import { requestLocale } from "@/lib/i18n/server";
 import type { AuthContext, NetworkZone, PolicyWithActivity, Terms } from "@/lib/policy-types";
 import type { Application, Group, User } from "@/lib/types";
 
-export const metadata = { title: "Policies" };
+export async function generateMetadata() {
+  return { title: frameMessages[await requestLocale()].nav.items.policies.label };
+}
 
 export default async function PoliciesPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const { tab = "policies" } = await searchParams;
-  const [policies, zones, terms, contexts, groups, users, applications] = await Promise.all([
+  const [policies, zones, terms, contexts, groups, users, applications, locale] = await Promise.all([
     apiGet<PolicyWithActivity[]>("/policies"),
     apiGet<NetworkZone[]>("/network-zones"),
     apiGet<Terms[]>("/terms"),
@@ -26,7 +30,9 @@ export default async function PoliciesPage({ searchParams }: { searchParams: Pro
     apiGet<Group[]>("/groups"),
     apiGet<User[]>("/users"),
     apiGet<Application[]>("/applications"),
+    requestLocale(),
   ]);
+  const copy = policyMessages[locale].page;
   const names: Names = {
     groups: Object.fromEntries(groups.map((g) => [g.id, g.name])),
     users: Object.fromEntries(users.map((u) => [u.id, u.name])),
@@ -44,8 +50,8 @@ export default async function PoliciesPage({ searchParams }: { searchParams: Pro
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        title="Policies"
-        description={`${pluralize(policies.length, "policy", "policies")}: ${enforced} enforced, ${report} report-only. At every sign-in Halo checks each policy that is on, and the most restrictive enforced match decides.`}
+        title={frameMessages[locale].nav.items.policies.label}
+        description={copy.summary(policies.length, enforced, report)}
         actions={
           <>
             <SimulateDialog
@@ -55,19 +61,19 @@ export default async function PoliciesPage({ searchParams }: { searchParams: Pro
             {tab === "policies" ? (
               <Link href="/admin/policies/new" className={buttonClasses("primary", "sm")}>
                 <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-                Create policy
+                {copy.create}
               </Link>
             ) : null}
           </>
         }
       />
       <TabNav
-        label="Policy sections"
+        label={copy.sections}
         tabs={[
-          { id: "policies", label: "Policies", count: policies.length },
-          { id: "networks", label: "Networks", count: zones.length },
-          { id: "terms", label: "Terms", count: terms.length },
-          { id: "contexts", label: "Contexts", count: contexts.length },
+          { id: "policies", label: copy.tabs.policies, count: policies.length },
+          { id: "networks", label: copy.tabs.networks, count: zones.length },
+          { id: "terms", label: copy.tabs.terms, count: terms.length },
+          { id: "contexts", label: copy.tabs.contexts, count: contexts.length },
         ]}
         active={tab}
         hrefFor={(id) => (id === "policies" ? "/admin/policies" : `/admin/policies?tab=${id}`)}

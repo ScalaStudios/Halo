@@ -12,8 +12,8 @@ import { Field, Input } from "@/components/ui/input";
 import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
-import { formatDuration } from "@/lib/format";
-import { METHOD } from "@/lib/labels";
+import { useMessages } from "@/lib/i18n/client";
+import { policyMessages } from "@/lib/i18n/console/policy";
 import type { AuthContext } from "@/lib/policy-types";
 import type { MethodKind } from "@/lib/types";
 import { CheckList } from "./policy-form";
@@ -22,6 +22,8 @@ import { POLICY_METHODS, joinList } from "./shared";
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
 
 export function ContextsSection({ contexts, usedBy }: { contexts: AuthContext[]; usedBy: Record<string, string[]> }) {
+  const copy = useMessages(policyMessages);
+  const t = copy.contexts;
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [editing, setEditing] = useState<AuthContext | "new" | null>(null);
   const [deleting, setDeleting] = useState<AuthContext | null>(null);
@@ -31,26 +33,26 @@ export function ContextsSection({ contexts, usedBy }: { contexts: AuthContext[];
     if (!item) return;
     void run("delete", () => api(`/authentication-contexts/${encodeURIComponent(item.id)}`, { method: "DELETE" }), () => {
       setDeleting(null);
-      toast({ title: `${item.name} deleted`, description: `Applications that send acr_values=${item.id} no longer get it. Recorded in the audit log.` });
+      toast({ title: copy.deleted(item.name), description: t.deletedDescription(item.id) });
     }, "inline");
   }
 
   return (
     <div className="flex flex-col gap-6">
       <SectionTitle
-        title="Authentication contexts"
-        description="Named sign-in requirements. Applications ask for one with acr_values, policies require one with the effect “Require an authentication context”, and the ID token names the one that was met in its acr claim."
+        title={t.title}
+        description={t.description}
         action={
           <Button size="sm" variant="primary" onClick={() => setEditing("new")}>
             <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-            Add context
+            {t.add}
           </Button>
         }
       />
       {contexts.length ? (
         <SimpleTable
-          caption="Authentication contexts"
-          head={["Name", "Identifier", "Sign-in methods", "Signed in within", "Used by", "Actions"]}
+          caption={t.title}
+          head={[copy.name, t.identifier, t.methods, t.within, copy.usedBy, copy.actions]}
           rows={contexts.map((item) => [
             <span key="name" className="font-medium whitespace-nowrap text-fg">
               {item.name}
@@ -58,16 +60,16 @@ export function ContextsSection({ contexts, usedBy }: { contexts: AuthContext[];
             <span key="id" className="font-mono text-code-sm text-fg-2">
               {item.id}
             </span>,
-            <span key="methods">{item.methods.length ? joinList(item.methods.map((m) => METHOD[m].label)) : <span className="text-fg-3">Any method</span>}</span>,
+            <span key="methods">{item.methods.length ? joinList(item.methods.map((m) => copy.labels.method[m]), copy.or) : <span className="text-fg-3">{t.anyMethod}</span>}</span>,
             <span key="age" className="whitespace-nowrap">
-              {item.maxAge ? formatDuration(item.maxAge) : <span className="text-fg-3">Any time</span>}
+              {item.maxAge ? copy.duration(item.maxAge) : <span className="text-fg-3">{t.anyTime}</span>}
             </span>,
-            <span key="used">{usedBy[item.id]?.length ? joinList(usedBy[item.id]!, "and") : <span className="text-fg-3">No policy</span>}</span>,
+            <span key="used">{usedBy[item.id]?.length ? joinList(usedBy[item.id]!, copy.and) : <span className="text-fg-3">{copy.noPolicy}</span>}</span>,
             <span key="actions" className="flex gap-1">
-              <Button size="icon-sm" variant="quiet" aria-label={`Edit ${item.name}`} onClick={() => setEditing(item)}>
+              <Button size="icon-sm" variant="quiet" aria-label={copy.edit(item.name)} onClick={() => setEditing(item)}>
                 <Pencil aria-hidden="true" size={16} strokeWidth={1.75} />
               </Button>
-              <Button size="icon-sm" variant="quiet" aria-label={`Delete ${item.name}`} onClick={() => setDeleting(item)}>
+              <Button size="icon-sm" variant="quiet" aria-label={copy.delete(item.name)} onClick={() => setDeleting(item)}>
                 <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
               </Button>
             </span>,
@@ -77,8 +79,8 @@ export function ContextsSection({ contexts, usedBy }: { contexts: AuthContext[];
         <Card>
           <EmptyState
             icon={ShieldCheck}
-            title="No authentication contexts yet"
-            description="Add one, such as “passkey-recent” for a passkey sign-in in the last 5 minutes, so an application can ask for a stronger sign-in before a sensitive action."
+            title={t.empty}
+            description={t.emptyDescription}
           />
         </Card>
       )}
@@ -91,15 +93,15 @@ export function ContextsSection({ contexts, usedBy }: { contexts: AuthContext[];
           clearError();
         }}
         error={errorFor("delete")}
-        title={`Delete ${deleting?.name ?? "context"}?`}
-        description="Halo ignores it in acr_values from then on. Halo refuses if a policy still requires it."
+        title={copy.confirmDelete(deleting?.name ?? t.deleteFallback)}
+        description={t.deleteDescription}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleting(null)}>
-              Cancel
+              {copy.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "delete"} onClick={remove}>
-              Delete context
+              {t.delete}
             </Button>
           </>
         }
@@ -109,6 +111,8 @@ export function ContextsSection({ contexts, usedBy }: { contexts: AuthContext[];
 }
 
 function ContextDialog({ item, onClose }: { item: AuthContext | null; onClose: () => void }) {
+  const copy = useMessages(policyMessages);
+  const t = copy.contexts;
   const { pending, run, errorFor, toast } = useMutation();
   const [identifier, setIdentifier] = useState(item?.id ?? "");
   const [name, setName] = useState(item?.name ?? "");
@@ -118,10 +122,10 @@ function ContextDialog({ item, onClose }: { item: AuthContext | null; onClose: (
 
   function save() {
     const next = {
-      identifier: item || IDENTIFIER.test(identifier.trim()) ? undefined : "Use up to 100 letters, digits, dots, colons, hyphens or underscores, such as passkey-recent.",
-      name: name.trim() ? undefined : "Enter a name, for example “Passkey in the last 5 minutes”.",
+      identifier: item || IDENTIFIER.test(identifier.trim()) ? undefined : t.identifierInvalid,
+      name: name.trim() ? undefined : copy.enterName(t.nameExample),
       age: wholeNumber(age),
-      requirement: methods.length || toSeconds(age) ? undefined : "Choose at least one sign-in method, a maximum sign-in age, or both.",
+      requirement: methods.length || toSeconds(age) ? undefined : t.requirement,
     };
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
@@ -133,7 +137,7 @@ function ContextDialog({ item, onClose }: { item: AuthContext | null; onClose: (
           ? api<AuthContext>(`/authentication-contexts/${encodeURIComponent(item.id)}`, { method: "PUT", body })
           : api<AuthContext>("/authentication-contexts", { body }),
       (saved) => {
-        toast({ title: item ? `${saved.name} saved` : `${saved.name} added`, description: `Applications ask for it with acr_values=${saved.id}.` });
+        toast({ title: item ? copy.saved(saved.name) : copy.added(saved.name), description: t.savedDescription(saved.id) });
         onClose();
       },
       "inline",
@@ -148,15 +152,15 @@ function ContextDialog({ item, onClose }: { item: AuthContext | null; onClose: (
       }}
       width="wide"
       error={errorFor("save")}
-      title={item ? `Edit ${item.name}` : "Add authentication context"}
-      description={item ? `Identifier ${item.id}. Changes apply from the next sign-in.` : "A sign-in meets the context when it used one of the chosen methods and is no older than the maximum age."}
+      title={item ? copy.edit(item.name) : t.addTitle}
+      description={item ? t.editDescription(item.id) : t.addDescription}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {copy.cancel}
           </Button>
           <Button variant="primary" loading={pending === "save"} onClick={save}>
-            {item ? "Save context" : "Add context"}
+            {item ? t.save : t.add}
           </Button>
         </>
       }
@@ -169,25 +173,25 @@ function ContextDialog({ item, onClose }: { item: AuthContext | null; onClose: (
         }}
       >
         {item ? null : (
-          <Field label="Identifier" error={errors.identifier} hint="The value applications send in acr_values and read back in the acr claim. It can't be changed later.">
+          <Field label={t.identifier} error={errors.identifier} hint={t.identifierHint}>
             {(props) => <Input {...props} mono autoFocus autoComplete="off" spellCheck={false} value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder="passkey-recent" />}
           </Field>
         )}
-        <Field label="Name" error={errors.name}>
-          {(props) => <Input {...props} autoFocus={item !== null} autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder="Passkey in the last 5 minutes" />}
+        <Field label={copy.name} error={errors.name}>
+          {(props) => <Input {...props} autoFocus={item !== null} autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder={t.nameExample} />}
         </Field>
         <div className="flex flex-col gap-2">
           <CheckList
-            legend="Sign-in methods"
-            options={POLICY_METHODS.map((kind) => ({ id: kind, name: METHOD[kind].label }))}
+            legend={t.methods}
+            options={POLICY_METHODS.map((kind) => ({ id: kind, name: copy.labels.method[kind] }))}
             selected={methods}
             onToggle={(id, on) => setMethods((current) => (on ? [...current, id as MethodKind] : current.filter((m) => m !== id)))}
             empty={null}
             scroll={false}
           />
-          <p className={errors.requirement ? "text-caption text-danger" : "text-caption text-fg-3"}>{errors.requirement ?? "None checked accepts every method."}</p>
+          <p className={errors.requirement ? "text-caption text-danger" : "text-caption text-fg-3"}>{errors.requirement ?? t.anyChecked}</p>
         </div>
-        <DurationField label="Maximum sign-in age" hint="1 minute to 90 days. Set 0 for no limit. Older sign-ins are asked to sign in again." value={age} onChange={setAge} error={errors.age} />
+        <DurationField label={t.maxAge} hint={t.maxAgeHint} value={age} onChange={setAge} error={errors.age} />
         <button type="submit" hidden />
       </form>
     </Dialog>

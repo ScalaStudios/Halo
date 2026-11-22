@@ -13,68 +13,39 @@ import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api/client";
-import { pluralize } from "@/lib/format";
+import { useMessages } from "@/lib/i18n/client";
+import { policyMessages } from "@/lib/i18n/console/policy";
 import { METHOD } from "@/lib/labels";
 import type { MethodSetting } from "@/lib/policy-types";
 import type { Settings } from "@/lib/settings-types";
-import type { MethodKind } from "@/lib/types";
 import { CheckList, FieldError, type Option } from "./policy-form";
-import { METHOD_PLURAL } from "./shared";
+import type { PolicyCopy } from "./shared";
 
-const DESCRIPTION: Record<MethodKind, string> = {
-  passkey: "Face ID, Touch ID, Windows Hello or a phone screen lock. Bound to this domain, so a fake sign-in page can't use them.",
-  "security-key": "Hardware keys such as a YubiKey or Titan Key. Phishing-resistant and portable between computers.",
-  totp: "Six-digit codes from apps such as 1Password, Google Authenticator or Aegis. A convincing fake sign-in page can capture them.",
-  "magic-link": "A single-use sign-in link or code sent by email. Only as safe as the mailbox it goes to.",
-  "recovery-codes": "Single-use backup codes for people who lost their other methods.",
-  password: "For people who can't use a passkey yet, such as during a move from another identity provider. Passwords can be phished, guessed or reused from a breach elsewhere.",
-  federated: "Sign-in through Google, Microsoft Entra, GitHub or another OpenID Connect provider. Only as strong as that provider's sign-in.",
-  "access-pass": "A time-limited pass an administrator gives someone to set up a new passkey. It never signs anyone in by itself.",
-  certificate: "A certificate from your organization's certificate authority, such as on a smart card. Your reverse proxy asks the browser for it and passes it to Halo.",
-  kerberos: "The Kerberos ticket a Windows computer joined to your Active Directory domain already holds, so people sign in without typing anything. Only as strong as their Windows sign-in.",
-};
-
-const HAVE: Record<MethodKind, string> = {
-  passkey: "a passkey",
-  "security-key": "a security key",
-  totp: "an authenticator app",
-  "magic-link": "",
-  "recovery-codes": "recovery codes",
-  password: "a password",
-  federated: "a linked identity provider account",
-  "access-pass": "a temporary access pass",
-  certificate: "",
-  kerberos: "",
-};
-
-function people(n: number) {
-  return pluralize(n, "active person", "active people");
+function usage(m: MethodSetting, t: PolicyCopy["methods"]) {
+  if (m.method === "certificate") return t.usageCertificate;
+  if (m.method === "kerberos") return t.usageKerberos;
+  if (m.method === "magic-link") return t.usageMagicLink(m.users);
+  return t.usage(m.users, t.have[m.method]);
 }
 
-function usage(m: MethodSetting) {
-  if (m.method === "certificate") return "Matches each certificate to a person through the trusted certificate authorities below.";
-  if (m.method === "kerberos") return "Matches each ticket to a person through the realms under Windows sign-in below.";
-  if (m.method === "magic-link") return `${people(m.users)} ${m.users === 1 ? "has" : "have"} no passkey, security key or authenticator app.`;
-  return `${people(m.users)} ${m.users === 1 ? "has" : "have"} ${HAVE[m.method]}.`;
-}
-
-function warning(m: MethodSetting) {
-  if (m.method === "magic-link") return `${pluralize(m.exclusive, "person relies", "people rely")} on magic links because nothing else they enrolled is turned on.`;
-  return `${pluralize(m.exclusive, "person has", "people have")} no other passkey, security key or authenticator app that is turned on.`;
+function warning(m: MethodSetting, t: PolicyCopy["methods"]) {
+  if (m.method === "magic-link") return t.warningMagicLink(m.exclusive);
+  return t.warning(m.exclusive);
 }
 
 export function MethodSettings({ methods, settings, groups }: { methods: MethodSetting[]; settings: Settings; groups: Option[] }) {
+  const copy = useMessages(policyMessages);
+  const t = copy.methods;
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [confirming, setConfirming] = useState<MethodSetting | null>(null);
   const magicLinks = methods.find((m) => m.method === "magic-link")?.enabled ?? false;
 
   function apply(m: MethodSetting, enabled: boolean) {
-    const plural = METHOD_PLURAL[m.method];
     void run(m.method, () => api(`/methods/${m.method}`, { method: "PUT", body: { enabled } }), () => {
       setConfirming(null);
       toast({
-        title: `${plural[0]!.toUpperCase()}${plural.slice(1)} turned ${enabled ? "on" : "off"}`,
-        description: !enabled ? "Sign-ins that use them are blocked from now on." : m.method === "password" ? "Choose who can use them under Password rules." : "People can sign in with them again.",
+        title: t.turned(copy.labels.method[m.method], copy.labels.methodPlural[m.method], enabled),
+        description: !enabled ? t.turnedOff : m.method === "password" ? t.passwordsOn : t.turnedOn,
       });
     }, "inline");
   }
@@ -85,14 +56,8 @@ export function MethodSettings({ methods, settings, groups }: { methods: MethodS
   }
 
   function consequence(m: MethodSetting) {
-    const who = `${people(m.exclusive)} ${m.exclusive === 1 ? "has" : "have"}`;
-    if (m.method === "magic-link") {
-      return `${who} no passkey, security key or authenticator app that is turned on. They can't sign in until you turn magic links back on or send them a setup link to enroll a passkey.`;
-    }
-    const fallback = magicLinks
-      ? "They'll have to sign in with a magic link until they enroll another method."
-      : "They can't sign in until you turn this back on or send them a new setup link.";
-    return `${who} no other passkey, security key or authenticator app that is turned on. ${fallback}`;
+    if (m.method === "magic-link") return t.consequenceMagicLink(m.exclusive);
+    return t.consequence(m.exclusive, magicLinks);
   }
 
   return (
@@ -112,18 +77,18 @@ export function MethodSettings({ methods, settings, groups }: { methods: MethodS
                   <div className="flex min-w-0 flex-col gap-1">
                     <span className="flex flex-wrap items-center gap-2">
                       <span id={id} className="font-medium text-fg">
-                        {meta.label}
+                        {copy.labels.method[m.method]}
                       </span>
-                      {meta.phishingResistant ? <Badge tone="success">Phishing-resistant</Badge> : null}
-                      {m.enabled ? null : <Badge tone="neutral">Off</Badge>}
+                      {meta.phishingResistant ? <Badge tone="success">{t.phishingResistant}</Badge> : null}
+                      {m.enabled ? null : <Badge tone="neutral">{t.off}</Badge>}
                     </span>
-                    <p className="text-body-sm text-fg-3">{DESCRIPTION[m.method]}</p>
-                    <p className="tnum text-body-sm text-fg-2">{usage(m)}</p>
+                    <p className="text-body-sm text-fg-3">{t.descriptions[m.method]}</p>
+                    <p className="tnum text-body-sm text-fg-2">{usage(m, t)}</p>
                     {confirming ? null : <ActionError message={errorFor(m.method)} />}
                     {m.enabled && m.exclusive > 0 ? (
                       <p className="flex items-start gap-2 text-body-sm text-warning">
                         <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0" />
-                        <span className="tnum">{warning(m)}</span>
+                        <span className="tnum">{warning(m, t)}</span>
                       </p>
                     ) : null}
                   </div>
@@ -134,7 +99,7 @@ export function MethodSettings({ methods, settings, groups }: { methods: MethodS
                   ) : (
                     <Checkbox aria-labelledby={`${id} ${id}-state`} checked={m.enabled} disabled={pending !== null} onChange={(event) => change(m, event.target.checked)} />
                   )}
-                  <span id={`${id}-state`}>Allowed</span>
+                  <span id={`${id}-state`}>{t.allowed}</span>
                 </label>
               </li>
             );
@@ -142,7 +107,7 @@ export function MethodSettings({ methods, settings, groups }: { methods: MethodS
         </ul>
       </Card>
       <p className="text-body-sm text-fg-3">
-        Changes apply from the next sign-in. Enrolled methods are kept when you turn one off, so turning it back on restores them. People who are already signed in stay signed in.
+        {t.footnote}
       </p>
       {magicLinks ? <SignInEmails settings={settings} /> : null}
       {methods.some((m) => m.method === "password" && m.enabled) ? <PasswordRules settings={settings} groups={groups} /> : null}
@@ -155,21 +120,21 @@ export function MethodSettings({ methods, settings, groups }: { methods: MethodS
           clearError();
         }}
         error={confirming ? errorFor(confirming.method) : undefined}
-        title="Turn on passwords?"
-        description="Passkeys stay the recommended way to sign in. Use passwords only for people who can't use a passkey yet, such as during a move from another identity provider."
+        title={t.passwordsTitle}
+        description={t.passwordsDescription}
         footer={
           <>
             <Button variant="secondary" onClick={() => setConfirming(null)}>
-              Cancel
+              {copy.cancel}
             </Button>
             <Button variant="primary" loading={pending === "password"} onClick={() => confirming && apply(confirming, true)}>
-              Turn on passwords
+              {t.passwordsConfirm}
             </Button>
           </>
         }
       >
         <SecretWarning>
-          Passwords can be phished by a fake sign-in page, guessed, or reused from a breach at another site. Passkeys resist all three. After you turn passwords on, limit them to the groups that need them under Password rules.
+          {t.passwordsWarning}
         </SecretWarning>
       </Dialog>
       <Dialog
@@ -180,15 +145,15 @@ export function MethodSettings({ methods, settings, groups }: { methods: MethodS
           clearError();
         }}
         error={confirming ? errorFor(confirming.method) : undefined}
-        title={confirming ? `Turn off ${METHOD_PLURAL[confirming.method]}?` : "Turn off this method?"}
+        title={confirming ? t.turnOffTitle(copy.labels.methodPlural[confirming.method]) : t.turnOffFallback}
         description={confirming ? consequence(confirming) : undefined}
         footer={
           <>
             <Button variant="secondary" onClick={() => setConfirming(null)}>
-              Cancel
+              {copy.cancel}
             </Button>
             <Button variant="destructive" loading={confirming !== null && pending === confirming.method} onClick={() => confirming && apply(confirming, false)}>
-              Turn off {confirming ? METHOD_PLURAL[confirming.method] : ""}
+              {t.turnOff(confirming ? copy.labels.methodPlural[confirming.method] : "")}
             </Button>
           </>
         }
@@ -198,35 +163,36 @@ export function MethodSettings({ methods, settings, groups }: { methods: MethodS
 }
 
 function SignInEmails({ settings }: { settings: Settings }) {
+  const t = useMessages(policyMessages).methods;
   const { saving, failure, save } = useSaveSettings();
   const [contents, setContents] = useState(settings.emailSignIn);
 
   return (
     <Card>
       <CardHeader
-        title="Sign-in emails"
-        description="What people get when they ask for an email on the sign-in page. A code works when they read the email on another device, and a mail scanner that opens the link doesn't use up the code."
+        title={t.emails}
+        description={t.emailsDescription}
       />
       <CardBody>
         <form
           className="flex max-w-xl flex-col gap-6"
           onSubmit={(event) => {
             event.preventDefault();
-            void save({ emailSignIn: contents }, "Sign-in emails saved", "Emails sent from now on follow it within 30 seconds.");
+            void save({ emailSignIn: contents }, t.emailsSaved, t.emailsSavedDescription);
           }}
         >
-          <Field label="Each email contains" hint="Links and codes work once and expire after 10 minutes. A code has 5 attempts, and wrong codes count toward the lockout.">
+          <Field label={t.emailContains} hint={t.emailContainsHint}>
             {(props) => (
               <Select {...props} value={contents} onChange={(event) => setContents(event.target.value as Settings["emailSignIn"])}>
-                <option value="link">A sign-in link</option>
-                <option value="code">A 6-digit code to enter on the sign-in page</option>
-                <option value="both">A sign-in link and a 6-digit code</option>
+                <option value="link">{t.emailLink}</option>
+                <option value="code">{t.emailCode}</option>
+                <option value="both">{t.emailBoth}</option>
               </Select>
             )}
           </Field>
           <div className="flex flex-wrap items-center gap-4">
             <Button type="submit" variant="primary" loading={saving} disabled={contents === settings.emailSignIn}>
-              Save sign-in emails
+              {t.saveEmails}
             </Button>
             <ActionError message={failure} />
           </div>
@@ -237,6 +203,8 @@ function SignInEmails({ settings }: { settings: Settings }) {
 }
 
 function PasswordRules({ settings, groups }: { settings: Settings; groups: Option[] }) {
+  const copy = useMessages(policyMessages);
+  const t = copy.methods;
   const { saving, save } = useSaveSettings();
   const [limited, setLimited] = useState(settings.passwordGroupIds.length > 0);
   const [groupIds, setGroupIds] = useState(() => settings.passwordGroupIds.filter((id) => groups.some((g) => g.id === id)));
@@ -244,7 +212,7 @@ function PasswordRules({ settings, groups }: { settings: Settings; groups: Optio
   const [breachCheck, setBreachCheck] = useState(settings.passwordBreachCheck);
   const [attempted, setAttempted] = useState(false);
   const chosen = limited ? groupIds : [];
-  const problem = limited && groupIds.length === 0 ? "Choose at least one group, or let everyone use a password." : undefined;
+  const problem = limited && groupIds.length === 0 ? t.passwordGroupsRequired : undefined;
   const dirty =
     secondFactor !== settings.passwordSecondFactor ||
     breachCheck !== settings.passwordBreachCheck ||
@@ -254,12 +222,12 @@ function PasswordRules({ settings, groups }: { settings: Settings; groups: Optio
   function submit() {
     setAttempted(true);
     if (problem) return;
-    void save({ passwordGroupIds: chosen, passwordSecondFactor: secondFactor, passwordBreachCheck: breachCheck }, "Password rules saved", "Sign-ins follow them within 30 seconds.");
+    void save({ passwordGroupIds: chosen, passwordSecondFactor: secondFactor, passwordBreachCheck: breachCheck }, t.passwordRulesSaved, t.passwordRulesSavedDescription);
   }
 
   return (
     <Card>
-      <CardHeader title="Password rules" description="Who can sign in with a password, and what else they need. Halo stores only Argon2id hashes of passwords and never shows them to anyone." />
+      <CardHeader title={t.passwordRules} description={t.passwordRulesDescription} />
       <CardBody>
         <form
           noValidate
@@ -269,22 +237,22 @@ function PasswordRules({ settings, groups }: { settings: Settings; groups: Optio
             submit();
           }}
         >
-          <Field label="Who can use a password">
+          <Field label={t.whoPassword}>
             {(props) => (
               <Select {...props} value={limited ? "groups" : "everyone"} onChange={(event) => setLimited(event.target.value === "groups")}>
-                <option value="everyone">Everyone in the organization</option>
-                <option value="groups">Members of selected groups</option>
+                <option value="everyone">{t.everyone}</option>
+                <option value="groups">{t.selectedGroups}</option>
               </Select>
             )}
           </Field>
           {limited ? (
             <div className="flex flex-col gap-2">
               <CheckList
-                legend="Groups"
+                legend={copy.groups}
                 options={groups}
                 selected={groupIds}
                 onToggle={(id, on) => setGroupIds((current) => (on ? [...current, id] : current.filter((v) => v !== id)))}
-                empty="There are no groups yet."
+                empty={copy.noGroups}
               />
               <FieldError>{attempted ? problem : undefined}</FieldError>
             </div>
@@ -292,22 +260,20 @@ function PasswordRules({ settings, groups }: { settings: Settings; groups: Optio
           <label className="flex cursor-pointer items-start gap-3">
             <Checkbox className="mt-0.5" checked={secondFactor} onChange={(event) => setSecondFactor(event.target.checked)} />
             <span className="flex flex-col">
-              <span className="text-body-sm text-fg">Also require a code from an authenticator app</span>
-              <span className="text-caption text-fg-3">Recommended. People without an authenticator app can't sign in with a password, but can still use their other methods.</span>
+              <span className="text-body-sm text-fg">{t.secondFactor}</span>
+              <span className="text-caption text-fg-3">{t.secondFactorHint}</span>
             </span>
           </label>
           <label className="flex cursor-pointer items-start gap-3">
             <Checkbox className="mt-0.5" checked={breachCheck} onChange={(event) => setBreachCheck(event.target.checked)} />
             <span className="flex flex-col">
-              <span className="text-body-sm text-fg">Refuse passwords found in data breaches</span>
-              <span className="text-caption text-fg-3">
-                Checks new passwords with Have I Been Pwned, sending only the first 5 characters of their SHA-1 hash. If the service can&apos;t be reached, Halo accepts the password and logs a warning. Turn this off when Halo has no internet access.
-              </span>
+              <span className="text-body-sm text-fg">{t.breachCheck}</span>
+              <span className="text-caption text-fg-3">{t.breachCheckHint}</span>
             </span>
           </label>
           <div>
             <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>
-              Save password rules
+              {t.savePasswordRules}
             </Button>
           </div>
         </form>
@@ -325,17 +291,18 @@ function aaguidList(text: string) {
   return [...new Set(text.toLowerCase().split(/[\s,]+/).filter(Boolean))];
 }
 
-function ruleProblem(row: PasskeyRuleRow) {
+function ruleProblem(row: PasskeyRuleRow, t: PolicyCopy["methods"]) {
   const minimum = Number(row.minimum);
   const invalid = row.attestation ? aaguidList(row.aaguids).find((a) => !AAGUID.test(a)) : undefined;
-  if (!row.groupId) return "Choose a group, or remove these rules.";
-  if (row.minimum.trim() === "" || !Number.isInteger(minimum) || minimum < 0 || minimum > 10) return "Enter a whole number of keys between 0 and 10.";
-  if (invalid) return `“${invalid}” is not an AAGUID. Enter each model like cb69481e-8ff7-4039-93ec-0a2729a154a8.`;
-  if (!row.deviceBound && !row.attestation && minimum === 0) return "Choose at least one rule for this group, or remove it.";
+  if (!row.groupId) return t.ruleGroup;
+  if (row.minimum.trim() === "" || !Number.isInteger(minimum) || minimum < 0 || minimum > 10) return t.ruleMinimum;
+  if (invalid) return t.ruleAaguid(invalid);
+  if (!row.deviceBound && !row.attestation && minimum === 0) return t.ruleEmpty;
   return undefined;
 }
 
 function PasskeyRules({ settings, groups }: { settings: Settings; groups: Option[] }) {
+  const t = useMessages(policyMessages).methods;
   const { saving, failure, save } = useSaveSettings();
   const saved = settings.authenticatorRules.filter((rule) => groups.some((g) => g.id === rule.groupId));
   const [rows, setRows] = useState<PasskeyRuleRow[]>(() => saved.map((rule) => ({ ...rule, aaguids: rule.aaguids.join("\n"), minimum: String(rule.minimum) })));
@@ -348,7 +315,7 @@ function PasskeyRules({ settings, groups }: { settings: Settings; groups: Option
     minimum: Number(row.minimum),
   }));
   const dirty = JSON.stringify(rules) !== JSON.stringify(saved);
-  const groupName = (id: string) => groups.find((g) => g.id === id)?.name ?? "this group";
+  const groupName = (id: string) => groups.find((g) => g.id === id)?.name ?? t.thisGroup;
 
   function update(index: number, change: Partial<PasskeyRuleRow>) {
     setRows((current) => current.map((row, i) => (i === index ? { ...row, ...change } : row)));
@@ -356,15 +323,15 @@ function PasskeyRules({ settings, groups }: { settings: Settings; groups: Option
 
   function submit() {
     setAttempted(true);
-    if (rows.some((row) => ruleProblem(row))) return;
-    void save({ authenticatorRules: rules }, "Passkey rules saved", "New passkeys and security keys follow them within 30 seconds. Keys people already have keep working.");
+    if (rows.some((row) => ruleProblem(row, t))) return;
+    void save({ authenticatorRules: rules }, t.passkeyRulesSaved, t.passkeyRulesSavedDescription);
   }
 
   return (
     <Card>
       <CardHeader
-        title="Passkey rules"
-        description="Limit which passkeys and security keys members of a group can add. Someone in several of these groups must meet the rules of each. Keys added before a rule keep working."
+        title={t.passkeyRules}
+        description={t.passkeyRulesDescription}
       />
       <CardBody>
         <form
@@ -375,13 +342,13 @@ function PasskeyRules({ settings, groups }: { settings: Settings; groups: Option
             submit();
           }}
         >
-          {rows.length === 0 ? <p className="text-body-sm text-fg-3">No group has passkey rules, so everyone can add any passkey or security key.</p> : null}
+          {rows.length === 0 ? <p className="text-body-sm text-fg-3">{t.noPasskeyRules}</p> : null}
           {rows.map((row, index) => (
             <fieldset key={index} className="flex flex-col gap-4 rounded-lg border border-border p-4">
-              <legend className="sr-only">Rules for {groupName(row.groupId)}</legend>
+              <legend className="sr-only">{t.rulesFor(groupName(row.groupId))}</legend>
               <div className="flex items-center gap-3">
-                <Select aria-label={`Group ${index + 1}`} value={row.groupId} onChange={(event) => update(index, { groupId: event.target.value })}>
-                  <option value="">Choose a group</option>
+                <Select aria-label={t.groupNumber(index + 1)} value={row.groupId} onChange={(event) => update(index, { groupId: event.target.value })}>
+                  <option value="">{t.chooseGroup}</option>
                   {groups
                     .filter((g) => g.id === row.groupId || !rows.some((other) => other.groupId === g.id))
                     .map((g) => (
@@ -390,42 +357,40 @@ function PasskeyRules({ settings, groups }: { settings: Settings; groups: Option
                       </option>
                     ))}
                 </Select>
-                <Button size="icon-sm" variant="quiet" aria-label={`Remove the rules for ${groupName(row.groupId)}`} onClick={() => setRows((current) => current.filter((_, i) => i !== index))}>
+                <Button size="icon-sm" variant="quiet" aria-label={t.removeRules(groupName(row.groupId))} onClick={() => setRows((current) => current.filter((_, i) => i !== index))}>
                   <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
                 </Button>
               </div>
               <label className="flex cursor-pointer items-start gap-3">
                 <Checkbox className="mt-0.5" checked={row.deviceBound} onChange={(event) => update(index, { deviceBound: event.target.checked })} />
                 <span className="flex flex-col">
-                  <span className="text-body-sm text-fg">Only keys that stay on one device</span>
-                  <span className="text-caption text-fg-3">Refuses passkeys that sync between devices, such as those in iCloud Keychain or Google Password Manager. Security keys qualify.</span>
+                  <span className="text-body-sm text-fg">{t.deviceBound}</span>
+                  <span className="text-caption text-fg-3">{t.deviceBoundHint}</span>
                 </span>
               </label>
               <label className="flex cursor-pointer items-start gap-3">
                 <Checkbox className="mt-0.5" checked={row.attestation} onChange={(event) => update(index, { attestation: event.target.checked })} />
                 <span className="flex flex-col">
-                  <span className="text-body-sm text-fg">Only certified models</span>
-                  <span className="text-caption text-fg-3">
-                    Each new key must prove its make and model, checked against the FIDO Metadata Service, so counterfeit keys and keys that hide their model are refused. Halo downloads the service&apos;s list once a day, so it needs internet access.
-                  </span>
+                  <span className="text-body-sm text-fg">{t.attestation}</span>
+                  <span className="text-caption text-fg-3">{t.attestationHint}</span>
                 </span>
               </label>
               {row.attestation ? (
-                <Field label="Approved models" hint="One AAGUID per line, from the key maker or the FIDO Metadata Service. Leave empty to accept any certified model.">
+                <Field label={t.models} hint={t.modelsHint}>
                   {(props) => <Textarea {...props} mono rows={3} value={row.aaguids} onChange={(event) => update(index, { aaguids: event.target.value })} />}
                 </Field>
               ) : null}
-              <Field label="Keys each member keeps" hint="Members can't remove a key that would leave them with fewer that meet these rules. 0 for no minimum.">
+              <Field label={t.minimum} hint={t.minimumHint}>
                 {(props) => (
                   <div className="flex items-center gap-3">
                     <div className="w-24">
                       <Input {...props} type="number" inputMode="numeric" min={0} max={10} step={1} className="tnum" value={row.minimum} onChange={(event) => update(index, { minimum: event.target.value })} />
                     </div>
-                    <span className="text-body-sm text-fg-3">keys</span>
+                    <span className="text-body-sm text-fg-3">{t.keys}</span>
                   </div>
                 )}
               </Field>
-              <FieldError>{attempted ? ruleProblem(row) : undefined}</FieldError>
+              <FieldError>{attempted ? ruleProblem(row, t) : undefined}</FieldError>
             </fieldset>
           ))}
           <div>
@@ -436,12 +401,12 @@ function PasskeyRules({ settings, groups }: { settings: Settings; groups: Option
               onClick={() => setRows((current) => [...current, { groupId: "", deviceBound: true, attestation: false, aaguids: "", minimum: "0" }])}
             >
               <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-              Add group rules
+              {t.addGroupRules}
             </Button>
           </div>
           <div className="flex flex-wrap items-center gap-4">
             <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>
-              Save passkey rules
+              {t.savePasskeyRules}
             </Button>
             <ActionError message={failure} />
           </div>
