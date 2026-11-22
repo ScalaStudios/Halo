@@ -13,6 +13,8 @@ import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/compo
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
+import { useMessages } from "@/lib/i18n/client";
+import { applicationsMessages } from "@/lib/i18n/console/applications";
 import type { User } from "@/lib/types";
 import { RotateSecretDialog } from "./credentials";
 import { EditDetailsDialog } from "./edit-application";
@@ -42,7 +44,8 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
   const { pending, run } = useMutation();
   const [rotate, setRotate] = useState(false);
   const [editing, setEditing] = useState(false);
-  const idLabel = app.saml ? "entity ID" : "client ID";
+  const t = useMessages(applicationsMessages);
+  const a = t.actions;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -55,39 +58,39 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
             void run(
               "approve",
               () => api(`/applications/${app.id}/enable`, { method: "POST", body: { redirectUris: app.redirectUris, postLogoutUris: app.postLogoutUris } }),
-              () => toast({ title: `${app.name} approved`, description: "Assign groups to it so people can sign in." }),
+              () => toast({ title: a.approved(app.name), description: a.approvedHint }),
             )
           }
         >
           <Check aria-hidden="true" size={16} strokeWidth={1.75} />
-          Approve
+          {a.approve}
         </Button>
       ) : null}
       {app.bookmark || app.radius || app.ldap || app.remote ? null : (
         <Link href={`/admin/applications/${app.id}#setup-guide`} className={buttonClasses("secondary", "sm")}>
           <BookOpen aria-hidden="true" size={16} strokeWidth={1.75} />
-          View setup guide
+          {a.viewGuide}
         </Link>
       )}
       {app.hasSecret ? (
         <Button size="sm" variant="secondary" onClick={() => setRotate(true)}>
           <RefreshCw aria-hidden="true" size={16} strokeWidth={1.75} />
-          {app.ldap ? "Rotate bind password" : "Rotate secret"}
+          {app.ldap ? a.rotateBind : a.rotateSecret}
         </Button>
       ) : null}
       <Menu>
         <MenuTrigger asChild>
-          <Button size="icon-sm" variant="quiet" aria-label="More actions">
+          <Button size="icon-sm" variant="quiet" aria-label={a.more}>
             <Ellipsis aria-hidden="true" size={16} strokeWidth={1.75} />
           </Button>
         </MenuTrigger>
         <MenuContent>
           <MenuItem icon={Pencil} onSelect={() => setEditing(true)}>
-            Edit details
+            {a.editDetails}
           </MenuItem>
           {app.homepage ? (
             <MenuItem icon={ExternalLink} onSelect={() => window.open(app.homepage, "_blank", "noopener,noreferrer")}>
-              Open {new URL(app.homepage).host}
+              {a.openHost(new URL(app.homepage).host)}
             </MenuItem>
           ) : null}
           {app.bookmark || app.radius || app.ldap || app.remote ? null : (
@@ -95,22 +98,22 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
               icon={Copy}
               onSelect={() => {
                 void navigator.clipboard?.writeText(app.clientId);
-                toast({ title: app.saml ? "Entity ID copied" : "Client ID copied", description: app.clientId });
+                toast({ title: app.saml ? t.list.entityIdCopied : t.list.clientIdCopied, description: app.clientId });
               }}
             >
-              Copy {idLabel}
+              {app.saml ? a.copyEntityId : t.list.copyClientId}
             </MenuItem>
           )}
           <MenuSeparator />
           <MenuItem icon={Power} onSelect={() => router.push(`/admin/applications/${app.id}#danger-zone`)}>
-            {app.disabled ? "Enable application" : "Disable application"}
+            {app.disabled ? a.enable : a.disable}
           </MenuItem>
           <MenuItem icon={Trash2} danger onSelect={() => router.push(`/admin/applications/${app.id}#danger-zone`)}>
-            Delete application
+            {a.delete}
           </MenuItem>
         </MenuContent>
       </Menu>
-      {app.hasSecret ? <RotateSecretDialog open={rotate} onOpenChange={setRotate} appId={app.id} appName={app.name} label={app.radius ? "Shared secret" : app.ldap ? "Bind password" : undefined} bind={app.ldap} /> : null}
+      {app.hasSecret ? <RotateSecretDialog open={rotate} onOpenChange={setRotate} appId={app.id} appName={app.name} secret={app.radius ? "shared" : app.ldap ? "bind" : undefined} /> : null}
       <EditDetailsDialog app={app} directory={directory} open={editing} onOpenChange={setEditing} />
     </div>
   );
@@ -118,21 +121,9 @@ export function AppActions({ app, directory }: { app: AppSummary; directory: Use
 
 export function DangerZone({ id, name, disabled, bookmark = false, className }: { id: string; name: string; disabled: boolean; bookmark?: boolean; className?: string }) {
   const { pending, run, errorFor, toast, router } = useMutation();
-  const copy = bookmark
-    ? {
-        enabled: "It appears in the account portal again.",
-        disabled: "It no longer appears in the account portal.",
-        enable: `Shows ${name} in the account portal of the people assigned to it again.`,
-        disable: `Hides ${name} from the account portal. You can enable it again at any time.`,
-        remove: `Removes ${name} and its group assignments. This cannot be undone.`,
-      }
-    : {
-        enabled: "Assigned people can sign in again.",
-        disabled: "New sign-ins are blocked and tokens already issued are revoked.",
-        enable: `Lets people assigned to ${name} sign in again with the existing credentials.`,
-        disable: `Blocks new sign-ins to ${name} and revokes tokens already issued. You can enable it again at any time.`,
-        remove: `Removes ${name}, its credentials and group assignments. Sign-in stops immediately and cannot be restored.`,
-      };
+  const t = useMessages(applicationsMessages);
+  const a = t.actions;
+  const copy = bookmark ? a.bookmark : a.application;
 
   function toggle() {
     void run(
@@ -140,7 +131,7 @@ export function DangerZone({ id, name, disabled, bookmark = false, className }: 
       () => api(`/applications/${id}/${disabled ? "enable" : "disable"}`, { method: "POST" }),
       () =>
         toast(
-          disabled ? { title: `${name} enabled`, description: copy.enabled } : { title: `${name} disabled`, description: copy.disabled },
+          disabled ? { title: a.enabledToast(name), description: copy.enabled } : { title: t.list.disabled(name), description: copy.disabled },
         ),
       "inline",
     );
@@ -151,7 +142,7 @@ export function DangerZone({ id, name, disabled, bookmark = false, className }: 
       "delete",
       () => api(`/applications/${id}`, { method: "DELETE" }),
       () => {
-        toast({ title: `${name} deleted`, description: "Recorded in the audit log." });
+        toast({ title: t.common.deletedToast(name), description: t.common.audit });
         router.push("/admin/applications");
       },
       "inline",
@@ -161,31 +152,31 @@ export function DangerZone({ id, name, disabled, bookmark = false, className }: 
   return (
     <div id="danger-zone" className={cn("scroll-mt-24", className)}>
       <Card>
-        <CardHeader title="Danger zone" />
+        <CardHeader title={a.dangerZone} />
         <div className="flex flex-col gap-4 border-t border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-1">
-            <p className="text-body-sm font-semibold text-fg">{disabled ? "Enable application" : "Disable application"}</p>
-            <p className="text-body-sm text-fg-3">{disabled ? copy.enable : copy.disable}</p>
+            <p className="text-body-sm font-semibold text-fg">{disabled ? a.enable : a.disable}</p>
+            <p className="text-body-sm text-fg-3">{disabled ? copy.enable(name) : copy.disable(name)}</p>
             <ActionError message={errorFor("toggle")} />
           </div>
           <Button size="sm" variant="secondary" loading={pending === "toggle"} onClick={toggle} className="self-start sm:self-center">
             <Power aria-hidden="true" size={16} strokeWidth={1.75} />
-            {disabled ? "Enable application" : "Disable application"}
+            {disabled ? a.enable : a.disable}
           </Button>
         </div>
         <div className="flex flex-col gap-4 border-t border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-1">
-            <p className="text-body-sm font-semibold text-fg">Delete application</p>
-            <p className="text-body-sm text-fg-3">{copy.remove}</p>
+            <p className="text-body-sm font-semibold text-fg">{a.delete}</p>
+            <p className="text-body-sm text-fg-3">{copy.remove(name)}</p>
             <ActionError message={errorFor("delete")} />
           </div>
           <HoldToConfirm
             size="sm"
-            doneLabel="Deleted"
+            doneLabel={a.deleted}
             className="self-start sm:self-center"
             onConfirm={remove}
           >
-            Hold to delete
+            {a.holdToDelete}
           </HoldToConfirm>
         </div>
       </Card>

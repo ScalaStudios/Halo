@@ -5,7 +5,10 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
 import { CopyField } from "@/components/ui/copy-field";
 import { cn } from "@/lib/cn";
-import { daysUntil, formatDate, pluralize } from "@/lib/format";
+import { daysUntil, formatDate } from "@/lib/format";
+import { useLocale } from "@/lib/i18n/client";
+import { applicationsMessages } from "@/lib/i18n/console/applications";
+import type { Locale } from "@/lib/i18n/locale";
 import type { SetupGuide } from "@/lib/setup-guides";
 import type { Application, AppType } from "@/lib/types";
 
@@ -36,11 +39,13 @@ export function credentialState(app: Application): "expired" | "expiring" | "ok"
 }
 
 export function ExpiryText({ iso }: { iso: string }) {
+  const locale = useLocale();
+  const t = applicationsMessages[locale].expiry;
   const days = daysUntil(iso);
   const tone = days <= 14 ? "text-danger" : days <= 30 ? "text-warning" : "text-fg-3";
   return (
     <span className={cn("tnum whitespace-nowrap", tone)}>
-      {days < 0 ? "Expired" : days <= 30 ? `Expires in ${pluralize(days, "day")}` : `Expires ${formatDate(iso)}`}
+      {days < 0 ? t.expired : days <= 30 ? t.in(days) : t.on(formatDate(iso, locale))}
     </span>
   );
 }
@@ -54,36 +59,38 @@ export function SecretWarning({ children }: { children: ReactNode }) {
   );
 }
 
-export function RadiusServerFields({ issuer, port }: { issuer: string; port?: number }) {
-  if (!port) return <SecretWarning>Halo&apos;s RADIUS server is off. Set HALO_RADIUS_LISTEN, for example to :1812, and restart Halo.</SecretWarning>;
+export function RadiusServerFields({ issuer, port, locale }: { issuer: string; port?: number; locale: Locale }) {
+  const t = applicationsMessages[locale].fields;
+  if (!port) return <SecretWarning>{t.radiusOff}</SecretWarning>;
   return (
     <>
-      <CopyField label="Server" value={new URL(issuer).hostname} hint="The address of the Halo server itself. RADIUS runs over UDP, so HTTP proxies and ingresses don't carry it." />
-      <CopyField label="Port" value={String(port)} hint="For authentication and accounting." />
+      <CopyField label={t.server} value={new URL(issuer).hostname} hint={t.radiusServerHint} />
+      <CopyField label={t.port} value={String(port)} hint={t.portHint} />
     </>
   );
 }
 
-export function LdapConnectionFields({ ldap }: { ldap: NonNullable<Application["ldap"]> }) {
+export function LdapConnectionFields({ ldap, locale }: { ldap: NonNullable<Application["ldap"]>; locale: Locale }) {
+  const t = applicationsMessages[locale].fields;
   return (
     <>
       {ldap.url ? (
         <CopyField
-          label="Server"
+          label={t.server}
           value={ldap.url}
-          hint={ldap.url.startsWith("ldaps://") ? undefined : "Turn on StartTLS in the application. Halo refuses binds without TLS unless HALO_LDAP_TLS is none."}
+          hint={ldap.url.startsWith("ldaps://") ? undefined : t.ldapTlsHint}
         />
       ) : (
-        <SecretWarning>The LDAP server is off. Set HALO_LDAP_LISTEN, with HALO_LDAP_CERT_FILE and HALO_LDAP_KEY_FILE for TLS, and restart Halo.</SecretWarning>
+        <SecretWarning>{t.ldapOff}</SecretWarning>
       )}
-      <CopyField label="Base DN" value={ldap.baseDn} />
-      <CopyField label="Bind DN" value={ldap.bindDn} hint="The application binds as this DN with its bind password to search for people and groups." />
+      <CopyField label={t.baseDn} value={ldap.baseDn} />
+      <CopyField label={t.bindDn} value={ldap.bindDn} hint={t.bindDnHint} />
       <CopyField
-        label="User search base"
+        label={t.userBase}
         value={ldap.peopleDn}
-        hint="inetOrgPerson entries: uid and mail hold the email address, cn the name and memberOf the groups. People bind as their own DN with their Halo password; people without one can't."
+        hint={t.userBaseHint}
       />
-      <CopyField label="Group search base" value={ldap.groupsDn} hint="groupOfNames entries, with a member attribute for each person." />
+      <CopyField label={t.groupBase} value={ldap.groupsDn} hint={t.groupBaseHint} />
     </>
   );
 }

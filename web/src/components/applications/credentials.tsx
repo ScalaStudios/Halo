@@ -12,6 +12,8 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
 import { formatDate, formatDateTime } from "@/lib/format";
+import { useLocale } from "@/lib/i18n/client";
+import { applicationsMessages } from "@/lib/i18n/console/applications";
 import type { Credential } from "@/lib/types";
 import { ExpiryText, SecretWarning } from "./shared";
 
@@ -20,17 +22,19 @@ export function RotateSecretDialog({
   onOpenChange,
   appId,
   appName,
-  label = "Client secret",
-  bind = false,
+  secret = "client",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   appId: string;
   appName: string;
-  label?: string;
-  bind?: boolean;
+  secret?: "client" | "shared" | "bind";
 }) {
-  const kind = label.toLowerCase();
+  const locale = useLocale();
+  const t = applicationsMessages[locale];
+  const c = t.credentials;
+  const label = c.kinds[secret].label;
+  const bind = secret === "bind";
   const { pending, run, errorFor, clearError } = useMutation();
   const [rotated, setRotated] = useState<{ secret: string; graceEnds: string } | null>(null);
 
@@ -44,7 +48,7 @@ export function RotateSecretDialog({
     void run(
       "rotate",
       () => api<{ credential: Credential; clientSecret: string }>(`/applications/${appId}/secrets`, { body: {} }),
-      ({ clientSecret }) => setRotated({ secret: clientSecret, graceEnds: formatDateTime(new Date(Date.now() + 86_400_000).toISOString()) }),
+      ({ clientSecret }) => setRotated({ secret: clientSecret, graceEnds: formatDateTime(new Date(Date.now() + 86_400_000).toISOString(), locale) }),
       "inline",
     );
   }
@@ -54,28 +58,28 @@ export function RotateSecretDialog({
       open={open}
       onOpenChange={(next) => (next ? onOpenChange(true) : close())}
       error={errorFor("rotate")}
-      title={rotated ? `New ${kind}` : `Rotate ${kind}?`}
+      title={rotated ? c.kinds[secret].fresh : c.kinds[secret].rotate}
       description={
         bind
           ? rotated
-            ? `Update ${appName} with this bind password. The previous one no longer works.`
-            : `Halo replaces the bind password of ${appName}. The current one stops working at once, so ${appName} can't search until you update it.`
+            ? c.bindRotated(appName)
+            : c.bindConfirm(appName)
           : rotated
-            ? `Update ${appName} with this secret. The previous secrets keep working for 24 hours, until ${rotated.graceEnds}.`
-            : `Halo creates a new ${kind} for ${appName}. The current secrets keep working for 24 hours, so you can deploy the new one without downtime.`
+            ? c.rotated(appName, rotated.graceEnds)
+            : c.confirm(label.toLowerCase(), appName)
       }
       footer={
         rotated ? (
           <Button variant="primary" onClick={close}>
-            Done
+            {t.common.done}
           </Button>
         ) : (
           <>
             <Button variant="secondary" onClick={close}>
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button variant="primary" loading={pending === "rotate"} onClick={rotate}>
-              {bind ? "Rotate password" : "Rotate secret"}
+              {bind ? c.rotatePassword : c.rotateSecret}
             </Button>
           </>
         )
@@ -84,60 +88,63 @@ export function RotateSecretDialog({
       {rotated ? (
         <div className="flex animate-enter flex-col gap-4">
           <CopyField label={label} value={rotated.secret} secret />
-          <SecretWarning>This is the only time Halo shows this secret. Store it in your secret manager before closing this dialog.</SecretWarning>
+          <SecretWarning>{c.onlyOnce}</SecretWarning>
         </div>
       ) : null}
     </Dialog>
   );
 }
 
-export function CredentialList({ appId, appName, credentials, empty, label = "Client secret" }: { appId: string; appName: string; credentials: Credential[]; empty: string; label?: string }) {
+export function CredentialList({ appId, appName, credentials, empty, secret = "client" }: { appId: string; appName: string; credentials: Credential[]; empty: string; secret?: "client" | "shared" }) {
+  const locale = useLocale();
+  const t = applicationsMessages[locale];
+  const c = t.credentials;
   const [rotating, setRotating] = useState(false);
   const { run, toast } = useMutation();
 
-  if (credentials.length === 0) return <EmptyState icon={KeyRound} title="No credentials" description={empty} />;
+  if (credentials.length === 0) return <EmptyState icon={KeyRound} title={c.empty} description={empty} />;
 
   function revoke(credential: Credential) {
     return run(
       `revoke-${credential.id}`,
       () => api(`/applications/${appId}/secrets/${credential.id}`, { method: "DELETE" }),
-      () => toast({ title: `“${credential.label}” revoked`, description: `${appName} can no longer use it. Recorded in the audit log.` }),
+      () => toast({ title: c.revoked(credential.label), description: c.revokedHint(appName) }),
     );
   }
 
   return (
     <>
       <SimpleTable
-        caption="Credentials"
-        head={["Credential", "Created", "Expires", "Last used", "Actions"]}
+        caption={c.caption}
+        head={[c.credential, t.common.created, c.expires, c.lastUsed, t.common.actions]}
         rows={credentials.map((credential) => [
           <span key="n" className="flex flex-col">
             <span className="font-medium text-fg">{credential.label}</span>
             <span className="text-caption text-fg-3">
-              {credential.kind === "secret" ? label : "Signing certificate"} · <span className="font-mono text-code-sm">{credential.hint}</span>
+              {credential.kind === "secret" ? c.kinds[secret].label : c.certificate} · <span className="font-mono text-code-sm">{credential.hint}</span>
             </span>
           </span>,
           <span key="c" className="tnum whitespace-nowrap">
-            {formatDate(credential.createdAt)}
+            {formatDate(credential.createdAt, locale)}
           </span>,
           <ExpiryText key="e" iso={credential.expiresAt} />,
           <span key="u" className="whitespace-nowrap">
-            {credential.lastUsedAt ? <RelativeTime iso={credential.lastUsedAt} /> : "Never"}
+            {credential.lastUsedAt ? <RelativeTime iso={credential.lastUsedAt} /> : t.common.never}
           </span>,
           <span key="a" className="flex justify-end gap-2">
             {credential.kind === "secret" ? (
               <Button size="sm" variant="secondary" onClick={() => setRotating(true)}>
                 <RefreshCw aria-hidden="true" size={16} strokeWidth={1.75} />
-                Rotate secret
+                {c.rotateSecret}
               </Button>
             ) : null}
-            <HoldToConfirm size="sm" doneLabel="Revoked" onConfirm={() => revoke(credential)}>
-              Hold to revoke
+            <HoldToConfirm size="sm" doneLabel={c.revokedDone} onConfirm={() => revoke(credential)}>
+              {c.holdToRevoke}
             </HoldToConfirm>
           </span>,
         ])}
       />
-      <RotateSecretDialog open={rotating} onOpenChange={setRotating} appId={appId} appName={appName} label={label} />
+      <RotateSecretDialog open={rotating} onOpenChange={setRotating} appId={appId} appName={appName} secret={secret} />
     </>
   );
 }

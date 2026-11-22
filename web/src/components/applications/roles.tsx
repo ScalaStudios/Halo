@@ -13,18 +13,21 @@ import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field, Input, Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
+import { useMessages } from "@/lib/i18n/client";
+import { applicationsMessages } from "@/lib/i18n/console/applications";
+import type { Locale } from "@/lib/i18n/locale";
 import { GROUP_KIND } from "@/lib/labels";
 import type { AppRole, Group } from "@/lib/types";
 import { Checklist } from "./collections-table";
 
 type Row = AppRole & { holders: { name: string }[] };
 
-const columns: ColumnDef<Row, any>[] = [
+const columns = (t: (typeof applicationsMessages)[Locale]): ColumnDef<Row, any>[] => [
   {
     id: "name",
     accessorFn: (r) => r.name,
-    header: "Role",
-    meta: { label: "Role", hideable: false },
+    header: t.roles.role,
+    meta: { label: t.roles.role, hideable: false },
     cell: ({ row }) => (
       <span className="flex flex-col py-2">
         <span className="font-medium whitespace-nowrap text-fg">{row.original.name}</span>
@@ -35,26 +38,28 @@ const columns: ColumnDef<Row, any>[] = [
   {
     id: "description",
     accessorFn: (r) => r.description,
-    header: "Description",
-    meta: { label: "Description" },
+    header: t.common.description,
+    meta: { label: t.common.description },
     cell: ({ getValue }) => <span className="block max-w-96 min-w-48 py-2">{getValue<string>() || "—"}</span>,
   },
   {
     id: "holders",
     accessorFn: (r) => joinNames(r.holders),
-    header: "Held by",
-    meta: { label: "Held by" },
+    header: t.roles.heldBy,
+    meta: { label: t.roles.heldBy },
     cell: ({ row }) =>
       row.original.holders.length ? (
         <span className="block max-w-96 min-w-48 py-2">{joinNames(row.original.holders)}</span>
       ) : (
-        <span className="whitespace-nowrap text-fg-3">Nobody</span>
+        <span className="whitespace-nowrap text-fg-3">{t.common.nobody}</span>
       ),
   },
 ];
 
 export function RolesTable({ appId, appName, roles, groups, people }: { appId: string; appName: string; roles: AppRole[]; groups: Group[]; people: Person[] }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
+  const t = useMessages(applicationsMessages);
+  const r = t.roles;
   const [editing, setEditing] = useState<AppRole | "new" | null>(null);
   const [deleting, setDeleting] = useState<AppRole | null>(null);
   const rows = roles.map((r) => ({
@@ -65,7 +70,7 @@ export function RolesTable({ appId, appName, roles, groups, people }: { appId: s
   const create = (
     <Button size="sm" variant="primary" onClick={() => setEditing("new")}>
       <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-      Add role
+      {r.add}
     </Button>
   );
 
@@ -75,25 +80,25 @@ export function RolesTable({ appId, appName, roles, groups, people }: { appId: s
         <Card>
           <EmptyState
             icon={BadgeCheck}
-            title="No roles yet"
-            description={`Add roles such as Viewer, Editor or Billing, then give them to groups and people. ${appName} reads them from one roles claim instead of group names.`}
+            title={r.empty}
+            description={r.emptyHint(appName)}
             action={create}
           />
         </Card>
       ) : (
         <DataTable
           data={rows}
-          columns={columns}
+          columns={columns(t)}
           getRowId={(r) => r.id}
-          label="Roles"
-          noun={["role", "roles"]}
+          label={r.label}
+          noun={r.noun}
           storageKey="application-roles"
           searchText={(r) => `${r.name} ${r.key} ${joinNames(r.holders)}`}
-          searchPlaceholder="Search roles, groups or people"
+          searchPlaceholder={r.search}
           onRowOpen={setEditing}
           rowActions={[
-            { label: "Edit role", icon: Pencil, onSelect: setEditing },
-            { label: "Delete role", icon: Trash2, danger: true, separatorBefore: true, onSelect: setDeleting },
+            { label: r.edit, icon: Pencil, onSelect: setEditing },
+            { label: r.delete, icon: Trash2, danger: true, separatorBefore: true, onSelect: setDeleting },
           ]}
           toolbarEnd={create}
         />
@@ -109,12 +114,12 @@ export function RolesTable({ appId, appName, roles, groups, people }: { appId: s
           clearError();
         }}
         error={errorFor("delete")}
-        title={`Delete ${deleting?.name ?? ""}?`}
-        description={`Everyone who holds it loses it the next time they sign in to ${appName}. It can't be undone.`}
+        title={t.common.deleteConfirm(deleting?.name ?? "")}
+        description={r.deleteHint(appName)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleting(null)}>
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button
               variant="destructive"
@@ -125,14 +130,14 @@ export function RolesTable({ appId, appName, roles, groups, people }: { appId: s
                   "delete",
                   () => api(`/applications/${appId}/roles/${deleting.id}`, { method: "DELETE" }),
                   () => {
-                    toast({ title: `${deleting.name} deleted`, description: "Recorded in the audit log." });
+                    toast({ title: t.common.deletedToast(deleting.name), description: t.common.audit });
                     setDeleting(null);
                   },
                   "inline",
                 )
               }
             >
-              Delete role
+              {r.delete}
             </Button>
           </>
         }
@@ -149,11 +154,13 @@ function RoleDialog({ appId, appName, role, groups, people, onClose }: { appId: 
   const [userIds, setUserIds] = useState<string[]>(role?.userIds ?? []);
   const [errors, setErrors] = useState<{ name?: string; key?: string }>({});
   const { pending, run, errorFor, toast } = useMutation();
+  const t = useMessages(applicationsMessages);
+  const r = t.roles;
 
   function submit() {
     const next = {
-      name: name.trim() ? undefined : "Enter a role name, like Editor.",
-      key: role || /^[A-Za-z][A-Za-z0-9_.:-]{0,63}$/.test(key.trim()) ? undefined : "Start with a letter and use only letters, digits, dots, colons, dashes and underscores, like billing.admin.",
+      name: name.trim() ? undefined : r.nameRequired,
+      key: role || /^[A-Za-z][A-Za-z0-9_.:-]{0,63}$/.test(key.trim()) ? undefined : r.keyInvalid,
     };
     setErrors(next);
     if (next.name || next.key) return;
@@ -167,7 +174,7 @@ function RoleDialog({ appId, appName, role, groups, people, onClose }: { appId: 
         }),
       (saved) => {
         onClose();
-        toast({ title: `${saved.name} ${role ? "saved" : "added"}`, description: `${appName} receives it on the next sign-in. Recorded in the audit log.` });
+        toast({ title: role ? t.common.savedToast(saved.name) : t.common.addedToast(saved.name), description: r.savedHint(appName) });
       },
       "inline",
     );
@@ -178,15 +185,15 @@ function RoleDialog({ appId, appName, role, groups, people, onClose }: { appId: 
       open
       onOpenChange={(open) => (open ? undefined : onClose())}
       error={errorFor("save")}
-      title={role ? `Edit ${role.name}` : "Add role"}
-      description={`Roles refine what people can do in ${appName}. They don't let anyone sign in: that still takes a group on the Users & groups tab.`}
+      title={role ? t.common.edit(role.name) : r.add}
+      description={r.dialogHint(appName)}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {t.common.cancel}
           </Button>
           <Button variant="primary" loading={pending === "save"} onClick={submit}>
-            {role ? "Save role" : "Add role"}
+            {role ? r.save : r.add}
           </Button>
         </>
       }
@@ -199,24 +206,24 @@ function RoleDialog({ appId, appName, role, groups, people, onClose }: { appId: 
         }}
       >
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-          <Field label="Name" error={errors.name}>
-            {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder="Editor" />}
+          <Field label={t.common.name} error={errors.name}>
+            {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder={r.placeholder} />}
           </Field>
-          <Field label="Key" error={errors.key} hint={role ? "Can't be changed." : `What ${appName} receives. Can't be changed later.`}>
+          <Field label={r.key} error={errors.key} hint={role ? r.keyLocked : r.keyHint(appName)}>
             {(props) => <Input {...props} mono autoComplete="off" disabled={!!role} value={key} onChange={(event) => setKey(event.target.value)} placeholder="editor" />}
           </Field>
         </div>
-        <Field label="Description" hint="Shown to administrators, and never sent to the application.">
+        <Field label={t.common.description} hint={r.descriptionHint}>
           {(props) => <Textarea {...props} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} />}
         </Field>
         <Checklist
-          legend="Groups"
-          hint="Members of these groups hold the role."
+          legend={t.common.groups}
+          hint={r.groupsHint}
           items={groups.map((g) => ({ id: g.id, label: g.name, detail: GROUP_KIND[g.kind] }))}
           value={groupIds}
           onChange={setGroupIds}
         />
-        <Field label="People" hint="Give the role to someone directly, without a group.">
+        <Field label={t.common.people} hint={r.peopleHint}>
           {(props) => <PeoplePicker {...props} people={people} value={userIds} onChange={setUserIds} />}
         </Field>
         <button type="submit" hidden />

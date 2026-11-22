@@ -8,6 +8,8 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
+import { useMessages } from "@/lib/i18n/client";
+import { applicationsMessages } from "@/lib/i18n/console/applications";
 import type { ApplicationHook } from "@/lib/types";
 
 export function HookForm({ appId, appName, hook }: { appId: string; appName: string; hook: ApplicationHook | null }) {
@@ -18,12 +20,14 @@ export function HookForm({ appId, appName, hook }: { appId: string; appName: str
   const [failOpen, setFailOpen] = useState(hook?.failOpen ?? false);
   const [errors, setErrors] = useState<{ url?: string; secret?: string }>({});
   const [removing, setRemoving] = useState(false);
+  const t = useMessages(applicationsMessages);
+  const h = t.hook;
 
   function submit(event: FormEvent) {
     event.preventDefault();
     const next = {
-      url: (hook && !url.trim()) || /^https:\/\/\S+$/.test(url.trim()) ? undefined : "Enter the https:// URL of the hook.",
-      secret: (hook && !secret) || (secret.trim().length >= 32 && secret.trim().length <= 256) ? undefined : "Enter a signing secret of 32 to 256 characters.",
+      url: (hook && !url.trim()) || /^https:\/\/\S+$/.test(url.trim()) ? undefined : h.urlInvalid,
+      secret: (hook && !secret) || (secret.trim().length >= 32 && secret.trim().length <= 256) ? undefined : h.secretInvalid,
     };
     setErrors(next);
     if (next.url || next.secret) return;
@@ -34,7 +38,7 @@ export function HookForm({ appId, appName, hook }: { appId: string; appName: str
       () => {
         setUrl("");
         setSecret("");
-        toast({ title: hook ? "Hook saved" : "Hook added", description: `Halo calls it from the next sign-in to ${appName}. Recorded in the audit log.` });
+        toast({ title: hook ? h.saved : h.added, description: h.savedHint(appName) });
       },
       "inline",
     );
@@ -43,15 +47,15 @@ export function HookForm({ appId, appName, hook }: { appId: string; appName: str
   return (
     <Card>
       <CardHeader
-        title="Sign-in hook"
-        description={`Halo calls this endpoint when someone signs in to ${appName} and before it issues each token. It can deny access with a reason shown to the person, or add claims. Every call and its decision appear in the sign-in log.`}
+        title={h.title}
+        description={h.description(appName)}
       />
       <form onSubmit={submit} noValidate>
         <CardBody className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <Field
-            label="Hook URL"
+            label={h.url}
             error={errors.url}
-            hint={hook ? `Leave empty to keep the URL for ${hook.host}. Halo stores it encrypted and never shows it again.` : "Halo stores it encrypted and never shows it again. Private and local addresses are refused."}
+            hint={hook ? h.urlKeep(hook.host) : h.urlHint}
           >
             {(props) => (
               <Input
@@ -61,15 +65,15 @@ export function HookForm({ appId, appName, hook }: { appId: string; appName: str
                 autoComplete="off"
                 spellCheck={false}
                 value={url}
-                placeholder={hook ? "Unchanged" : "https://checks.example.com/halo"}
+                placeholder={hook ? t.common.unchanged : "https://checks.example.com/halo"}
                 onChange={(event) => setUrl(event.target.value)}
               />
             )}
           </Field>
           <Field
-            label="Signing secret"
+            label={h.secret}
             error={errors.secret}
-            hint={hook ? "Leave empty to keep the current secret." : "32 to 256 characters. Halo signs each request with it, and the hook signs its answer with it."}
+            hint={hook ? h.secretKeep : h.secretHint}
           >
             {(props) => (
               <Input
@@ -79,21 +83,21 @@ export function HookForm({ appId, appName, hook }: { appId: string; appName: str
                 autoComplete="new-password"
                 spellCheck={false}
                 value={secret}
-                placeholder={hook ? "Unchanged" : undefined}
+                placeholder={hook ? t.common.unchanged : undefined}
                 onChange={(event) => setSecret(event.target.value)}
               />
             )}
           </Field>
-          <Field label="Claims the hook can add" hint="Separate names with commas. Halo drops any other claim, and never lets a hook set sub, iss, aud, exp, email, groups, roles or another claim it sets itself.">
+          <Field label={h.claims} hint={h.claimsHint}>
             {(props) => (
               <Input {...props} mono autoComplete="off" spellCheck={false} value={claims} placeholder="department, cost_center" onChange={(event) => setClaims(event.target.value)} />
             )}
           </Field>
-          <Field label="When the hook fails" hint="A failure is no answer within 3 seconds, a status other than 200, a missing or wrong signature, or an unreadable answer.">
+          <Field label={h.failure} hint={h.failureHint}>
             {(props) => (
               <Select {...props} value={failOpen ? "open" : "closed"} onChange={(event) => setFailOpen(event.target.value === "open")}>
-                <option value="closed">Block the sign-in</option>
-                <option value="open">Allow the sign-in without added claims</option>
+                <option value="closed">{h.block}</option>
+                <option value="open">{h.allow}</option>
               </Select>
             )}
           </Field>
@@ -102,11 +106,11 @@ export function HookForm({ appId, appName, hook }: { appId: string; appName: str
           <ActionError message={errorFor("save")} />
           {hook ? (
             <Button variant="secondary" onClick={() => setRemoving(true)}>
-              Remove hook
+              {h.remove}
             </Button>
           ) : null}
           <Button type="submit" variant="primary" loading={pending === "save"}>
-            {hook ? "Save hook" : "Add hook"}
+            {hook ? h.save : h.add}
           </Button>
         </div>
       </form>
@@ -117,12 +121,12 @@ export function HookForm({ appId, appName, hook }: { appId: string; appName: str
           setRemoving(next);
         }}
         error={errorFor("remove")}
-        title="Remove the sign-in hook?"
-        description={`Halo stops calling ${hook?.host ?? "the hook"}. Sign-ins to ${appName} are no longer checked by it, and tokens lose the claims it added.`}
+        title={h.removeTitle}
+        description={h.removeHint(hook?.host, appName)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setRemoving(false)}>
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button
               variant="destructive"
@@ -135,13 +139,13 @@ export function HookForm({ appId, appName, hook }: { appId: string; appName: str
                     setRemoving(false);
                     setClaims("");
                     setFailOpen(false);
-                    toast({ title: "Hook removed", description: "Recorded in the audit log." });
+                    toast({ title: h.removed, description: t.common.audit });
                   },
                   "inline",
                 )
               }
             >
-              Remove hook
+              {h.remove}
             </Button>
           </>
         }

@@ -2,13 +2,17 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { DescriptionList } from "@/components/ui/description-list";
 import { SectionTitle } from "@/components/ui/section-title";
 import { DetailHeaderSkeleton, PageSkeleton, Skeleton, SkeletonText, TableSkeleton } from "@/components/ui/skeleton";
+import { applicationsMessages } from "@/lib/i18n/console/applications";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { requestLocale } from "@/lib/i18n/server";
 
-const facts = ["Access token lifetime", "Applications", "Created"];
-
-export default function Loading() {
+export default async function Loading() {
+  const locale = await requestLocale();
+  const t = applicationsMessages[locale];
+  const facts = [t.apiResources.accessTokenLifetime, t.common.applications, t.common.created];
   return (
     <PageSkeleton
-      back={{ href: "/admin/api-resources", label: "API resources" }}
+      back={{ href: "/admin/api-resources", label: frameMessages[locale].nav.items.apiResources.label }}
       heading={
         <>
           <DetailHeaderSkeleton actions={2} />
@@ -20,19 +24,19 @@ export default function Loading() {
       }
     >
       <div className="flex flex-col gap-6">
-        <SectionTitle title="Scopes" description="What the API lets callers do. Tokens list the granted scopes in the scope claim, separated by spaces." />
+        <SectionTitle title={t.apiResources.scopes} description={t.apiResources.scopesHint} />
         <TableSkeleton simple columns={3} rows={2} />
       </div>
       <div className="flex flex-col gap-6">
         <SectionTitle
-          title="Applications"
-          description="Applications granted scopes get JWT access tokens with this API's identifier in aud when they request a granted scope or send resource=<identifier>."
+          title={t.common.applications}
+          description={t.apiResources.grantsHint}
           action={<Skeleton className="h-8 w-32 rounded-md" />}
         />
         <TableSkeleton simple columns={3} rows={1} />
       </div>
       <Card>
-        <CardHeader title="Validate tokens in the API" description="Access tokens for this API are JWTs signed by Halo. The API validates them itself, without calling Halo on each request." />
+        <CardHeader title={t.apiResources.validate} description={t.apiResources.validateHint} />
         <CardBody>
           <div className="h-40 rounded-md border border-border bg-sunken" />
         </CardBody>
