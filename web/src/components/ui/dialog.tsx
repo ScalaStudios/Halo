@@ -11,6 +11,8 @@ export function Dialog({
   onOpenChange,
   trigger,
   title,
+  lang,
+  closeLabel = "Close",
   description,
   width = "default",
   children,
@@ -21,6 +23,8 @@ export function Dialog({
   onOpenChange: (open: boolean) => void;
   trigger?: ReactNode;
   title: string;
+  lang?: string;
+  closeLabel?: string;
   description?: ReactNode;
   width?: "default" | "wide";
   children?: ReactNode;
@@ -33,6 +37,7 @@ export function Dialog({
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-40 bg-ink/80 data-[state=open]:animate-[halo-fade_220ms_var(--ease-brand)]" />
         <D.Content
+          lang={lang}
           className={cn(
             "fixed top-1/2 left-1/2 z-50 flex max-h-[85dvh] -translate-x-1/2 -translate-y-1/2 flex-col",
             "rounded-xl border border-border-strong bg-surface shadow-lg outline-none",
@@ -51,7 +56,7 @@ export function Dialog({
                 </VisuallyHidden.Root>
               )}
             </div>
-            <D.Close aria-label="Close" className="-mt-1 -mr-2 grid size-8 place-items-center rounded-md text-fg-3 hover:bg-hover hover:text-fg">
+            <D.Close aria-label={closeLabel} className="-mt-1 -mr-2 grid size-8 place-items-center rounded-md text-fg-3 hover:bg-hover hover:text-fg">
               <X aria-hidden="true" size={16} strokeWidth={1.75} />
             </D.Close>
           </div>

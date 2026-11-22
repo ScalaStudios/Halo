@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { AccountShell } from "@/components/account/shell";
 import { BrandStyle } from "@/components/brand-style";
 import { apiGet } from "@/lib/api/server";
+import { requestLocale } from "@/lib/i18n/server";
 import type { OrganizationProfile } from "@/lib/settings-types";
 import type { User } from "@/lib/types";
 
@@ -11,11 +12,11 @@ export const metadata: Metadata = {
 };
 
 export default async function AccountLayout({ children }: { children: ReactNode }) {
-  const [user, org] = await Promise.all([apiGet<User>("/me"), apiGet<OrganizationProfile>("/organization")]);
+  const [user, org, locale] = await Promise.all([apiGet<User>("/me"), apiGet<OrganizationProfile>("/organization"), requestLocale()]);
   return (
     <>
       <BrandStyle org={org} />
-      <AccountShell user={{ name: user.name, email: user.email, roles: user.roles, avatarUrl: user.avatarUrl, impersonation: user.impersonation }} featuresOff={org.featuresOff}>
+      <AccountShell locale={locale} user={{ name: user.name, email: user.email, roles: user.roles, avatarUrl: user.avatarUrl, impersonation: user.impersonation }} featuresOff={org.featuresOff}>
         {children}
       </AccountShell>
     </>

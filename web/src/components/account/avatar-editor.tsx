@@ -8,6 +8,8 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { toApiError } from "@/lib/api/error";
 import { cn } from "@/lib/cn";
+import { accountMessages } from "@/lib/i18n/account";
+import type { Locale } from "@/lib/i18n/locale";
 
 const TYPES = ["image/png", "image/jpeg", "image/webp"];
 const SVG = "image/svg+xml";
@@ -30,6 +32,7 @@ export function AvatarEditor({
   endpoint,
   size = "lg",
   logo = false,
+  locale = "en",
   className,
   children,
 }: {
@@ -38,26 +41,27 @@ export function AvatarEditor({
   endpoint: string;
   size?: "lg" | "xl";
   logo?: boolean;
+  locale?: Locale;
   className?: string;
   children: ReactNode;
 }) {
   const { pending, run, errorFor, toast } = useMutation();
   const input = useRef<HTMLInputElement>(null);
   const types = logo ? [...TYPES, SVG] : TYPES;
-  const noun = logo ? "logo" : "picture";
+  const copy = accountMessages(locale).picture;
 
   function upload(file: File) {
     if (!types.includes(file.type)) {
-      toast({ title: "That file can't be used", description: logo ? "Choose a PNG, JPEG, WebP or SVG image." : "Choose a PNG, JPEG or WebP image.", tone: "danger" });
+      toast({ title: copy.badFile, description: logo ? "Choose a PNG, JPEG, WebP or SVG image." : copy.chooseFile, tone: "danger" });
       return;
     }
     void run(
       "upload",
       async () => {
         const res = await fetch(endpoint, { method: "PUT", body: file.type === SVG ? file : await square(file, logo), credentials: "same-origin" });
-        if (!res.ok) throw await toApiError(res, `Halo could not store the ${noun}. Try again.`);
+        if (!res.ok) throw await toApiError(res, logo ? "Halo could not store the logo. Try again." : copy.uploadFailed);
       },
-      () => toast(logo ? { title: "Logo updated" } : { title: "Profile picture updated", description: "Applications that read the picture claim get it the next time they sign you in." }),
+      () => toast(logo ? { title: "Logo updated" } : { title: copy.updated, description: copy.updatedHint }),
       "inline",
     );
   }
@@ -67,9 +71,9 @@ export function AvatarEditor({
       "remove",
       async () => {
         const res = await fetch(endpoint, { method: "DELETE", credentials: "same-origin" });
-        if (!res.ok) throw await toApiError(res, `Halo could not remove the ${noun}. Try again.`);
+        if (!res.ok) throw await toApiError(res, logo ? "Halo could not remove the logo. Try again." : copy.removeFailed);
       },
-      () => toast({ title: logo ? "Logo removed" : "Profile picture removed" }),
+      () => toast({ title: logo ? "Logo removed" : copy.removed }),
       "inline",
     );
   }
@@ -96,12 +100,12 @@ export function AvatarEditor({
         />
         <Button variant="secondary" size="sm" loading={pending === "upload"} onClick={() => input.current?.click()}>
           <ImageUp aria-hidden="true" size={16} strokeWidth={1.75} />
-          {avatarUrl ? `Change ${noun}` : `Upload ${noun}`}
+          {avatarUrl ? (logo ? "Change logo" : copy.change) : (logo ? "Upload logo" : copy.upload)}
         </Button>
         {avatarUrl ? (
           <Button variant="quiet" size="sm" loading={pending === "remove"} onClick={remove}>
             <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
-            Remove
+            {copy.remove}
           </Button>
         ) : null}
         <ActionError message={errorFor("upload") ?? errorFor("remove")} className="basis-full" />

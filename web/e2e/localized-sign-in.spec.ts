@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { addVirtualAuthenticator, adminApi, invite, json } from "./support";
+import { addVirtualAuthenticator, adminApi, devSession, invite, json, useSession } from "./support";
 
 test.describe("with a Spanish browser", () => {
   test.use({ locale: "es-MX" });
@@ -89,6 +89,23 @@ test.describe("with a Spanish browser", () => {
     await page.goto("/enroll?proofing=done");
     await expect(page.getByRole("heading", { name: "Verificación de identidad enviada" })).toBeVisible();
     await expect(page.getByText("Vuelve a abrir el enlace de configuración para ver el resultado y crear tu clave de acceso.")).toBeVisible();
+  });
+
+  test("the Spanish account home and menu match the browser language", async ({ page, context }) => {
+    await useSession(context, devSession("luna@example.com"));
+    await page.goto("/account");
+
+    const heading = page.getByRole("heading", { name: "Cuenta", exact: true });
+    await expect(heading).toBeVisible();
+    await expect(heading.locator("xpath=ancestor::*[@lang][1]")).toHaveAttribute("lang", "es");
+    await expect(page).toHaveTitle("Cuenta de Halo");
+    await expect(page.getByRole("navigation", { name: "Cuenta" }).getByRole("link", { name: "Seguridad" })).toHaveAttribute("href", "/account/security");
+    await expect(page.getByRole("button", { name: "Descargar tus datos" })).toBeVisible();
+    await page.getByRole("button", { name: "Menú de la cuenta" }).click();
+    const menu = page.getByRole("menu");
+    await expect(menu).toHaveAttribute("lang", "es");
+    await menu.getByRole("menuitem", { name: "Cerrar sesión" }).click();
+    await expect(page).toHaveURL(/\/sign-in$/);
   });
 });
 

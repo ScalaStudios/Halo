@@ -1,3 +1,4 @@
+import type { Locale } from "./i18n/locale";
 import type { Attribute, AttributeValue } from "./types";
 
 const MONTHS = [
@@ -19,15 +20,18 @@ export function now(): Date {
   return new Date();
 }
 
-export function formatAttribute(attribute: Attribute, value: AttributeValue | undefined) {
+export function formatAttribute(attribute: Attribute, value: AttributeValue | undefined, locale: Locale = "en") {
   if (value === undefined) return "—";
-  if (attribute.type === "boolean") return value ? "Yes" : "No";
-  if (attribute.type === "date") return formatDate(String(value));
+  if (attribute.type === "boolean") return value ? (locale === "es" ? "Sí" : "Yes") : "No";
+  if (attribute.type === "date") return formatDate(String(value), locale);
   return Array.isArray(value) ? value.join(", ") : String(value);
 }
 
-export function formatDate(iso: string): string {
+export function formatDate(iso: string, locale: Locale = "en"): string {
   const date = new Date(iso);
+  if (locale === "es" && Number.isFinite(date.getTime())) {
+    return date.toLocaleDateString(locale, { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+  }
   return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
 }
 
@@ -38,8 +42,8 @@ export function formatTime(iso: string): string {
   return `${hours}:${minutes} UTC`;
 }
 
-export function formatDateTime(iso: string): string {
-  return `${formatDate(iso)}, ${formatTime(iso)}`;
+export function formatDateTime(iso: string, locale: Locale = "en"): string {
+  return `${formatDate(iso, locale)}, ${formatTime(iso)}`;
 }
 
 export function formatRelative(iso: string): string {

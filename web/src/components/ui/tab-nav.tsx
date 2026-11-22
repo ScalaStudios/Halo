@@ -9,16 +9,18 @@ export function TabNav({
   active,
   hrefFor,
   label,
+  lang,
   className,
 }: {
   tabs: TabItem[];
   active: string;
   hrefFor: (id: string) => string;
   label: string;
+  lang?: string;
   className?: string;
 }) {
   return (
-    <nav aria-label={label} className={cn("overflow-x-auto overflow-y-hidden border-b border-border [scrollbar-width:none]", className)}>
+    <nav lang={lang} aria-label={label} className={cn("overflow-x-auto overflow-y-hidden border-b border-border [scrollbar-width:none]", className)}>
       <ul className="flex min-w-max gap-1">
         {tabs.map((tab) => {
           const current = tab.id === active;

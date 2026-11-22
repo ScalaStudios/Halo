@@ -10,33 +10,38 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DescriptionList } from "@/components/ui/description-list";
 import { apiGet } from "@/lib/api/server";
-import { formatAttribute, formatDateTime, pluralize } from "@/lib/format";
-import { STRENGTH } from "@/lib/labels";
+import { formatAttribute, formatDateTime } from "@/lib/format";
+import { accountMessages } from "@/lib/i18n/account";
+import { requestLocale } from "@/lib/i18n/server";
 import type { Attribute, Organization, Session, User } from "@/lib/types";
 
-export const metadata: Metadata = { title: { absolute: "Halo account" } };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: { absolute: accountMessages(await requestLocale()).title } };
+}
 
 export default async function AccountPage() {
-  const [user, org, sessions, apps, attributes] = await Promise.all([
+  const [user, org, sessions, apps, attributes, locale] = await Promise.all([
     apiGet<User>("/me"),
     apiGet<Organization>("/organization"),
     apiGet<Session[]>("/me/sessions"),
     apiGet<unknown[]>("/me/applications"),
     apiGet<Attribute[]>("/attributes"),
+    requestLocale(),
   ]);
+  const copy = accountMessages(locale);
   const editable = attributes.filter((a) => a.selfService);
   const count = (kind: string) => user.methods.filter((m) => m.kind === kind).length;
   const strong = count("passkey") + count("security-key");
   const resistant = user.strength === "phishing-resistant";
   const passwordSession = strong === 0 && sessions.some((s) => s.current && s.method === "password");
   const links = [
-    { href: "/account/sessions", icon: MonitorSmartphone, label: "Sessions", detail: `${pluralize(sessions.length, "device")} signed in` },
-    { href: "/account/applications", icon: LayoutGrid, label: "Applications", detail: `${pluralize(apps.length, "application")} available to you` },
+    { href: "/account/sessions", icon: MonitorSmartphone, label: copy.nav.sessions, detail: copy.signedInDevices(sessions.length) },
+    { href: "/account/applications", icon: LayoutGrid, label: copy.nav.applications, detail: copy.availableApps(apps.length) },
   ];
 
   return (
-    <div className="flex flex-col gap-12">
-      <PageHeader size="large" title="Account" description={`Your profile, how you sign in and what you can open at ${org.name}.`} />
+    <div lang={locale} className="flex flex-col gap-12">
+      <PageHeader size="large" title={copy.nav.account} description={copy.intro(org.name)} />
 
       <div className="flex flex-col gap-8">
         {passwordSession ? (
@@ -45,21 +50,21 @@ export default async function AccountPage() {
               <Fingerprint aria-hidden="true" size={20} strokeWidth={1.75} className="text-ember" />
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <h2 className="text-h4 text-fg">You signed in with a password</h2>
-              <p className="text-body-sm text-fg-3">A passkey is quicker and can&apos;t be phished or guessed. Add one, then sign in with your fingerprint, face or screen lock.</p>
+              <h2 className="text-h4 text-fg">{copy.signedInPassword}</h2>
+              <p className="text-body-sm text-fg-3">{copy.passkeyHint}</p>
             </div>
             <Link href="/account/security" className={buttonClasses("primary", "md")}>
-              Add a passkey
+              {copy.addPasskey}
             </Link>
           </Card>
         ) : null}
 
         <Card className="flex flex-col gap-6 p-6">
-          <AvatarEditor name={user.name} avatarUrl={user.avatarUrl} endpoint="/api/v1/me/avatar">
+          <AvatarEditor locale={locale} name={user.name} avatarUrl={user.avatarUrl} endpoint="/api/v1/me/avatar">
             <div className="flex min-w-0 flex-col gap-1">
               <h2 className="flex min-w-0 items-center gap-3 text-h3 text-fg">
                 <span className="truncate">{user.name}</span>
-                {user.guest ? <Badge tone="info">Guest</Badge> : null}
+                {user.guest ? <Badge tone="info">{copy.guest}</Badge> : null}
               </h2>
               <p className="truncate text-body-sm text-fg-3">{user.email}</p>
             </div>
@@ -67,28 +72,28 @@ export default async function AccountPage() {
           <DescriptionList
             columns={2}
             items={[
-              { label: "Title", value: user.title || "Not set" },
-              { label: "Department", value: user.department || "Not set" },
-              { label: "Location", value: user.location || "Not set" },
+              { label: copy.job, value: user.title || copy.unset },
+              { label: copy.department, value: user.department || copy.unset },
+              { label: copy.location, value: user.location || copy.unset },
               ...attributes
                 .filter((a) => a.selfService || user.attributes[a.name] !== undefined)
-                .map((a) => ({ label: a.label, value: user.attributes[a.name] === undefined ? "Not set" : formatAttribute(a, user.attributes[a.name]) })),
+                .map((a) => ({ label: a.label, value: user.attributes[a.name] === undefined ? copy.unset : formatAttribute(a, user.attributes[a.name], locale) })),
               ...(user.guest && user.expiresAt
                 ? [
-                    { label: "Sponsor", value: user.sponsor?.name ?? "None" },
-                    { label: "Access ends", value: formatDateTime(user.expiresAt) },
+                    { label: copy.sponsor, value: user.sponsor?.name ?? copy.none },
+                    { label: copy.accessEnds, value: formatDateTime(user.expiresAt, locale) },
                   ]
                 : []),
             ]}
           />
-          {editable.length > 0 ? <MyAttributesButton attributes={editable} values={user.attributes} /> : null}
+          {editable.length > 0 ? <MyAttributesButton locale={locale} attributes={editable} values={user.attributes} /> : null}
           {user.guest ? (
             <p className="text-body-sm text-fg-2">
-              You&apos;re a guest at {org.name}. Your access ends on its own; {user.sponsor ? `ask ${user.sponsor.name} to extend it` : "ask the person who invited you to extend it"} if you still need it.
+              {copy.guestNotice(org.name, user.sponsor?.name)}
             </p>
           ) : null}
           <p className="border-t border-border pt-4 text-caption text-fg-3">
-            Your profile is managed by {org.name} IT. To correct something, email{" "}
+            {copy.profileManaged(org.name)}{" "}
             <a href="mailto:it@example.com" className="text-link underline underline-offset-3 hover:text-ember-hover">
               it@example.com
             </a>
@@ -103,19 +108,19 @@ export default async function AccountPage() {
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <h2 className="text-h4 text-fg">
-                {resistant ? "You sign in with a passkey." : "You don't have a passkey yet."} {STRENGTH[user.strength].label}.
+                {resistant ? copy.usesPasskey : copy.missingPasskey} {copy.strength[user.strength]}.
               </h2>
               <p className="text-body-sm text-fg-3">
-                {pluralize(count("passkey"), "passkey")} and {pluralize(count("security-key"), "security key")} enrolled.{" "}
+                {copy.enrolledMethods(count("passkey"), count("security-key"))}{" "}
                 {strong > 1
-                  ? "Losing one device won't lock you out."
+                  ? copy.multipleMethods
                   : strong === 1
-                    ? "Add another so losing one device won't lock you out."
-                    : "Add one to sign in without codes."}
+                    ? copy.singleMethod
+                    : copy.noMethods}
               </p>
             </div>
             <Link href="/account/security" className="shrink-0 text-body-sm text-link underline underline-offset-3 hover:text-ember-hover">
-              Review security
+              {copy.reviewSecurity}
             </Link>
           </Card>
         )}
@@ -143,11 +148,11 @@ export default async function AccountPage() {
             <FileDown aria-hidden="true" size={20} strokeWidth={1.75} className="text-fg-3" />
           </span>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <h2 className="text-h4 text-fg">Your data</h2>
-            <p className="text-body-sm text-fg-3">Download a copy of everything Halo stores about you as a JSON file: your profile, sign-in methods, groups, sessions, devices and sign-ins.</p>
+            <h2 className="text-h4 text-fg">{copy.data}</h2>
+            <p className="text-body-sm text-fg-3">{copy.dataHint}</p>
           </div>
           <div className="shrink-0">
-            <ExportButton path="/me/export" label="Download your data" variant="secondary" size="sm" />
+            <ExportButton path="/me/export" label={copy.download} variant="secondary" size="sm" />
           </div>
         </Card>
       </div>

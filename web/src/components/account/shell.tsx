@@ -16,29 +16,34 @@ import { describeFailure } from "@/components/auth/passkey";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
+import { accountMessages } from "@/lib/i18n/account";
+import type { Locale } from "@/lib/i18n/locale";
 import type { FeatureId } from "@/lib/settings-types";
 import type { User } from "@/lib/types";
 
-const pages: { label: string; href: string; icon: LucideIcon; feature?: FeatureId }[] = [
-  { label: "Account", href: "/account", icon: UserRound },
-  { label: "Security", href: "/account/security", icon: ShieldCheck },
-  { label: "Sessions", href: "/account/sessions", icon: MonitorSmartphone },
-  { label: "Applications", href: "/account/applications", icon: LayoutGrid },
-  { label: "Groups", href: "/account/groups", icon: UsersRound },
-  { label: "Access", href: "/account/access", icon: KeyRound, feature: "governance" },
-  { label: "Terms", href: "/account/terms", icon: FileCheck },
-  { label: "Activity", href: "/account/activity", icon: History },
+const pages: { label: keyof ReturnType<typeof accountMessages>["nav"]; href: string; icon: LucideIcon; feature?: FeatureId }[] = [
+  { label: "account", href: "/account", icon: UserRound },
+  { label: "security", href: "/account/security", icon: ShieldCheck },
+  { label: "sessions", href: "/account/sessions", icon: MonitorSmartphone },
+  { label: "applications", href: "/account/applications", icon: LayoutGrid },
+  { label: "groups", href: "/account/groups", icon: UsersRound },
+  { label: "access", href: "/account/access", icon: KeyRound, feature: "governance" },
+  { label: "terms", href: "/account/terms", icon: FileCheck },
+  { label: "activity", href: "/account/activity", icon: History },
 ];
 
 export function AccountShell({
   user,
   featuresOff,
+  locale,
   children,
 }: {
   user: Pick<User, "name" | "email" | "roles" | "avatarUrl" | "impersonation">;
   featuresOff: FeatureId[];
+  locale: Locale;
   children: ReactNode;
 }) {
+  const copy = accountMessages(locale);
   const nav = pages.filter((item) => !item.feature || !featuresOff.includes(item.feature));
   const pathname = usePathname();
   const router = useRouter();
@@ -55,7 +60,7 @@ export function AccountShell({
       window.location.assign("/sign-in");
     } catch (error) {
       setSigningOut(false);
-      toast({ title: "Couldn't sign you out", description: describeFailure(error), tone: "danger" });
+      toast({ title: copy.signOutFailed, description: describeFailure(error), tone: "danger" });
     }
   }
 
@@ -63,38 +68,38 @@ export function AccountShell({
     <div className="flex min-h-dvh flex-col">
       {navigating || signingOut ? <NavigationProgress /> : null}
       {user.impersonation ? (
-        <div role="status" className="border-b border-warning/20 bg-warning-container">
+        <div lang={locale} role="status" className="border-b border-warning/20 bg-warning-container">
           <div className="mx-auto flex w-full max-w-288 flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center sm:px-8">
             <VenetianMask aria-hidden="true" size={20} strokeWidth={1.75} className="hidden shrink-0 text-warning sm:block" />
             <p className="flex-1 text-body-sm text-fg">
               <span className="font-semibold">
-                {user.impersonation.actor.name} is viewing Halo as {user.name} until {formatTime(user.impersonation.expiresAt)}.
+                {copy.impersonationNotice(user.impersonation.actor.name, user.name, formatTime(user.impersonation.expiresAt))}
               </span>{" "}
-              You can look but not change anything or open applications.
+              {copy.viewOnly}
             </p>
             <Button size="sm" variant="secondary" loading={signingOut} onClick={signOut} className="self-start sm:self-center">
-              End impersonation
+              {copy.endImpersonation}
             </Button>
           </div>
         </div>
       ) : null}
-      <header className="sticky top-0 z-30 border-b border-border bg-canvas">
+      <header lang={locale} className="sticky top-0 z-30 border-b border-border bg-canvas">
         <div className="mx-auto flex h-16 w-full max-w-288 items-center gap-3 px-5 sm:px-8">
           <Link href="/account" className="flex items-center gap-3 rounded-md">
             <HaloLogo />
             <span aria-hidden="true" className="h-6 w-px bg-border" />
-            <span className="text-body text-fg-3">Account</span>
+            <span className="text-body text-fg-3">{copy.nav.account}</span>
           </Link>
-          {user.impersonation ? <Badge tone="warning">Impersonation</Badge> : null}
+          {user.impersonation ? <Badge tone="warning">{copy.impersonation}</Badge> : null}
           <Menu>
             <MenuTrigger
-              aria-label="Account menu"
+              aria-label={copy.menu}
               className="ml-auto flex h-10 items-center gap-2 rounded-md px-2 text-body-sm text-fg-2 transition-colors duration-fast ease-brand hover:bg-hover hover:text-fg data-[state=open]:bg-press"
             >
               <Avatar name={user.name} src={user.avatarUrl} size="sm" />
               <span className="hidden sm:inline">{user.name}</span>
             </MenuTrigger>
-            <MenuContent className="w-64">
+            <MenuContent lang={locale} className="w-64">
               <MenuLabel>
                 <span className="block truncate text-body-sm font-semibold text-fg">{user.name}</span>
                 <span className="block truncate font-normal">{user.email}</span>
@@ -102,26 +107,27 @@ export function AccountShell({
               <MenuSeparator />
               {user.roles.length > 0 ? (
                 <MenuItem icon={UserRoundCog} onSelect={() => startNavigation(() => router.push("/admin"))}>
-                  Halo administration
+                  {copy.admin}
                 </MenuItem>
               ) : null}
               <MenuItem icon={LogOut} onSelect={signOut}>
-                {user.impersonation ? "End impersonation" : "Sign out"}
+                {user.impersonation ? copy.endImpersonation : copy.signOut}
               </MenuItem>
             </MenuContent>
           </Menu>
         </div>
       </header>
       <TabNav
-        label="Account"
-        tabs={nav.map((item) => ({ id: item.href, label: item.label }))}
+        lang={locale}
+        label={copy.nav.account}
+        tabs={nav.map((item) => ({ id: item.href, label: copy.nav[item.label] }))}
         active={active}
         hrefFor={(href) => href}
         className="px-5 sm:px-8 lg:hidden"
       />
 
       <div className="mx-auto flex w-full max-w-288 flex-1 gap-12 px-5 sm:px-8">
-        <nav aria-label="Account" className="sticky top-16 hidden h-fit w-56 shrink-0 py-12 lg:block">
+        <nav lang={locale} aria-label={copy.nav.account} className="sticky top-16 hidden h-fit w-56 shrink-0 py-12 lg:block">
           <ul className="flex flex-col gap-1">
             {nav.map((item) => {
               const current = item.href === active;
@@ -138,7 +144,7 @@ export function AccountShell({
                   >
                     {current ? <span aria-hidden="true" className="absolute top-2 bottom-2 -left-3 w-0.5 rounded-full bg-ember" /> : null}
                     <Icon aria-hidden="true" size={16} strokeWidth={1.75} className={current ? "text-ember" : undefined} />
-                    {item.label}
+                    {copy.nav[item.label]}
                     <LinkProgress />
                   </Link>
                 </li>

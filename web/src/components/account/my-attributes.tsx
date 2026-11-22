@@ -6,9 +6,13 @@ import { AttributeFields, draftsOf, parseDrafts } from "@/components/directory/a
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { api } from "@/lib/api/client";
+import { accountMessages } from "@/lib/i18n/account";
+import { authMessages } from "@/lib/i18n/auth";
+import type { Locale } from "@/lib/i18n/locale";
 import type { Attribute, AttributeValue } from "@/lib/types";
 
-export function MyAttributesButton({ attributes, values }: { attributes: Attribute[]; values: Record<string, AttributeValue> }) {
+export function MyAttributesButton({ attributes, values, locale }: { attributes: Attribute[]; values: Record<string, AttributeValue>; locale: Locale }) {
+  const copy = accountMessages(locale);
   const formId = useId();
   const [open, setOpen] = useState(false);
   const [drafts, setDrafts] = useState(() => draftsOf(attributes, values));
@@ -25,7 +29,7 @@ export function MyAttributesButton({ attributes, values }: { attributes: Attribu
       () => api("/me/attributes", { method: "PATCH", body: parsed.values }),
       () => {
         setOpen(false);
-        toast({ title: "Details saved", description: "Applications receive the new values the next time you sign in to them." });
+        toast({ title: copy.detailsSaved, description: copy.detailsSavedHint });
       },
       "inline",
     );
@@ -43,7 +47,7 @@ export function MyAttributesButton({ attributes, values }: { attributes: Attribu
           setOpen(true);
         }}
       >
-        Edit your details
+        {copy.editDetails}
       </Button>
       <Dialog
         open={open}
@@ -52,20 +56,22 @@ export function MyAttributesButton({ attributes, values }: { attributes: Attribu
           setOpen(next);
         }}
         error={errorFor("attributes")}
-        title="Edit your details"
-        description="Your administrators let you keep these up to date. Applications that use them see the change the next time you sign in."
+        lang={locale}
+        closeLabel={copy.close}
+        title={copy.editDetails}
+        description={copy.editDetailsHint}
         footer={
           <>
             <Button variant="secondary" onClick={() => setOpen(false)}>
-              Cancel
+              {authMessages(locale).cancel}
             </Button>
             <Button type="submit" form={formId} variant="primary" loading={pending === "attributes"}>
-              Save details
+              {copy.saveDetails}
             </Button>
           </>
         }
       >
-        <form id={formId} className="flex flex-col gap-6" onSubmit={submit} noValidate>
+        <form lang="en" id={formId} className="flex flex-col gap-6" onSubmit={submit} noValidate>
           <AttributeFields attributes={attributes} drafts={drafts} errors={errors} onChange={setDrafts} />
         </form>
       </Dialog>

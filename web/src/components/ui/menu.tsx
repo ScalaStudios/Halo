@@ -12,14 +12,17 @@ export function MenuContent({
   children,
   align = "end",
   className,
+  lang,
 }: {
   children: ReactNode;
   align?: "start" | "center" | "end";
   className?: string;
+  lang?: string;
 }) {
   return (
     <M.Portal>
       <M.Content
+        lang={lang}
         align={align}
         sideOffset={4}
         collisionPadding={16}
