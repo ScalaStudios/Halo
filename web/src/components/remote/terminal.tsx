@@ -13,9 +13,10 @@ import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { api, ApiError } from "@/lib/api/client";
 import { formatTime } from "@/lib/format";
-import type { RemoteSession } from "@/lib/infra-types";
+import type { RemoteProtocol, RemoteSession } from "@/lib/infra-types";
 
 type Phase = "starting" | "connecting" | "connected" | "ended" | "refused";
+type DesktopRenderer = Awaited<ReturnType<typeof import("./desktop").remoteDesktop>>;
 type Connected = { username: string; address: string; endsAt: string; recording: boolean };
 type ServerEvent = { type: "status" | "end"; message: string } | ({ type: "connected" } & Connected) | { type: "ping" };
 
@@ -36,6 +37,8 @@ function token(name: string) {
 export function RemoteTerminal({ app }: { app: { id: string; name: string; logoUrl: string | null } }) {
   const container = useRef<HTMLDivElement>(null);
   const terminal = useRef<{ term: Terminal; fit: FitAddon } | null>(null);
+  const desktop = useRef<ReturnType<DesktopRenderer> | null>(null);
+  const [protocol, setProtocol] = useState<RemoteProtocol | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const attempt = useRef(0);
   const [phase, setPhase] = useState<Phase>("starting");
@@ -47,6 +50,8 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
   const connect = useCallback(async () => {
     const mine = ++attempt.current;
     socket.current?.close();
+    desktop.current?.dispose();
+    desktop.current = null;
     setPhase("starting");
     setSession(null);
     setRefusal(null);
@@ -62,7 +67,60 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
       return;
     }
     if (mine !== attempt.current) return;
+    setProtocol(started.protocol);
     try {
+      if (started.protocol !== "ssh") {
+        const host = container.current;
+        if (!host) return;
+        terminal.current?.term.dispose();
+        terminal.current = null;
+        const { remoteDesktop } = await import("./desktop");
+        const render = await remoteDesktop(host);
+        if (mine !== attempt.current) return;
+        setPhase("connecting");
+        setMessage(`Opening the remote desktop at ${started.address}.`);
+        const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+        const width = Math.max(320, Math.min(host.clientWidth, 4096));
+        const height = Math.max(320, Math.min(host.clientHeight, 4096));
+        const ws = new WebSocket(`${scheme}://${window.location.host}/api/v1/me/remote-sessions/${started.id}/connect?width=${width}&height=${height}`);
+        ws.binaryType = "arraybuffer";
+        socket.current = ws;
+        let ended = false;
+        const heartbeat = window.setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }));
+        }, 25_000);
+        ws.onmessage = ({ data }) => {
+          if (socket.current !== ws) return;
+          if (typeof data !== "string") {
+            desktop.current?.receive(data as ArrayBuffer);
+            return;
+          }
+          const e = JSON.parse(data) as ServerEvent;
+          if (e.type === "status") setMessage(e.message);
+          if (e.type === "connected") {
+            desktop.current = render(ws, started);
+            setPhase("connected");
+            setSession(e);
+          }
+          if (e.type === "end") {
+            ended = true;
+            setPhase("ended");
+            setMessage(e.message);
+          }
+        };
+        ws.onclose = () => {
+          window.clearInterval(heartbeat);
+          if (socket.current !== ws) return;
+          socket.current = null;
+          desktop.current?.dispose();
+          desktop.current = null;
+          if (!ended) {
+            setPhase("ended");
+            setMessage("The connection to Halo was lost. Connect again to start a new session.");
+          }
+        };
+        return;
+      }
       if (!terminal.current) {
         const [{ Terminal }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit"), document.fonts.load("14px 'JetBrains Mono Variable'")]);
         if (mine !== attempt.current || !container.current) return;
@@ -136,7 +194,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
       terminal.current?.term.dispose();
       terminal.current = null;
       setPhase("ended");
-      setMessage("The terminal could not start. Connect again to retry.");
+      setMessage(`The ${started.protocol === "ssh" ? "terminal" : "remote desktop"} could not start. Connect again to retry.`);
     }
   }, [app.id]);
 
@@ -152,6 +210,8 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
       ws?.close();
       terminal.current?.term.dispose();
       terminal.current = null;
+      desktop.current?.dispose();
+      desktop.current = null;
     };
   }, [connect]);
 
@@ -159,6 +219,8 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
     const ws = socket.current;
     socket.current = null;
     ws?.close();
+    desktop.current?.dispose();
+    desktop.current = null;
     setPhase("ended");
     setMessage("You closed the session. Connect again to start a new one.");
   }
@@ -185,13 +247,13 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
               {session ? (
                 <>
                   <span className="font-mono text-code-sm text-fg-2">
-                    {session.username}@{session.address}
+                    {session.username ? `${session.username}@` : ""}{session.address}
                   </span>
                   {` · Ends at ${formatTime(session.endsAt)}`}
                   {session.recording ? " · Recorded" : null}
                 </>
               ) : (
-                "SSH session in your browser"
+                protocol ? `${protocol.toUpperCase()} session in your browser` : "Remote access"
               )}
             </p>
           </div>
@@ -215,7 +277,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
       <Card className="relative overflow-hidden">
         <div
           role="region"
-          aria-label={`Terminal for ${app.name}`}
+          aria-label={`${protocol === "ssh" ? "Terminal" : protocol ? "Remote desktop" : "Remote session"} for ${app.name}`}
           aria-busy={busy}
           className="h-[min(70dvh,720px)] min-h-80 bg-sunken p-2"
           onClick={() => terminal.current?.term.focus()}
@@ -247,7 +309,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
         ) : null}
       </Card>
       <p role="status" aria-live="polite" className="sr-only">
-        {phase === "connected" ? `Connected to ${app.name}. The terminal has focus.` : null}
+        {phase === "connected" ? `Connected to ${app.name}. The remote session has focus.` : null}
       </p>
     </div>
   );

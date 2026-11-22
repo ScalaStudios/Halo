@@ -49,7 +49,7 @@ const PROTOCOLS: Option<Protocol>[] = [
   {
     value: "remote",
     label: "Remote access",
-    description: "An SSH session in the browser to a host that an outpost reaches, with a time limit and an optional recording. Nobody sees the host's credentials.",
+    description: "An SSH, RDP or VNC session in the browser through an outpost. Halo checks access and encrypts stored host credentials.",
     icon: SquareTerminal,
   },
   { value: "bookmark", label: "Bookmark", description: "A link in the account portal, like an intranet page, status page or helpdesk. Nobody signs in through Halo.", icon: Bookmark },

@@ -24,17 +24,21 @@ export type HostRule = { groupId: string; sudo: string[] };
 
 export type HostGroup = { id: string; name: string; description: string; rules: HostRule[]; hostCount: number; createdAt: string; updatedAt: string };
 
+export type RemoteProtocol = "ssh" | "rdp" | "vnc";
+export type RDPSecurity = "nla" | "tls";
+
 export type RemoteAuth = "certificate" | "password" | "key";
 
 export type RemoteTarget = {
   outpostId: string;
-  protocol: "ssh";
+  protocol: RemoteProtocol;
   host: string;
   port: number;
   username: string;
   auth: RemoteAuth;
   hasCredential: boolean;
   hostKey: string;
+  rdpSecurity: RDPSecurity;
   sessionLimit: number;
   record: boolean;
 };
@@ -60,7 +64,7 @@ export type RemoteSession = {
   userId: string | null;
   email: string;
   outpostId: string | null;
-  protocol: "ssh";
+  protocol: RemoteProtocol;
   address: string;
   username: string;
   ip: string;

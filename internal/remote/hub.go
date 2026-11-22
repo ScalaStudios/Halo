@@ -138,7 +138,7 @@ func (h *Hub) track(remoteID, outpostID string, end context.CancelCauseFunc) fun
 	}
 }
 
-func (h *Hub) Dial(ctx context.Context, outpostID, address string) (*stream, error) {
+func (h *Hub) Dial(ctx context.Context, outpostID, address, kind string) (*stream, error) {
 	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
 	token := secret.Token(32)
@@ -158,7 +158,7 @@ func (h *Hub) Dial(ctx context.Context, outpostID, address string) (*stream, err
 		h.mu.Unlock()
 		close(c.gone)
 	}()
-	if err := l.send(ctx, Message{Type: "dial", Stream: token, Address: address}); err != nil {
+	if err := l.send(ctx, Message{Type: kind, Stream: token, Address: address}); err != nil {
 		return nil, errOffline
 	}
 

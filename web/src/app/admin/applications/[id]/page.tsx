@@ -489,7 +489,7 @@ function OverviewTab({ app, issuer, outposts }: { app: SamlApplication; issuer: 
         <Card className="min-w-0 xl:col-span-7">
           <CardHeader
             title="Connection"
-            description={`People assigned to ${app.name} open an SSH terminal to this host from their account portal. Halo checks their access and policies first, then the outpost connects to the host.`}
+            description={`People assigned to ${app.name} open a remote session to this host from their account portal. Halo checks their access and policies first, then the outpost connects to the host.`}
           />
           <CardBody>
             <DescriptionList
@@ -498,7 +498,7 @@ function OverviewTab({ app, issuer, outposts }: { app: SamlApplication; issuer: 
                 { label: "Host", value: `${target.host}:${target.port}`, mono: true },
                 { label: "Outpost", value: outpost ? `${outpost.name} · ${outpost.connected ? "connected" : "not connected"}` : "Unknown" },
                 { label: "Signs in with", value: REMOTE_AUTH[target.auth] },
-                { label: "Account", value: target.username || "Each person's first SSH principal" },
+                { label: "Account", value: target.username || (target.protocol === "ssh" ? "Each person's first SSH principal" : "Password only") },
                 { label: "Host key", value: target.hostKey ? `Pinned ${target.hostKey.split(" ")[0]} key` : "Halo host certificate" },
                 { label: "Time limit", value: formatDuration(target.sessionLimit) },
                 { label: "Recording", value: target.record ? "Terminal output is recorded" : "Off" },

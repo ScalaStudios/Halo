@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"compress/gzip"
 	"context"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net"
@@ -245,18 +246,29 @@ type Settings struct {
 	HostKey      *string `json:"hostKey"`
 	SessionLimit *int    `json:"sessionLimit"`
 	Record       *bool   `json:"record"`
+	RDPSecurity  *string `json:"rdpSecurity"`
 }
 
 func NewTarget(appID string) store.RemoteTarget {
-	return store.RemoteTarget{AppID: appID, Protocol: "ssh", Port: 22, Auth: "certificate", SessionLimit: 3600}
+	return store.RemoteTarget{AppID: appID, Protocol: "ssh", Port: 22, Auth: "certificate", SessionLimit: 3600, RDPSecurity: "nla"}
 }
 
 func (in Settings) Apply(ctx context.Context, st *store.Store, t store.RemoteTarget) (store.RemoteTarget, []string, error) {
 	before, changed := t, []string{}
+	if in.Protocol != nil {
+		protocol := strings.TrimSpace(*in.Protocol)
+		port := map[string]int{"ssh": 22, "rdp": 3389, "vnc": 5900}[protocol]
+		if protocol != before.Protocol && port != 0 {
+			t.Auth, t.Username, t.HostKey, t.Record, t.Port = "certificate", "", "", false, port
+			if protocol != "ssh" {
+				t.Auth = "password"
+			}
+		}
+	}
 	for _, f := range []struct {
 		value *string
 		field *string
-	}{{in.OutpostID, &t.OutpostID}, {in.Protocol, &t.Protocol}, {in.Host, &t.Host}, {in.Username, &t.Username}, {in.Auth, &t.Auth}, {in.HostKey, &t.HostKey}} {
+	}{{in.OutpostID, &t.OutpostID}, {in.Protocol, &t.Protocol}, {in.Host, &t.Host}, {in.Username, &t.Username}, {in.Auth, &t.Auth}, {in.HostKey, &t.HostKey}, {in.RDPSecurity, &t.RDPSecurity}} {
 		if f.value != nil {
 			*f.field = strings.TrimSpace(*f.value)
 		}
@@ -278,22 +290,39 @@ func (in Settings) Apply(ctx context.Context, st *store.Store, t store.RemoteTar
 		return t, nil, err
 	}
 	switch {
-	case t.Protocol != "ssh":
-		return t, nil, httpx.Invalid(`Choose the protocol "ssh". Browser sessions over RDP and VNC are not available yet.`)
+	case !slices.Contains([]string{"ssh", "rdp", "vnc"}, t.Protocol):
+		return t, nil, httpx.Invalid("Choose SSH, RDP or VNC.")
 	case !hostPattern.MatchString(t.Host) && net.ParseIP(t.Host) == nil:
 		return t, nil, httpx.Invalid("Enter the host name or IP address the outpost connects to, like db1.internal or 10.0.0.5, without a port or user name.")
 	case t.Port < 1 || t.Port > 65535:
-		return t, nil, httpx.Invalid("Enter a port between 1 and 65535. SSH usually listens on 22.")
-	case t.Username != "" && !userPattern.MatchString(t.Username):
+		return t, nil, httpx.Invalid("Enter a port between 1 and 65535.")
+	case t.Protocol == "ssh" && t.Username != "" && !userPattern.MatchString(t.Username):
 		return t, nil, httpx.Invalid("Enter the account to sign in as on the host, like ubuntu or deploy, without spaces.")
 	case !slices.Contains([]string{"certificate", "password", "key"}, t.Auth):
 		return t, nil, httpx.Invalid(`Choose how Halo signs in to the host: "certificate" for a short-lived certificate from Halo's SSH CA, "password" or "key" for a stored password or private key.`)
-	case t.Auth != "certificate" && t.Username == "":
+	case t.Protocol != "ssh" && t.Auth != "password":
+		return t, nil, httpx.Invalid("RDP and VNC use a stored password.")
+	case t.Protocol != "ssh" && (len(t.Username) > 255 || strings.ContainsAny(t.Username, "\r\n\x00")):
+		return t, nil, httpx.Invalid("Enter a valid remote desktop account.")
+	case t.Protocol != "ssh" && t.Record:
+		return t, nil, httpx.Invalid("Use the session log for remote desktop sessions. Terminal recording is available for SSH.")
+	case t.RDPSecurity != "nla" && t.RDPSecurity != "tls":
+		return t, nil, httpx.Invalid("Choose Network Level Authentication or TLS for RDP.")
+	case t.Protocol != "vnc" && t.Auth != "certificate" && t.Username == "":
 		return t, nil, httpx.Invalid("Enter the account Halo signs in as with the stored " + map[string]string{"password": "password", "key": "private key"}[t.Auth] + ".")
 	case t.SessionLimit < 60 || t.SessionLimit > 86400:
 		return t, nil, httpx.Invalid("Set a session time limit between 1 minute and 24 hours.")
 	}
-	if t.HostKey != "" {
+	switch {
+	case t.Protocol == "rdp":
+		fingerprint, err := hex.DecodeString(strings.ReplaceAll(t.HostKey, ":", ""))
+		if err != nil || len(fingerprint) != 32 {
+			return t, nil, httpx.Invalid("Enter the SHA-256 fingerprint of the RDP server certificate.")
+		}
+		t.HostKey = hex.EncodeToString(fingerprint)
+	case t.Protocol == "vnc":
+		t.HostKey = ""
+	case t.HostKey != "":
 		key, err := parseHostKey(t.HostKey)
 		if err != nil {
 			return t, nil, err
@@ -310,14 +339,14 @@ func (in Settings) Apply(ctx context.Context, st *store.Store, t store.RemoteTar
 			}
 		}
 		t.HasCredential = true
-	case t.Auth != before.Auth || !t.HasCredential:
+	case t.Auth != before.Auth || t.Protocol != before.Protocol || !t.HasCredential:
 		return t, nil, httpx.Invalid("Enter the " + map[string]string{"password": "password", "key": "private key"}[t.Auth] + " Halo signs in to the host with. Halo stores it encrypted and never shows it again.")
 	}
 	for _, f := range []struct {
 		label   string
 		changed bool
-	}{{"outpost", t.OutpostID != before.OutpostID}, {"host", t.Host != before.Host || t.Port != before.Port}, {"account", t.Username != before.Username}, {"sign-in method", t.Auth != before.Auth},
-		{"stored credential", t.Auth != "certificate" && in.Credential != nil && *in.Credential != ""}, {"host key", t.HostKey != before.HostKey}, {"session time limit", t.SessionLimit != before.SessionLimit}, {"recording", t.Record != before.Record}} {
+	}{{"protocol", t.Protocol != before.Protocol}, {"outpost", t.OutpostID != before.OutpostID}, {"host", t.Host != before.Host || t.Port != before.Port}, {"account", t.Username != before.Username}, {"sign-in method", t.Auth != before.Auth},
+		{"stored credential", t.Auth != "certificate" && in.Credential != nil && *in.Credential != ""}, {"host key or certificate fingerprint", t.HostKey != before.HostKey}, {"RDP security", t.RDPSecurity != before.RDPSecurity}, {"session time limit", t.SessionLimit != before.SessionLimit}, {"recording", t.Record != before.Record}} {
 		if f.changed {
 			changed = append(changed, f.label)
 		}

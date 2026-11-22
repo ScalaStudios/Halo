@@ -4,6 +4,12 @@ All notable changes to Halo are recorded in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Halo follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- Browser RDP and VNC through the existing Halo outpost, with assigned application access, encrypted credentials, time limits, and session audit records.
+
 ## 0.3.0
 
 ### Added

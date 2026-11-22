@@ -347,15 +347,24 @@ Halo has a RADIUS server for VPN gateways, firewalls and network devices that si
 
 ### SSH in the browser
 
-People open an SSH terminal to a host in a private network from their account portal, without a client or a VPN. Halo never connects to the network itself: `halo-outpost`, a small agent inside it, keeps one connection open to Halo and reaches the host when a session starts. Halo runs the SSH session, so the host's credentials never reach the outpost or the browser.
+People open an SSH terminal to a host in a private network from their account portal, without a client or a VPN. For SSH, Halo never connects to the host network itself: `halo-outpost`, a small agent inside it, keeps one connection open to Halo and reaches the host when a session starts. Halo runs the SSH session, so the host's credentials never reach the outpost or the browser.
 
 1. On **Remote access** in the console, choose **Register outpost** and run the command it shows on a machine that reaches your hosts. The outpost requires an HTTPS URL. The `halo-server` image includes `halo-outpost`, or build it with `go build ./cmd/halo-outpost`.
 2. Choose **Add application**, then **Remote access**, and enter the host, its port, its host key from `ssh-keyscan` (or nothing, for hosts with a Halo host certificate) and how Halo signs in: a one-minute certificate from Halo's SSH CA for the person's principals, so nothing is stored, or a password or private key that Halo keeps encrypted.
 3. Assign groups. People in them see the host in their account portal and open the terminal there.
 
-Starting a session runs the checks of any other application sign-in: assignment, access policies with passkey requirements and network zones, sign-in frequency and authentication contexts, and it is in the sign-in log. Each session ends at the application's time limit, when an administrator ends it under **Remote access**, or within a minute of the person being suspended, unassigned or signed out. The session log keeps who connected where, when and how much they transferred, and, when recording is on, the terminal output as an asciicast file, for as long as the sign-in log. RDP and VNC are not available yet, and outposts and browsers must reach the same Halo instance, as [Running several instances](#running-several-instances) explains.
+Starting a session runs the checks of any other application sign-in: assignment, access policies with passkey requirements and network zones, sign-in frequency and authentication contexts, and it is in the sign-in log. Each session ends at the application's time limit, when an administrator ends it under **Remote access**, or within a minute of the person being suspended, unassigned or signed out. The session log keeps who connected where, when and how much they transferred, and, when recording is on, the terminal output as an asciicast file, for as long as the sign-in log. Outposts and browsers must reach the same Halo instance, as [Running several instances](#running-several-instances) explains.
 
 Configuration imports report new password- or key-authenticated remote applications as skipped. Create those applications on the destination and configure their outpost and credential there.
+
+### RDP and VNC in the browser
+
+1. Run Apache Guacamole 1.6's native proxy, `guacd`, alongside the outpost. Bind its listener to loopback in the outpost's network namespace. If you run the outpost on the host and Guacamole in Docker, publish port 4822 with `-p 127.0.0.1:4822:4822`.
+2. Start the outpost with `--guacd-port 4822` or set `HALO_OUTPOST_GUACD_PORT=4822`. The outpost relays the protected connection to its local proxy, which connects to the registered desktop host.
+3. Add a **Remote access** application, choose **RDP** or **VNC**, and configure the host and password. For RDP, choose **Network Level Authentication** for servers that require it, or **TLS** for servers such as xrdp. Enter the SHA-256 fingerprint obtained from the RDP server certificate through a trusted administration channel. Use `DOMAIN\username` for a domain account. VNC can leave the username blank.
+4. Assign groups. People open the desktop from **Applications** in the account portal. Press **Shift + Escape** to return keyboard focus to Halo's controls.
+
+Halo stores the password encrypted and delivers it to the configured Guacamole proxy over the outpost connection. Desktop sessions use the same policy checks, time limits, termination controls, and session logs as SSH. Clipboard and file transfer are disabled. Terminal recordings apply to SSH. Place VNC hosts and their outpost on a trusted private network.
 
 ### Applications that only speak LDAP
 
