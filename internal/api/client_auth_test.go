@@ -78,10 +78,10 @@ func TestApplicationClientAuthentication(t *testing.T) {
 	rec = call(t, h, admin, "PATCH", path, map[string]any{"fapi2Profile": true})
 	expect(t, rec, 200)
 	got = decode[store.Application](t, rec)
-	if !got.FAPI2Profile || !got.RequirePAR || !got.RequirePKCE || !got.RequireDPoP || got.TokenPolicy.IDTokenAlg != "ES256" {
+	if !got.FAPI2Profile || !got.RequirePAR || !got.RequirePKCE || !got.RequireDPoP || got.TokenPolicy.IDTokenAlg != "ES256" || got.TokenPolicy.Rotation {
 		t.Fatalf("FAPI 2.0 profile did not apply its requirements: %+v", got)
 	}
-	if e := lastAudit(t, st); e.Summary != "Updated FAPI 2.0 profile, pushed authorization requirement, PKCE requirement, DPoP requirement, ID token signing algorithm" || diff(e)["fapi2Profile"] != "false → true" {
+	if e := lastAudit(t, st); e.Summary != "Updated FAPI 2.0 profile, pushed authorization requirement, PKCE requirement, DPoP requirement, ID token signing algorithm, refresh token rotation" || diff(e)["fapi2Profile"] != "false → true" {
 		t.Fatalf("audit: %+v %v", e, diff(e))
 	}
 	for _, body := range []map[string]any{
@@ -90,6 +90,7 @@ func TestApplicationClientAuthentication(t *testing.T) {
 		{"requireDpop": false},
 		{"tokenEndpointAuthMethod": "client_secret_basic"},
 		{"tokenPolicy": map[string]any{"idTokenAlg": "RS256"}},
+		{"tokenPolicy": map[string]any{"rotation": true}},
 		{"redirectUris": []string{"http://localhost:3000/cb"}},
 		{"jwks": nil},
 	} {

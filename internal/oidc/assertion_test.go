@@ -363,6 +363,18 @@ func TestFAPI2Profile(t *testing.T) {
 	if tokens.status != http.StatusOK || tokens.body["token_type"] != "DPoP" {
 		t.Fatalf("code exchange under the FAPI 2.0 profile: %d %v", tokens.status, tokens.body)
 	}
+	refresh, ok := tokens.body["refresh_token"].(string)
+	if !ok || refresh == "" || !withRSA.TokenPolicy.Rotation {
+		t.Fatal("expected a refresh token and a legacy stored rotation setting")
+	}
+	for range 2 {
+		form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refresh}, "client_id": {id}}
+		r, _ := h.do(http.MethodPost, "/oauth2/token", asserted(form, signer.sign(id, issuer, nil)),
+			header("DPoP", dpop.proof(http.MethodPost, issuer+"/oauth2/token", "", nil)))
+		if r.status != http.StatusOK || r.body["refresh_token"] != refresh || r.body["token_type"] != "DPoP" {
+			t.Fatalf("FAPI refresh did not retain the sender-bound refresh token: status %d", r.status)
+		}
+	}
 }
 
 func TestDPoPCodeBinding(t *testing.T) {
