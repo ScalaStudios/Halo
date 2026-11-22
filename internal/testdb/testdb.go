@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"net/url"
 	"os"
 	"sync/atomic"
@@ -34,15 +35,20 @@ func New(t *testing.T) *store.Store {
 func NewCounted(t *testing.T) (*store.Store, *atomic.Int64) {
 	t.Helper()
 	counter := &queryCounter{}
-	return open(t, 1, counter)[0], &counter.n
+	return open(t, 1, counter, false)[0], &counter.n
 }
 
 func Instances(t *testing.T, n int) []*store.Store {
 	t.Helper()
-	return open(t, n, nil)
+	return open(t, n, nil, false)
 }
 
-func open(t *testing.T, n int, counter *queryCounter) []*store.Store {
+func Schemas(t *testing.T, n int) []*store.Store {
+	t.Helper()
+	return open(t, n, nil, true)
+}
+
+func open(t *testing.T, n int, counter *queryCounter, separateSchemas bool) []*store.Store {
 	t.Helper()
 	base := os.Getenv("HALO_TEST_DATABASE_URL")
 	if base == "" {
@@ -82,11 +88,21 @@ func open(t *testing.T, n int, counter *queryCounter) []*store.Store {
 		if counter != nil {
 			cfg.ConnConfig.Tracer = counter
 		}
+		if separateSchemas {
+			schema := fmt.Sprintf("organization_%d", i)
+			cfg.ConnConfig.RuntimeParams["search_path"] = schema
+		}
 		pool, err := pgxpool.NewWithConfig(ctx, cfg)
 		if err != nil {
 			t.Fatalf("open test database: %v", err)
 		}
 		pools = append(pools, pool)
+		if separateSchemas {
+			schema := pgx.Identifier{cfg.ConnConfig.RuntimeParams["search_path"]}
+			if _, err := pool.Exec(ctx, "create schema "+schema.Sanitize()); err != nil {
+				t.Fatalf("create test schema: %v", err)
+			}
+		}
 		if stores[i], err = store.New(pool, key); err != nil {
 			t.Fatal(err)
 		}

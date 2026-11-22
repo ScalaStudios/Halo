@@ -118,6 +118,8 @@ func (s *Store) PoolStat() *pgxpool.Stat {
 }
 
 const leaseCheck = 2 * time.Second
+const schemaLockHash = `(select hashtextextended(case n.nspname when 'public' then $1::text else format('%I.%s', n.nspname, $1::text) end, 0)
+	from pg_catalog.pg_class c join pg_catalog.pg_namespace n on n.oid = c.relnamespace where c.oid = 'settings'::regclass)`
 
 func (s *Store) connect(ctx context.Context) (*pgx.Conn, error) {
 	conn, err := pgx.ConnectConfig(ctx, s.pool.Config().ConnConfig.Copy())
@@ -136,7 +138,7 @@ func (s *Store) Lock(ctx context.Context, name string) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := conn.Exec(ctx, `select pg_advisory_lock(hashtextextended($1, 0))`, name); err != nil {
+	if _, err := conn.Exec(ctx, `select pg_advisory_lock(`+schemaLockHash+`)`, name); err != nil {
 		conn.Close(context.Background())
 		return nil, err
 	}
@@ -150,7 +152,7 @@ func (s *Store) Lead(ctx context.Context, run func(context.Context)) error {
 	}
 	defer conn.Close(context.Background())
 	for held := false; !held; {
-		if err := conn.QueryRow(ctx, `select pg_try_advisory_lock(hashtextextended('halo:jobs', 0))`).Scan(&held); err != nil {
+		if err := conn.QueryRow(ctx, `select pg_try_advisory_lock(`+schemaLockHash+`)`, "halo:jobs").Scan(&held); err != nil {
 			return err
 		}
 		if !held {
