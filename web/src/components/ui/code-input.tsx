@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import CodeSlots, { type CodeSlotsStatus } from "@/components/reactbits/CodeSlots";
+import { useMessages } from "@/lib/i18n/client";
+import { uiMessages } from "@/lib/i18n/ui";
 
 export function CodeInput({
   value,
@@ -10,7 +12,7 @@ export function CodeInput({
   status = "idle",
   disabled,
   autoFocus,
-  label = "Six-digit code",
+  label,
 }: {
   value: string;
   onChange: (code: string) => void;
@@ -20,6 +22,7 @@ export function CodeInput({
   autoFocus?: boolean;
   label?: string;
 }) {
+  const copy = useMessages(uiMessages);
   const [compact, setCompact] = useState(false);
 
   useEffect(() => {
@@ -39,7 +42,7 @@ export function CodeInput({
       status={status}
       disabled={disabled}
       autoFocus={autoFocus}
-      ariaLabel={label}
+      ariaLabel={label ?? copy.code}
       slotSize={compact ? 36 : 48}
       gap={8}
       radius={8}

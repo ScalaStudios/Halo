@@ -35,6 +35,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useTransition, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { useMessages } from "@/lib/i18n/client";
+import { uiMessages } from "@/lib/i18n/ui";
 import { Button } from "./button";
 import { EmptyState } from "./empty-state";
 import { Checkbox, Input } from "./input";
@@ -110,6 +112,7 @@ export function DataTable<T>({
   toolbarEnd?: ReactNode | ((rows: T[]) => ReactNode);
   pageSize?: number;
 }) {
+  const t = useMessages(uiMessages).table;
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>(
     (views.find((view) => view.id === initialViewId) ?? views[0])?.filters ?? [],
@@ -154,10 +157,10 @@ export function DataTable<T>({
       id: "_select",
       enableSorting: false,
       enableHiding: false,
-      meta: { label: "Select", className: "w-12" },
+      meta: { label: t.select, className: "w-12" },
       header: ({ table }) => (
         <Checkbox
-          aria-label={`Select all ${noun[1]} on this page`}
+          aria-label={t.selectAll(noun[1])}
           checked={table.getIsAllPageRowsSelected()}
           ref={(el) => {
             if (el) el.indeterminate = table.getIsSomePageRowsSelected();
@@ -167,7 +170,7 @@ export function DataTable<T>({
       ),
       cell: ({ row }) => (
         <Checkbox
-          aria-label="Select row"
+          aria-label={t.selectRow}
           checked={row.getIsSelected()}
           onChange={row.getToggleSelectedHandler()}
           onClick={(event) => event.stopPropagation()}
@@ -178,13 +181,13 @@ export function DataTable<T>({
       id: "_actions",
       enableSorting: false,
       enableHiding: false,
-      meta: { label: "Actions", className: "w-12", align: "right" },
-      header: () => <span className="sr-only">Actions</span>,
+      meta: { label: t.actions, className: "w-12", align: "right" },
+      header: () => <span className="sr-only">{t.actions}</span>,
       cell: ({ row }) =>
         rowActions ? <RowMenu actions={rowActions} loading={busy === row.id} onSelect={(action) => void track(row.id, action.onSelect(row.original))} /> : null,
     };
     return [...(bulkActions ? [select] : []), ...columns, ...(rowActions ? [actions] : [])];
-  }, [columns, bulkActions, rowActions, noun, busy]);
+  }, [columns, bulkActions, rowActions, noun, busy, t]);
 
   const table = useReactTable({
     data,
@@ -287,7 +290,7 @@ export function DataTable<T>({
     <div className="flex flex-col gap-4">
       {opening ? <NavigationProgress /> : null}
       {allViews.length > 0 ? (
-        <div className="-mx-1 flex items-center gap-1 overflow-x-auto px-1" role="toolbar" aria-label="Saved views">
+        <div className="-mx-1 flex items-center gap-1 overflow-x-auto px-1" role="toolbar" aria-label={t.savedViews}>
           {allViews.map((view) => {
             const current = activeView?.id === view.id;
             return (
@@ -308,7 +311,7 @@ export function DataTable<T>({
                   <button
                     type="button"
                     onClick={() => removeView(view.id)}
-                    aria-label={`Delete view ${view.label}`}
+                    aria-label={t.deleteView(view.label)}
                     className="absolute top-1/2 right-1 grid size-6 -translate-y-1/2 place-items-center rounded-sm text-fg-3 hover:bg-press hover:text-fg"
                   >
                     <X aria-hidden="true" size={16} strokeWidth={1.75} />
@@ -334,12 +337,12 @@ export function DataTable<T>({
                   onKeyDown={(event) => {
                     if (event.key === "Escape") setNaming(false);
                   }}
-                  placeholder="View name"
-                  aria-label="View name"
+                  placeholder={t.viewName}
+                  aria-label={t.viewName}
                   className="w-44"
                 />
                 <Button type="submit" size="sm" variant="secondary" disabled={!viewName.trim()}>
-                  Save
+                  {t.save}
                 </Button>
               </form>
             ) : (
@@ -349,7 +352,7 @@ export function DataTable<T>({
                 className="inline-flex h-8 shrink-0 items-center gap-2 rounded-md px-3 text-body-sm font-medium text-fg-3 transition-colors duration-fast hover:bg-hover hover:text-fg"
               >
                 <BookmarkPlus aria-hidden="true" size={16} strokeWidth={1.75} />
-                Save view
+                {t.saveView}
               </button>
             )
           ) : null}
@@ -383,7 +386,7 @@ export function DataTable<T>({
         ))}
         {hasFilters ? (
           <Button size="sm" variant="quiet" onClick={clearFilters}>
-            Clear
+            {t.clear}
           </Button>
         ) : null}
         <div className="ml-auto flex items-center gap-2">
@@ -391,13 +394,13 @@ export function DataTable<T>({
           {hideable.length > 0 ? (
             <Menu>
               <MenuTrigger asChild>
-                <Button size="sm" variant="quiet" aria-label="Choose columns">
+                <Button size="sm" variant="quiet" aria-label={t.chooseColumns}>
                   <Columns3 aria-hidden="true" size={16} strokeWidth={1.75} />
-                  <span className="hidden md:inline">Columns</span>
+                  <span className="hidden md:inline">{t.columns}</span>
                 </Button>
               </MenuTrigger>
               <MenuContent>
-                <MenuLabel>Visible columns</MenuLabel>
+                <MenuLabel>{t.visibleColumns}</MenuLabel>
                 {hideable.map((column) => (
                   <MenuCheckboxItem key={column.id} checked={column.getIsVisible()} onCheckedChange={(value) => column.toggleVisibility(value)}>
                     {column.columnDef.meta?.label ?? column.id}
@@ -509,11 +512,11 @@ export function DataTable<T>({
         {rows.length === 0 ? (
           <EmptyState
             icon={SearchX}
-            title={`No ${noun[1]} match`}
-            description="Try a different search, or clear the filters to see everything."
+            title={t.noMatch(noun[1])}
+            description={t.noMatchHint}
             action={
               <Button size="sm" variant="secondary" onClick={clearFilters}>
-                Clear filters
+                {t.clearFilters}
               </Button>
             }
           />
@@ -521,17 +524,17 @@ export function DataTable<T>({
         <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border px-4 py-2 text-body-sm text-fg-3">
           <span className="tnum">
             {filteredCount === data.length
-              ? `${start}–${end} of ${data.length} ${data.length === 1 ? noun[0] : noun[1]}`
-              : `${start}–${end} of ${filteredCount} matching · ${data.length} total`}
+              ? t.range(start, end, data.length, data.length === 1 ? noun[0] : noun[1])
+              : t.rangeFiltered(start, end, filteredCount, data.length)}
           </span>
           <div className="flex items-center gap-1">
             <span className="tnum mr-2 hidden sm:inline">
-              Page {table.getPageCount() === 0 ? 0 : pagination.pageIndex + 1} of {table.getPageCount()}
+              {t.page(table.getPageCount() === 0 ? 0 : pagination.pageIndex + 1, table.getPageCount())}
             </span>
-            <Button size="icon-sm" variant="quiet" aria-label="Previous page" disabled={!table.getCanPreviousPage()} onClick={() => table.previousPage()}>
+            <Button size="icon-sm" variant="quiet" aria-label={t.previousPage} disabled={!table.getCanPreviousPage()} onClick={() => table.previousPage()}>
               <ChevronLeft aria-hidden="true" size={16} strokeWidth={1.75} />
             </Button>
-            <Button size="icon-sm" variant="quiet" aria-label="Next page" disabled={!table.getCanNextPage()} onClick={() => table.nextPage()}>
+            <Button size="icon-sm" variant="quiet" aria-label={t.nextPage} disabled={!table.getCanNextPage()} onClick={() => table.nextPage()}>
               <ChevronRight aria-hidden="true" size={16} strokeWidth={1.75} />
             </Button>
           </div>
@@ -541,10 +544,10 @@ export function DataTable<T>({
       {bulkActions && selected.length > 0 ? (
         <div
           role="region"
-          aria-label="Bulk actions"
+          aria-label={t.bulkActions}
           className="fixed bottom-6 left-1/2 z-30 flex max-w-[calc(100vw-32px)] -translate-x-1/2 animate-enter items-center gap-2 overflow-x-auto rounded-lg border border-border-strong bg-surface p-2 pl-4 shadow-md lg:left-[calc(50%+132px)]"
         >
-          <span className="tnum shrink-0 pr-2 text-body-sm font-medium text-fg">{selected.length} selected</span>
+          <span className="tnum shrink-0 pr-2 text-body-sm font-medium text-fg">{t.selected(selected.length)}</span>
           {bulkActions.map((action) => {
             const Icon = action.icon;
             return (
@@ -562,7 +565,7 @@ export function DataTable<T>({
               </Button>
             );
           })}
-          <Button size="icon-sm" variant="quiet" aria-label="Clear selection" onClick={() => setRowSelection({})}>
+          <Button size="icon-sm" variant="quiet" aria-label={t.clearSelection} onClick={() => setRowSelection({})}>
             <X aria-hidden="true" size={16} strokeWidth={1.75} />
           </Button>
         </div>
@@ -582,7 +585,8 @@ function FacetMenu({
   value: string[];
   onChange: (value: string[]) => void;
 }) {
-  const summary = value.length === 0 ? null : value.length === 1 ? facet.options.find((o) => o.value === value[0])?.label : `${value.length} selected`;
+  const t = useMessages(uiMessages).table;
+  const summary = value.length === 0 ? null : value.length === 1 ? facet.options.find((o) => o.value === value[0])?.label : t.selected(value.length);
   return (
     <Menu>
       <MenuTrigger asChild>
@@ -619,7 +623,7 @@ function FacetMenu({
               onSelect={() => onChange([])}
               className="flex h-8 cursor-pointer items-center rounded-sm px-2 text-body-sm text-fg-3 outline-none data-highlighted:bg-press data-highlighted:text-fg"
             >
-              Clear {facet.label.toLowerCase()}
+              {t.clearFacet(facet.label)}
             </DM.Item>
           </>
         ) : null}
@@ -629,13 +633,14 @@ function FacetMenu({
 }
 
 function RowMenu<T>({ actions, loading, onSelect }: { actions: RowAction<T>[]; loading: boolean; onSelect: (action: RowAction<T>) => void }) {
+  const t = useMessages(uiMessages).table;
   return (
     <Menu>
       <MenuTrigger asChild>
         <Button
           size="icon-sm"
           variant="quiet"
-          aria-label="Row actions"
+          aria-label={t.rowActions}
           loading={loading}
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}

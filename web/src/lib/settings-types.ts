@@ -1,3 +1,4 @@
+import type { Locale } from "./i18n/locale";
 import type { RiskEventType } from "./policy-types";
 import type { RoleKey } from "./provisioning-types";
 
@@ -13,6 +14,7 @@ export type Theme = {
 export type Settings = {
   organizationName: string;
   contactEmail: string;
+  locale: Locale;
   signInMessage: string;
   theme: Theme;
   customCss: string;
@@ -135,6 +137,7 @@ export type OrganizationProfile = {
   customCss: string;
   consoleBranding: boolean;
   featuresOff: FeatureId[];
+  locale: Locale;
 };
 
 export type Domain = {

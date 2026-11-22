@@ -311,6 +311,27 @@ func (h *handler) securityEmails(w http.ResponseWriter, r *http.Request) error {
 	return httpx.JSON(w, http.StatusOK, list)
 }
 
+func (h *handler) setLocale(w http.ResponseWriter, r *http.Request) error {
+	u, _, err := httpx.RequireUser(r)
+	if err != nil {
+		return err
+	}
+	var in struct {
+		Locale *string `json:"locale"`
+	}
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	if in.Locale != nil && !slices.Contains(store.Locales, *in.Locale) {
+		return httpx.Invalid(`Set the language to "en" or "es", or to null to follow your browser and your organization.`)
+	}
+	if err := h.st.SetUserLocale(r.Context(), u.ID, in.Locale); err != nil {
+		return err
+	}
+	u.Locale = in.Locale
+	return httpx.JSON(w, http.StatusOK, u)
+}
+
 func (h *handler) setSecurityEmails(w http.ResponseWriter, r *http.Request) error {
 	u, _, err := httpx.RequireUser(r)
 	if err != nil {

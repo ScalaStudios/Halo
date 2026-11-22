@@ -1,6 +1,7 @@
+import type { en } from "./en";
 import { pluralize } from "../../format";
 
-export const es = {
+export const es: typeof en = {
   title: "Cuenta de Halo",
   nav: {
     account: "Cuenta",
@@ -73,6 +74,10 @@ export const es = {
   singleMethod: "Añade otra para poder iniciar sesión si pierdes un dispositivo.",
   noMethods: "Añade una para iniciar sesión sin códigos.",
   reviewSecurity: "Revisar la seguridad",
+  language: "Idioma",
+  languageHint: "Halo lo usa en estas páginas y en los correos que te envía. Automático sigue a tu navegador y, en los correos, el idioma de tu organización.",
+  automatic: "Automático",
+  languageSaved: "Idioma guardado",
   data: "Tus datos",
   dataHint: "Descarga un archivo JSON con todo lo que Halo guarda sobre ti: tu perfil, métodos de inicio de sesión, grupos, sesiones, dispositivos e inicios de sesión.",
   download: "Descargar tus datos",

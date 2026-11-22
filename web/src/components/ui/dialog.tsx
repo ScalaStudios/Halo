@@ -4,6 +4,8 @@ import { Dialog as D, VisuallyHidden } from "radix-ui";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { useMessages } from "@/lib/i18n/client";
+import { uiMessages } from "@/lib/i18n/ui";
 import { ActionError } from "./action-error";
 
 export function Dialog({
@@ -12,7 +14,7 @@ export function Dialog({
   trigger,
   title,
   lang,
-  closeLabel = "Close",
+  closeLabel,
   description,
   width = "default",
   children,
@@ -31,6 +33,7 @@ export function Dialog({
   footer?: ReactNode;
   error?: string;
 }) {
+  const copy = useMessages(uiMessages);
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
       {trigger ? <D.Trigger asChild>{trigger}</D.Trigger> : null}
@@ -56,7 +59,7 @@ export function Dialog({
                 </VisuallyHidden.Root>
               )}
             </div>
-            <D.Close aria-label={closeLabel} className="-mt-1 -mr-2 grid size-8 place-items-center rounded-md text-fg-3 hover:bg-hover hover:text-fg">
+            <D.Close aria-label={closeLabel ?? copy.close} className="-mt-1 -mr-2 grid size-8 place-items-center rounded-md text-fg-3 hover:bg-hover hover:text-fg">
               <X aria-hidden="true" size={16} strokeWidth={1.75} />
             </D.Close>
           </div>

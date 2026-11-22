@@ -4,6 +4,7 @@ import "@fontsource-variable/jetbrains-mono";
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
+import { requestLocale } from "@/lib/i18n/server";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
@@ -23,11 +24,12 @@ export const viewport: Viewport = {
   colorScheme: "dark",
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const locale = await requestLocale();
   return (
-    <html lang="en">
+    <html lang={locale}>
       <body>
-        <Providers>{children}</Providers>
+        <Providers locale={locale}>{children}</Providers>
       </body>
     </html>
   );

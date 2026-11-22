@@ -40,6 +40,7 @@ type User struct {
 	Sponsor       *NamedRef  `json:"sponsor"`
 	ExpiresAt     *time.Time `json:"expiresAt"`
 	Directory     *NamedRef  `json:"directory"`
+	Locale        *string    `json:"locale"`
 
 	EligibleRoles  []string            `json:"eligibleRoles"`
 	Activations    []RoleActivation    `json:"activations"`

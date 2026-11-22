@@ -52,6 +52,7 @@ type Settings struct {
 	PasswordGroupIDs     []string `json:"passwordGroupIds"`
 	PasswordBreachCheck  bool     `json:"passwordBreachCheck"`
 	EmailSignIn          string   `json:"emailSignIn"`
+	Locale               string   `json:"locale"`
 
 	SessionLimit       int                 `json:"sessionLimit"`
 	SessionLimitAction string              `json:"sessionLimitAction"`
@@ -135,6 +136,7 @@ var DefaultSettings = Settings{
 	PasswordGroupIDs:     []string{},
 	PasswordBreachCheck:  true,
 	EmailSignIn:          "link",
+	Locale:               "en",
 	SessionLimitAction:   "refuse",
 	SessionLimitGroups:   []GroupSessionLimit{},
 	AuthenticatorRules:   []AuthenticatorRule{},

@@ -11,6 +11,7 @@ import { CheckList, FieldError } from "@/components/policy/policy-form";
 import { joinList } from "@/components/policy/shared";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
 import { pluralize } from "@/lib/format";
+import { languageNames, locales, type Locale } from "@/lib/i18n/locale";
 import type { Domain, EmailTemplate, Settings } from "@/lib/settings-types";
 import type { Group } from "@/lib/types";
 import { ReadOnlyNote, useSaveSettings } from "./shared";
@@ -19,8 +20,9 @@ export function OrganizationForm({ settings, defaultName, issuer, canEdit }: { s
   const { saving, failure, save } = useSaveSettings();
   const [name, setName] = useState(settings.organizationName);
   const [email, setEmail] = useState(settings.contactEmail);
+  const [locale, setLocale] = useState(settings.locale);
   const [error, setError] = useState<string>();
-  const dirty = name.trim() !== settings.organizationName || email.trim() !== settings.contactEmail;
+  const dirty = name.trim() !== settings.organizationName || email.trim() !== settings.contactEmail || locale !== settings.locale;
 
   function submit() {
     if (email.trim() && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email.trim())) {
@@ -28,7 +30,7 @@ export function OrganizationForm({ settings, defaultName, issuer, canEdit }: { s
       return;
     }
     setError(undefined);
-    void save({ organizationName: name.trim(), contactEmail: email.trim() }, "Organization saved", "The console and sign-in pages show the change within 30 seconds.");
+    void save({ organizationName: name.trim(), contactEmail: email.trim(), locale }, "Organization saved", "The console and sign-in pages show the change within 30 seconds.");
   }
 
   return (
@@ -48,6 +50,17 @@ export function OrganizationForm({ settings, defaultName, issuer, canEdit }: { s
           </Field>
           <Field label="Contact email" error={error} hint="The sign-in page links to this address under Get help. Leave empty to hide the link.">
             {(props) => <Input {...props} type="email" autoComplete="email" disabled={!canEdit} value={email} placeholder="it@example.com" onChange={(event) => setEmail(event.target.value)} />}
+          </Field>
+          <Field label="Default language" hint="For people who haven't chosen a language: on pages when their browser asks for none Halo has, and in every email.">
+            {(props) => (
+              <Select {...props} disabled={!canEdit} value={locale} onChange={(event) => setLocale(event.target.value as Locale)}>
+                {locales.map((value) => (
+                  <option key={value} value={value} lang={value}>
+                    {languageNames[value]}
+                  </option>
+                ))}
+              </Select>
+            )}
           </Field>
           <CopyField label="Issuer URL" value={issuer} hint="Set by HALO_PUBLIC_URL when Halo starts. Applications discover every protocol endpoint from it." />
           {canEdit ? (

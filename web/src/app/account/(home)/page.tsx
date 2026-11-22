@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ChevronRight, FileDown, Fingerprint, LayoutGrid, MonitorSmartphone, ShieldCheck } from "lucide-react";
+import { ChevronRight, FileDown, Fingerprint, Languages, LayoutGrid, MonitorSmartphone, ShieldCheck } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { AvatarEditor } from "@/components/account/avatar-editor";
+import { LanguagePicker } from "@/components/account/language-picker";
 import { MyAttributesButton } from "@/components/account/my-attributes";
 import { ExportButton } from "@/components/settings/export-button";
 import { buttonClasses } from "@/components/ui/button";
@@ -142,6 +143,19 @@ export default async function AccountPage() {
             );
           })}
         </ul>
+
+        <Card className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center">
+          <span className="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-sunken">
+            <Languages aria-hidden="true" size={20} strokeWidth={1.75} className="text-fg-3" />
+          </span>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <h2 className="text-h4 text-fg">{copy.language}</h2>
+            <p className="text-body-sm text-fg-3">{copy.languageHint}</p>
+          </div>
+          <div className="shrink-0 sm:w-48">
+            <LanguagePicker chosen={user.locale} />
+          </div>
+        </Card>
 
         <Card className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center">
           <span className="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-sunken">

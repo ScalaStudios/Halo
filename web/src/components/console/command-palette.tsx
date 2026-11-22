@@ -8,20 +8,23 @@ import { Avatar } from "@/components/ui/avatar";
 import { useListbox } from "@/components/ui/listbox";
 import { NavigationProgress } from "@/components/ui/navigation-progress";
 import { api } from "@/lib/api/client";
+import { useLocale } from "@/lib/i18n/client";
+import { frameMessages } from "@/lib/i18n/console/frame";
 import type { FeatureId } from "@/lib/settings-types";
 import type { Application, User } from "@/lib/types";
 import { BASE, allItems, shown, type NavItem } from "./nav";
 
 type Entry = { id: string; group: string; label: string; detail?: string; search: string; href: string; icon?: LucideIcon; person?: boolean; features?: NavItem["features"] };
 
-const fixed: Entry[] = [
-  { id: "add-application", group: "Actions", label: "Add application", search: "Add application register oidc saml", href: `${BASE}/applications/new`, icon: Plus },
-  { id: "invite-user", group: "Actions", label: "Invite user", search: "Invite user add person", href: `${BASE}/users?invite=1`, icon: UserPlus },
-  ...allItems.map((item) => ({ id: item.href, group: "Go to", label: item.label, detail: item.group ?? undefined, search: `${item.group ?? ""} ${item.label}`, href: item.href, icon: item.icon, features: item.features })),
-];
-
 export function CommandPalette({ open, limited, featuresOff, onOpenChange }: { open: boolean; limited: boolean; featuresOff: FeatureId[]; onOpenChange: (open: boolean) => void }) {
   const router = useRouter();
+  const locale = useLocale();
+  const copy = frameMessages[locale].palette;
+  const fixed: Entry[] = [
+    { id: "add-application", group: copy.actions, label: copy.addApplication, search: `${copy.addApplication} ${copy.addApplicationKeywords}`, href: `${BASE}/applications/new`, icon: Plus },
+    { id: "invite-user", group: copy.actions, label: copy.inviteUser, search: `${copy.inviteUser} ${copy.inviteUserKeywords}`, href: `${BASE}/users?invite=1`, icon: UserPlus },
+    ...allItems(locale).map((item) => ({ id: item.href, group: copy.goTo, label: item.label, detail: item.group ?? undefined, search: `${item.group ?? ""} ${item.label}`, href: item.href, icon: item.icon, features: item.features })),
+  ];
   const [results, setResults] = useState<{ users: User[]; applications: Application[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
@@ -31,14 +34,14 @@ export function CommandPalette({ open, limited, featuresOff, onOpenChange }: { o
     ...fixed.filter((entry) => shown(entry, featuresOff) && (!limited || entry.href.startsWith(`${BASE}/users`))),
     ...(results?.users ?? []).map((user) => ({
       id: user.id,
-      group: "Users",
+      group: copy.users,
       label: user.name,
       detail: user.email,
-      search: `user ${user.name} ${user.email}`,
+      search: `${copy.users} ${user.name} ${user.email}`,
       href: `${BASE}/users/${user.id}`,
       person: true,
     })),
-    ...(results?.applications ?? []).map((app) => ({ id: app.id, group: "Applications", label: app.name, search: `application ${app.name}`, href: `${BASE}/applications/${app.id}`, icon: AppWindow })),
+    ...(results?.applications ?? []).map((app) => ({ id: app.id, group: copy.applications, label: app.name, search: `${copy.applications} ${app.name}`, href: `${BASE}/applications/${app.id}`, icon: AppWindow })),
   ];
   const words = query.toLowerCase().split(" ");
   const matches = entries.filter((entry) => words.every((word) => entry.search.toLowerCase().includes(word)));
@@ -72,16 +75,16 @@ export function CommandPalette({ open, limited, featuresOff, onOpenChange }: { o
           <D.Overlay className="fixed inset-0 z-40 bg-ink/80 data-[state=open]:animate-[halo-fade_160ms_var(--ease-brand)]" />
           <D.Content className="fixed top-[12dvh] left-1/2 z-50 w-[min(640px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-xl border border-border-strong bg-surface shadow-lg outline-none data-[state=open]:animate-[halo-dialog_220ms_var(--ease-brand)]">
             <VisuallyHidden.Root asChild>
-              <D.Title>Search Halo</D.Title>
+              <D.Title>{copy.title}</D.Title>
             </VisuallyHidden.Root>
             <VisuallyHidden.Root asChild>
-              <D.Description>Jump to a page, user or application, or run an action.</D.Description>
+              <D.Description>{copy.description}</D.Description>
             </VisuallyHidden.Root>
             <div className="flex items-center gap-3 border-b border-border px-4">
               <Search aria-hidden="true" size={16} strokeWidth={1.75} className="text-fg-3" />
               <input
                 role="combobox"
-                aria-label="Search Halo"
+                aria-label={copy.title}
                 aria-expanded={matches.length > 0}
                 aria-controls={listbox.listId}
                 aria-autocomplete="list"
@@ -93,13 +96,13 @@ export function CommandPalette({ open, limited, featuresOff, onOpenChange }: { o
                   list.current?.scrollTo({ top: 0 });
                 }}
                 onKeyDown={listbox.onKeyDown}
-                placeholder="Search users, applications and settings"
+                placeholder={copy.placeholder}
                 className="h-12 flex-1 bg-transparent text-body text-fg outline-none placeholder:text-fg-3 focus-visible:shadow-none"
               />
             </div>
             <div ref={list} className="max-h-[min(440px,60dvh)] overflow-y-auto p-2">
               {matches.length ? (
-                <div id={listbox.listId} role="listbox" aria-label="Search results">
+                <div id={listbox.listId} role="listbox" aria-label={copy.results}>
                   {groups.map((group) => (
                     <div key={group} role="group" aria-labelledby={`${listbox.listId}-${group}`}>
                       <div id={`${listbox.listId}-${group}`} role="presentation" className="px-2 pt-3 pb-1 text-label text-fg-3">
@@ -130,9 +133,9 @@ export function CommandPalette({ open, limited, featuresOff, onOpenChange }: { o
                   ))}
                 </div>
               ) : (
-                <p className="px-2 py-8 text-center text-body-sm text-fg-3">No matches. Try a name, an email address or a page.</p>
+                <p className="px-2 py-8 text-center text-body-sm text-fg-3">{copy.empty}</p>
               )}
-              {loading ? <p className="px-2 py-3 text-body-sm text-fg-3">Loading people and applications…</p> : null}
+              {loading ? <p className="px-2 py-3 text-body-sm text-fg-3">{copy.loading}</p> : null}
             </div>
           </D.Content>
         </D.Portal>

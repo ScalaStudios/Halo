@@ -8,8 +8,10 @@ import { HaloMark } from "@/components/halo-mark";
 import { Kbd } from "@/components/ui/kbd";
 import { LinkProgress } from "@/components/ui/navigation-progress";
 import { cn } from "@/lib/cn";
+import { useLocale } from "@/lib/i18n/client";
+import { frameMessages } from "@/lib/i18n/console/frame";
 import type { FeatureId } from "@/lib/settings-types";
-import { BASE, findItem, nav, navFor } from "./nav";
+import { BASE, findItem, navFor, navigation } from "./nav";
 
 const REPO = "https://github.com/ScalaStudios/Halo";
 const VERSION = process.env.NEXT_PUBLIC_HALO_VERSION || "dev";
@@ -31,8 +33,10 @@ export function Sidebar({
   onNavigate?: (href: string) => void;
 }) {
   const pathname = usePathname();
-  const activeHref = findItem(pathname)?.href;
-  const activeGroup = nav.find((group) => group.items.some((item) => item.href === activeHref))?.id;
+  const locale = useLocale();
+  const copy = frameMessages[locale];
+  const activeHref = findItem(pathname, locale)?.href;
+  const activeGroup = navigation(locale).find((group) => group.items.some((item) => item.href === activeHref))?.id;
   const [collapsed, setCollapsed] = useState<string[]>([]);
 
   useEffect(() => {
@@ -81,13 +85,13 @@ export function Sidebar({
           className="flex h-8 w-full items-center gap-2 rounded-md border border-border bg-sunken px-3 text-body-sm text-fg-3 transition-colors duration-fast hover:border-border-strong hover:text-fg-2"
         >
           <Search aria-hidden="true" size={16} strokeWidth={1.75} />
-          <span className="flex-1 text-left">Search</span>
+          <span className="flex-1 text-left">{copy.search}</span>
           <Kbd>⌘K</Kbd>
         </button>
       </div>
 
-      <nav aria-label="Administration" className="flex-1 overflow-y-auto px-3 pt-2 pb-4">
-        {navFor(limited, featuresOff).map((group) => {
+      <nav aria-label={copy.administration} className="flex-1 overflow-y-auto px-3 pt-2 pb-4">
+        {navFor(locale, limited, featuresOff).map((group) => {
           const isCollapsed = group.label !== null && collapsed.includes(group.id) && group.id !== activeGroup;
           return (
             <div key={group.id} className="pt-2">
@@ -152,7 +156,7 @@ export function Sidebar({
           {COMMIT ? ` · ${COMMIT.slice(0, 7)}` : null}
         </a>
         <Link href={`${BASE}/developers`} onNavigate={navigate(`${BASE}/developers`)} className="transition-colors duration-fast hover:text-fg">
-          Documentation
+          {copy.documentation}
         </Link>
       </div>
     </div>

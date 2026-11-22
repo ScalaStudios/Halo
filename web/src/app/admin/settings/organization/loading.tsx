@@ -14,6 +14,7 @@ export default function Loading() {
           <div className="flex max-w-xl flex-col gap-6">
             <FieldSkeleton label="Organization name" hint={110} />
             <FieldSkeleton label="Contact email" hint="The sign-in page links to this address under Get help. Leave empty to hide the link." />
+            <FieldSkeleton label="Default language" hint="For people who haven't chosen a language: on pages when their browser asks for none Halo has, and in every email." />
             <FieldSkeleton label="Issuer URL" hint="Set by HALO_PUBLIC_URL when Halo starts. Applications discover every protocol endpoint from it." />
             <Skeleton className="h-10 w-44 rounded-md" />
           </div>

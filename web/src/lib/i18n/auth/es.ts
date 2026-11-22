@@ -1,6 +1,6 @@
 import type { en } from "./en";
 
-export const es = {
+export const es: typeof en = {
   title: "Iniciar sesión",
   description: "Inicia sesión en Halo con una clave de acceso, una llave de seguridad, una aplicación de autenticación o un código de recuperación.",
   help: "Obtener ayuda",

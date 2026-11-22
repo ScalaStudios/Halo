@@ -40,123 +40,125 @@ import {
   Workflow,
   type LucideIcon,
 } from "lucide-react";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import type { Locale } from "@/lib/i18n/locale";
 import type { FeatureId } from "@/lib/settings-types";
 
-export type NavItem = { label: string; href: string; icon: LucideIcon; summary: string; features?: FeatureId[] };
-export type NavGroup = { id: string; label: string | null; items: NavItem[] };
+type Labels = (typeof frameMessages)["en"]["nav"];
+
+export type NavItem = { id: keyof Labels["items"]; label: string; href: string; icon: LucideIcon; summary: string; features?: FeatureId[] };
+export type NavGroup = { id: keyof Labels["groups"] | "home"; label: string | null; items: NavItem[] };
 
 export const BASE = "/admin";
 
-export const nav: NavGroup[] = [
+const nav: { id: NavGroup["id"]; items: Omit<NavItem, "label" | "summary">[] }[] = [
   {
     id: "home",
-    label: null,
     items: [
-      { label: "Overview", href: `${BASE}`, icon: LayoutGrid, summary: "What needs your attention across the organization." },
-      { label: "Recommendations", href: `${BASE}/recommendations`, icon: ShieldCheck, summary: "Settings, administrators and keys checked against a recommended baseline, with a link to fix each one." },
+      { id: "overview", href: `${BASE}`, icon: LayoutGrid },
+      { id: "recommendations", href: `${BASE}/recommendations`, icon: ShieldCheck },
     ],
   },
   {
     id: "directory",
-    label: "Directory",
     items: [
-      { label: "Users", href: `${BASE}/users`, icon: Users, summary: "People, their authentication strength and everything they can reach." },
-      { label: "Groups", href: `${BASE}/groups`, icon: UsersRound, summary: "Assigned and rule-based groups. Groups are how access is granted." },
-      { label: "Service accounts", href: `${BASE}/service-accounts`, icon: Bot, summary: "Non-human identities for automation, with scoped credentials and owners." },
-      { label: "Devices", href: `${BASE}/devices`, icon: Laptop, summary: "Enrolled devices and their posture. Device trust feeds access policies." },
+      { id: "users", href: `${BASE}/users`, icon: Users },
+      { id: "groups", href: `${BASE}/groups`, icon: UsersRound },
+      { id: "serviceAccounts", href: `${BASE}/service-accounts`, icon: Bot },
+      { id: "devices", href: `${BASE}/devices`, icon: Laptop },
     ],
   },
   {
     id: "applications",
-    label: "Applications",
     items: [
-      { label: "Applications", href: `${BASE}/applications`, icon: AppWindow, summary: "Everything people sign in to: OpenID Connect, SAML and OAuth clients." },
-      { label: "Collections", href: `${BASE}/collections`, icon: Layers, summary: "Named sections of the account portal, like Engineering or HR, shown to the groups you choose." },
-      { label: "API resources", href: `${BASE}/api-resources`, icon: FileKey, summary: "APIs you protect with Halo, their scopes and audiences." },
-      { label: "Provisioning", href: `${BASE}/provisioning`, icon: RefreshCw, summary: "SCIM and directory sync in both directions: HR systems in, applications out.", features: ["scim", "provisioning"] },
+      { id: "applications", href: `${BASE}/applications`, icon: AppWindow },
+      { id: "collections", href: `${BASE}/collections`, icon: Layers },
+      { id: "apiResources", href: `${BASE}/api-resources`, icon: FileKey },
+      { id: "provisioning", href: `${BASE}/provisioning`, icon: RefreshCw, features: ["scim", "provisioning"] },
     ],
   },
   {
     id: "access",
-    label: "Access",
     items: [
-      { label: "Roles", href: `${BASE}/roles`, icon: UserRoundCog, summary: "Administrative roles in Halo and what each one may change." },
-      { label: "Policies", href: `${BASE}/policies`, icon: Shield, summary: "Conditional access: who, which application, under which device, network and risk conditions." },
-      { label: "Infrastructure access", href: `${BASE}/infrastructure`, icon: Server, summary: "Short-lived SSH certificates, database credentials and Kubernetes access.", features: ["ssh"] },
-      { label: "Remote access", href: `${BASE}/remote-access`, icon: SquareTerminal, summary: "Outposts in your networks and the SSH sessions people open in the browser, with recordings.", features: ["remote-access"] },
-      { label: "Approvals", href: `${BASE}/approvals`, icon: Stamp, summary: "High-impact changes waiting for a second global administrator, and which changes need one." },
+      { id: "roles", href: `${BASE}/roles`, icon: UserRoundCog },
+      { id: "policies", href: `${BASE}/policies`, icon: Shield },
+      { id: "infrastructure", href: `${BASE}/infrastructure`, icon: Server, features: ["ssh"] },
+      { id: "remoteAccess", href: `${BASE}/remote-access`, icon: SquareTerminal, features: ["remote-access"] },
+      { id: "approvals", href: `${BASE}/approvals`, icon: Stamp },
     ],
   },
   {
     id: "governance",
-    label: "Governance",
     items: [
-      { label: "Access packages", href: `${BASE}/access-packages`, icon: Package, summary: "Bundles of groups and app roles that people can request, with approvers and expiry.", features: ["governance"] },
-      { label: "Requests", href: `${BASE}/requests`, icon: Inbox, summary: "Access requests waiting on you or your team.", features: ["governance"] },
-      { label: "Access reviews", href: `${BASE}/access-reviews`, icon: ClipboardCheck, summary: "Periodic certification of who still needs what.", features: ["governance"] },
-      { label: "Lifecycle", href: `${BASE}/lifecycle`, icon: Workflow, summary: "Joiner, mover and leaver workflows driven by your HR source, plus date and inactivity rules.", features: ["governance"] },
+      { id: "accessPackages", href: `${BASE}/access-packages`, icon: Package, features: ["governance"] },
+      { id: "requests", href: `${BASE}/requests`, icon: Inbox, features: ["governance"] },
+      { id: "accessReviews", href: `${BASE}/access-reviews`, icon: ClipboardCheck, features: ["governance"] },
+      { id: "lifecycle", href: `${BASE}/lifecycle`, icon: Workflow, features: ["governance"] },
     ],
   },
   {
     id: "authentication",
-    label: "Authentication",
     items: [
-      { label: "Methods", href: `${BASE}/methods`, icon: Fingerprint, summary: "Passkeys, security keys, authenticator apps and magic links: which are allowed, for whom." },
-      { label: "Identity providers", href: `${BASE}/identity-providers`, icon: Network, summary: "Federate sign-in from Google, GitHub, Microsoft Entra or any SAML or OIDC provider." },
-      { label: "Sessions", href: `${BASE}/sessions`, icon: MonitorSmartphone, summary: "Active sessions across every user, with bulk revocation." },
+      { id: "methods", href: `${BASE}/methods`, icon: Fingerprint },
+      { id: "identityProviders", href: `${BASE}/identity-providers`, icon: Network },
+      { id: "sessions", href: `${BASE}/sessions`, icon: MonitorSmartphone },
     ],
   },
   {
     id: "monitoring",
-    label: "Monitoring",
     items: [
-      { label: "Sign-in logs", href: `${BASE}/sign-ins`, icon: LogIn, summary: "Every authentication attempt, its result, method and risk." },
-      { label: "Audit log", href: `${BASE}/audit`, icon: ScrollText, summary: "Every administrative change, who made it and from where." },
-      { label: "Risk events", href: `${BASE}/risk`, icon: ShieldAlert, summary: "Impossible travel, anonymizing networks and credential attacks." },
-      { label: "Reports", href: `${BASE}/reports`, icon: ChartColumn, summary: "Sign-in method adoption, inactive people and application usage, with CSV export." },
-      { label: "Log streaming", href: `${BASE}/log-streaming`, icon: Waypoints, summary: "Every sign-in and audit event sent to syslog or an OpenTelemetry collector.", features: ["log-streaming"] },
-      { label: "Notification rules", href: `${BASE}/notification-rules`, icon: BellRing, summary: "Slack, Discord and webhook messages for the security events you choose.", features: ["webhooks"] },
+      { id: "signIns", href: `${BASE}/sign-ins`, icon: LogIn },
+      { id: "audit", href: `${BASE}/audit`, icon: ScrollText },
+      { id: "risk", href: `${BASE}/risk`, icon: ShieldAlert },
+      { id: "reports", href: `${BASE}/reports`, icon: ChartColumn },
+      { id: "logStreaming", href: `${BASE}/log-streaming`, icon: Waypoints, features: ["log-streaming"] },
+      { id: "notificationRules", href: `${BASE}/notification-rules`, icon: BellRing, features: ["webhooks"] },
     ],
   },
   {
     id: "developers",
-    label: "Developers",
     items: [
-      { label: "API keys", href: `${BASE}/api-keys`, icon: KeyRound, summary: "Keys for the Halo management API and the Halo CLI." },
-      { label: "Webhooks", href: `${BASE}/webhooks`, icon: Webhook, summary: "Signed event delivery for sign-ins, provisioning and admin changes.", features: ["webhooks"] },
-      { label: "SDKs and reference", href: `${BASE}/developers`, icon: BookOpen, summary: "Protocol endpoints, the OpenAPI document and client libraries." },
+      { id: "apiKeys", href: `${BASE}/api-keys`, icon: KeyRound },
+      { id: "webhooks", href: `${BASE}/webhooks`, icon: Webhook, features: ["webhooks"] },
+      { id: "developers", href: `${BASE}/developers`, icon: BookOpen },
     ],
   },
   {
     id: "settings",
-    label: "Settings",
     items: [
-      { label: "Organization", href: `${BASE}/settings/organization`, icon: Building2, summary: "Name, contacts, the issuer URL and log retention." },
-      { label: "Features", href: `${BASE}/settings/features`, icon: ToggleRight, summary: "Turn off the parts of Halo your organization doesn't use, with their routes, background jobs and pages." },
-      { label: "User attributes", href: `${BASE}/settings/attributes`, icon: Tags, summary: "Custom fields on people, such as an employee number, for claims and outbound SCIM." },
-      { label: "Domains", href: `${BASE}/settings/domains`, icon: Globe, summary: "Verified email domains and the custom sign-in domain." },
-      { label: "Branding", href: `${BASE}/settings/branding`, icon: Palette, summary: "Your logo and a message on the sign-in, setup and sign-out pages." },
-      { label: "Email templates", href: `${BASE}/settings/email`, icon: Mail, summary: "The subject and text of invitations, resets, sign-in emails and access notices." },
-      { label: "Security defaults", href: `${BASE}/settings/security`, icon: SlidersHorizontal, summary: "Session lifetimes, lockout thresholds and token defaults." },
-      { label: "Export and import", href: `${BASE}/settings/export`, icon: Download, summary: "Download every user, group, application, policy and setting as JSON, import configuration, and schedule exports." },
+      { id: "organization", href: `${BASE}/settings/organization`, icon: Building2 },
+      { id: "features", href: `${BASE}/settings/features`, icon: ToggleRight },
+      { id: "attributes", href: `${BASE}/settings/attributes`, icon: Tags },
+      { id: "domains", href: `${BASE}/settings/domains`, icon: Globe },
+      { id: "branding", href: `${BASE}/settings/branding`, icon: Palette },
+      { id: "emailTemplates", href: `${BASE}/settings/email`, icon: Mail },
+      { id: "security", href: `${BASE}/settings/security`, icon: SlidersHorizontal },
+      { id: "export", href: `${BASE}/settings/export`, icon: Download },
     ],
   },
 ];
+
+export function navigation(locale: Locale): NavGroup[] {
+  const { groups, items } = frameMessages[locale].nav;
+  return nav.map((group) => ({ id: group.id, label: group.id === "home" ? null : groups[group.id], items: group.items.map((item) => ({ ...item, ...items[item.id] })) }));
+}
 
 export function shown(item: Pick<NavItem, "features">, featuresOff: FeatureId[]) {
   return !item.features?.every((feature) => featuresOff.includes(feature));
 }
 
-export function navFor(limited: boolean, featuresOff: FeatureId[]) {
-  return nav
+export function navFor(locale: Locale, limited: boolean, featuresOff: FeatureId[]) {
+  return navigation(locale)
     .map((group) => ({ ...group, items: group.items.filter((item) => shown(item, featuresOff) && (!limited || item.href === `${BASE}/users`)) }))
     .filter((group) => group.items.length);
 }
 
-export const allItems = nav.flatMap((group) => group.items.map((item) => ({ ...item, group: group.label })));
+export function allItems(locale: Locale) {
+  return navigation(locale).flatMap((group) => group.items.map((item) => ({ ...item, group: group.label })));
+}
 
-export function findItem(pathname: string) {
-  return [...allItems]
+export function findItem(pathname: string, locale: Locale) {
+  return allItems(locale)
     .sort((a, b) => b.href.length - a.href.length)
     .find((item) => pathname === item.href || (item.href !== BASE && pathname.startsWith(`${item.href}/`)));
 }
