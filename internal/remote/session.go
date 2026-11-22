@@ -281,7 +281,7 @@ func (h *handlers) activeRemoteSession(ctx context.Context, id string) error {
 		return terminated(name)
 	}
 	if status != "active" {
-		return errRevoked
+		return errors.New("The session is no longer active in Halo.")
 	}
 	return nil
 }

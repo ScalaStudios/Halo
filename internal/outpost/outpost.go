@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/websocket"
@@ -122,6 +123,12 @@ func (a *Agent) serve(ctx context.Context) error {
 	stop := context.AfterFunc(ctx, func() { closeSocket(conn) })
 	defer stop()
 	a.Log.Info("connected to Halo", "server", a.Server)
+	var writeMu sync.Mutex
+	send := func(m message) error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		return sendControl(conn, m)
+	}
 	for {
 		conn.SetReadDeadline(time.Now().Add(3 * heartbeat))
 		var raw string
@@ -134,21 +141,23 @@ func (a *Agent) serve(ctx context.Context) error {
 		}
 		switch m.Type {
 		case "ping":
-			if err := send(conn, message{Type: "pong"}); err != nil {
+			if err := send(message{Type: "pong"}); err != nil {
 				return err
 			}
 		case "dial":
-			go a.relay(ctx, conn, m)
+			go a.relay(ctx, send, m)
 		}
 	}
 }
 
-func send(conn *websocket.Conn, m message) error {
+func sendControl(conn *websocket.Conn, m message) error {
 	raw, err := json.Marshal(m)
 	if err != nil {
 		return err
 	}
-	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		return err
+	}
 	return websocket.Message.Send(conn, string(raw))
 }
 
@@ -157,17 +166,17 @@ func closeSocket(conn *websocket.Conn) {
 	conn.Close()
 }
 
-func (a *Agent) relay(ctx context.Context, control *websocket.Conn, m message) {
+func (a *Agent) relay(ctx context.Context, send func(message) error, m message) {
 	target, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, "tcp", m.Address)
 	if err != nil {
 		a.Log.Warn("could not reach a host for Halo", "address", m.Address, "error", err)
-		send(control, message{Type: "failed", Stream: m.Stream, Message: err.Error()})
+		send(message{Type: "failed", Stream: m.Stream, Message: err.Error()})
 		return
 	}
 	defer target.Close()
 	stream, err := a.dial(ctx, "/api/v1/outpost/streams/"+url.PathEscape(m.Stream))
 	if err != nil {
-		send(control, message{Type: "failed", Stream: m.Stream, Message: err.Error()})
+		send(message{Type: "failed", Stream: m.Stream, Message: err.Error()})
 		return
 	}
 	stream.PayloadType = websocket.BinaryFrame

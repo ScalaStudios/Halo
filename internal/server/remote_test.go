@@ -727,6 +727,26 @@ func TestRemoteSessionEndsWhenAnotherInstanceTerminatesIt(t *testing.T) {
 	}
 }
 
+func TestRemoteSocketClosesWhenSessionRecordEnds(t *testing.T) {
+	r := setupRemote(t, "")
+	app := r.app(map[string]any{"auth": "certificate"})
+	_, token := r.member("ana@example.com", "passkey")
+	rs := r.start(token, app.ID)
+	ws, err := r.connect(token, rs.ID, remoteOrigin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Close()
+	s := &screen{t: t, ws: ws}
+	s.until(func() bool { return s.saw("connected") })
+	if err := r.st.EndRemoteSession(t.Context(), rs.ID, "Session cleanup marked it ended.", 0, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	if msg := s.waitEnd(); msg != "The session is no longer active in Halo." {
+		t.Fatalf("the live connection should stop after its record ends: %q", msg)
+	}
+}
+
 func TestRemoteCertificateSessionDefaultsToTheLinuxAccount(t *testing.T) {
 	r := setupRemote(t, "")
 	ctx := context.Background()
