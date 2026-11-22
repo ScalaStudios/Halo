@@ -21,7 +21,7 @@ export function MyAttributesButton({ attributes, values, locale }: { attributes:
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    const parsed = parseDrafts(attributes, drafts);
+    const parsed = parseDrafts(attributes, drafts, locale);
     setErrors(parsed.errors);
     if (Object.keys(parsed.errors).length > 0) return;
     void run(

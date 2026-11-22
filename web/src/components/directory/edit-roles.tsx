@@ -4,12 +4,12 @@ import { ShieldAlert } from "lucide-react";
 import { useState } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { RoleCheckboxes } from "@/components/provisioning/service-accounts-table";
-import { ROLES } from "@/components/provisioning/shared";
+import { rolesFor } from "@/components/provisioning/shared";
 import { keysOf } from "@/components/settings/roles";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { api } from "@/lib/api/client";
-import { useMessages } from "@/lib/i18n/client";
+import { useLocale, useMessages } from "@/lib/i18n/client";
 import { directoryMessages } from "@/lib/i18n/console/directory";
 import type { RoleKey } from "@/lib/provisioning-types";
 import type { User } from "@/lib/types";
@@ -29,6 +29,7 @@ export function EditRolesButton({ user }: { user: User }) {
   const [roles, setRoles] = useState<RoleKey[]>([]);
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const t = useMessages(directoryMessages);
+  const locale = useLocale();
   const given = roles.find((role) => !keysOf(user).includes(role));
 
   function save() {
@@ -71,7 +72,7 @@ export function EditRolesButton({ user }: { user: User }) {
       >
         <div className="flex flex-col gap-6">
           <RoleCheckboxes selected={roles} onChange={setRoles} />
-          {given && user.strength !== "phishing-resistant" ? <PasskeyWarning role={ROLES[given].label} /> : null}
+          {given && user.strength !== "phishing-resistant" ? <PasskeyWarning role={rolesFor(locale)[given].label} /> : null}
         </div>
       </Dialog>
     </>

@@ -627,6 +627,7 @@ export const en = {
       auditor: ["Read every administration page, the sign-in log and the audit log"],
     },
     deletedGroup: "a deleted group",
+    scopedTo: (role: string, groups: string) => `${role} for ${groups}`,
     memberCount: (count: number) => pluralize(count, "member"),
     takesEffect: "Takes effect on their next request. Recorded in the audit log.",
     members: "Members",

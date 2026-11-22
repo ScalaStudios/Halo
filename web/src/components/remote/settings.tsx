@@ -39,7 +39,7 @@ export function remoteDraft(outposts: Outpost[], target?: RemoteTarget): RemoteD
   };
 }
 
-export function remoteErrors(draft: RemoteDraft, stored: boolean, locale: Locale = "en"): RemoteErrors {
+export function remoteErrors(draft: RemoteDraft, stored: boolean, locale: Locale): RemoteErrors {
   const t = remoteMessages[locale].settings;
   const port = Number(draft.port);
   const keeps = stored && draft.auth !== "certificate";

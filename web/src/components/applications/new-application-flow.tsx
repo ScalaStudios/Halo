@@ -285,7 +285,7 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
 
   function submitRemote() {
     const next = { name: name.trim() ? undefined : v.namePortal };
-    const problems = remoteErrors(remote, false);
+    const problems = remoteErrors(remote, false, locale);
     setErrors(next);
     setRemoteProblems(problems);
     if (next.name || Object.values(problems).some(Boolean)) return;
@@ -330,7 +330,7 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
     const { application, clientSecret } = created;
     const appName = application.name;
     const radius = application.protocol === "radius";
-    const guide = setupGuide(application, issuer);
+    const guide = setupGuide(application, issuer, locale);
     return (
       <div className="flex animate-enter flex-col gap-6">
         <Card>

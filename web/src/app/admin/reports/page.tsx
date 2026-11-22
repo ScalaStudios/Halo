@@ -11,6 +11,7 @@ import { cn } from "@/lib/cn";
 import { formatDate, isoDay } from "@/lib/format";
 import { frameMessages } from "@/lib/i18n/console/frame";
 import { governanceMessages } from "@/lib/i18n/console/governance";
+import { monitoringMessages } from "@/lib/i18n/console/monitoring";
 import type { Locale } from "@/lib/i18n/locale";
 import { requestLocale } from "@/lib/i18n/server";
 import type {
@@ -111,7 +112,8 @@ async function PeriodFilters({ report, days }: { report: string; days: number })
 }
 
 async function Registration({ params }: { params: Params }) {
-  const g = governanceMessages[await requestLocale()];
+  const locale = await requestLocale();
+  const g = governanceMessages[locale];
   const t = g.reports;
   const filter = params.filter && params.filter in t.filters ? (params.filter as RegistrationFilter) : undefined;
   const query = new URLSearchParams(Object.entries({ filter, group: params.group }).filter((entry): entry is [string, string] => Boolean(entry[1])));
@@ -126,7 +128,7 @@ async function Registration({ params }: { params: Params }) {
           description={t.registeredDescription(total, Boolean(params.group), data.counts.filters["no-passkey"] ?? 0)}
         />
         <CardBody>
-          <BarList label={t.perMethod} max={total} items={data.methods.map((m) => ({ label: t.methods[m.method], value: m.people, detail: share(m.people) }))} />
+          <BarList label={t.perMethod} max={total} items={data.methods.map((m) => ({ label: monitoringMessages[locale].methods[m.method], value: m.people, detail: share(m.people) }))} />
         </CardBody>
       </Card>
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -170,7 +172,7 @@ async function MethodUsage({ params }: { params: Params }) {
             label={t.successfulPerMethod}
             max={Math.max(0, ...methods.map((m) => m.signIns))}
             items={methods.map((m) => ({
-              label: t.methods[m.method],
+              label: monitoringMessages[locale].methods[m.method],
               value: m.signIns,
               detail: m.signIns ? t.usage(m.signIns, m.people) : t.notUsed,
             }))}

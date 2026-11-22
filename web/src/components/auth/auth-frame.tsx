@@ -6,7 +6,7 @@ import type { Locale } from "@/lib/i18n/locale";
 import { authMessages } from "@/lib/i18n/auth";
 import type { OrganizationProfile } from "@/lib/settings-types";
 
-export async function AuthFrame({ children, locale = "en" }: { children: ReactNode; locale?: Locale }) {
+export async function AuthFrame({ children, locale }: { children: ReactNode; locale: Locale }) {
   const org = await apiGet<OrganizationProfile>("/organization");
   return (
     <div className="relative isolate flex min-h-dvh flex-col overflow-hidden">

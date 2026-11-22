@@ -4,7 +4,7 @@ import { Skeleton, SkeletonText, TableSkeleton } from "@/components/ui/skeleton"
 import { governanceMessages } from "@/lib/i18n/console/governance";
 import type { Locale } from "@/lib/i18n/locale";
 
-export function ReviewSkeleton({ locale = "en" }: { locale?: Locale }) {
+export function ReviewSkeleton({ locale }: { locale: Locale }) {
   const t = governanceMessages[locale];
   return (
     <>

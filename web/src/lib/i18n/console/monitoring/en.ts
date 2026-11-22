@@ -20,6 +20,7 @@ export const en = {
   exportCsv: "Export CSV",
   revokeSessions: "Revoke sessions",
   signIns: "Sign-ins",
+  unknownApplication: "Unknown application",
   controls: {
     holdHint: (seconds: string) => `Press and hold for ${seconds} seconds to confirm`,
     codeAccepted: "Code accepted",

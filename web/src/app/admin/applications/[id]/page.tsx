@@ -29,8 +29,8 @@ import { SimpleTable } from "@/components/ui/simple-table";
 import { TabNav } from "@/components/ui/tab-nav";
 import { apiGet } from "@/lib/api/server";
 import { applicationsMessages } from "@/lib/i18n/console/applications";
+import { remoteMessages } from "@/lib/i18n/console/infrastructure/remote";
 import { requestLocale } from "@/lib/i18n/server";
-import { REMOTE_AUTH } from "@/lib/labels";
 import type { ApiResource, Outpost, RemoteSession } from "@/lib/infra-types";
 import type { SamlApplication } from "@/lib/saml-types";
 import type { OrganizationProfile, WebhookDelivery } from "@/lib/settings-types";
@@ -148,7 +148,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
             <div className="flex min-w-0 flex-col gap-1">
               <div className="flex flex-wrap items-center gap-3">
                 <h1 className="text-h2 text-fg">{app.name}</h1>
-                <Badge tone={APP_STATUS[statusKey(app)].tone} dot>
+                <Badge tone={APP_STATUS[statusKey(app)]} dot>
                   {t.status[statusKey(app)]}
                 </Badge>
                 {app.registeredDynamically ? <Badge tone="info">{d.registeredDynamically}</Badge> : null}
@@ -190,7 +190,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
               label: t.common.status,
               value: (
                 <span className="inline-flex items-center gap-2">
-                  <StatusDot tone={APP_STATUS[statusKey(app)].tone} />
+                  <StatusDot tone={APP_STATUS[statusKey(app)]} />
                   {t.status[statusKey(app)]}
                 </span>
               ),
@@ -480,7 +480,7 @@ async function OverviewTab({ app, issuer, outposts }: { app: SamlApplication; is
               items={[
                 { label: d.host, value: `${target.host}:${target.port}`, mono: true },
                 { label: d.outpost, value: outpost ? `${outpost.name} · ${outpost.connected ? d.connected : d.notConnected}` : d.unknown },
-                { label: d.signsInWith, value: REMOTE_AUTH[target.auth] },
+                { label: d.signsInWith, value: remoteMessages[locale].settings.auth[target.auth] },
                 { label: d.account, value: target.username || (target.protocol === "ssh" ? d.firstPrincipal : d.passwordOnly) },
                 { label: d.hostKey, value: target.hostKey ? d.pinned(target.hostKey.split(" ")[0]) : d.hostCertificate },
                 { label: d.timeLimit, value: t.duration(target.sessionLimit) },
@@ -552,7 +552,7 @@ async function OverviewTab({ app, issuer, outposts }: { app: SamlApplication; is
           </CardBody>
         </Card>
         <div id="setup-guide" className="flex min-w-0 scroll-mt-24 flex-col gap-6 xl:col-span-7">
-          {proxyGuides(app, issuer).map((guide) => (
+          {proxyGuides(app, issuer, locale).map((guide) => (
             <SetupGuideCard key={guide.title} guide={guide} />
           ))}
         </div>
@@ -587,7 +587,7 @@ async function OverviewTab({ app, issuer, outposts }: { app: SamlApplication; is
         </CardBody>
       </Card>
       <div id="setup-guide" className="min-w-0 scroll-mt-24 xl:col-span-7">
-        <SetupGuideCard guide={setupGuide(app, issuer)} />
+        <SetupGuideCard guide={setupGuide(app, issuer, locale)} />
       </div>
       <DangerZone id={app.id} name={app.name} disabled={app.status === "disabled"} className="xl:col-span-12" />
     </div>

@@ -61,7 +61,7 @@ export default async function AccountPage() {
         ) : null}
 
         <Card className="flex flex-col gap-6 p-6">
-          <AvatarEditor locale={locale} name={user.name} avatarUrl={user.avatarUrl} endpoint="/api/v1/me/avatar">
+          <AvatarEditor name={user.name} avatarUrl={user.avatarUrl} endpoint="/api/v1/me/avatar">
             <div className="flex min-w-0 flex-col gap-1">
               <h2 className="flex min-w-0 items-center gap-3 text-h3 text-fg">
                 <span className="truncate">{user.name}</span>

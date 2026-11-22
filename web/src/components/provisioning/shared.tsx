@@ -19,18 +19,11 @@ export function scopesFor(locale: Locale): Record<KeyScope, { label: string; des
 
 export const SCOPES = scopesFor("en");
 
-export const ACCOUNT_STATUS: Record<ServiceAccount["status"], { label: string; tone: Tone }> = {
-  active: { label: "Active", tone: "success" },
-  suspended: { label: "Disabled", tone: "neutral" },
-};
+export const ACCOUNT_STATUS: Record<ServiceAccount["status"], Tone> = { active: "success", suspended: "neutral" };
 
 type KeyState = "active" | "expired" | "revoked";
 
-export const KEY_STATE: Record<KeyState, { label: string; tone: Tone }> = {
-  active: { label: "Active", tone: "success" },
-  expired: { label: "Expired", tone: "warning" },
-  revoked: { label: "Revoked", tone: "neutral" },
-};
+export const KEY_STATE: Record<KeyState, Tone> = { active: "success", expired: "warning", revoked: "neutral" };
 
 export function keyState(key: ApiKey): KeyState {
   if (key.revokedAt) return "revoked";
@@ -79,7 +72,7 @@ export function ScopeTags({ scopes }: { scopes: KeyScope[] }) {
   );
 }
 
-export function ActivityList({ events, actorNames, empty, locale = "en" }: { events: AuditEvent[]; actorNames: Record<string, string>; empty: string; locale?: Locale }) {
+export function ActivityList({ events, actorNames, empty, locale }: { events: AuditEvent[]; actorNames: Record<string, string>; empty: string; locale: Locale }) {
   if (events.length === 0) {
     return (
       <CardBody>

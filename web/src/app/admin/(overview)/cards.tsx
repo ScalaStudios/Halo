@@ -4,7 +4,7 @@ import { AppWindow, ArrowRight, ClipboardCheck, FileKey, Inbox, Laptop, LogIn, S
 import { OrgLogo } from "@/components/console/org-logo";
 import { PendingRequests } from "@/components/governance/requests";
 import { ReportInsights } from "@/components/policy/policy-list";
-import { hasRole } from "@/components/settings/roles";
+import { hasRole, roleLabel } from "@/components/settings/roles";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, StatusDot } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
@@ -160,7 +160,7 @@ export async function ProfileCard({ locale }: { locale: Locale }) {
         <Avatar name={me.name} src={me.avatarUrl} size="lg" />
         <div className="flex min-w-0 flex-col items-start gap-1">
           <h2 className="max-w-full truncate text-h3 text-fg">{me.name}</h2>
-          {me.roles[0] ? <Badge tone="ember">{me.roles[0]}</Badge> : null}
+          {me.roles[0] ? <Badge tone="ember">{roleLabel(me.roles[0], locale)}</Badge> : null}
         </div>
       </div>
       <div className="flex min-w-0 items-center gap-2 px-6 pt-4 text-body-sm">
@@ -179,7 +179,7 @@ export async function ProfileCard({ locale }: { locale: Locale }) {
         <ul className="flex flex-wrap gap-2">
           {me.roles.map((role) => (
             <li key={role}>
-              <Badge>{role}</Badge>
+              <Badge>{roleLabel(role, locale)}</Badge>
             </li>
           ))}
         </ul>
@@ -530,7 +530,7 @@ export async function RecentSignIns({ locale }: { locale: Locale }) {
                       <span className="font-medium text-fg">{event.email}</span>
                     )}
                   </td>
-                  <td className="px-3 text-fg-2">{signInApp(event, appNames)}</td>
+                  <td className="px-3 text-fg-2">{signInApp(event, appNames, m.unknownApplication)}</td>
                   <td className="px-3">
                     <span className="inline-flex items-center gap-2 text-fg-2">
                       <StatusDot tone={RESULT[event.result].tone} />

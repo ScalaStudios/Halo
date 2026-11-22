@@ -24,7 +24,7 @@ export async function SignInRows({ events, appNames = {} }: { events: SignInEven
         <tbody>
           {events.map((event) => (
             <tr key={event.id} className="h-12 border-b border-border last:border-b-0">
-              <td className="px-3 pl-6 text-fg">{signInApp(event, appNames)}</td>
+              <td className="px-3 pl-6 text-fg">{signInApp(event, appNames, t.unknownApplication)}</td>
               <td className="px-3">
                 <span className="inline-flex items-center gap-2 text-fg-2" title={event.reason}>
                   <StatusDot tone={RESULT[event.result].tone} />

@@ -112,7 +112,7 @@ export function SignInFlow({
   const [routed, setRouted] = useState(route?.name ?? "");
   const [methods, setMethods] = useState<Choice[]>([]);
   const [error, setError] = useState<ReactNode>(null);
-  const [notice, setNotice] = useState<string | null>(() => federationProblem(failure));
+  const [notice, setNotice] = useState<string | null>(() => federationProblem(failure, messages));
   const [options, setOptions] = useState(false);
   const [focus, setFocus] = useState<"passkey" | "email" | null>(null);
   const [busy, setBusy] = useState(false);
@@ -682,7 +682,7 @@ export function SignInFlow({
             <input type="email" name="email" autoComplete="username" value={email} readOnly hidden />
             <Field
               label={changing ? messages.newPassword : messages.password}
-              hint={changing ? "At least 15 characters. A few unrelated words make a password that is long and easy to remember." : undefined}
+              hint={changing ? messages.passwordHint : undefined}
               error={passwordError}
             >
               {(field) => (

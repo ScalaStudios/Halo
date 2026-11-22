@@ -5,38 +5,46 @@ import { ActivateRole, CancelRequest, DeactivateRole, ExtendAccess, RequestAcces
 import { GuestAccessButton } from "@/components/directory/guest-access";
 import { PendingRequests } from "@/components/governance/requests";
 import { approversLabel, dueLabel, grantLabel, joinNames, REQUEST_STATUS, requestDurationLabel, ReviewProgress } from "@/components/governance/shared";
-import { ROLES } from "@/components/provisioning/shared";
+import { rolesFor } from "@/components/provisioning/shared";
 import { keysOf } from "@/components/settings/roles";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionTitle } from "@/components/ui/section-title";
 import { apiGet } from "@/lib/api/server";
 import { formatDateTime, formatRelative } from "@/lib/format";
+import { accountMessages } from "@/lib/i18n/account";
+import { governanceMessages } from "@/lib/i18n/console/governance";
+import { monitoringMessages } from "@/lib/i18n/console/monitoring";
+import type { Locale } from "@/lib/i18n/locale";
+import { requestLocale } from "@/lib/i18n/server";
 import { STATUS } from "@/lib/labels";
 import type { AccessPackage, AccessRequest, AccessReview, NamedRef } from "@/lib/governance-types";
 import type { Organization, User } from "@/lib/types";
 
-export const metadata: Metadata = { title: "Access" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: accountMessages(await requestLocale()).nav.access };
+}
 
-function requestDetail(request: AccessRequest, userId: string): string {
+function requestDetail(request: AccessRequest, userId: string, locale: Locale): string {
+  const t = accountMessages(locale).access;
   const who =
-    request.requester.id !== userId ? `For ${request.requester.name} · ` : request.requestedBy && request.requestedBy.id !== userId ? `Asked by ${request.requestedBy.name} · ` : "";
+    request.requester.id !== userId ? t.forPerson(request.requester.name) : request.requestedBy && request.requestedBy.id !== userId ? t.askedBy(request.requestedBy.name) : "";
   switch (request.status) {
     case "pending":
-      return `${who}${requestDurationLabel(request)}${request.stages > 1 ? ` · Stage ${request.stage} of ${request.stages}` : ""} · Waiting on ${approversLabel(request.approvers)} · Asked ${formatRelative(request.createdAt).toLowerCase()}`;
+      return `${who}${requestDurationLabel(request, locale)}${request.stages > 1 ? ` · ${governanceMessages[locale].requests.stageOf(request.stage, request.stages)}` : ""} · ${t.waitingOn(approversLabel(request.approvers, locale))} · ${t.asked(formatRelative(request.createdAt, locale).toLowerCase())}`;
     case "approved":
-      return `${who}Approved by ${request.decidedBy?.name ?? "an approver"} · ${grantLabel(request)}`;
+      return `${who}${t.approvedBy(request.decidedBy?.name ?? t.anApprover)} · ${grantLabel(request, locale)}`;
     case "denied":
-      return `${who}Denied by ${request.decidedBy?.name ?? "an approver"}`;
+      return `${who}${t.deniedBy(request.decidedBy?.name ?? t.anApprover)}`;
     case "cancelled":
-      return `${who}Cancelled`;
+      return `${who}${t.cancelled}`;
     case "expired":
-      return `${who}Nobody decided in time, so Halo closed it`;
+      return `${who}${t.expired}`;
   }
 }
 
 export default async function AccessPage() {
-  const [user, org, packages, requests, grants, approvals, reviews, guests, reports] = await Promise.all([
+  const [user, org, packages, requests, grants, approvals, reviews, guests, reports, locale] = await Promise.all([
     apiGet<User>("/me"),
     apiGet<Organization>("/organization"),
     apiGet<AccessPackage[]>("/me/access-packages"),
@@ -46,7 +54,12 @@ export default async function AccessPage() {
     apiGet<AccessReview[]>("/me/reviews"),
     apiGet<User[]>("/me/guests"),
     apiGet<NamedRef[]>("/me/direct-reports"),
+    requestLocale(),
   ]);
+  const account = accountMessages(locale);
+  const t = account.access;
+  const governance = governanceMessages[locale];
+  const roles = rolesFor(locale);
   const pendingIds = requests.filter((r) => r.status === "pending" && r.requester.id === user.id).map((r) => r.package.id);
   const admin = user.roles.length > 0;
   const standing = keysOf(user);
@@ -56,22 +69,20 @@ export default async function AccessPage() {
     <div className="flex flex-col gap-12">
       <PageHeader
         size="large"
-        title="Access"
-        description="What you can reach and why. Groups decide which applications you see; roles decide what you can change in Halo."
+        title={account.nav.access}
+        description={t.description}
         actions={packages.length ? <RequestAccess packages={packages} pendingIds={pendingIds} reports={reports} /> : null}
       />
 
       {packages.length === 0 ? (
-        <p className={empty}>
-          There&apos;s nothing to request in Halo yet. If you need an application or group you don&apos;t have, ask a Halo administrator at {org.name}.
-        </p>
+        <p className={empty}>{t.nothingToRequest(org.name)}</p>
       ) : null}
 
       {approvals.length ? (
         <section className="flex flex-col gap-4">
           <SectionTitle
-            title="Waiting for your approval"
-            description="You approve requests for these packages. The requester gets an email with your decision."
+            title={t.approvals}
+            description={t.approvalsHint}
           />
           <div className="rounded-lg border border-border bg-surface p-6">
             <PendingRequests requests={approvals} />
@@ -81,25 +92,25 @@ export default async function AccessPage() {
 
       {reviews.length ? (
         <section className="flex flex-col gap-4">
-          <SectionTitle title="Reviews assigned to you" description="Confirm or remove each member's access before the due date." />
+          <SectionTitle title={t.reviews} description={t.reviewsHint} />
           <ul className={list}>
             {reviews.map((review) => (
               <li key={review.id} className="flex flex-col gap-4 border-t border-border px-6 py-4 first:border-t-0 sm:flex-row sm:items-center sm:gap-6">
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <p className="flex flex-wrap items-center gap-2 text-body-sm font-semibold text-fg">
                     {review.name}
-                    {review.status === "overdue" ? <Badge tone="danger">Overdue</Badge> : null}
+                    {review.status === "overdue" ? <Badge tone="danger">{governance.reviewStatus.overdue}</Badge> : null}
                   </p>
                   <p className="text-body-sm text-fg-3">
-                    {review.group.name} · {dueLabel(review)}
+                    {review.group.name} · {dueLabel(review, locale)}
                   </p>
                 </div>
-                <ReviewProgress review={review} className="w-full sm:w-40" />
+                <ReviewProgress review={review} className="w-full sm:w-40" locale={locale} />
                 <Link
                   href={admin ? `/admin/access-reviews/${review.id}` : `/account/reviews/${review.id}`}
                   className="shrink-0 text-body-sm text-link underline underline-offset-3 hover:text-ember-hover"
                 >
-                  Open review
+                  {t.openReview}
                 </Link>
               </li>
             ))}
@@ -109,18 +120,18 @@ export default async function AccessPage() {
 
       {guests.length ? (
         <section className="flex flex-col gap-4">
-          <SectionTitle title="Guests you sponsor" description="You're responsible for these external accounts. Halo emails you two weeks before access ends and suspends the account then unless you extend it." />
+          <SectionTitle title={t.guests} description={t.guestsHint} />
           <ul className={list}>
             {guests.map((guest) => (
               <li key={guest.id} className={row}>
                 <div className="flex min-w-0 flex-col gap-1">
                   <p className="flex flex-wrap items-center gap-2 text-body-sm font-semibold text-fg">
                     {guest.name}
-                    {guest.status === "active" || guest.status === "invited" ? null : <Badge tone={STATUS[guest.status].tone}>{STATUS[guest.status].label}</Badge>}
+                    {guest.status === "active" || guest.status === "invited" ? null : <Badge tone={STATUS[guest.status].tone}>{monitoringMessages[locale].statuses[guest.status]}</Badge>}
                   </p>
                   <p className="text-body-sm text-fg-3">
                     {guest.email}
-                    {guest.expiresAt ? ` · Access ends ${formatDateTime(guest.expiresAt)}` : null}
+                    {guest.expiresAt ? t.guestEnds(formatDateTime(guest.expiresAt, locale)) : null}
                   </p>
                 </div>
                 {guest.status === "active" || guest.status === "invited" ? <GuestAccessButton guest={guest} /> : null}
@@ -131,7 +142,7 @@ export default async function AccessPage() {
       ) : null}
 
       <section className="flex flex-col gap-4">
-        <SectionTitle title="Your requests" description="You get an email when an approver decides." />
+        <SectionTitle title={t.requests} description={t.requestsHint} />
         {requests.length ? (
           <ul className={list}>
             {requests.map((request) => (
@@ -139,27 +150,27 @@ export default async function AccessPage() {
                 <div className="flex min-w-0 flex-col gap-1">
                   <p className="flex flex-wrap items-center gap-2 text-body-sm font-semibold text-fg">
                     {request.package.name}
-                    <Badge tone={REQUEST_STATUS[request.status].tone}>{REQUEST_STATUS[request.status].label}</Badge>
-                    {request.extends ? <Badge tone="neutral">Extension</Badge> : null}
+                    <Badge tone={REQUEST_STATUS[request.status].tone}>{governance.requestStatus[request.status]}</Badge>
+                    {request.extends ? <Badge tone="neutral">{t.extension}</Badge> : null}
                   </p>
-                  <p className="text-body-sm text-fg-3">{requestDetail(request, user.id)}</p>
+                  <p className="text-body-sm text-fg-3">{requestDetail(request, user.id, locale)}</p>
                   {request.decisionNote ? <p className="text-body-sm text-fg-3">“{request.decisionNote}”</p> : null}
                 </div>
                 {request.status === "pending" ? (
                   <CancelRequest request={request} />
                 ) : (
-                  <span className="shrink-0 text-caption text-fg-3">{formatRelative(request.decidedAt ?? request.createdAt)}</span>
+                  <span className="shrink-0 text-caption text-fg-3">{formatRelative(request.decidedAt ?? request.createdAt, locale)}</span>
                 )}
               </li>
             ))}
           </ul>
         ) : (
-          <p className={empty}>You haven&apos;t requested access yet.</p>
+          <p className={empty}>{t.noRequests}</p>
         )}
       </section>
 
       <section className="flex flex-col gap-4">
-        <SectionTitle title="Access you were granted" description="Approved packages. Halo removes the access when it ends." />
+        <SectionTitle title={t.grants} description={t.grantsHint} />
         {grants.length ? (
           <ul className={list}>
             {grants.map((grant) => {
@@ -169,10 +180,10 @@ export default async function AccessPage() {
                 <li key={grant.id} className={row}>
                   <div className="flex min-w-0 flex-col gap-1">
                     <p className="text-body-sm font-semibold text-fg">{grant.package.name}</p>
-                    <p className="text-body-sm text-fg-3">Groups: {joinNames(grant.groups)}</p>
+                    <p className="text-body-sm text-fg-3">{t.groups(joinNames(grant.groups, locale))}</p>
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-3">
-                    <span className="text-caption text-fg-3">{asked ? `${grantLabel(grant)} · Extension requested` : grantLabel(grant)}</span>
+                    <span className="text-caption text-fg-3">{asked ? t.extensionRequested(grantLabel(grant, locale)) : grantLabel(grant, locale)}</span>
                     {grant.expiresAt && pkg && !asked ? <ExtendAccess grant={grant} pkg={pkg} /> : null}
                   </div>
                 </li>
@@ -180,25 +191,25 @@ export default async function AccessPage() {
             })}
           </ul>
         ) : (
-          <p className={empty}>No approved access right now.</p>
+          <p className={empty}>{t.noGrants}</p>
         )}
       </section>
 
       <section className="flex flex-col gap-4">
         <SectionTitle
-          title="Your roles"
-          description="Administrative roles in Halo. Most people have none. Roles you're eligible for stay off until you activate them."
+          title={t.roles}
+          description={t.rolesHint}
         />
         {standing.length + eligible.length > 0 ? (
           <ul className={list}>
             {standing.map((role) => (
               <li key={role} className={row}>
                 <div className="flex min-w-0 flex-col gap-1">
-                  <p className="text-body-sm font-semibold text-fg">{ROLES[role].label}</p>
-                  <p className="text-body-sm text-fg-3">Lets you manage Halo for {org.name}.</p>
+                  <p className="text-body-sm font-semibold text-fg">{roles[role].label}</p>
+                  <p className="text-body-sm text-fg-3">{t.manage(org.name)}</p>
                 </div>
                 <Link href="/admin" className="shrink-0 text-body-sm text-link underline underline-offset-3 hover:text-ember-hover">
-                  Open Halo administration
+                  {t.openAdmin}
                 </Link>
               </li>
             ))}
@@ -208,11 +219,11 @@ export default async function AccessPage() {
                 <li key={`eligible-${role}`} className={row}>
                   <div className="flex min-w-0 flex-col gap-1">
                     <p className="flex flex-wrap items-center gap-2 text-body-sm font-semibold text-fg">
-                      {ROLES[role].label}
-                      <Badge tone={active ? "success" : "neutral"}>{active ? "Active" : "Eligible"}</Badge>
+                      {roles[role].label}
+                      <Badge tone={active ? "success" : "neutral"}>{active ? t.active : t.eligible}</Badge>
                     </p>
                     <p className="text-body-sm text-fg-3">
-                      {active ? `Until ${formatDateTime(active.expiresAt)} · “${active.justification}”` : "Activate it for up to 8 hours when you need it."}
+                      {active ? t.activeUntil(formatDateTime(active.expiresAt, locale), active.justification) : t.activateHint}
                     </p>
                   </div>
                   {active ? <DeactivateRole activation={active} /> : <ActivateRole role={role} />}
@@ -221,7 +232,7 @@ export default async function AccessPage() {
             })}
           </ul>
         ) : (
-          <p className={empty}>You don&apos;t have an administrative role in Halo.</p>
+          <p className={empty}>{t.noRoles}</p>
         )}
       </section>
     </div>

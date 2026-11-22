@@ -61,7 +61,7 @@ const columns = (t: (typeof provisioningMessages)[Locale], locale: Locale): Colu
     header: t.status,
     filterFn: facetFilter,
     meta: { label: t.status },
-    cell: ({ row }) => <StatusLabel {...KEY_STATE[keyState(row.original)]} label={t.keyState[keyState(row.original)]} />,
+    cell: ({ row }) => <StatusLabel tone={KEY_STATE[keyState(row.original)]} label={t.keyState[keyState(row.original)]} />,
   },
   {
     id: "created",

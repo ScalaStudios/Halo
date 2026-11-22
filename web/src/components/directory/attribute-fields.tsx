@@ -17,7 +17,7 @@ export function draftsOf(attributes: Attribute[], values: Record<string, Attribu
   ) as Drafts;
 }
 
-export function parseDrafts(attributes: Attribute[], drafts: Drafts, locale: Locale = "en") {
+export function parseDrafts(attributes: Attribute[], drafts: Drafts, locale: Locale) {
   const values: Record<string, AttributeValue | null> = {};
   const errors: Record<string, string> = {};
   for (const a of attributes) {

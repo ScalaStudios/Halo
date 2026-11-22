@@ -9,6 +9,7 @@ import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { apiGet } from "@/lib/api/server";
 import { formatDate } from "@/lib/format";
+import { applicationsMessages } from "@/lib/i18n/console/applications";
 import { directoryMessages } from "@/lib/i18n/console/directory";
 import { frameMessages } from "@/lib/i18n/console/frame";
 import { requestLocale } from "@/lib/i18n/server";
@@ -30,6 +31,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
     requestLocale(),
   ]);
   const t = directoryMessages[locale];
+  const apps = applicationsMessages[locale];
   const dynamic = group.kind === "dynamic";
   const groupApps = applications.filter((a) => a.groupIds.includes(group.id));
   const active = users.filter((u) => u.status !== "deprovisioned");
@@ -131,10 +133,10 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
               <Link key="n" href={`/admin/applications/${app.id}`} className="font-medium text-fg hover:underline">
                 {app.name}
               </Link>,
-              t.protocols[app.protocol],
+              apps.protocols[app.protocol],
               <span key="s" className="inline-flex items-center gap-2">
-                <StatusDot tone={APP_STATUS[statusKey(app)].tone} />
-                {t.appStatus[statusKey(app)]}
+                <StatusDot tone={APP_STATUS[statusKey(app)]} />
+                {apps.status[statusKey(app)]}
               </span>,
               <span key="u" className="tnum">
                 {app.userCount}

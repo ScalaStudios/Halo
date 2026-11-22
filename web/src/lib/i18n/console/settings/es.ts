@@ -99,7 +99,7 @@ export const es: typeof en = {
   },
   signInMessage: {
     title: "Mensaje de inicio de sesión",
-    description: "Una nota breve bajo el logotipo en las páginas de inicio de sesión, de enlace mágico y de configuración, por ejemplo dónde pedir ayuda.",
+    description: "Una nota breve bajo el logotipo en las páginas de inicio de sesión, de enlaces por correo y de configuración, por ejemplo dónde pedir ayuda.",
     label: "Mensaje",
     hint: (count: number) => `${count} de 500 caracteres. Texto sin formato; se conservan los saltos de línea.`,
     placeholder: "Usa la clave de acceso de tu portátil del trabajo. ¿La has perdido? Llama al servicio de TI a la extensión 4000.",
@@ -649,6 +649,7 @@ export const es: typeof en = {
       auditor: ["Consultar todas las páginas de administración, el registro de inicios de sesión y el registro de auditoría"],
     },
     deletedGroup: "un grupo eliminado",
+    scopedTo: (role: string, groups: string) => `${role} para ${groups}`,
     memberCount: (count: number) => pluralize(count, "miembro", "miembros"),
     takesEffect: "Se aplica en su próxima solicitud. Queda en el registro de auditoría.",
     members: "Miembros",

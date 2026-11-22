@@ -20,18 +20,18 @@ export type Person = { id: string; name: string; email: string };
 
 export const DURATIONS = [1, 2, 7, 14, 30, 90, 180, 365];
 
-export const REQUEST_STATUS: Record<RequestStatus, { label: string; tone: Tone }> = {
-  pending: { label: "Pending", tone: "warning" },
-  approved: { label: "Approved", tone: "success" },
-  denied: { label: "Denied", tone: "danger" },
-  cancelled: { label: "Cancelled", tone: "neutral" },
-  expired: { label: "Expired", tone: "neutral" },
+export const REQUEST_STATUS: Record<RequestStatus, { tone: Tone }> = {
+  pending: { tone: "warning" },
+  approved: { tone: "success" },
+  denied: { tone: "danger" },
+  cancelled: { tone: "neutral" },
+  expired: { tone: "neutral" },
 };
 
-export const REVIEW_STATUS: Record<ReviewStatus, { label: string; tone: Tone }> = {
-  overdue: { label: "Overdue", tone: "danger" },
-  "in-progress": { label: "In progress", tone: "info" },
-  completed: { label: "Completed", tone: "success" },
+export const REVIEW_STATUS: Record<ReviewStatus, { tone: Tone }> = {
+  overdue: { tone: "danger" },
+  "in-progress": { tone: "info" },
+  completed: { tone: "success" },
 };
 
 export const OUTCOME: Record<ReviewOutcome, Tone> = {
@@ -45,25 +45,25 @@ export const TRIGGERS = Object.keys(governanceMessages.en.triggers) as Lifecycle
 
 export const ACTIONS = Object.keys(governanceMessages.en.actions) as LifecycleActionType[];
 
-export function joinNames(refs: { name: string }[], locale: Locale = "en"): string {
+export function joinNames(refs: { name: string }[], locale: Locale): string {
   const names = refs.map((ref) => ref.name);
   return names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} ${governanceMessages[locale].and} ${names[names.length - 1]}`;
 }
 
-export function approversLabel(refs: NamedRef[], locale: Locale = "en"): string {
+export function approversLabel(refs: NamedRef[], locale: Locale): string {
   return refs.length ? joinNames(refs, locale) : governanceMessages[locale].globalAdmin;
 }
 
-export function durationLabel(days: number | null, locale: Locale = "en"): string {
+export function durationLabel(days: number | null, locale: Locale): string {
   const t = governanceMessages[locale];
   return days === null ? t.untilRevoked : t.days(days);
 }
 
-export function requestDurationLabel(request: AccessRequest, locale: Locale = "en"): string {
+export function requestDurationLabel(request: AccessRequest, locale: Locale): string {
   return request.extends && request.durationDays !== null ? governanceMessages[locale].moreDays(request.durationDays) : durationLabel(request.durationDays, locale);
 }
 
-export function stagesLabel(stages: AccessStage[], locale: Locale = "en", manager = governanceMessages[locale].requesterManager): string {
+export function stagesLabel(stages: AccessStage[], locale: Locale, manager = governanceMessages[locale].requesterManager): string {
   const t = governanceMessages[locale];
   return stages
     .map((stage) =>
@@ -76,7 +76,7 @@ export function stagesLabel(stages: AccessStage[], locale: Locale = "en", manage
     .join(t.then);
 }
 
-export function grantLabel(request: AccessRequest, withTime = true, locale: Locale = "en"): string {
+export function grantLabel(request: AccessRequest, locale: Locale, withTime = true): string {
   const t = governanceMessages[locale];
   if (request.status !== "approved") return "—";
   if (request.endedAt) return t.ended[request.endReason ?? "expired"](formatDate(request.endedAt, locale));
@@ -84,7 +84,7 @@ export function grantLabel(request: AccessRequest, withTime = true, locale: Loca
   return t.until(withTime ? formatDateTime(request.expiresAt, locale) : formatDate(request.expiresAt, locale));
 }
 
-export function dueLabel(review: AccessReview, locale: Locale = "en"): string {
+export function dueLabel(review: AccessReview, locale: Locale): string {
   const t = governanceMessages[locale];
   if (review.status === "completed") return review.completedAt ? t.completedOn(formatDate(review.completedAt, locale)) : t.reviewStatus.completed;
   const days = daysUntil(review.dueAt);
@@ -92,7 +92,7 @@ export function dueLabel(review: AccessReview, locale: Locale = "en"): string {
   return days <= 0 ? t.dueToday : t.dueIn(days);
 }
 
-export function ReviewProgress({ review, className, locale = "en" }: { review: AccessReview; className?: string; locale?: Locale }) {
+export function ReviewProgress({ review, className, locale }: { review: AccessReview; className?: string; locale: Locale }) {
   const t = governanceMessages[locale];
   return (
     <div className={cn("flex flex-col gap-2", className)}>
@@ -114,7 +114,7 @@ export function ReviewProgress({ review, className, locale = "en" }: { review: A
   );
 }
 
-export function ReviewFacts({ review, locale = "en" }: { review: AccessReview; locale?: Locale }) {
+export function ReviewFacts({ review, locale }: { review: AccessReview; locale: Locale }) {
   const t = governanceMessages[locale];
   return (
     <DescriptionList

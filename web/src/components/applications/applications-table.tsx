@@ -59,7 +59,7 @@ const columns = (t: (typeof applicationsMessages)[Locale], locale: Locale): Colu
     meta: { label: t.common.status },
     cell: ({ row }) => (
       <span className="inline-flex items-center gap-2 whitespace-nowrap">
-        <StatusDot tone={APP_STATUS[statusKey(row.original)].tone} />
+        <StatusDot tone={APP_STATUS[statusKey(row.original)]} />
         {t.status[statusKey(row.original)]}
       </span>
     ),

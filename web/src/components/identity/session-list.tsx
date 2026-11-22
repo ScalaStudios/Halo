@@ -10,10 +10,8 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiError } from "@/lib/api/client";
 import { accountMessages } from "@/lib/i18n/account";
-import { authMessages } from "@/lib/i18n/auth";
 import type { Locale } from "@/lib/i18n/locale";
-import { pluralize } from "@/lib/format";
-import { METHOD } from "@/lib/labels";
+import { monitoringMessages } from "@/lib/i18n/console/monitoring";
 import type { Session } from "@/lib/types";
 
 function deviceIcon(session: Session) {
@@ -22,22 +20,9 @@ function deviceIcon(session: Session) {
   return Laptop;
 }
 
-export function SessionList({ sessions, userId, locale = "en" }: { sessions: Session[]; userId?: string; locale?: Locale }) {
+export function SessionList({ sessions, userId, locale }: { sessions: Session[]; userId?: string; locale: Locale }) {
   const account = accountMessages(locale);
   const copy = account.sessions;
-  const auth = authMessages(locale);
-  const methods = {
-    passkey: auth.passkey,
-    "security-key": auth.securityKey,
-    totp: auth.authenticator,
-    "magic-link": copy.magicLink,
-    "recovery-codes": auth.recoveryCode,
-    password: auth.password,
-    federated: copy.identityProvider,
-    "access-pass": auth.accessPass,
-    certificate: auth.certificate,
-    kerberos: copy.windowsSignIn,
-  };
   const self = userId === undefined;
   const [items, setItems] = useState(sessions);
   const [revoking, setRevoking] = useState<string | null>(null);
@@ -69,10 +54,8 @@ export function SessionList({ sessions, userId, locale = "en" }: { sessions: Ses
       const { revoked } = await api<{ revoked: number }>(self ? "/me/sessions/revoke-others" : `/users/${userId}/revoke-sessions`, { method: "POST", body: {} });
       setItems((current) => current.filter((s) => s.current));
       toast({
-        title: self ? copy.othersEnded : "All sessions revoked",
-        description: self
-          ? copy.othersEndedDetail(revoked)
-          : "Refresh tokens were invalidated. Applications will ask for sign-in within 15 minutes.",
+        title: self ? copy.othersEnded : copy.allRevoked,
+        description: self ? copy.othersEndedDetail(revoked) : copy.allRevokedHint,
       });
       return true;
     } catch (error) {
@@ -90,7 +73,7 @@ export function SessionList({ sessions, userId, locale = "en" }: { sessions: Ses
       <ul className="overflow-hidden rounded-lg border border-border bg-surface">
         {items.map((session) => {
           const Icon = deviceIcon(session);
-          const method = (locale === "es" ? methods[session.method] : METHOD[session.method].label).toLowerCase();
+          const method = monitoringMessages[locale].methods[session.method].toLowerCase();
           return (
             <li key={session.id} className="flex flex-col gap-4 border-t border-border p-4 first:border-t-0 sm:flex-row sm:items-center sm:px-6">
               <span className="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-sunken text-fg-3">
@@ -136,11 +119,9 @@ export function SessionList({ sessions, userId, locale = "en" }: { sessions: Ses
       {others.length > 0 ? (
         <div className="flex flex-col gap-3 rounded-lg border border-border p-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div className="flex flex-col gap-1">
-            <p className="text-body-sm font-semibold text-fg">{self ? copy.signOutElsewhere : "Revoke every session"}</p>
+            <p className="text-body-sm font-semibold text-fg">{self ? copy.signOutElsewhere : copy.revokeAll}</p>
             <p className="text-body-sm text-fg-3">
-              {self
-                ? copy.signOutElsewhereHint(others.length)
-                : `Signs ${pluralize(others.length, "session")} out and invalidates refresh tokens for every application.`}
+              {self ? copy.signOutElsewhereHint(others.length) : copy.revokeAllHint(others.length)}
             </p>
           </div>
           <HoldToConfirm size="sm" doneLabel={copy.done} onConfirm={revokeAll}>

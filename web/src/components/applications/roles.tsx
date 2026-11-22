@@ -13,16 +13,16 @@ import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field, Input, Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
-import { useMessages } from "@/lib/i18n/client";
+import { useLocale, useMessages } from "@/lib/i18n/client";
 import { applicationsMessages } from "@/lib/i18n/console/applications";
+import { directoryMessages } from "@/lib/i18n/console/directory";
 import type { Locale } from "@/lib/i18n/locale";
-import { GROUP_KIND } from "@/lib/labels";
 import type { AppRole, Group } from "@/lib/types";
 import { Checklist } from "./collections-table";
 
 type Row = AppRole & { holders: { name: string }[] };
 
-const columns = (t: (typeof applicationsMessages)[Locale]): ColumnDef<Row, any>[] => [
+const columns = (t: (typeof applicationsMessages)[Locale], locale: Locale): ColumnDef<Row, any>[] => [
   {
     id: "name",
     accessorFn: (r) => r.name,
@@ -44,12 +44,12 @@ const columns = (t: (typeof applicationsMessages)[Locale]): ColumnDef<Row, any>[
   },
   {
     id: "holders",
-    accessorFn: (r) => joinNames(r.holders),
+    accessorFn: (r) => joinNames(r.holders, locale),
     header: t.roles.heldBy,
     meta: { label: t.roles.heldBy },
     cell: ({ row }) =>
       row.original.holders.length ? (
-        <span className="block max-w-96 min-w-48 py-2">{joinNames(row.original.holders)}</span>
+        <span className="block max-w-96 min-w-48 py-2">{joinNames(row.original.holders, locale)}</span>
       ) : (
         <span className="whitespace-nowrap text-fg-3">{t.common.nobody}</span>
       ),
@@ -58,7 +58,8 @@ const columns = (t: (typeof applicationsMessages)[Locale]): ColumnDef<Row, any>[
 
 export function RolesTable({ appId, appName, roles, groups, people }: { appId: string; appName: string; roles: AppRole[]; groups: Group[]; people: Person[] }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
-  const t = useMessages(applicationsMessages);
+  const locale = useLocale();
+  const t = applicationsMessages[locale];
   const r = t.roles;
   const [editing, setEditing] = useState<AppRole | "new" | null>(null);
   const [deleting, setDeleting] = useState<AppRole | null>(null);
@@ -88,12 +89,12 @@ export function RolesTable({ appId, appName, roles, groups, people }: { appId: s
       ) : (
         <DataTable
           data={rows}
-          columns={columns(t)}
+          columns={columns(t, locale)}
           getRowId={(r) => r.id}
           label={r.label}
           noun={r.noun}
           storageKey="application-roles"
-          searchText={(r) => `${r.name} ${r.key} ${joinNames(r.holders)}`}
+          searchText={(r) => `${r.name} ${r.key} ${joinNames(r.holders, locale)}`}
           searchPlaceholder={r.search}
           onRowOpen={setEditing}
           rowActions={[
@@ -155,6 +156,7 @@ function RoleDialog({ appId, appName, role, groups, people, onClose }: { appId: 
   const [errors, setErrors] = useState<{ name?: string; key?: string }>({});
   const { pending, run, errorFor, toast } = useMutation();
   const t = useMessages(applicationsMessages);
+  const kinds = useMessages(directoryMessages).groupKind;
   const r = t.roles;
 
   function submit() {
@@ -219,7 +221,7 @@ function RoleDialog({ appId, appName, role, groups, people, onClose }: { appId: 
         <Checklist
           legend={t.common.groups}
           hint={r.groupsHint}
-          items={groups.map((g) => ({ id: g.id, label: g.name, detail: GROUP_KIND[g.kind] }))}
+          items={groups.map((g) => ({ id: g.id, label: g.name, detail: kinds[g.kind] }))}
           value={groupIds}
           onChange={setGroupIds}
         />

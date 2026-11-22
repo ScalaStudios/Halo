@@ -3,7 +3,7 @@
 import { Plus } from "lucide-react";
 import { useId, useState, type FormEvent } from "react";
 import { useMutation } from "@/components/console/use-mutation";
-import { ROLES } from "@/components/provisioning/shared";
+import { rolesFor } from "@/components/provisioning/shared";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
@@ -294,7 +294,7 @@ function ActivateDialog({ role, onClose }: { role: RoleKey; onClose: () => void 
   const locale = useLocale();
   const t = governanceMessages[locale];
   const copy = t.request;
-  const label = ROLES[role].label;
+  const label = rolesFor(locale)[role].label;
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -362,8 +362,9 @@ function ActivateDialog({ role, onClose }: { role: RoleKey; onClose: () => void 
 
 export function DeactivateRole({ activation }: { activation: RoleActivation }) {
   const { pending, run, toast } = useMutation();
-  const t = useMessages(governanceMessages).request;
-  const label = ROLES[activation.role].label;
+  const locale = useLocale();
+  const t = governanceMessages[locale].request;
+  const label = rolesFor(locale)[activation.role].label;
   return (
     <Button
       size="sm"

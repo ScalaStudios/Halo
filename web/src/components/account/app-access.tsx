@@ -9,10 +9,15 @@ import { SectionTitle } from "@/components/ui/section-title";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/api/client";
 import { formatDate } from "@/lib/format";
+import { accountMessages } from "@/lib/i18n/account";
+import { useLocale } from "@/lib/i18n/client";
 import { scopeLabel } from "@/lib/labels";
 import type { Consent } from "@/lib/types";
 
 export function AppAccess({ consents }: { consents: Consent[] }) {
+  const locale = useLocale();
+  const copy = accountMessages(locale);
+  const t = copy.applications;
   const toast = useToast();
   const [items, setItems] = useState(consents);
   const [pending, setPending] = useState<Consent | null>(null);
@@ -24,10 +29,10 @@ export function AppAccess({ consents }: { consents: Consent[] }) {
     try {
       await api(`/me/consents/${pending.appId}`, { method: "DELETE" });
       setItems((current) => current.filter((c) => c.appId !== pending.appId));
-      toast({ title: `${pending.name} no longer has access`, description: "Its tokens stopped working. It asks for your permission again the next time you use it." });
+      toast({ title: t.removed(pending.name), description: t.removedHint });
       setPending(null);
     } catch (error) {
-      toast({ title: "That didn't work", description: describeFailure(error), tone: "danger" });
+      toast({ title: copy.sessions.failed, description: describeFailure(error), tone: "danger" });
     } finally {
       setRemoving(false);
     }
@@ -37,18 +42,18 @@ export function AppAccess({ consents }: { consents: Consent[] }) {
 
   return (
     <section className="flex flex-col gap-4">
-      <SectionTitle title="Access you allowed" description="Applications that asked for your permission to see your Halo account information." />
+      <SectionTitle title={t.allowed} description={t.allowedHint} />
       <ul className="overflow-hidden rounded-lg border border-border bg-surface">
         {items.map((consent) => (
           <li key={consent.appId} className="flex flex-col gap-4 border-t border-border p-4 first:border-t-0 sm:flex-row sm:items-center sm:px-6">
             <Avatar name={consent.name} src={consent.logoUrl} size="lg" square />
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <p className="text-body-sm font-semibold text-fg">{consent.name}</p>
-              <p className="text-body-sm text-fg-3">{consent.scopes.map(scopeLabel).join(" · ")}</p>
-              <p className="text-caption text-fg-3">Allowed {formatDate(consent.grantedAt)}</p>
+              <p className="text-body-sm text-fg-3">{consent.scopes.map((scope) => scopeLabel(scope, locale)).join(" · ")}</p>
+              <p className="text-caption text-fg-3">{t.allowedOn(formatDate(consent.grantedAt, locale))}</p>
             </div>
-            <Button size="sm" variant="secondary" onClick={() => setPending(consent)} className="self-start sm:self-center" aria-label={`Remove access for ${consent.name}`}>
-              Remove access
+            <Button size="sm" variant="secondary" onClick={() => setPending(consent)} className="self-start sm:self-center" aria-label={t.removeAccessFor(consent.name)}>
+              {t.removeAccess}
             </Button>
           </li>
         ))}
@@ -58,15 +63,15 @@ export function AppAccess({ consents }: { consents: Consent[] }) {
         onOpenChange={(open) => {
           if (!open) setPending(null);
         }}
-        title={`Remove access for ${pending?.name ?? "this application"}?`}
-        description={`${pending?.name ?? "The application"} is signed out and its tokens stop working. It asks for your permission again the next time you use it.`}
+        title={t.removeTitle(pending?.name)}
+        description={t.removeDescription(pending?.name)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setPending(null)}>
-              Cancel
+              {copy.cancel}
             </Button>
             <Button variant="destructive" loading={removing} onClick={remove}>
-              Remove access
+              {t.removeAccess}
             </Button>
           </>
         }

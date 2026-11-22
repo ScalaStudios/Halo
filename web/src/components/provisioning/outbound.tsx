@@ -3,7 +3,6 @@
 import { PlugZap, RefreshCw, Settings2 } from "lucide-react";
 import { useState } from "react";
 import { Checklist } from "@/components/applications/collections-table";
-import { PROTOCOL_LABEL } from "@/components/applications/shared";
 import { useMutation } from "@/components/console/use-mutation";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -14,6 +13,7 @@ import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
 import { formatDateTime } from "@/lib/format";
 import { useLocale, useMessages } from "@/lib/i18n/client";
+import { applicationsMessages } from "@/lib/i18n/console/applications";
 import { provisioningMessages } from "@/lib/i18n/console/infrastructure/provisioning";
 import type { Locale } from "@/lib/i18n/locale";
 import type { AppProvisioning } from "@/lib/provisioning-types";
@@ -78,7 +78,7 @@ export function OutboundTable({ apps, groups }: { apps: OutboundApp[]; groups: G
           return [
             <span key="n" className="flex flex-col">
               <span className="font-medium text-fg">{app.name}</span>
-              <span className="text-caption text-fg-3">{PROTOCOL_LABEL[app.protocol]}</span>
+              <span className="text-caption text-fg-3">{applicationsMessages[locale].protocols[app.protocol]}</span>
             </span>,
             <span key="s" className="flex max-w-80 flex-col gap-1">
               <StatusLabel {...status(config, t)} />

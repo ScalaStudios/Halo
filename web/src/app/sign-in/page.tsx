@@ -12,23 +12,23 @@ import type { Challenge, Settings } from "@/lib/settings-types";
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
-  if (typeof (await searchParams).consent === "string") {
-    return { title: "Allow access", description: "Choose whether an application can access your Halo account information." };
-  }
   const messages = authMessages(await requestLocale());
+  if (typeof (await searchParams).consent === "string") {
+    return { title: messages.consent.title, description: messages.consent.description };
+  }
   return { title: messages.title, description: messages.description };
 }
 
 export default async function SignInPage({ searchParams }: Props) {
   const params = await searchParams;
+  const locale = await requestLocale();
   if (typeof params.consent === "string") {
     return (
-      <AuthFrame>
+      <AuthFrame locale={locale}>
         <ConsentStep authRequest={params.consent} />
       </AuthFrame>
     );
   }
-  const locale = await requestLocale();
   const authRequest = typeof params.authRequest === "string" ? params.authRequest : undefined;
   const [request, methods] = await Promise.all([
     authRequest ? apiPeek<{ application: { name: string; logoUrl: string | null; kerberosSignIn: boolean }; loginHint: string; provider?: SignInProvider }>(`/auth/request/${encodeURIComponent(authRequest)}`) : null,

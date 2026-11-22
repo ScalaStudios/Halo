@@ -10,11 +10,15 @@ import { Input } from "@/components/ui/input";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { SectionTitle } from "@/components/ui/section-title";
 import { api } from "@/lib/api/client";
+import { accountMessages } from "@/lib/i18n/account";
+import { useLocale } from "@/lib/i18n/client";
 
 type LauncherApp = { id: string; name: string; homepage: string; launchUrl: string; host: string; logoUrl: string | null; favourite: boolean; roles: string[] };
 type Section = { id: string; title: string | null; apps: LauncherApp[] };
 
 export function AppLauncher({ apps, collections }: { apps: LauncherApp[]; collections: { id: string; name: string; applicationIds: string[] }[] }) {
+  const copy = accountMessages(useLocale());
+  const t = copy.applications;
   const [query, setQuery] = useState("");
   const { pending, run } = useMutation();
   const needle = query.trim().toLowerCase();
@@ -22,17 +26,17 @@ export function AppLauncher({ apps, collections }: { apps: LauncherApp[]; collec
   const collected = new Set(collections.flatMap((c) => c.applicationIds));
 
   if (apps.length === 0) {
-    return <EmptyState icon={LayoutGrid} title="No applications yet" description="When an administrator gives you access to an application, it appears here." />;
+    return <EmptyState icon={LayoutGrid} title={t.empty} description={t.emptyHint} />;
   }
 
   const sections: Section[] = needle
     ? [{ id: "results", title: null, apps: apps.filter((app) => `${app.name} ${app.host}`.toLowerCase().includes(needle)) }]
     : [
-        { id: "favourites", title: "Favourites", apps: favourites },
+        { id: "favourites", title: t.favourites, apps: favourites },
         ...collections.map((c) => ({ id: c.id, title: c.name, apps: apps.filter((app) => c.applicationIds.includes(app.id)) })),
         {
           id: "rest",
-          title: collections.length ? "Other applications" : favourites.length ? "All applications" : null,
+          title: collections.length ? t.other : favourites.length ? t.all : null,
           apps: apps.filter((app) => !collected.has(app.id)),
         },
       ].filter((section) => section.apps.length > 0);
@@ -59,15 +63,15 @@ export function AppLauncher({ apps, collections }: { apps: LauncherApp[]; collec
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search applications"
-            aria-label="Search applications"
+            placeholder={t.search}
+            aria-label={t.search}
             leading={<Search size={16} strokeWidth={1.75} />}
           />
         </div>
       ) : null}
       {sections.length > 0 ? (
         sections.map((section) => (
-          <section key={section.id} aria-label={section.title ?? "Applications"} className="flex flex-col gap-4">
+          <section key={section.id} aria-label={section.title ?? copy.nav.applications} className="flex flex-col gap-4">
             {section.title ? <SectionTitle title={section.title} /> : null}
             <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {section.apps.map((app, index) => {
@@ -86,37 +90,37 @@ export function AppLauncher({ apps, collections }: { apps: LauncherApp[]; collec
                           {app.favourite ? (
                             <>
                               <Star aria-hidden="true" size={16} strokeWidth={1.75} fill="currentColor" className="shrink-0 text-ember" />
-                              <span className="sr-only">(favourite)</span>
+                              <span className="sr-only">{t.favourite}</span>
                             </>
                           ) : null}
                         </span>
                         <span className="truncate text-caption text-fg-3">{app.host}</span>
                         {app.roles.length ? (
                           <span className="truncate text-caption text-fg-2">
-                            <span className="sr-only">Your roles: </span>
+                            <span className="sr-only">{t.yourRoles}</span>
                             {app.roles.join(", ")}
                           </span>
                         ) : null}
                       </span>
                       <ArrowUpRight aria-hidden="true" size={16} strokeWidth={1.75} className="shrink-0 text-fg-3 transition-colors duration-fast ease-brand group-hover:text-fg" />
-                      <span className="sr-only">(opens in a new tab)</span>
+                      <span className="sr-only">{copy.newTab}</span>
                     </a>
                     <Menu>
                       <MenuTrigger asChild>
-                        <Button size="icon-sm" variant="quiet" aria-label={`Options for ${app.name}`} loading={pending === app.id} disabled={pending !== null}>
+                        <Button size="icon-sm" variant="quiet" aria-label={t.options(app.name)} loading={pending === app.id} disabled={pending !== null}>
                           <Ellipsis aria-hidden="true" size={16} strokeWidth={1.75} />
                         </Button>
                       </MenuTrigger>
                       <MenuContent>
                         <MenuItem icon={app.favourite ? StarOff : Star} onSelect={() => toggleFavourite(app)}>
-                          {app.favourite ? "Remove from favourites" : "Add to favourites"}
+                          {app.favourite ? t.removeFavourite : t.addFavourite}
                         </MenuItem>
                         <MenuSeparator />
                         <MenuItem icon={ArrowLeft} disabled={!before} onSelect={() => before && move(app, before)}>
-                          Move earlier
+                          {t.moveEarlier}
                         </MenuItem>
                         <MenuItem icon={ArrowRight} disabled={!after} onSelect={() => after && move(app, after)}>
-                          Move later
+                          {t.moveLater}
                         </MenuItem>
                       </MenuContent>
                     </Menu>
@@ -129,11 +133,11 @@ export function AppLauncher({ apps, collections }: { apps: LauncherApp[]; collec
       ) : (
         <EmptyState
           icon={SearchX}
-          title="No applications match"
-          description="Check the spelling. If something you need isn't listed, ask an administrator for access."
+          title={t.noMatch}
+          description={t.noMatchHint}
           action={
             <Button size="sm" onClick={() => setQuery("")}>
-              Clear search
+              {t.clearSearch}
             </Button>
           }
         />

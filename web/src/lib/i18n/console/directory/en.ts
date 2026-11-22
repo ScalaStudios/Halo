@@ -84,17 +84,6 @@ export const en = {
     date: "Date",
     list: "List",
   },
-  appStatus: { active: "Active", disabled: "Disabled", awaiting: "Awaiting approval" },
-  protocols: {
-    oidc: "OpenID Connect",
-    saml: "SAML 2.0",
-    oauth: "OAuth 2.0",
-    "forward-auth": "Forward auth",
-    radius: "RADIUS",
-    ldap: "LDAP",
-    remote: "Remote access",
-    bookmark: "Bookmark",
-  },
   users: {
     description: (people: number, active: number) => `${pluralize(people, "person", "people")}, ${active} active.`,
     guestUntil: (date: string) => `Guest until ${date}`,

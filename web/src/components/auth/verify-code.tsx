@@ -5,7 +5,7 @@ import { CodeInput } from "@/components/ui/code-input";
 import { cn } from "@/lib/cn";
 import { describeFailure } from "./passkey";
 
-export function VerifyCode({ verify, hint, label, accepted = "Code accepted." }: { verify: (code: string) => Promise<unknown>; hint: string; label?: string; accepted?: string }) {
+export function VerifyCode({ verify, hint, label, accepted }: { verify: (code: string) => Promise<unknown>; hint: string; label?: string; accepted: string }) {
   const [code, setCode] = useState("");
   const [status, setStatus] = useState<"idle" | "error" | "success">("idle");
   const [problem, setProblem] = useState<string | null>(null);

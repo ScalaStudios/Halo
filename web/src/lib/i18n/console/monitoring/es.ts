@@ -16,11 +16,12 @@ export const es: typeof en = {
   eventId: "ID del evento",
   copyIp: "Copiar IP",
   copyId: "Copiar ID",
-  impersonation: "Suplantación",
+  impersonation: "Vista como otra persona",
   unknownUser: "Usuario desconocido",
   exportCsv: "Exportar CSV",
   revokeSessions: "Revocar sesiones",
   signIns: "Inicios de sesión",
+  unknownApplication: "Aplicación desconocida",
   controls: {
     holdHint: (seconds: string) => `Mantén pulsado ${seconds} segundos para confirmar`,
     codeAccepted: "Código aceptado",

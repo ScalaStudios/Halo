@@ -162,7 +162,7 @@ export function SignInsTable({
   const locale = useLocale();
   const t = monitoringMessages[locale];
   const [openId, setOpenId] = useState(initialEventId);
-  const rows = events.map((e) => ({ ...e, user: signInUser(e, userNames), app: signInApp(e, appNames) }));
+  const rows = events.map((e) => ({ ...e, user: signInUser(e, userNames), app: signInApp(e, appNames, t.unknownApplication) }));
   const selected = rows.find((e) => e.id === openId);
   const apps = [...new Set(rows.map((e) => e.app))].sort();
   const methods = [...new Set(events.map((e) => e.method))];

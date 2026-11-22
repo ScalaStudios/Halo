@@ -12,15 +12,15 @@ import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox, Field, Input } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
-import { useMessages } from "@/lib/i18n/client";
+import { useLocale, useMessages } from "@/lib/i18n/client";
 import { applicationsMessages } from "@/lib/i18n/console/applications";
+import { directoryMessages } from "@/lib/i18n/console/directory";
 import type { Locale } from "@/lib/i18n/locale";
-import { GROUP_KIND } from "@/lib/labels";
 import type { Application, Collection, Group } from "@/lib/types";
 
 type Row = Collection & { applications: Application[]; groups: Group[] };
 
-const columns = (t: (typeof applicationsMessages)[Locale]): ColumnDef<Row, any>[] => [
+const columns = (t: (typeof applicationsMessages)[Locale], locale: Locale): ColumnDef<Row, any>[] => [
   {
     id: "name",
     accessorFn: (c) => c.name,
@@ -30,14 +30,14 @@ const columns = (t: (typeof applicationsMessages)[Locale]): ColumnDef<Row, any>[
   },
   {
     id: "applications",
-    accessorFn: (c) => joinNames(c.applications),
+    accessorFn: (c) => joinNames(c.applications, locale),
     header: t.common.applications,
     meta: { label: t.common.applications },
     cell: ({ row }) => <Names names={row.original.applications} empty={t.collections.noApplications} />,
   },
   {
     id: "groups",
-    accessorFn: (c) => joinNames(c.groups),
+    accessorFn: (c) => joinNames(c.groups, locale),
     header: t.collections.shownTo,
     meta: { label: t.collections.shownTo },
     cell: ({ row }) => <Names names={row.original.groups} empty={t.common.nobody} />,
@@ -45,12 +45,14 @@ const columns = (t: (typeof applicationsMessages)[Locale]): ColumnDef<Row, any>[
 ];
 
 function Names({ names, empty }: { names: { name: string }[]; empty: string }) {
-  return names.length ? <span className="block max-w-96 min-w-48 py-2">{joinNames(names)}</span> : <span className="whitespace-nowrap text-fg-3">{empty}</span>;
+  const locale = useLocale();
+  return names.length ? <span className="block max-w-96 min-w-48 py-2">{joinNames(names, locale)}</span> : <span className="whitespace-nowrap text-fg-3">{empty}</span>;
 }
 
 export function CollectionsTable({ collections, applications, groups }: { collections: Collection[]; applications: Application[]; groups: Group[] }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
-  const t = useMessages(applicationsMessages);
+  const locale = useLocale();
+  const t = applicationsMessages[locale];
   const c = t.collections;
   const [editing, setEditing] = useState<Row | "new" | null>(null);
   const [deleting, setDeleting] = useState<Row | null>(null);
@@ -81,12 +83,12 @@ export function CollectionsTable({ collections, applications, groups }: { collec
       ) : (
         <DataTable
           data={rows}
-          columns={columns(t)}
+          columns={columns(t, locale)}
           getRowId={(c) => c.id}
           label={c.label}
           noun={c.noun}
           storageKey="collections"
-          searchText={(c) => `${c.name} ${joinNames(c.applications)} ${joinNames(c.groups)}`}
+          searchText={(c) => `${c.name} ${joinNames(c.applications, locale)} ${joinNames(c.groups, locale)}`}
           searchPlaceholder={c.search}
           onRowOpen={setEditing}
           rowActions={[
@@ -151,6 +153,7 @@ function CollectionDialog({ collection, applications, groups, onClose }: { colle
   const [error, setError] = useState<string>();
   const { pending, run, errorFor, toast } = useMutation();
   const t = useMessages(applicationsMessages);
+  const kinds = useMessages(directoryMessages).groupKind;
   const c = t.collections;
 
   function submit() {
@@ -209,7 +212,7 @@ function CollectionDialog({ collection, applications, groups, onClose }: { colle
         <Checklist
           legend={c.shownTo}
           hint={c.shownToHint}
-          items={groups.map((g) => ({ id: g.id, label: g.name, detail: GROUP_KIND[g.kind] }))}
+          items={groups.map((g) => ({ id: g.id, label: g.name, detail: kinds[g.kind] }))}
           value={groupIds}
           onChange={setGroupIds}
         />

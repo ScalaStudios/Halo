@@ -7,6 +7,9 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { apiGet } from "@/lib/api/server";
 import type { AccessReview } from "@/lib/governance-types";
+import { accountMessages } from "@/lib/i18n/account";
+import { governanceMessages } from "@/lib/i18n/console/governance";
+import { requestLocale } from "@/lib/i18n/server";
 
 type Params = Promise<{ id: string }>;
 
@@ -17,7 +20,8 @@ export async function generateMetadata({ params }: { params: Params }) {
 
 export default async function AccountReviewPage({ params }: { params: Params }) {
   const { id } = await params;
-  const review = await apiGet<AccessReview>(`/access-reviews/${encodeURIComponent(id)}`);
+  const [review, locale] = await Promise.all([apiGet<AccessReview>(`/access-reviews/${encodeURIComponent(id)}`), requestLocale()]);
+  const copy = accountMessages(locale);
   return (
     <div className="flex flex-col gap-12">
       <div className="flex flex-col gap-6">
@@ -26,17 +30,17 @@ export default async function AccountReviewPage({ params }: { params: Params }) 
           className="inline-flex w-fit items-center gap-2 rounded-sm text-body-sm text-fg-3 transition-colors duration-fast hover:text-fg"
         >
           <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.75} />
-          Access
+          {copy.nav.access}
         </Link>
         <PageHeader
           size="large"
           title={review.name}
-          meta={<Badge tone={REVIEW_STATUS[review.status].tone}>{REVIEW_STATUS[review.status].label}</Badge>}
-          description={`You were asked to confirm who still needs ${review.group.name}. Keep the people who need it and remove the rest.`}
+          meta={<Badge tone={REVIEW_STATUS[review.status].tone}>{governanceMessages[locale].reviewStatus[review.status]}</Badge>}
+          description={copy.access.reviewDescription(review.group.name)}
         />
       </div>
       <Card className="p-6">
-        <ReviewFacts review={review} />
+        <ReviewFacts review={review} locale={locale} />
       </Card>
       <ReviewWorkspace review={review} />
     </div>

@@ -40,7 +40,7 @@ export function toSeconds({ amount, unit }: Duration): number {
   return Number(amount) * (UNITS.find(([u]) => u === unit)?.[1] ?? 1);
 }
 
-export const wholeNumber = (d: Duration, locale: Locale = "en") => (/^\d+$/.test(d.amount.trim()) ? undefined : applicationsMessages[locale].edit.wholeNumber);
+export const wholeNumber = (d: Duration, locale: Locale) => (/^\d+$/.test(d.amount.trim()) ? undefined : applicationsMessages[locale].edit.wholeNumber);
 
 export function EditDetailsDialog({ app, directory, open, onOpenChange }: { app: Details; directory: User[]; open: boolean; onOpenChange: (open: boolean) => void }) {
   const formId = useId();

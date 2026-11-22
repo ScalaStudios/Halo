@@ -7,5 +7,5 @@ import { ACCOUNT_STATUS, StatusLabel } from "./shared";
 
 export function AccountStatus({ status }: { status: ServiceAccount["status"] }) {
   const t = useMessages(provisioningMessages);
-  return <StatusLabel tone={ACCOUNT_STATUS[status].tone} label={t.accountStatus[status]} />;
+  return <StatusLabel tone={ACCOUNT_STATUS[status]} label={t.accountStatus[status]} />;
 }

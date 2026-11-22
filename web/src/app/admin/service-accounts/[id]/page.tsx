@@ -2,7 +2,8 @@ import Link from "next/link";
 import { ArrowLeft, Bot, TriangleAlert } from "lucide-react";
 import { AccountActions, KeyTable, RateLimitCard, RolesCard } from "@/components/provisioning/account-actions";
 import { FederatedCredentials } from "@/components/provisioning/federated-credentials";
-import { ACCOUNT_STATUS, ActivityList, StatusLabel, activeKeys, lastUsed } from "@/components/provisioning/shared";
+import { AccountStatus } from "@/components/provisioning/account-status";
+import { ACCOUNT_STATUS, ActivityList, activeKeys, lastUsed } from "@/components/provisioning/shared";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { DescriptionList } from "@/components/ui/description-list";
@@ -11,6 +12,7 @@ import { apiGet } from "@/lib/api/server";
 import { formatDate, formatRelative } from "@/lib/format";
 import { applicationsMessages } from "@/lib/i18n/console/applications";
 import { frameMessages } from "@/lib/i18n/console/frame";
+import { provisioningMessages } from "@/lib/i18n/console/infrastructure/provisioning";
 import { requestLocale } from "@/lib/i18n/server";
 import type { ServiceAccount } from "@/lib/provisioning-types";
 import type { AuditEvent, Organization, User } from "@/lib/types";
@@ -35,7 +37,6 @@ export default async function ServiceAccountPage({ params }: { params: Promise<{
   const names = { ...Object.fromEntries(users.map((u) => [u.id, u.name])), [account.id]: account.name };
   const activity = audit.filter((event) => event.actorId === account.id || event.targetId === account.id).slice(0, 20);
   const used = lastUsed([...account.keys, ...account.federatedCredentials]);
-  const status = ACCOUNT_STATUS[account.status];
 
   return (
     <div className="flex flex-col gap-8">
@@ -52,8 +53,8 @@ export default async function ServiceAccountPage({ params }: { params: Promise<{
             <div className="flex min-w-0 flex-col gap-1">
               <div className="flex flex-wrap items-center gap-3">
                 <h1 className="text-h2 text-fg">{account.name}</h1>
-                <Badge tone={status.tone} dot>
-                  {status.label}
+                <Badge tone={ACCOUNT_STATUS[account.status]} dot>
+                  {provisioningMessages[locale].accountStatus[account.status]}
                 </Badge>
               </div>
               <p className="text-body text-fg-3">{account.description || t.serviceAccounts.noDescription}</p>
@@ -70,7 +71,7 @@ export default async function ServiceAccountPage({ params }: { params: Promise<{
         <DescriptionList
           className="grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 xl:grid-cols-6"
           items={[
-            { label: t.common.status, value: <StatusLabel {...status} /> },
+            { label: t.common.status, value: <AccountStatus status={account.status} /> },
             {
               label: t.common.owner,
               value: owner ? (
@@ -103,7 +104,7 @@ export default async function ServiceAccountPage({ params }: { params: Promise<{
         </div>
         <Card className="min-w-0 xl:col-span-7">
           <CardHeader title={t.serviceAccounts.activity} description={t.serviceAccounts.activityHint(account.name)} />
-          <ActivityList events={activity} actorNames={names} empty={t.serviceAccounts.noActivity} />
+          <ActivityList events={activity} actorNames={names} empty={t.serviceAccounts.noActivity} locale={locale} />
         </Card>
       </div>
     </div>

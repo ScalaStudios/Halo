@@ -12,7 +12,7 @@ import { Field, Input } from "@/components/ui/input";
 import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
-import { useMessages } from "@/lib/i18n/client";
+import { useLocale, useMessages } from "@/lib/i18n/client";
 import { policyMessages } from "@/lib/i18n/console/policy";
 import type { AuthContext } from "@/lib/policy-types";
 import type { MethodKind } from "@/lib/types";
@@ -111,7 +111,8 @@ export function ContextsSection({ contexts, usedBy }: { contexts: AuthContext[];
 }
 
 function ContextDialog({ item, onClose }: { item: AuthContext | null; onClose: () => void }) {
-  const copy = useMessages(policyMessages);
+  const locale = useLocale();
+  const copy = policyMessages[locale];
   const t = copy.contexts;
   const { pending, run, errorFor, toast } = useMutation();
   const [identifier, setIdentifier] = useState(item?.id ?? "");
@@ -124,7 +125,7 @@ function ContextDialog({ item, onClose }: { item: AuthContext | null; onClose: (
     const next = {
       identifier: item || IDENTIFIER.test(identifier.trim()) ? undefined : t.identifierInvalid,
       name: name.trim() ? undefined : copy.enterName(t.nameExample),
-      age: wholeNumber(age),
+      age: wholeNumber(age, locale),
       requirement: methods.length || toSeconds(age) ? undefined : t.requirement,
     };
     setErrors(next);

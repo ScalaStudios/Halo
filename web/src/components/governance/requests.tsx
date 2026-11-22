@@ -272,7 +272,7 @@ const decidedColumns = (t: typeof governanceMessages.en, locale: Locale): Column
   },
   {
     id: "access",
-    accessorFn: (r) => grantLabel(r, true, locale),
+    accessorFn: (r) => grantLabel(r, locale),
     header: t.requests.access,
     meta: { label: t.requests.access },
     cell: ({ row }) => {
@@ -280,7 +280,7 @@ const decidedColumns = (t: typeof governanceMessages.en, locale: Locale): Column
       return (
         <span className="flex items-center gap-2 whitespace-nowrap">
           <span className={active ? "text-fg" : "text-fg-3"} title={row.original.expiresAt ? formatDateTime(row.original.expiresAt, locale) : undefined}>
-            {grantLabel(row.original, false, locale)}
+            {grantLabel(row.original, locale, false)}
           </span>
           {active ? <RevokeButton request={row.original} /> : null}
         </span>

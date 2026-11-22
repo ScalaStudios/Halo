@@ -14,7 +14,7 @@ import { ImpersonationNotices } from "@/components/directory/impersonation";
 import { PersonalData } from "@/components/directory/personal-data";
 import { EditProfileButton, type ProfileEdit } from "@/components/directory/edit-profile";
 import { EditRolesButton, PasskeyWarning } from "@/components/directory/edit-roles";
-import { limitedOnly, roleNames } from "@/components/settings/roles";
+import { limitedOnly, roleLabel, roleNames } from "@/components/settings/roles";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
 import { GuestAccessButton } from "@/components/directory/guest-access";
 import { LinuxAccountCard } from "@/components/directory/linux-account";
@@ -28,6 +28,7 @@ import { DevicesTable } from "@/components/policy/devices-table";
 import { joinList } from "@/components/policy/shared";
 import { apiGet } from "@/lib/api/server";
 import { formatAttribute, formatDate, formatDateTime, formatRelative } from "@/lib/format";
+import { applicationsMessages } from "@/lib/i18n/console/applications";
 import { directoryMessages } from "@/lib/i18n/console/directory";
 import { frameMessages } from "@/lib/i18n/console/frame";
 import { requestLocale } from "@/lib/i18n/server";
@@ -152,7 +153,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
             </span>
           </Fact>
           <Fact label={t.fields.adminRole} action={global && !user.guest ? <EditRolesButton user={user} /> : undefined}>
-            {(limited ? user.roles : roleNames(user, groups)).join(", ") || t.none}
+            {(limited ? user.roles.map((role) => roleLabel(role, locale)) : roleNames(user, groups, locale)).join(", ") || t.none}
           </Fact>
           <Fact label={t.fields.lastSignIn}>{user.lastSignInAt ? formatRelative(user.lastSignInAt, locale) : t.never}</Fact>
           <Fact label={t.fields.source}>{user.source}</Fact>
@@ -213,7 +214,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
                     <Link key="n" href={`/admin/applications/${app.id}`} className="font-medium text-fg hover:underline">
                       {app.name}
                     </Link>,
-                    t.protocols[app.protocol],
+                    applicationsMessages[locale].protocols[app.protocol],
                     via?.name ?? copy.directAssignment,
                     last ? formatRelative(last.time, locale) : "—",
                   ];
@@ -425,7 +426,7 @@ export default async function UserPage({ params, searchParams }: { params: Promi
                 {user.roles.map((role) => (
                   <li key={role} className="flex items-center justify-between gap-4 rounded-md border border-border p-4">
                     <span className="flex flex-col">
-                      <span className="text-body-sm font-semibold text-fg">{role}</span>
+                      <span className="text-body-sm font-semibold text-fg">{roleLabel(role, locale)}</span>
                       <span className="text-caption text-fg-3">{copy.assignedDirectly}</span>
                     </span>
                     <Badge tone="ember">{copy.privileged}</Badge>

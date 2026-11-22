@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { SecretWarning } from "@/components/applications/shared";
 import { useMutation } from "@/components/console/use-mutation";
-import { ROLES } from "@/components/provisioning/shared";
+import { rolesFor } from "@/components/provisioning/shared";
 import { ROLE_ORDER } from "@/components/settings/roles";
 import { Button } from "@/components/ui/button";
 import { CopyField } from "@/components/ui/copy-field";
@@ -47,6 +47,7 @@ export function InviteDialog({
   const { pending, run, errorFor, clearError } = useMutation();
   const locale = useLocale();
   const t = directoryMessages[locale];
+  const roleLabels = rolesFor(locale);
 
   function reset() {
     setEmail("");
@@ -140,20 +141,20 @@ export function InviteDialog({
           {guest ? <GuestFields value={guest} onChange={setGuest} directory={directory} errors={errors} /> : null}
           <OrgFields value={org} onChange={setOrg} directory={directory} />
           {canGrantRoles && !guest ? (
-            <Field label={t.fields.adminRole} hint={role ? ROLES[role].description : t.invite.roleHint}>
+            <Field label={t.fields.adminRole} hint={role ? roleLabels[role].description : t.invite.roleHint}>
               {(props) => (
                 <Select {...props} value={role} onChange={(event) => setRole(event.target.value as RoleKey | "")}>
                   <option value="">{t.users.noAdminRole}</option>
                   {ROLE_ORDER.map((key) => (
                     <option key={key} value={key}>
-                      {ROLES[key].label}
+                      {roleLabels[key].label}
                     </option>
                   ))}
                 </Select>
               )}
             </Field>
           ) : null}
-          {role ? <PasskeyWarning role={ROLES[role].label} /> : null}
+          {role ? <PasskeyWarning role={roleLabels[role].label} /> : null}
           {groups.length ? (
             <fieldset className="flex flex-col gap-3">
               <legend className="mb-3 text-label text-fg">{t.fields.groups}</legend>

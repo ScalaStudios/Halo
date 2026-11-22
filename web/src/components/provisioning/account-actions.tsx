@@ -416,7 +416,7 @@ export function KeyTable({ keys, accountName }: { keys: ApiKey[]; accountName: s
               <span className="font-mono text-code-sm text-fg-3">{key.prefix}…</span>
             </span>,
             <ScopeTags key="s" scopes={key.scopes} />,
-            <StatusLabel key="t" {...KEY_STATE[state]} label={t.keyState[state]} />,
+            <StatusLabel key="t" tone={KEY_STATE[state]} label={t.keyState[state]} />,
             <span key="c" className="tnum whitespace-nowrap">
               {formatDate(key.createdAt, locale)}
             </span>,

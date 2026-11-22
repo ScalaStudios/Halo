@@ -1,12 +1,11 @@
 import { ListSkeleton, PageSkeleton } from "@/components/ui/skeleton";
+import { accountMessages } from "@/lib/i18n/account";
+import { requestLocale } from "@/lib/i18n/server";
 
-export default function Loading() {
+export default async function Loading() {
+  const t = accountMessages(await requestLocale()).terms;
   return (
-    <PageSkeleton
-      large
-      title="Terms of use"
-      description="Terms your organization asks you to accept before you use its applications. When a new version is published, Halo asks you again at your next sign-in."
-    >
+    <PageSkeleton large title={t.title} description={t.description}>
       <ListSkeleton rows={2} className="overflow-hidden rounded-lg border border-border bg-surface" />
     </PageSkeleton>
   );

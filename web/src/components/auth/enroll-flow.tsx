@@ -33,7 +33,7 @@ function stopFor(problem: Problem, signUp: boolean, messages: SignInMessages["en
   return { icon: CircleAlert, title: messages.openFailed, body: problem.message, bodyLocale: "en" };
 }
 
-export function EnrollFlow({ token, enrollee, problem, signUp = false, locale = "en" }: { token: string; enrollee: Enrollee | null; problem: Problem | null; signUp?: boolean; locale?: Locale }) {
+export function EnrollFlow({ token, enrollee, problem, signUp = false, locale }: { token: string; enrollee: Enrollee | null; problem: Problem | null; signUp?: boolean; locale: Locale }) {
   const copy = authMessages(locale);
   const messages = copy.enrollment;
   const supported = usePasskeySupport();
@@ -49,7 +49,7 @@ export function EnrollFlow({ token, enrollee, problem, signUp = false, locale = 
   const proof = enrollee?.identityProof;
   const checking = Boolean(proof?.required && proof.status !== "verified" && !(signUp && inPerson));
 
-  useEffect(() => setLabel(deviceLabel()), []);
+  useEffect(() => setLabel(deviceLabel(copy)), [copy]);
 
   useEffect(() => {
     if (proof?.status !== "pending") return;
@@ -257,7 +257,7 @@ export function EnrollFlow({ token, enrollee, problem, signUp = false, locale = 
   );
 }
 
-export function ResumeAfterCheck({ signUp = false, locale = "en" }: { signUp?: boolean; locale?: Locale }) {
+export function ResumeAfterCheck({ signUp = false, locale }: { signUp?: boolean; locale: Locale }) {
   const messages = authMessages(locale).enrollment;
   const [lost, setLost] = useState(false);
 
