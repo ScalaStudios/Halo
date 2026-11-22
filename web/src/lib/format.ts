@@ -46,11 +46,11 @@ export function formatDateTime(iso: string, locale: Locale = "en"): string {
   return `${formatDate(iso, locale)}, ${formatTime(iso)}`;
 }
 
-export function formatRelative(iso: string): string {
+export function formatRelative(iso: string, locale: Locale = "en"): string {
   const seconds = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
   const future = seconds < 0;
   const abs = Math.abs(seconds);
-  const units: [number, string][] = [
+  const units: [number, Intl.RelativeTimeFormatUnit][] = [
     [60 * 60 * 24 * 365, "year"],
     [60 * 60 * 24 * 30, "month"],
     [60 * 60 * 24 * 7, "week"],
@@ -58,10 +58,11 @@ export function formatRelative(iso: string): string {
     [60 * 60, "hour"],
     [60, "minute"],
   ];
-  if (abs < 60) return "Just now";
+  if (abs < 60) return locale === "es" ? "Ahora mismo" : "Just now";
   for (const [size, unit] of units) {
     if (abs >= size) {
       const value = Math.floor(abs / size);
+      if (locale === "es") return new Intl.RelativeTimeFormat(locale).format(future ? value : -value, unit);
       const label = `${value} ${unit}${value === 1 ? "" : "s"}`;
       return future ? `In ${label}` : `${label} ago`;
     }

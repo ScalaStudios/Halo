@@ -9,6 +9,9 @@ import { HoldToConfirm } from "@/components/ui/hold-to-confirm";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiError } from "@/lib/api/client";
+import { accountMessages } from "@/lib/i18n/account";
+import { authMessages } from "@/lib/i18n/auth";
+import type { Locale } from "@/lib/i18n/locale";
 import { pluralize } from "@/lib/format";
 import { METHOD } from "@/lib/labels";
 import type { Session } from "@/lib/types";
@@ -19,7 +22,22 @@ function deviceIcon(session: Session) {
   return Laptop;
 }
 
-export function SessionList({ sessions, userId }: { sessions: Session[]; userId?: string }) {
+export function SessionList({ sessions, userId, locale = "en" }: { sessions: Session[]; userId?: string; locale?: Locale }) {
+  const account = accountMessages(locale);
+  const copy = account.sessions;
+  const auth = authMessages(locale);
+  const methods = {
+    passkey: auth.passkey,
+    "security-key": auth.securityKey,
+    totp: auth.authenticator,
+    "magic-link": copy.magicLink,
+    "recovery-codes": auth.recoveryCode,
+    password: auth.password,
+    federated: copy.identityProvider,
+    "access-pass": auth.accessPass,
+    certificate: auth.certificate,
+    kerberos: copy.windowsSignIn,
+  };
   const self = userId === undefined;
   const [items, setItems] = useState(sessions);
   const [revoking, setRevoking] = useState<string | null>(null);
@@ -27,7 +45,7 @@ export function SessionList({ sessions, userId }: { sessions: Session[]; userId?
   const others = items.filter((s) => !s.current);
 
   function fail(error: unknown) {
-    toast({ title: "That didn't work", description: error instanceof ApiError ? error.message : "Halo could not reach the server. Try again.", tone: "danger" });
+    toast({ title: copy.failed, description: error instanceof ApiError ? error.message : copy.connectionFailed, tone: "danger" });
   }
 
   async function revoke(session: Session) {
@@ -36,8 +54,8 @@ export function SessionList({ sessions, userId }: { sessions: Session[]; userId?
       await api(self ? `/me/sessions/${session.id}` : `/sessions/${session.id}`, { method: "DELETE" });
       setItems((current) => current.filter((s) => s.id !== session.id));
       toast({
-        title: "Session signed out",
-        description: session.client ? `Halo CLI on ${session.device} must run halo login again.` : `${session.device} · ${session.browser} must sign in again.`,
+        title: copy.ended,
+        description: session.client ? copy.cliEnded(session.device) : copy.browserEnded(session.device, session.browser),
       });
     } catch (error) {
       fail(error);
@@ -51,9 +69,9 @@ export function SessionList({ sessions, userId }: { sessions: Session[]; userId?
       const { revoked } = await api<{ revoked: number }>(self ? "/me/sessions/revoke-others" : `/users/${userId}/revoke-sessions`, { method: "POST", body: {} });
       setItems((current) => current.filter((s) => s.current));
       toast({
-        title: self ? "Signed out of other sessions" : "All sessions revoked",
+        title: self ? copy.othersEnded : "All sessions revoked",
         description: self
-          ? `${revoked} other ${revoked === 1 ? "session was" : "sessions were"} signed out. Only this browser is still signed in.`
+          ? copy.othersEndedDetail(revoked)
           : "Refresh tokens were invalidated. Applications will ask for sign-in within 15 minutes.",
       });
       return true;
@@ -64,7 +82,7 @@ export function SessionList({ sessions, userId }: { sessions: Session[]; userId?
   }
 
   if (items.length === 0) {
-    return <EmptyState icon={MonitorSmartphone} title="No active sessions" description="Sessions appear here after a successful sign-in." />;
+    return <EmptyState icon={MonitorSmartphone} title={copy.empty} description={copy.emptyHint} />;
   }
 
   return (
@@ -72,6 +90,7 @@ export function SessionList({ sessions, userId }: { sessions: Session[]; userId?
       <ul className="overflow-hidden rounded-lg border border-border bg-surface">
         {items.map((session) => {
           const Icon = deviceIcon(session);
+          const method = (locale === "es" ? methods[session.method] : METHOD[session.method].label).toLowerCase();
           return (
             <li key={session.id} className="flex flex-col gap-4 border-t border-border p-4 first:border-t-0 sm:flex-row sm:items-center sm:px-6">
               <span className="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-sunken text-fg-3">
@@ -84,30 +103,30 @@ export function SessionList({ sessions, userId }: { sessions: Session[]; userId?
                     {session.device} · <span className="font-mono text-code-sm">{session.ip}</span>
                   </p>
                   <p className="text-caption text-fg-3">
-                    Approved <RelativeTime iso={session.createdAt} lowercase /> with {METHOD[session.method].label.toLowerCase()} · Last refresh{" "}
-                    <RelativeTime iso={session.lastActiveAt} lowercase />
+                    {copy.approved} <RelativeTime locale={locale} iso={session.createdAt} lowercase /> {copy.withMethod(method)} · {copy.lastRefresh}{" "}
+                    <RelativeTime locale={locale} iso={session.lastActiveAt} lowercase />
                   </p>
                 </div>
               ) : (
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <p className="flex flex-wrap items-center gap-2 text-body-sm font-semibold text-fg">
                     {session.device} · {session.browser}
-                    {session.current ? <Badge tone="success">This browser</Badge> : null}
-                    {session.impersonationId ? <Badge tone="warning">Impersonation</Badge> : null}
+                    {session.current ? <Badge tone="success">{copy.current}</Badge> : null}
+                    {session.impersonationId ? <Badge tone="warning">{account.impersonation}</Badge> : null}
                   </p>
                   <p className="text-body-sm text-fg-3">
                     {session.location} · <span className="font-mono text-code-sm">{session.ip}</span>
                   </p>
                   <p className="text-caption text-fg-3">
-                    Signed in <RelativeTime iso={session.createdAt} lowercase /> with {METHOD[session.method].label.toLowerCase()} · Active{" "}
-                    <RelativeTime iso={session.lastActiveAt} lowercase />
+                    {copy.signedIn} <RelativeTime locale={locale} iso={session.createdAt} lowercase /> {copy.withMethod(method)} · {copy.active}{" "}
+                    <RelativeTime locale={locale} iso={session.lastActiveAt} lowercase />
                   </p>
                 </div>
               )}
               {session.current ? null : (
                 <Button size="sm" variant="secondary" loading={revoking === session.id} onClick={() => revoke(session)} className="self-start sm:self-center">
                   <LogOut aria-hidden="true" size={16} strokeWidth={1.75} />
-                  Sign out
+                  {account.signOut}
                 </Button>
               )}
             </li>
@@ -117,15 +136,15 @@ export function SessionList({ sessions, userId }: { sessions: Session[]; userId?
       {others.length > 0 ? (
         <div className="flex flex-col gap-3 rounded-lg border border-border p-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div className="flex flex-col gap-1">
-            <p className="text-body-sm font-semibold text-fg">{self ? "Sign out everywhere else" : "Revoke every session"}</p>
+            <p className="text-body-sm font-semibold text-fg">{self ? copy.signOutElsewhere : "Revoke every session"}</p>
             <p className="text-body-sm text-fg-3">
               {self
-                ? `Signs out ${pluralize(others.length, "other session")}. You stay signed in here.`
+                ? copy.signOutElsewhereHint(others.length)
                 : `Signs ${pluralize(others.length, "session")} out and invalidates refresh tokens for every application.`}
             </p>
           </div>
-          <HoldToConfirm size="sm" doneLabel="Signed out" onConfirm={revokeAll}>
-            Hold to sign out {others.length}
+          <HoldToConfirm size="sm" doneLabel={copy.done} onConfirm={revokeAll}>
+            {copy.hold(others.length)}
           </HoldToConfirm>
         </div>
       ) : null}

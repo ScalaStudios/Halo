@@ -107,6 +107,25 @@ test.describe("with a Spanish browser", () => {
     await menu.getByRole("menuitem", { name: "Cerrar sesión" }).click();
     await expect(page).toHaveURL(/\/sign-in$/);
   });
+
+  test("the Spanish sessions page signs out another session", async ({ page, context }) => {
+    devSession("luna@example.com");
+    await useSession(context, devSession("luna@example.com"));
+    await page.goto("/account/sessions");
+
+    const main = page.locator("#main");
+    const heading = main.getByRole("heading", { name: "Sesiones", exact: true });
+    await expect(heading).toBeVisible();
+    await expect(heading.locator("xpath=ancestor::*[@lang][1]")).toHaveAttribute("lang", "es");
+    await expect(main.getByText("Este navegador", { exact: true })).toBeVisible();
+    await expect(main.getByText(/Última actividad ahora mismo/).first()).toBeVisible();
+    const other = main.getByRole("button", { name: "Cerrar sesión", exact: true }).first();
+    const revoked = page.waitForResponse((response) => response.request().method() === "DELETE" && response.url().includes("/api/v1/me/sessions/"));
+    await other.click();
+    expect((await revoked).ok()).toBe(true);
+    await expect(page.getByText("Sesión cerrada", { exact: true })).toBeVisible();
+    await expect(main.getByText("Este navegador", { exact: true })).toBeVisible();
+  });
 });
 
 test("sign-in negotiates only acceptable languages", async ({ request }) => {
