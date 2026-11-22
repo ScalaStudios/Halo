@@ -11,6 +11,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { api } from "@/lib/api/client";
+import { useMessages } from "@/lib/i18n/client";
+import { policyMessages } from "@/lib/i18n/console/policy";
 import type { PolicyWithActivity } from "@/lib/policy-types";
 import { activityText, describePolicy, policyState, type Names } from "./shared";
 
@@ -19,20 +21,21 @@ function payload(p: PolicyWithActivity, change: { enabled?: boolean; mode?: Poli
 }
 
 export function ReportInsights({ policies }: { policies: PolicyWithActivity[] }) {
+  const copy = useMessages(policyMessages);
   const report = policies.filter((p) => p.enabled && p.mode === "report");
   if (report.length === 0) return null;
   return (
     <Card>
-      <CardHeader title="Report-only insights" description="What report-only policies would have done in the last 24 hours. None of these sign-ins were changed." />
+      <CardHeader title={copy.list.insights} description={copy.list.insightsDescription} />
       <ul className="border-t border-border">
         {report.map((p) => (
           <li key={p.id} className="flex flex-col gap-3 border-b border-border px-6 py-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
             <div className="flex min-w-0 flex-col gap-1">
               <span className="text-body-sm font-medium text-fg">{p.name}</span>
-              <span className="text-body-sm text-fg-2">{activityText(p)}</span>
+              <span className="text-body-sm text-fg-2">{activityText(p, copy)}</span>
             </div>
             <Link href={`/admin/policies/${p.id}`} className={buttonClasses("secondary", "sm", "self-start sm:self-center")}>
-              Review policy
+              {copy.list.review}
             </Link>
           </li>
         ))}
@@ -42,6 +45,8 @@ export function ReportInsights({ policies }: { policies: PolicyWithActivity[] })
 }
 
 export function PolicyList({ policies, names }: { policies: PolicyWithActivity[]; names: Names }) {
+  const copy = useMessages(policyMessages);
+  const t = copy.list;
   const { pending, run, errorFor, clearError, toast, router } = useMutation();
   const [deleting, setDeleting] = useState<PolicyWithActivity | null>(null);
 
@@ -51,7 +56,7 @@ export function PolicyList({ policies, names }: { policies: PolicyWithActivity[]
     [ids[index], ids[target]] = [ids[target]!, ids[index]!];
     const name = policies[index]!.name;
     void run("order", () => api("/policies/order", { method: "PUT", body: { ids } }), () =>
-      toast({ title: "Order saved", description: `${name} is now number ${target + 1}.` }),
+      toast({ title: t.orderSaved, description: t.position(name, target + 1) }),
     );
   }
 
@@ -64,7 +69,7 @@ export function PolicyList({ policies, names }: { policies: PolicyWithActivity[]
     if (!p) return;
     void run("delete", () => api(`/policies/${p.id}`, { method: "DELETE" }), () => {
       setDeleting(null);
-      toast({ title: `${p.name} deleted`, description: "Halo no longer evaluates it. Recorded in the audit log." });
+      toast({ title: copy.deleted(p.name), description: t.deletedDescription });
     }, "inline");
   }
 
@@ -73,12 +78,12 @@ export function PolicyList({ policies, names }: { policies: PolicyWithActivity[]
       <Card>
         <EmptyState
           icon={Shield}
-          title="No policies yet"
-          description="Until you add one, Halo allows every sign-in that passes authentication."
+          title={t.empty}
+          description={t.emptyDescription}
           action={
             <Link href="/admin/policies/new" className={buttonClasses("primary", "sm")}>
               <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-              Create policy
+              {copy.page.create}
             </Link>
           }
         />
@@ -89,9 +94,9 @@ export function PolicyList({ policies, names }: { policies: PolicyWithActivity[]
   return (
     <>
       <Card>
-        <ol aria-label="Policies in evaluation order">
+        <ol aria-label={t.order}>
           {policies.map((p, index) => {
-            const state = policyState(p);
+            const state = policyState(p, copy);
             return (
               <li key={p.id} className="flex items-start gap-4 border-b border-border px-4 py-4 last:border-b-0 sm:px-6">
                 <span className="tnum w-6 shrink-0 pt-px text-body-sm text-fg-3">{index + 1}</span>
@@ -104,17 +109,17 @@ export function PolicyList({ policies, names }: { policies: PolicyWithActivity[]
                       {state.label}
                     </Badge>
                   </div>
-                  <p className="text-body-sm text-fg-2">{describePolicy(p, names)}</p>
-                  <p className="text-caption text-fg-3">{activityText(p)}</p>
+                  <p className="text-body-sm text-fg-2">{describePolicy(p, names, copy)}</p>
+                  <p className="text-caption text-fg-3">{activityText(p, copy)}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <Button size="icon-sm" variant="quiet" aria-label={`Move ${p.name} up`} disabled={index === 0 || pending === "order"} onClick={() => move(index, -1)}>
+                  <Button size="icon-sm" variant="quiet" aria-label={t.moveUp(p.name)} disabled={index === 0 || pending === "order"} onClick={() => move(index, -1)}>
                     <ArrowUp aria-hidden="true" size={16} strokeWidth={1.75} />
                   </Button>
                   <Button
                     size="icon-sm"
                     variant="quiet"
-                    aria-label={`Move ${p.name} down`}
+                    aria-label={t.moveDown(p.name)}
                     disabled={index === policies.length - 1 || pending === "order"}
                     onClick={() => move(index, 1)}
                   >
@@ -122,39 +127,39 @@ export function PolicyList({ policies, names }: { policies: PolicyWithActivity[]
                   </Button>
                   <Menu>
                     <MenuTrigger asChild>
-                      <Button size="icon-sm" variant="quiet" aria-label={`Actions for ${p.name}`} loading={pending === p.id}>
+                      <Button size="icon-sm" variant="quiet" aria-label={t.actionsFor(p.name)} loading={pending === p.id}>
                         <MoreHorizontal aria-hidden="true" size={16} strokeWidth={1.75} />
                       </Button>
                     </MenuTrigger>
                     <MenuContent>
                       <MenuItem icon={Pencil} onSelect={() => router.push(`/admin/policies/${p.id}`)}>
-                        Edit policy
+                        {t.edit}
                       </MenuItem>
                       {p.mode === "report" ? (
-                        <MenuItem icon={ShieldCheck} onSelect={() => update(p, { mode: "enforce" }, `${p.name} enforced`, "It now decides sign-ins.")}>
-                          Enforce policy
+                        <MenuItem icon={ShieldCheck} onSelect={() => update(p, { mode: "enforce" }, t.enforced(p.name), t.enforcedDescription)}>
+                          {t.enforce}
                         </MenuItem>
                       ) : (
                         <MenuItem
                           icon={FlaskConical}
-                          onSelect={() => update(p, { mode: "report" }, `${p.name} is report-only`, "Halo records what it would do without changing sign-ins.")}
+                          onSelect={() => update(p, { mode: "report" }, t.reportOnly(p.name), t.reportOnlyDescription)}
                         >
-                          Switch to report-only
+                          {t.switchToReport}
                         </MenuItem>
                       )}
                       <MenuItem
                         icon={Power}
                         onSelect={() =>
                           p.enabled
-                            ? update(p, { enabled: false }, `${p.name} turned off`, "Halo skips it until you turn it on again.")
-                            : update(p, { enabled: true }, `${p.name} turned on`, p.mode === "enforce" ? "It decides sign-ins again." : "Halo records what it would do.")
+                            ? update(p, { enabled: false }, t.turnedOff(p.name), t.turnedOffDescription)
+                            : update(p, { enabled: true }, t.turnedOn(p.name), p.mode === "enforce" ? t.turnedOnEnforced : t.turnedOnReport)
                         }
                       >
-                        {p.enabled ? "Turn off" : "Turn on"}
+                        {p.enabled ? t.turnOff : t.turnOn}
                       </MenuItem>
                       <MenuSeparator />
                       <MenuItem icon={Trash2} danger onSelect={() => setDeleting(p)}>
-                        Delete policy
+                        {t.delete}
                       </MenuItem>
                     </MenuContent>
                   </Menu>
@@ -172,15 +177,15 @@ export function PolicyList({ policies, names }: { policies: PolicyWithActivity[]
           clearError();
         }}
         error={errorFor("delete")}
-        title={`Delete ${deleting?.name ?? "policy"}?`}
-        description="Halo stops evaluating it immediately. Its changes stay in the audit log."
+        title={copy.confirmDelete(deleting?.name ?? t.deleteFallback)}
+        description={t.deleteDescription}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleting(null)}>
-              Cancel
+              {copy.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "delete"} onClick={remove}>
-              Delete policy
+              {t.delete}
             </Button>
           </>
         }

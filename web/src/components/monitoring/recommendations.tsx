@@ -11,30 +11,35 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Field, Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
-import { formatDate, pluralize } from "@/lib/format";
+import { formatDate } from "@/lib/format";
+import { useLocale, useMessages } from "@/lib/i18n/client";
+import { monitoringMessages } from "@/lib/i18n/console/monitoring";
 import type { Recommendation } from "@/lib/types";
 
 const STATUS = {
-  fail: { label: "Fail", icon: TriangleAlert, className: "border-danger/20 bg-danger-container text-danger" },
-  attention: { label: "Attention", icon: CircleAlert, className: "border-warning/20 bg-warning-container text-warning" },
-  pass: { label: "Pass", icon: CircleCheck, className: "border-success/20 bg-success-container text-success" },
+  fail: { icon: TriangleAlert, className: "border-danger/20 bg-danger-container text-danger" },
+  attention: { icon: CircleAlert, className: "border-warning/20 bg-warning-container text-warning" },
+  pass: { icon: CircleCheck, className: "border-success/20 bg-success-container text-success" },
 };
 
 function Row({ check, children }: { check: Recommendation; children?: ReactNode }) {
+  const locale = useLocale();
+  const t = monitoringMessages[locale].recommendations;
   const status = STATUS[check.status];
   const Icon = status.icon;
   return (
     <li className="flex flex-col gap-4 border-t border-border px-6 py-4 sm:flex-row sm:items-center">
       <span className={cn("grid size-8 shrink-0 place-items-center rounded-md border", status.className)}>
         <Icon aria-hidden="true" size={16} strokeWidth={1.75} />
-        <span className="sr-only">{status.label}</span>
+        <span className="sr-only">{t.status[check.status]}</span>
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <p className="text-body-sm font-semibold text-fg">{check.title}</p>
         <p className="text-body-sm text-fg-3">{check.detail}</p>
         {check.dismissal ? (
           <p className="text-body-sm text-fg-2">
-            Dismissed by {check.dismissal.by?.name ?? "a former administrator"} on {formatDate(check.dismissal.at)}: {check.dismissal.reason}
+            {t.dismissedBy(check.dismissal.by?.name, formatDate(check.dismissal.at, locale))}
+            {check.dismissal.reason}
           </p>
         ) : null}
       </div>
@@ -44,6 +49,7 @@ function Row({ check, children }: { check: Recommendation; children?: ReactNode 
 }
 
 function DismissDialog({ check, onClose }: { check: Recommendation; onClose: () => void }) {
+  const t = useMessages(monitoringMessages).recommendations;
   const { pending, run, errorFor, toast } = useMutation();
   const formId = useId();
   const [reason, setReason] = useState("");
@@ -53,15 +59,15 @@ function DismissDialog({ check, onClose }: { check: Recommendation; onClose: () 
       open
       onOpenChange={onClose}
       error={errorFor("dismiss")}
-      title={`Dismiss “${check.title}”?`}
-      description="It moves to Dismissed and stays out of the weekly digest until someone restores it. Your reason is shown here and recorded in the audit log."
+      title={t.dismissTitle(check.title)}
+      description={t.dismissDescription}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {t.cancel}
           </Button>
           <Button variant="primary" type="submit" form={formId} loading={pending === "dismiss"}>
-            Dismiss
+            {t.dismiss}
           </Button>
         </>
       }
@@ -76,13 +82,13 @@ function DismissDialog({ check, onClose }: { check: Recommendation; onClose: () 
             () => api(`/recommendations/${check.id}/dismissal`, { method: "PUT", body: { reason } }),
             () => {
               onClose();
-              toast({ title: "Recommendation dismissed", description: "Recorded in the audit log with your reason." });
+              toast({ title: t.dismissed, description: t.dismissedHint });
             },
             "inline",
           );
         }}
       >
-        <Field label="Reason" hint="For example the compensating control, or the date you plan to fix it.">
+        <Field label={t.reason} hint={t.reasonHint}>
           {(props) => <Textarea {...props} rows={3} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} />}
         </Field>
       </form>
@@ -91,6 +97,7 @@ function DismissDialog({ check, onClose }: { check: Recommendation; onClose: () 
 }
 
 export function Recommendations({ checks, canEdit }: { checks: Recommendation[]; canEdit: boolean }) {
+  const t = useMessages(monitoringMessages).recommendations;
   const { pending, run, toast } = useMutation();
   const [dismissing, setDismissing] = useState<Recommendation | null>(null);
   const open = checks.filter((c) => c.status !== "pass" && !c.dismissal).sort((a, b) => Number(b.status === "fail") - Number(a.status === "fail"));
@@ -101,10 +108,10 @@ export function Recommendations({ checks, canEdit }: { checks: Recommendation[];
     <>
       <Card>
         <CardHeader
-          title="Needs action"
-          description={open.length ? `${pluralize(open.length, "check")}, most urgent first.` : undefined}
+          title={t.needsAction}
+          description={open.length ? t.checks(open.length) : undefined}
         />
-        {open.length === 0 ? <EmptyState icon={ShieldCheck} title="Nothing needs action" description="Every check passes or has been dismissed." /> : null}
+        {open.length === 0 ? <EmptyState icon={ShieldCheck} title={t.nothing} description={t.nothingHint} /> : null}
         <ul>
           {open.map((check) => (
             <Row key={check.id} check={check}>
@@ -113,7 +120,7 @@ export function Recommendations({ checks, canEdit }: { checks: Recommendation[];
               </Link>
               {canEdit ? (
                 <Button size="sm" variant="quiet" onClick={() => setDismissing(check)}>
-                  Dismiss
+                  {t.dismiss}
                 </Button>
               ) : null}
             </Row>
@@ -123,7 +130,7 @@ export function Recommendations({ checks, canEdit }: { checks: Recommendation[];
 
       {dismissed.length ? (
         <Card>
-          <CardHeader title="Dismissed" description="Left out of the counts above and the weekly digest, whatever their status." />
+          <CardHeader title={t.dismissedTitle} description={t.dismissedDescription} />
           <ul>
             {dismissed.map((check) => (
               <Row key={check.id} check={check}>
@@ -136,11 +143,11 @@ export function Recommendations({ checks, canEdit }: { checks: Recommendation[];
                       run(
                         `restore-${check.id}`,
                         () => api(`/recommendations/${check.id}/dismissal`, { method: "DELETE" }),
-                        () => toast({ title: "Recommendation restored", description: "Recorded in the audit log." }),
+                        () => toast({ title: t.restored, description: t.restoredHint }),
                       )
                     }
                   >
-                    Restore
+                    {t.restore}
                   </Button>
                 ) : null}
               </Row>
@@ -151,7 +158,7 @@ export function Recommendations({ checks, canEdit }: { checks: Recommendation[];
 
       {passing.length ? (
         <Card>
-          <CardHeader title="Passing" />
+          <CardHeader title={t.passing} />
           <ul>
             {passing.map((check) => (
               <Row key={check.id} check={check} />

@@ -17,31 +17,31 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
-import { formatDateTime, formatTime, pluralize } from "@/lib/format";
+import { formatDateTime, formatTime } from "@/lib/format";
+import { useLocale, useMessages } from "@/lib/i18n/client";
+import { settingsMessages } from "@/lib/i18n/console/settings";
 import type { DeliveryStatus, Webhook, WebhookDelivery, WebhookEventFamily } from "@/lib/settings-types";
 
-export const DELIVERY_STATUS: Record<DeliveryStatus, { label: string; tone: Tone }> = {
-  delivered: { label: "Delivered", tone: "success" },
-  pending: { label: "Retrying", tone: "warning" },
-  failed: { label: "Failed", tone: "danger" },
-};
+export const DELIVERY_TONE: Record<DeliveryStatus, Tone> = { delivered: "success", pending: "warning", failed: "danger" };
 
 export function EventTags({ events }: { events: string[] }) {
-  if (events.includes("*")) return <Tag>All events</Tag>;
+  const t = useMessages(settingsMessages).webhooks;
+  if (events.includes("*")) return <Tag>{t.allEvents}</Tag>;
   return (
     <span className="flex flex-wrap items-center gap-1">
       {events.slice(0, 3).map((event) => (
         <Tag key={event}>{event}</Tag>
       ))}
-      {events.length > 3 ? <span className="text-caption whitespace-nowrap text-fg-3">and {events.length - 3} more</span> : null}
+      {events.length > 3 ? <span className="text-caption whitespace-nowrap text-fg-3">{t.more(events.length - 3)}</span> : null}
     </span>
   );
 }
 
 export function EnabledBadge({ enabled }: { enabled: boolean }) {
+  const t = useMessages(settingsMessages).webhooks;
   return (
     <Badge tone={enabled ? "success" : "neutral"} dot>
-      {enabled ? "Enabled" : "Paused"}
+      {enabled ? t.enabled : t.paused}
     </Badge>
   );
 }
@@ -52,6 +52,7 @@ function covers(pattern: string, type: string) {
 
 export function EventPicker({ families, value, onChange }: { families: WebhookEventFamily[]; value: string[]; onChange: (value: string[]) => void }) {
   const id = useId();
+  const copy = useMessages(settingsMessages).webhooks;
   const [query, setQuery] = useState("");
   const covered = (type: string) => value.some((p) => covers(p, type));
   const [expanded, setExpanded] = useState(() => families.filter((f) => !value.includes(f.family) && f.types.some((t) => covered(t.type))).map((f) => f.family));
@@ -81,15 +82,15 @@ export function EventPicker({ families, value, onChange }: { families: WebhookEv
         onKeyDown={(event) => {
           if (event.key === "Enter") event.preventDefault();
         }}
-        placeholder="Search events"
-        aria-label="Search events"
+        placeholder={copy.searchEvents}
+        aria-label={copy.searchEvents}
         leading={<Search size={16} strokeWidth={1.75} />}
       />
       <fieldset>
-        <legend className="sr-only">Events to send</legend>
+        <legend className="sr-only">{copy.eventsToSend}</legend>
         <div className="max-h-80 overflow-y-auto rounded-md border border-border bg-sunken p-2">
           {empty ? (
-            <p className="px-2 py-4 text-body-sm text-fg-3">No events match “{query.trim()}”.</p>
+            <p className="px-2 py-4 text-body-sm text-fg-3">{copy.noMatch(query.trim())}</p>
           ) : (
             <ul className="flex flex-col">
               {families.map((f) => {
@@ -106,7 +107,7 @@ export function EventPicker({ families, value, onChange }: { families: WebhookEv
                     ) : (
                       <button
                         type="button"
-                        aria-label={`Events in ${f.family}`}
+                        aria-label={copy.eventsIn(f.family)}
                         aria-expanded={open}
                         aria-controls={open ? `${domId}-types` : undefined}
                         onClick={() => setExpanded(open ? expanded.filter((e) => e !== f.family) : [...expanded, f.family])}
@@ -132,7 +133,7 @@ export function EventPicker({ families, value, onChange }: { families: WebhookEv
                             {f.family}
                           </label>
                           <span id={`${domId}-count`} className="shrink-0 tnum text-caption text-fg-3">
-                            {whole ? "All events" : count ? `${count} of ${f.types.length}` : pluralize(f.types.length, "event")}
+                            {whole ? copy.allEvents : count ? copy.countOf(count, f.types.length) : copy.eventCount(f.types.length)}
                           </span>
                         </div>
                         {open ? (
@@ -157,13 +158,13 @@ export function EventPicker({ families, value, onChange }: { families: WebhookEv
               })}
               {shownOthers.length ? (
                 <li className="flex flex-col gap-3 pt-2 pb-3 pl-8">
-                  <span className="flex h-8 items-center text-label text-fg-3">Other</span>
+                  <span className="flex h-8 items-center text-label text-fg-3">{copy.other}</span>
                   {shownOthers.map((p) => (
                     <label key={p} className="flex cursor-pointer items-start gap-3">
                       <Checkbox className="mt-0.5" checked={value.includes(p)} onChange={(event) => onChange(event.target.checked ? [...value, p] : value.filter((e) => e !== p))} />
                       <span className="flex min-w-0 flex-col">
                         <span className="font-mono text-code-sm break-all text-fg">{p}</span>
-                        <span className="text-caption text-fg-3">{p.endsWith(".*") ? `Every ${p.slice(0, -2)} event` : "Not in this version's event list"}</span>
+                        <span className="text-caption text-fg-3">{p.endsWith(".*") ? copy.every(p.slice(0, -2)) : copy.unknown}</span>
                       </span>
                     </label>
                   ))}
@@ -173,17 +174,19 @@ export function EventPicker({ families, value, onChange }: { families: WebhookEv
           )}
         </div>
       </fieldset>
-      <p className="text-caption text-fg-3">A ticked family also sends events added to it in later Halo versions. Single events don&apos;t.</p>
+      <p className="text-caption text-fg-3">{copy.familyNote}</p>
     </div>
   );
 }
 
 export function WebhooksTable({ webhooks, eventTypes, canEdit }: { webhooks: Webhook[]; eventTypes: WebhookEventFamily[]; canEdit: boolean }) {
   const [creating, setCreating] = useState(false);
+  const locale = useLocale();
+  const { webhooks: t, common } = settingsMessages[locale];
   const add = canEdit ? (
     <Button size="sm" variant="primary" onClick={() => setCreating(true)}>
       <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-      Add endpoint
+      {t.add}
     </Button>
   ) : null;
 
@@ -193,8 +196,8 @@ export function WebhooksTable({ webhooks, eventTypes, canEdit }: { webhooks: Web
         <Card>
           <EmptyState
             icon={WebhookIcon}
-            title="No webhook endpoints yet"
-            description="Add an HTTPS endpoint to receive sign-ins and administrative changes as signed JSON within seconds of them happening."
+            title={t.emptyTitle}
+            description={t.emptyDescription}
             action={add}
           />
         </Card>
@@ -202,8 +205,8 @@ export function WebhooksTable({ webhooks, eventTypes, canEdit }: { webhooks: Web
         <div className="flex flex-col gap-4">
           {add ? <div className="flex justify-end">{add}</div> : null}
           <SimpleTable
-            caption="Webhook endpoints"
-            head={["Endpoint", "Events", "Status", "Last delivery"]}
+            caption={t.caption}
+            head={[t.endpoint, common.events, common.status, t.lastDelivery]}
             rows={webhooks.map((w) => [
               <Link key="url" href={`/admin/webhooks/${w.id}`} className="flex min-w-64 flex-col gap-1 py-2">
                 <span className="truncate font-mono text-code-sm text-fg hover:text-ember">{w.url}</span>
@@ -212,13 +215,13 @@ export function WebhooksTable({ webhooks, eventTypes, canEdit }: { webhooks: Web
               <EventTags key="events" events={w.events} />,
               <EnabledBadge key="status" enabled={w.enabled} />,
               w.lastStatus && w.lastDeliveryAt ? (
-                <span key="last" className="inline-flex items-center gap-2 whitespace-nowrap" title={formatDateTime(w.lastDeliveryAt)}>
-                  <StatusDot tone={DELIVERY_STATUS[w.lastStatus].tone} />
-                  {DELIVERY_STATUS[w.lastStatus].label} · <RelativeTime iso={w.lastDeliveryAt} />
+                <span key="last" className="inline-flex items-center gap-2 whitespace-nowrap" title={formatDateTime(w.lastDeliveryAt, locale)}>
+                  <StatusDot tone={DELIVERY_TONE[w.lastStatus]} />
+                  {t.status[w.lastStatus]} · <RelativeTime iso={w.lastDeliveryAt} />
                 </span>
               ) : (
                 <span key="last" className="text-fg-3">
-                  Nothing sent yet
+                  {common.nothingSent}
                 </span>
               ),
             ])}
@@ -239,11 +242,12 @@ function WebhookDialog({ webhook, eventTypes, onClose }: { webhook: Webhook | nu
   const [enabled, setEnabled] = useState(webhook?.enabled ?? true);
   const [errors, setErrors] = useState<{ url?: string; events?: string }>({});
   const [created, setCreated] = useState<{ webhook: Webhook; secret: string } | null>(null);
+  const { webhooks: t, common } = useMessages(settingsMessages);
 
   function submit() {
     const next = {
-      url: /^https:\/\/\S+$|^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/\S*)?$/.test(url.trim()) ? undefined : "Enter an https:// URL. Plain http:// works only for localhost.",
-      events: all || events.length ? undefined : "Choose at least one event or family, or send all events.",
+      url: /^https:\/\/\S+$|^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/\S*)?$/.test(url.trim()) ? undefined : t.urlError,
+      events: all || events.length ? undefined : common.eventsError,
     };
     setErrors(next);
     if (next.url || next.events) return;
@@ -253,7 +257,7 @@ function WebhookDialog({ webhook, eventTypes, onClose }: { webhook: Webhook | nu
       return;
     }
     void run("save", () => api<Webhook>(`/webhooks/${webhook.id}`, { method: "PUT", body }), () => {
-      toast({ title: "Endpoint saved", description: "Events from now on follow the new settings." });
+      toast({ title: t.saved, description: common.followSettings });
       onClose();
     }, "inline");
   }
@@ -265,17 +269,17 @@ function WebhookDialog({ webhook, eventTypes, onClose }: { webhook: Webhook | nu
         onOpenChange={(open) => {
           if (!open) router.push(`/admin/webhooks/${created.webhook.id}`);
         }}
-        title="Endpoint added"
-        description="Verify the Halo-Signature header of every request with this signing secret."
+        title={t.added}
+        description={t.secretDescription}
         footer={
           <Button variant="primary" onClick={() => router.push(`/admin/webhooks/${created.webhook.id}`)}>
-            Done
+            {common.done}
           </Button>
         }
       >
         <div className="flex animate-enter flex-col gap-4">
-          <CopyField label="Signing secret" value={created.secret} secret />
-          <SecretWarning>This is the only time Halo shows this secret. Store it with the receiving service before closing this dialog.</SecretWarning>
+          <CopyField label={common.signingSecret} value={created.secret} secret />
+          <SecretWarning>{common.secretOnce}</SecretWarning>
         </div>
       </Dialog>
     );
@@ -288,16 +292,16 @@ function WebhookDialog({ webhook, eventTypes, onClose }: { webhook: Webhook | nu
         if (!open) onClose();
       }}
       error={errorFor("save")}
-      title={webhook ? "Edit endpoint" : "Add endpoint"}
-      description="Halo sends each event as a signed JSON POST and retries failures up to 8 times over about an hour."
+      title={webhook ? t.edit : t.add}
+      description={t.dialogDescription}
       width="wide"
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {common.cancel}
           </Button>
           <Button variant="primary" loading={pending === "save"} onClick={submit}>
-            {webhook ? "Save endpoint" : "Add endpoint"}
+            {webhook ? t.save : t.add}
           </Button>
         </>
       }
@@ -310,18 +314,18 @@ function WebhookDialog({ webhook, eventTypes, onClose }: { webhook: Webhook | nu
           submit();
         }}
       >
-        <Field label="URL" error={errors.url}>
+        <Field label={t.url} error={errors.url}>
           {(props) => <Input {...props} mono autoFocus type="url" autoComplete="off" spellCheck={false} value={url} placeholder="https://hooks.example.com/halo" onChange={(event) => setUrl(event.target.value)} />}
         </Field>
-        <Field label="Description" hint="Optional. Say which system receives the events.">
-          {(props) => <Input {...props} maxLength={200} autoComplete="off" value={description} placeholder="SIEM ingestion" onChange={(event) => setDescription(event.target.value)} />}
+        <Field label={t.description} hint={t.descriptionHint}>
+          {(props) => <Input {...props} maxLength={200} autoComplete="off" value={description} placeholder={t.descriptionPlaceholder} onChange={(event) => setDescription(event.target.value)} />}
         </Field>
         <div className="flex flex-col gap-4">
-          <Field label="Events" error={errors.events}>
+          <Field label={common.events} error={errors.events}>
             {(props) => (
               <Select {...props} value={all ? "all" : "some"} onChange={(event) => setAll(event.target.value === "all")}>
-                <option value="all">All events, including types added in later Halo versions</option>
-                <option value="some">Only the events I choose</option>
+                <option value="all">{common.allEvents}</option>
+                <option value="some">{common.someEvents}</option>
               </Select>
             )}
           </Field>
@@ -330,8 +334,8 @@ function WebhookDialog({ webhook, eventTypes, onClose }: { webhook: Webhook | nu
         <label className="flex cursor-pointer items-start gap-3">
           <Checkbox className="mt-0.5" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
           <span className="flex flex-col">
-            <span className="text-body-sm text-fg">Send events</span>
-            <span className="text-caption text-fg-3">Paused endpoints keep their settings and queued deliveries, and receive only test events until you resume them.</span>
+            <span className="text-body-sm text-fg">{t.send}</span>
+            <span className="text-caption text-fg-3">{t.sendHint}</span>
           </span>
         </label>
         <button type="submit" hidden />
@@ -344,18 +348,19 @@ export function WebhookActions({ webhook, eventTypes }: { webhook: Webhook; even
   const { pending, run, errorFor, clearError, toast, router } = useMutation();
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const { webhooks: t, common } = useMessages(settingsMessages);
 
   function sendTest() {
     void run("test", () => api<WebhookDelivery>(`/webhooks/${webhook.id}/test`, { method: "POST" }), (delivery) =>
       delivery.status === "delivered"
-        ? toast({ title: "Test event delivered", description: `The endpoint answered ${delivery.responseStatus}.` })
-        : toast({ title: "Test event not delivered", description: delivery.error || "The endpoint did not answer with a 2xx status.", tone: "danger" }),
+        ? toast({ title: t.testDelivered, description: t.testDeliveredHint(delivery.responseStatus) })
+        : toast({ title: t.testFailed, description: delivery.error || t.testFailedHint, tone: "danger" }),
     );
   }
 
   function setEnabled(enabled: boolean) {
     void run("toggle", () => api(`/webhooks/${webhook.id}`, { method: "PUT", body: { url: webhook.url, description: webhook.description, events: webhook.events, enabled } }), () =>
-      toast({ title: enabled ? "Endpoint resumed" : "Endpoint paused", description: enabled ? "Queued and new events are delivered again." : "Events are queued but not sent until you resume it." }),
+      toast({ title: enabled ? t.resumed : t.pausedToast, description: enabled ? t.resumedHint : t.pausedHint }),
     );
   }
 
@@ -363,24 +368,24 @@ export function WebhookActions({ webhook, eventTypes }: { webhook: Webhook; even
     <div className="flex flex-wrap items-center gap-2">
       <Button variant="primary" loading={pending === "test"} onClick={sendTest}>
         <Send aria-hidden="true" size={16} strokeWidth={1.75} />
-        Send test event
+        {common.sendTestEvent}
       </Button>
       <Menu>
         <MenuTrigger asChild>
-          <Button size="icon" variant="secondary" aria-label="More endpoint actions" loading={pending === "toggle"}>
+          <Button size="icon" variant="secondary" aria-label={t.moreActions} loading={pending === "toggle"}>
             <MoreHorizontal aria-hidden="true" size={16} strokeWidth={1.75} />
           </Button>
         </MenuTrigger>
         <MenuContent>
           <MenuItem icon={Pencil} onSelect={() => setEditing(true)}>
-            Edit endpoint
+            {t.edit}
           </MenuItem>
           <MenuItem icon={webhook.enabled ? Pause : Play} onSelect={() => setEnabled(!webhook.enabled)}>
-            {webhook.enabled ? "Pause endpoint" : "Resume endpoint"}
+            {webhook.enabled ? t.pause : t.resume}
           </MenuItem>
           <MenuSeparator />
           <MenuItem icon={Trash2} danger onSelect={() => setDeleting(true)}>
-            Delete endpoint
+            {t.delete}
           </MenuItem>
         </MenuContent>
       </Menu>
@@ -392,24 +397,24 @@ export function WebhookActions({ webhook, eventTypes }: { webhook: Webhook; even
           setDeleting(next);
         }}
         error={errorFor("delete")}
-        title="Delete this endpoint?"
-        description="Halo stops sending events to it and deletes its delivery log. Queued retries are dropped."
+        title={t.deleteTitle}
+        description={t.deleteDescription}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleting(false)}>
-              Cancel
+              {common.cancel}
             </Button>
             <Button
               variant="destructive"
               loading={pending === "delete"}
               onClick={() =>
                 void run("delete", () => api(`/webhooks/${webhook.id}`, { method: "DELETE" }), () => {
-                  toast({ title: "Endpoint deleted", description: "Recorded in the audit log." });
+                  toast({ title: t.deleted, description: common.recorded });
                   router.push("/admin/webhooks");
                 }, "inline")
               }
             >
-              Delete endpoint
+              {t.delete}
             </Button>
           </>
         }
@@ -418,43 +423,45 @@ export function WebhookActions({ webhook, eventTypes }: { webhook: Webhook; even
   );
 }
 
-export function DeliveryLog({ deliveries, payloadNote = "The exact JSON body Halo signs and sends. Retries send the same body." }: { deliveries: WebhookDelivery[]; payloadNote?: string }) {
+export function DeliveryLog({ deliveries, payloadNote }: { deliveries: WebhookDelivery[]; payloadNote?: string }) {
   const [open, setOpen] = useState<WebhookDelivery | null>(null);
+  const locale = useLocale();
+  const { webhooks: t, common } = settingsMessages[locale];
   if (deliveries.length === 0) {
     return (
       <Card>
-        <EmptyState icon={Send} title="No deliveries yet" description="Deliveries appear here within about 15 seconds of a matching event. Send a test event to check the endpoint now." />
+        <EmptyState icon={Send} title={t.noDeliveries} description={t.noDeliveriesHint} />
       </Card>
     );
   }
   return (
     <>
       <SimpleTable
-        caption="Deliveries"
-        head={["Event", "Status", "Attempts", "Response", "Last attempt", "Payload"]}
+        caption={t.deliveries}
+        head={[t.event, common.status, t.attempts, t.response, t.lastAttempt, t.payload]}
         rows={deliveries.map((d) => [
           <span key="event" className="flex flex-col items-start gap-1">
             <Tag>{d.eventType}</Tag>
             <span className="font-mono text-code-sm text-fg-3">{d.eventId}</span>
           </span>,
           <span key="status" className="flex flex-col items-start gap-1">
-            <Badge tone={DELIVERY_STATUS[d.status].tone} dot>
-              {DELIVERY_STATUS[d.status].label}
+            <Badge tone={DELIVERY_TONE[d.status]} dot>
+              {t.status[d.status]}
             </Badge>
-            {d.status === "pending" && d.attempts > 0 ? <span className="text-caption whitespace-nowrap text-fg-3">Next try {formatTime(d.nextAttemptAt)}</span> : null}
+            {d.status === "pending" && d.attempts > 0 ? <span className="text-caption whitespace-nowrap text-fg-3">{t.nextTry(formatTime(d.nextAttemptAt))}</span> : null}
           </span>,
           <span key="attempts" className="tnum">
-            {d.attempts} of 8
+            {t.attemptsOf(d.attempts)}
           </span>,
           <span key="response" className="flex max-w-64 flex-col gap-1">
             <span className="tnum font-mono text-code-sm">{d.responseStatus ?? "—"}</span>
             {d.error ? <span className="truncate text-caption text-fg-3" title={d.error}>{d.error}</span> : null}
           </span>,
-          <span key="last" className="tnum whitespace-nowrap" title={d.lastAttemptAt ? formatDateTime(d.lastAttemptAt) : undefined}>
-            {d.lastAttemptAt ? <RelativeTime iso={d.lastAttemptAt} /> : "Queued"}
+          <span key="last" className="tnum whitespace-nowrap" title={d.lastAttemptAt ? formatDateTime(d.lastAttemptAt, locale) : undefined}>
+            {d.lastAttemptAt ? <RelativeTime iso={d.lastAttemptAt} /> : t.queued}
           </span>,
           <Button key="payload" size="sm" variant="quiet" onClick={() => setOpen(d)}>
-            View
+            {t.view}
           </Button>,
         ])}
       />
@@ -463,8 +470,8 @@ export function DeliveryLog({ deliveries, payloadNote = "The exact JSON body Hal
         onOpenChange={(next) => {
           if (!next) setOpen(null);
         }}
-        title={open ? open.eventType : "Payload"}
-        description={payloadNote}
+        title={open ? open.eventType : t.payload}
+        description={payloadNote ?? t.payloadNote}
         width="wide"
       >
         {open ? <pre className="overflow-x-auto rounded-md border border-border bg-sunken p-4 font-mono text-code-sm text-fg-2">{JSON.stringify(JSON.parse(open.body), null, 2)}</pre> : null}

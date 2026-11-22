@@ -26,6 +26,8 @@ var RoleLabels = map[string]string{
 
 var ScopedRoles = []string{"user_admin", "helpdesk_admin"}
 
+var Locales = []string{"en", "es"}
+
 func (u User) HasRole(keys ...string) bool {
 	for _, key := range keys {
 		if _, scoped := u.RoleScopes[key]; slices.Contains(u.RoleKeys, key) && !scoped {
@@ -65,7 +67,7 @@ func (u User) CanReauthenticate() bool {
 	return slices.ContainsFunc(u.Methods, func(m Method) bool { return m.Kind == "passkey" || m.Kind == "security-key" || m.Kind == "totp" })
 }
 
-const userColumns = `id, email, name, title, department, location, status, manager_id, source, created_at, last_sign_in_at, kind, email_verified, avatar_updated_at, guest, expires_at, attributes,
+const userColumns = `id, email, name, title, department, location, status, manager_id, source, created_at, last_sign_in_at, kind, email_verified, avatar_updated_at, guest, expires_at, attributes, locale,
 	(select json_build_object('id', s.id, 'name', s.name, 'email', s.email) from users s where s.id = users.sponsor_id),
 	(select json_build_object('id', d.id, 'name', d.name) from ldap_people p join ldap_directories d on d.id = p.directory_id where p.user_id = users.id),
 	(select json_build_object('username', p.name, 'uidNumber', p.number, 'gidNumber', p.number, 'loginShell', p.login_shell, 'homeDirectory', p.home_directory) from posix_ids p where p.user_id = users.id)`
@@ -77,7 +79,7 @@ type rowScanner interface {
 func scanUser(row rowScanner) (User, error) {
 	var u User
 	var avatar *time.Time
-	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Title, &u.Department, &u.Location, &u.Status, &u.ManagerID, &u.Source, &u.CreatedAt, &u.LastSignInAt, &u.Kind, &u.EmailVerified, &avatar, &u.Guest, &u.ExpiresAt, &u.Attributes, &u.Sponsor, &u.Directory, &u.POSIX)
+	err := row.Scan(&u.ID, &u.Email, &u.Name, &u.Title, &u.Department, &u.Location, &u.Status, &u.ManagerID, &u.Source, &u.CreatedAt, &u.LastSignInAt, &u.Kind, &u.EmailVerified, &avatar, &u.Guest, &u.ExpiresAt, &u.Attributes, &u.Locale, &u.Sponsor, &u.Directory, &u.POSIX)
 	if u.Expired() && (u.Status == "active" || u.Status == "invited") {
 		u.Status = "suspended"
 	}

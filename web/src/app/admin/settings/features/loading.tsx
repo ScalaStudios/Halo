@@ -1,9 +1,11 @@
 import { Card } from "@/components/ui/card";
 import { PageSkeleton, Skeleton, SkeletonText } from "@/components/ui/skeleton";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { requestLocale } from "@/lib/i18n/server";
 
-export default function Loading() {
+export default async function Loading() {
   return (
-    <PageSkeleton title="Features" description={150} className="max-w-4xl">
+    <PageSkeleton title={frameMessages[await requestLocale()].nav.items.features.label} description={150} className="max-w-4xl">
       <Card>
         <ul aria-hidden="true">
           {[22, 12, 14, 26, 10, 30, 12, 14].map((chars, i) => (

@@ -2078,6 +2078,32 @@ paths:
         '401': {$ref: '#/components/responses/ReauthRequired'}
         '403': {$ref: '#/components/responses/CrossSite'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /me/locale:
+    put:
+      tags: [Account]
+      operationId: setMyLocale
+      summary: Choose the language of your pages and emails
+      description: 'Null clears your choice: pages follow your browser''s language, then the organization''s, and emails follow the organization''s.'
+      security: *personal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [locale]
+              properties:
+                locale: {oneOf: [{$ref: '#/components/schemas/Locale'}, {type: 'null'}]}
+      responses:
+        '200':
+          description: Your profile after the change.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/CrossSite'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /me/applications:
     get:
       tags: [Account]
@@ -6703,7 +6729,7 @@ paths:
       tags: [Settings]
       operationId: updateSettings
       summary: Change organization settings
-      description: 'Roles: security administrator. Only a global administrator can change `organizationName`, `contactEmail`, `signInMessage`, `theme`, `customCss`, `consoleBranding`, `approvalActions`, `emergencyAccessIds`, `impersonationGroupIds` and `featuresOff`. Send only the fields to change. Token lifetimes apply to applications created afterwards.'
+      description: 'Roles: security administrator. Only a global administrator can change `organizationName`, `contactEmail`, `locale`, `signInMessage`, `theme`, `customCss`, `consoleBranding`, `approvalActions`, `emergencyAccessIds`, `impersonationGroupIds` and `featuresOff`. Send only the fields to change. Token lifetimes apply to applications created afterwards.'
       requestBody:
         required: true
         content:
@@ -9188,7 +9214,7 @@ components:
             filters: {type: object, description: People matching each filter., additionalProperties: {type: integer}}
     Organization:
       type: object
-      required: [name, issuer, contactEmail, signInMessage, logoUrl, theme, customCss, consoleBranding, featuresOff]
+      required: [name, issuer, contactEmail, signInMessage, logoUrl, theme, customCss, consoleBranding, featuresOff, locale]
       properties:
         name: {type: string, examples: [Fernway Systems]}
         issuer: {type: string, format: uri, examples: [https://auth.example.com]}
@@ -9199,6 +9225,7 @@ components:
         customCss: {type: string, description: 'Empty while `HALO_DISABLE_CUSTOM_CSS=1` is set.'}
         consoleBranding: {type: boolean}
         featuresOff: {type: array, items: {$ref: '#/components/schemas/FeatureId'}, description: Features that are turned off. The console and account portal hide their pages.}
+        locale: {allOf: [{$ref: '#/components/schemas/Locale'}], description: 'The organization''s default language, for people who chose none and whose browser asks for no language Halo has.'}
     Theme:
       type: object
       description: Colours for the sign-in, setup and account pages. An empty string keeps Halo's colour.
@@ -9289,6 +9316,9 @@ components:
           type: object
           description: Values of custom attributes, by attribute name. Attributes without a value are left out.
           additionalProperties: {$ref: '#/components/schemas/AttributeValue'}
+        locale:
+          oneOf: [{$ref: '#/components/schemas/Locale'}, {type: 'null'}]
+          description: 'The language the person chose for Halo''s pages and emails. Null follows the browser''s language, then the organization''s `locale`.'
     AttributeType:
       type: string
       enum: [string, number, boolean, date, list]
@@ -10599,6 +10629,7 @@ components:
         organizationName: {type: string, maxLength: 100, description: 'Empty uses `HALO_ORGANIZATION`.'}
         contactEmail: {type: string}
         signInMessage: {type: string, maxLength: 500}
+        locale: {allOf: [{$ref: '#/components/schemas/Locale'}], default: en, description: 'The default language of pages and emails, for people who chose none. On pages, a language the browser asks for comes first.'}
         theme: {$ref: '#/components/schemas/Theme'}
         customCss: {type: string, description: 'At most 32 KB, without `</`. Added after Halo''s stylesheet on the sign-in, setup and account pages.'}
         consoleBranding: {type: boolean, default: false, description: 'Also use `theme` and `customCss` in the admin console.'}
@@ -10819,6 +10850,10 @@ components:
       properties:
         error: {type: string, enum: [invalid_request, invalid_client, invalid_token, invalid_redirect_uri, invalid_client_metadata, temporarily_unavailable, server_error]}
         error_description: {type: string}
+    Locale:
+      type: string
+      enum: [en, es]
+      description: 'A language Halo''s pages and emails are written in: `en` for English, `es` for Spanish.'
     EmailSignIn:
       type: string
       enum: [link, code, both]

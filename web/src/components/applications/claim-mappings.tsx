@@ -8,27 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/input";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
+import { useMessages } from "@/lib/i18n/client";
+import { applicationsMessages } from "@/lib/i18n/console/applications";
 import type { Attribute, Claim } from "@/lib/types";
 
-const PROFILE = [
-  ["user.id", "User ID"],
-  ["user.email", "Email"],
-  ["user.emailVerified", "Email verified"],
-  ["user.name", "Name"],
-  ["user.givenName", "Given name"],
-  ["user.familyName", "Family name"],
-  ["user.title", "Title"],
-  ["user.department", "Department"],
-  ["user.location", "Location"],
-  ["user.groups", "Group names"],
-  ["user.roles", "Application roles"],
-] as const;
-
-const KINDS = {
-  claim: { caption: "Claim mappings", name: "Claim name", placeholder: "employee_id" },
-  attribute: { caption: "Attribute mappings", name: "SAML attribute name", placeholder: "employeeNumber" },
-  header: { caption: "Header mappings", name: "Header name", placeholder: "X-Employee-Id" },
-} as const;
+const PLACEHOLDER = { claim: "employee_id", attribute: "employeeNumber", header: "X-Employee-Id" } as const;
 
 export function ClaimMappingsForm({
   appId,
@@ -39,13 +23,15 @@ export function ClaimMappingsForm({
 }: {
   appId: string;
   appName: string;
-  kind: keyof typeof KINDS;
+  kind: keyof typeof PLACEHOLDER;
   mappings: Claim[];
   attributes: Attribute[];
 }) {
   const [rows, setRows] = useState<Claim[]>(mappings);
   const { pending, run, errorFor, toast } = useMutation();
-  const noun = kind;
+  const t = useMessages(applicationsMessages);
+  const m = t.mappings;
+  const k = m.kinds[kind];
   const update = (index: number, change: Partial<Claim>) => setRows(rows.map((row, i) => (i === index ? { ...row, ...change } : row)));
 
   function submit(event: FormEvent) {
@@ -53,7 +39,7 @@ export function ClaimMappingsForm({
     void run(
       "mappings",
       () => api(`/applications/${appId}`, { method: "PATCH", body: { claimMappings: rows } }),
-      () => toast({ title: "Mappings saved", description: `${appName} receives them on its next sign-in. Recorded in the audit log.` }),
+      () => toast({ title: m.saved, description: m.savedHint(appName) }),
       "inline",
     );
   }
@@ -62,16 +48,16 @@ export function ClaimMappingsForm({
     <form onSubmit={submit} noValidate className="flex flex-col gap-6">
       {rows.length > 0 ? (
         <SimpleTable
-          caption={KINDS[kind].caption}
-          head={[KINDS[kind].name, "Value", "Actions"]}
+          caption={k.title}
+          head={[k.name, t.common.value, t.common.actions]}
           rows={rows.map((row, i) => [
             <Input
               key="n"
               size="sm"
               mono
               className="min-w-48"
-              aria-label={`Name of ${noun} ${i + 1}`}
-              placeholder={KINDS[kind].placeholder}
+              aria-label={m.nameOf(k.noun, i + 1)}
+              placeholder={PLACEHOLDER[kind]}
               autoComplete="off"
               value={row.name}
               onChange={(event) => update(i, { name: event.target.value })}
@@ -80,19 +66,19 @@ export function ClaimMappingsForm({
               key="s"
               size="sm"
               className="min-w-48"
-              aria-label={`Value of ${noun} ${i + 1}`}
+              aria-label={m.valueOf(k.noun, i + 1)}
               value={row.source}
               onChange={(event) => update(i, { source: event.target.value })}
             >
-              <optgroup label="Profile">
-                {PROFILE.map(([source, label]) => (
+              <optgroup label={m.profileGroup}>
+                {Object.entries(m.profile).map(([source, label]) => (
                   <option key={source} value={source}>
                     {label}
                   </option>
                 ))}
               </optgroup>
               {attributes.length > 0 ? (
-                <optgroup label="Custom attributes">
+                <optgroup label={m.customAttributes}>
                   {attributes.map((a) => (
                     <option key={a.id} value={`attribute.${a.name}`}>
                       {a.label}
@@ -100,14 +86,14 @@ export function ClaimMappingsForm({
                   ))}
                 </optgroup>
               ) : null}
-              <option value="none">Not sent</option>
+              <option value="none">{m.notSent}</option>
             </Select>,
             <Button
               key="r"
               type="button"
               size="icon-sm"
               variant="quiet"
-              aria-label={`Remove ${row.name || `${noun} ${i + 1}`}`}
+              aria-label={m.removeEntry(row.name || `${k.noun} ${i + 1}`)}
               onClick={() => setRows(rows.filter((_, j) => j !== i))}
             >
               <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
@@ -116,7 +102,7 @@ export function ClaimMappingsForm({
         />
       ) : (
         <p className="rounded-lg border border-border bg-surface px-6 py-4 text-body-sm text-fg-3">
-          No mappings. {appName} receives the {noun}s above.
+          {k.empty(appName)}
         </p>
       )}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -128,12 +114,12 @@ export function ClaimMappingsForm({
           onClick={() => setRows([...rows, { name: "", source: attributes[0] ? `attribute.${attributes[0].name}` : "user.id" }])}
         >
           <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-          Add mapping
+          {m.add}
         </Button>
         <div className="flex flex-col items-start gap-2 sm:items-end">
           <ActionError message={errorFor("mappings")} />
           <Button type="submit" variant="primary" loading={pending === "mappings"}>
-            Save mappings
+            {m.save}
           </Button>
         </div>
       </div>

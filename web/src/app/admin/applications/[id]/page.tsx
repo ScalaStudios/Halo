@@ -14,7 +14,7 @@ import { RemoteSettingsForm } from "@/components/remote/settings";
 import { hasRole } from "@/components/settings/roles";
 import { SamlAttributesForm, SamlConnectionFields, SamlSettingsForm } from "@/components/applications/saml";
 import { SharedSignals } from "@/components/applications/shared-signals";
-import { APP_STATUS, LdapConnectionFields, PROTOCOL_LABEL, RadiusServerFields, SetupGuideCard, statusKey, TYPE_LABEL } from "@/components/applications/shared";
+import { APP_STATUS, LdapConnectionFields, RadiusServerFields, SetupGuideCard, statusKey } from "@/components/applications/shared";
 import { AddToGroup, RemoveFromGroup } from "@/components/directory/add-to-group";
 import { SessionsTable } from "@/components/monitoring/sessions-table";
 import { DeliveryLog } from "@/components/settings/webhooks";
@@ -28,8 +28,9 @@ import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { TabNav } from "@/components/ui/tab-nav";
 import { apiGet } from "@/lib/api/server";
-import { formatDuration, pluralize } from "@/lib/format";
-import { REMOTE_AUTH } from "@/lib/labels";
+import { applicationsMessages } from "@/lib/i18n/console/applications";
+import { remoteMessages } from "@/lib/i18n/console/infrastructure/remote";
+import { requestLocale } from "@/lib/i18n/server";
 import type { ApiResource, Outpost, RemoteSession } from "@/lib/infra-types";
 import type { SamlApplication } from "@/lib/saml-types";
 import type { OrganizationProfile, WebhookDelivery } from "@/lib/settings-types";
@@ -44,7 +45,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function ApplicationPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { id } = await params;
   const { tab = "overview" } = await searchParams;
-  const [app, groups, users, sessions, appSignIns, org, resources, hook, attributes, logouts, signals, model] = await Promise.all([
+  const [app, groups, users, sessions, appSignIns, org, resources, hook, attributes, logouts, signals, model, locale] = await Promise.all([
     apiGet<SamlApplication>(`/applications/${encodeURIComponent(id)}`),
     apiGet<Group[]>("/groups"),
     apiGet<User[]>("/users"),
@@ -57,7 +58,10 @@ export default async function ApplicationPage({ params, searchParams }: { params
     tab === "authentication" ? apiGet<WebhookDelivery[]>(`/applications/${encodeURIComponent(id)}/logout-deliveries`) : [],
     tab === "authentication" ? apiGet<{ receiver: SignalReceiver | null; deliveries: WebhookDelivery[] }>(`/applications/${encodeURIComponent(id)}/shared-signals`) : null,
     tab === "authorization" ? apiGet<AuthorizationModel>(`/applications/${encodeURIComponent(id)}/authorization`) : null,
+    requestLocale(),
   ]);
+  const t = applicationsMessages[locale];
+  const d = t.detail;
 
   const saml = app.protocol === "saml";
   const bookmark = app.protocol === "bookmark";
@@ -78,56 +82,58 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const owner = users.find((u) => u.id === app.owner);
   const appGroups = groups.filter((g) => app.groupIds.includes(g.id));
   const assigned = new Set(users.filter((u) => u.appIds.includes(app.id)).map((u) => u.id));
+  const kind = saml ? "attribute" : forward ? "header" : "claim";
+  const mapping = t.mappings.kinds[kind];
   const appSessions = service ? [] : sessions.filter((s) => assigned.has(s.userId)).sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
 
   const tabs = bookmark
     ? [
-        { id: "overview", label: "Overview" },
-        { id: "users", label: "Users & groups", count: appGroups.length },
+        { id: "overview", label: d.tabs.overview },
+        { id: "users", label: d.tabs.users, count: appGroups.length },
       ]
     : radius
       ? [
-          { id: "overview", label: "Overview" },
-          { id: "authentication", label: "Authentication" },
-          { id: "users", label: "Users & groups", count: appGroups.length },
-          { id: "credentials", label: "Credentials", count: app.credentials.length },
-          { id: "logs", label: "Logs", count: appSignIns.length },
+          { id: "overview", label: d.tabs.overview },
+          { id: "authentication", label: d.tabs.authentication },
+          { id: "users", label: d.tabs.users, count: appGroups.length },
+          { id: "credentials", label: d.tabs.credentials, count: app.credentials.length },
+          { id: "logs", label: d.tabs.logs, count: appSignIns.length },
         ]
     : ldap
       ? [
-          { id: "overview", label: "Overview" },
-          { id: "users", label: "Users & groups", count: appGroups.length },
-          { id: "logs", label: "Logs", count: appSignIns.length },
+          { id: "overview", label: d.tabs.overview },
+          { id: "users", label: d.tabs.users, count: appGroups.length },
+          { id: "logs", label: d.tabs.logs, count: appSignIns.length },
         ]
     : remote
       ? [
-          { id: "overview", label: "Overview" },
-          { id: "authentication", label: "Connection" },
-          { id: "users", label: "Users & groups", count: appGroups.length },
-          { id: "sessions", label: "Sessions", count: remoteSessions.length },
-          { id: "logs", label: "Logs", count: appSignIns.length },
+          { id: "overview", label: d.tabs.overview },
+          { id: "authentication", label: d.tabs.connection },
+          { id: "users", label: d.tabs.users, count: appGroups.length },
+          { id: "sessions", label: d.tabs.sessions, count: remoteSessions.length },
+          { id: "logs", label: d.tabs.logs, count: appSignIns.length },
         ]
     : forward
       ? [
-          { id: "overview", label: "Overview" },
-          { id: "authentication", label: "Authentication" },
-          { id: "claims", label: "Headers", count: app.claims.length },
-          { id: "users", label: "Users & groups", count: appGroups.length },
-          { id: "roles", label: "Roles", count: app.roles.length },
-          { id: "sessions", label: "Sessions", count: appSessions.length },
-          { id: "logs", label: "Logs", count: appSignIns.length },
+          { id: "overview", label: d.tabs.overview },
+          { id: "authentication", label: d.tabs.authentication },
+          { id: "claims", label: mapping.tab, count: app.claims.length },
+          { id: "users", label: d.tabs.users, count: appGroups.length },
+          { id: "roles", label: d.tabs.roles, count: app.roles.length },
+          { id: "sessions", label: d.tabs.sessions, count: appSessions.length },
+          { id: "logs", label: d.tabs.logs, count: appSignIns.length },
         ]
       : [
-        { id: "overview", label: "Overview" },
-        { id: "authentication", label: "Authentication" },
-        { id: "permissions", label: "Permissions", count: app.scopes.length },
-        { id: "claims", label: saml ? "Attributes" : "Claims", count: app.claims.length },
-        { id: "users", label: "Users & groups", count: appGroups.length },
-        ...(roleable ? [{ id: "roles", label: "Roles", count: app.roles.length }] : []),
-        ...(modelled ? [{ id: "authorization", label: "Authorization" }] : []),
-        { id: "credentials", label: "Credentials", count: app.credentials.length },
-        { id: "sessions", label: "Sessions", count: appSessions.length },
-        { id: "logs", label: "Logs", count: appSignIns.length },
+        { id: "overview", label: d.tabs.overview },
+        { id: "authentication", label: d.tabs.authentication },
+        { id: "permissions", label: d.tabs.permissions, count: app.scopes.length },
+        { id: "claims", label: mapping.tab, count: app.claims.length },
+        { id: "users", label: d.tabs.users, count: appGroups.length },
+        ...(roleable ? [{ id: "roles", label: d.tabs.roles, count: app.roles.length }] : []),
+        ...(modelled ? [{ id: "authorization", label: d.tabs.authorization }] : []),
+        { id: "credentials", label: d.tabs.credentials, count: app.credentials.length },
+        { id: "sessions", label: d.tabs.sessions, count: appSessions.length },
+        { id: "logs", label: d.tabs.logs, count: appSignIns.length },
       ];
 
   return (
@@ -135,20 +141,20 @@ export default async function ApplicationPage({ params, searchParams }: { params
       <div className="flex flex-col gap-6">
         <Link href="/admin/applications" className="inline-flex w-fit items-center gap-2 rounded-sm text-body-sm text-fg-3 transition-colors duration-fast hover:text-fg">
           <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.75} />
-          Applications
+          {t.common.applications}
         </Link>
         <header className="flex flex-col gap-6 2xl:flex-row 2xl:items-center 2xl:justify-between">
           <AvatarEditor name={app.name} avatarUrl={app.logoUrl} endpoint={`/api/v1/applications/${app.id}/logo`} size="xl" logo className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-col gap-1">
               <div className="flex flex-wrap items-center gap-3">
                 <h1 className="text-h2 text-fg">{app.name}</h1>
-                <Badge tone={APP_STATUS[statusKey(app)].tone} dot>
-                  {APP_STATUS[statusKey(app)].label}
+                <Badge tone={APP_STATUS[statusKey(app)]} dot>
+                  {t.status[statusKey(app)]}
                 </Badge>
-                {app.registeredDynamically ? <Badge tone="info">Registered dynamically</Badge> : null}
+                {app.registeredDynamically ? <Badge tone="info">{d.registeredDynamically}</Badge> : null}
               </div>
               <p className="text-body text-fg-3">
-                {PROTOCOL_LABEL[app.protocol]}
+                {t.protocols[app.protocol]}
                 {app.description ? ` · ${app.description}` : null}
               </p>
             </div>
@@ -178,32 +184,32 @@ export default async function ApplicationPage({ params, searchParams }: { params
         <DescriptionList
           className={`grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 ${bookmark ? "xl:grid-cols-4" : forward || radius || ldap || remote ? "xl:grid-cols-5" : "xl:grid-cols-6"}`}
           items={[
-            { label: "Protocol", value: PROTOCOL_LABEL[app.protocol] },
-            ...(bookmark || forward || radius || ldap || remote ? [] : [{ label: "Type", value: TYPE_LABEL[app.type] }]),
+            { label: t.list.protocol, value: t.protocols[app.protocol] },
+            ...(bookmark || forward || radius || ldap || remote ? [] : [{ label: t.list.type, value: t.types[app.type] }]),
             {
-              label: "Status",
+              label: t.common.status,
               value: (
                 <span className="inline-flex items-center gap-2">
-                  <StatusDot tone={APP_STATUS[statusKey(app)].tone} />
-                  {APP_STATUS[statusKey(app)].label}
+                  <StatusDot tone={APP_STATUS[statusKey(app)]} />
+                  {t.status[statusKey(app)]}
                 </span>
               ),
             },
-            { label: "Users", value: <span className="tnum">{app.userCount}</span> },
+            { label: t.list.users, value: <span className="tnum">{app.userCount}</span> },
             ...(bookmark
               ? []
               : [
                   {
-                    label: "Sign-ins (7 days)",
+                    label: d.signIns7d,
                     value: (
                       <span className="tnum">
-                        {app.signIns7d.toLocaleString("en-US")} <span className="text-fg-3">· {app.failureRate7d}% failed</span>
+                        {app.signIns7d.toLocaleString(locale)} <span className="text-fg-3">· {d.failed(app.failureRate7d)}</span>
                       </span>
                     ),
                   },
                 ]),
             {
-              label: "Owner",
+              label: t.common.owner,
               value: owner ? (
                 <Link href={`/admin/users/${owner.id}`} className="text-link underline underline-offset-3 hover:text-ember">
                   {owner.name}
@@ -216,7 +222,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         />
       </div>
 
-      <TabNav label="Application sections" tabs={tabs} active={tab} hrefFor={(t) => `/admin/applications/${app.id}${t === "overview" ? "" : `?tab=${t}`}`} />
+      <TabNav label={d.sections} tabs={tabs} active={tab} hrefFor={(t) => `/admin/applications/${app.id}${t === "overview" ? "" : `?tab=${t}`}`} />
 
       <div key={tab} className="animate-enter">
         {tab === "overview" ? <OverviewTab app={app} issuer={org.issuer} outposts={outposts} /> : null}
@@ -240,45 +246,45 @@ export default async function ApplicationPage({ params, searchParams }: { params
             ) : null}
             {logouts.length > 0 ? (
               <section className="flex flex-col gap-6">
-                <SectionTitle title="Logout deliveries" description={`The latest ${pluralize(logouts.length, "logout")}, newest first. Each one is a Halo session that ended.`} />
-                <DeliveryLog deliveries={logouts} payloadNote="The session the logout token ends. Halo signs a new token with it on every attempt." />
+                <SectionTitle title={d.logouts} description={d.logoutsHint(logouts.length)} />
+                <DeliveryLog deliveries={logouts} payloadNote={d.logoutNote} />
               </section>
             ) : null}
           </div>
         ) : null}
         {tab === "permissions" ? (
           <div className="flex flex-col gap-6">
-            <SectionTitle title="Scopes" description={saml ? undefined : `Scopes ${app.name} can request. Requests for any other scope are rejected.`} />
+            <SectionTitle title={d.scopes} description={saml ? undefined : d.scopesHint(app.name)} />
             {!saml ? (
               <ScopesForm key={`${app.scopes.join()}:${app.requiresConsent}`} app={app} />
             ) : (
-              <EmptyState title="SAML applications don't use scopes" description={`${app.name} receives the attributes listed on the Attributes tab in every assertion.`} />
+              <EmptyState title={d.samlScopes} description={d.samlScopesHint(app.name)} />
             )}
           </div>
         ) : null}
         {tab === "claims" && app.saml ? (
           <div className="flex flex-col gap-6">
-            <SectionTitle title="Attributes" description={`Sent in every SAML assertion to ${app.name}. Rename them to match what ${app.name} expects.`} />
+            <SectionTitle title={t.mappings.kinds.attribute.tab} description={d.samlAttributesHint(app.name)} />
             <SamlAttributesForm appId={app.id} appName={app.name} saml={app.saml} />
           </div>
         ) : null}
         {tab === "claims" && !app.saml ? (
           <div className="flex flex-col gap-6">
             <SectionTitle
-              title={saml ? "Attributes" : forward ? "Headers" : "Claims"}
+              title={mapping.tab}
               description={
                 saml
-                  ? `Sent in every SAML assertion to ${app.name}.`
+                  ? d.claimsSaml(app.name)
                   : forward
-                    ? `Sent to the proxy with every request Halo lets through to ${app.name}. The proxy replaces any copy the browser sent and passes them on.`
+                    ? d.claimsForward(app.name)
                     : service
-                    ? `Included in access tokens issued to ${app.name}.`
-                    : `Included in ID tokens and the userinfo response for ${app.name}.`
+                    ? d.claimsService(app.name)
+                    : d.claimsDefault(app.name)
               }
             />
             <SimpleTable
-              caption={saml ? "Attributes" : forward ? "Headers" : "Claims"}
-              head={[saml ? "Attribute" : forward ? "Header" : "Claim", "Source"]}
+              caption={mapping.tab}
+              head={[mapping.column, t.common.source]}
               rows={app.claims.map((claim) => [
                 <span key="n" className="font-mono text-code-sm break-all text-fg">
                   {claim.name}
@@ -293,20 +299,14 @@ export default async function ApplicationPage({ params, searchParams }: { params
         {tab === "claims" && !service ? (
           <div className="mt-12 flex flex-col gap-6">
             <SectionTitle
-              title={saml ? "Attribute mappings" : forward ? "Header mappings" : "Claim mappings"}
-              description={
-                saml
-                  ? `Send a profile field, group names or a custom attribute to ${app.name} under the name it expects. A mapping replaces the attribute above with the same name, and Not sent leaves it out.`
-                  : forward
-                    ? `Send a profile field, group names or a custom attribute in the header ${app.name} expects, like Remote-User. A mapping replaces the header above with the same name, and Not sent leaves it out. Update the proxy configuration after you add a header.`
-                    : `Add a profile field, group names or a custom attribute to ID tokens and userinfo for ${app.name}. A mapping replaces the claim above with the same name, and Not sent leaves it out. Halo's protocol claims, such as sub and iss, can't be mapped.`
-              }
+              title={mapping.title}
+              description={mapping.hint(app.name)}
             />
             <ClaimMappingsForm
               key={JSON.stringify(app.claimMappings)}
               appId={app.id}
               appName={app.name}
-              kind={saml ? "attribute" : forward ? "header" : "claim"}
+              kind={kind}
               mappings={app.claimMappings}
               attributes={attributes}
             />
@@ -315,12 +315,8 @@ export default async function ApplicationPage({ params, searchParams }: { params
         {tab === "users" ? (
           <div className="flex flex-col gap-6">
             <SectionTitle
-              title="Assigned groups"
-              description={
-                service
-                  ? `${app.name} authenticates as itself with client credentials. No people or groups are assigned.`
-                  : `${pluralize(app.userCount, "person", "people")} ${bookmark ? "see" : "can sign in to"} ${app.name} through ${pluralize(appGroups.length, "group")}.`
-              }
+              title={d.assignedGroups}
+              description={service ? d.serviceGroups(app.name) : d.groupsHint(app.userCount, app.name, appGroups.length, bookmark)}
               action={
                 service ? undefined : (
                   <AddToGroup name={app.name} appId={app.id} assigned={app.groupIds} groups={groups} bookmark={bookmark} />
@@ -329,14 +325,14 @@ export default async function ApplicationPage({ params, searchParams }: { params
             />
             {appGroups.length ? (
               <SimpleTable
-                caption="Assigned groups"
-                head={["Group", "Membership", "Source", "Members", "Actions"]}
+                caption={d.assignedGroups}
+                head={[d.group, d.membership, t.common.source, d.members, t.common.actions]}
                 rows={appGroups.map((group) => [
                   <span key="n" className="flex flex-col">
                     <span className="font-medium text-fg">{group.name}</span>
                     <span className="text-caption text-fg-3">{group.description}</span>
                   </span>,
-                  group.kind === "dynamic" ? <Tag key="k">{group.rule}</Tag> : "Assigned",
+                  group.kind === "dynamic" ? <Tag key="k">{group.rule}</Tag> : d.assigned,
                   group.source,
                   <span key="m" className="tnum">
                     {group.memberCount}
@@ -347,14 +343,8 @@ export default async function ApplicationPage({ params, searchParams }: { params
             ) : (
               <EmptyState
                 icon={UsersRound}
-                title="No groups assigned"
-                description={
-                  service
-                    ? "Service applications get access through scopes, not group membership."
-                    : bookmark
-                      ? `Nobody sees ${app.name} in their account portal until a group is assigned.`
-                      : `Nobody can sign in to ${app.name} until a group is assigned.`
-                }
+                title={d.noGroups}
+                description={service ? d.noGroupsService : bookmark ? d.noGroupsBookmark(app.name) : d.noGroupsDefault(app.name)}
               />
             )}
           </div>
@@ -362,8 +352,8 @@ export default async function ApplicationPage({ params, searchParams }: { params
         {tab === "roles" && roleable ? (
           <div className="flex flex-col gap-6">
             <SectionTitle
-              title="Roles"
-              description={`Halo sends the keys of the roles a person holds to ${app.name} ${saml ? "in the roles attribute of every assertion" : forward ? "in the X-Halo-Roles header" : "in the roles claim of ID tokens, userinfo and access tokens"}. Rename it with a mapping on the ${saml ? "Attributes" : forward ? "Headers" : "Claims"} tab.`}
+              title={d.roles}
+              description={d.rolesHint(app.name, kind)}
             />
             <RolesTable
               appId={app.id}
@@ -377,10 +367,10 @@ export default async function ApplicationPage({ params, searchParams }: { params
         {tab === "authorization" && modelled && model ? (
           <div className="flex flex-col gap-6">
             <SectionTitle
-              title="Authorization"
-              description={`${app.name} writes relationships such as document:readme#viewer@user:usr_… and asks Halo whether a person has a relation on an object. It calls the routes under this address with HTTP Basic: its client ID and one of its client secrets. Groups expand to their members, and deleting a person or group deletes the relationships that name them.`}
+              title={d.tabs.authorization}
+              description={d.authorizationHint(app.name)}
             />
-            <CopyField label="Authorization API" value={`${org.issuer}/api/v1/authz`} />
+            <CopyField label={d.authorizationApi} value={`${org.issuer}/api/v1/authz`} />
             <AuthorizationModelForm appId={app.id} appName={app.name} model={model} />
             {model.updatedAt ? (
               <AuthorizationCheckForm appId={app.id} people={users.filter((u) => u.status !== "deprovisioned").map(({ id, name, email }) => ({ id, name, email }))} />
@@ -390,61 +380,57 @@ export default async function ApplicationPage({ params, searchParams }: { params
         {tab === "credentials" ? (
           <div className="flex flex-col gap-6">
             <SectionTitle
-              title="Credentials"
+              title={d.tabs.credentials}
               description={
                 app.credentials.length === 0
                   ? undefined
                   : saml
-                    ? `Certificates recorded for ${app.name}. Halo signs its assertions with the organization's SAML signing certificate, shown on the Overview tab.`
+                    ? d.credentialsSaml(app.name)
                     : radius
-                      ? `${app.name} signs its RADIUS requests with these shared secrets. Rotate a secret before it expires, or Halo stops answering ${app.name}; the old one keeps working for 24 hours.`
-                      : `${app.name} uses these secrets to authenticate to Halo. Rotate a secret before it expires; the old one keeps working for 24 hours.`
+                      ? d.credentialsRadius(app.name)
+                      : d.credentialsDefault(app.name)
               }
             />
             <CredentialList
               appId={app.id}
               appName={app.name}
               credentials={app.credentials}
-              label={radius ? "Shared secret" : undefined}
+              secret={radius ? "shared" : undefined}
               empty={
                 saml
-                  ? `Halo signs assertions to ${app.name} with the organization's SAML signing certificate, shown on the Overview tab. SAML applications need no other credentials.`
+                  ? d.noCredentialsSaml(app.name)
                   : app.type === "native" || app.type === "spa"
-                    ? `${app.name} is a public client. It signs in with PKCE, so there is no secret to rotate.`
+                    ? d.noCredentialsPublic(app.name)
                     : radius
-                      ? `${app.name} has no active shared secret, so Halo ignores its RADIUS requests. Rotate one from the actions above.`
-                      : `${app.name} has no active credentials and cannot authenticate to Halo.`
+                      ? d.noCredentialsRadius(app.name)
+                      : d.noCredentialsDefault(app.name)
               }
             />
           </div>
         ) : null}
         {tab === "sessions" && remote ? (
           <div className="flex flex-col gap-6">
-            <SectionTitle title="Sessions" description={`Terminal sessions to ${app.name}, newest first. Ending one closes it at once.`} />
+            <SectionTitle title={d.tabs.sessions} description={d.remoteSessions(app.name)} />
             <RemoteSessions
               sessions={remoteSessions}
               showApplication={false}
               canEnd={me ? hasRole(me, "security_admin", "app_admin") : false}
               canDownload={me ? hasRole(me, "security_admin", "auditor") : false}
-              empty={`Sessions appear here when someone opens ${app.name} from their account portal.`}
+              empty={d.remoteSessionsEmpty(app.name)}
             />
           </div>
         ) : null}
         {tab === "sessions" && !remote ? (
           <div className="flex flex-col gap-6">
             <SectionTitle
-              title="Sessions"
-              description={
-                service
-                  ? undefined
-                  : `Halo sessions of people assigned to ${app.name}, most recently active first. Revoking a session signs that device out of Halo.`
-              }
+              title={d.tabs.sessions}
+              description={service ? undefined : d.sessionsHint(app.name)}
             />
             {service ? (
               <EmptyState
                 icon={MonitorSmartphone}
-                title="No user sessions"
-                description={`${app.name} authenticates as itself with client credentials. Its access tokens last ${formatDuration(app.tokenPolicy.accessTokenTtl)} and it never holds a user session.`}
+                title={d.noSessions}
+                description={d.noSessionsHint(app.name, t.duration(app.tokenPolicy.accessTokenTtl))}
               />
             ) : (
               <SessionsTable sessions={appSessions} userNames={Object.fromEntries(users.map((u) => [u.id, u.name]))} />
@@ -453,7 +439,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
         ) : null}
         {tab === "logs" ? (
           <div className="flex flex-col gap-6">
-            <SectionTitle title="Sign-ins" description="Newest first." />
+            <SectionTitle title={d.signIns} description={d.newestFirst} />
             {appSignIns.length ? (
               <Card>
                 <SignInRows events={appSignIns} appNames={{ [app.id]: app.name }} />
@@ -461,14 +447,8 @@ export default async function ApplicationPage({ params, searchParams }: { params
             ) : (
               <EmptyState
                 icon={ScrollText}
-                title="No sign-ins yet"
-                description={
-                  service
-                    ? `${app.name} requests tokens with client credentials. Those requests are not sign-ins, so none appear here.`
-                    : app.status === "disabled"
-                      ? `${app.name} is disabled, so nobody can sign in to it.`
-                      : `Sign-ins to ${app.name} appear here within a minute.`
-                }
+                title={d.noSignIns}
+                description={service ? d.noSignInsService(app.name) : app.status === "disabled" ? d.noSignInsDisabled(app.name) : d.noSignInsDefault(app.name)}
               />
             )}
           </div>
@@ -478,7 +458,10 @@ export default async function ApplicationPage({ params, searchParams }: { params
   );
 }
 
-function OverviewTab({ app, issuer, outposts }: { app: SamlApplication; issuer: string; outposts: Outpost[] }) {
+async function OverviewTab({ app, issuer, outposts }: { app: SamlApplication; issuer: string; outposts: Outpost[] }) {
+  const locale = await requestLocale();
+  const t = applicationsMessages[locale];
+  const d = t.detail;
   const saml = app.protocol === "saml";
   const urls = endpoints(issuer);
   if (app.remote) {
@@ -488,20 +471,20 @@ function OverviewTab({ app, issuer, outposts }: { app: SamlApplication; issuer: 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <Card className="min-w-0 xl:col-span-7">
           <CardHeader
-            title="Connection"
-            description={`People assigned to ${app.name} open a remote session to this host from their account portal. Halo checks their access and policies first, then the outpost connects to the host.`}
+            title={d.tabs.connection}
+            description={d.connectionHint(app.name)}
           />
           <CardBody>
             <DescriptionList
               columns={2}
               items={[
-                { label: "Host", value: `${target.host}:${target.port}`, mono: true },
-                { label: "Outpost", value: outpost ? `${outpost.name} · ${outpost.connected ? "connected" : "not connected"}` : "Unknown" },
-                { label: "Signs in with", value: REMOTE_AUTH[target.auth] },
-                { label: "Account", value: target.username || (target.protocol === "ssh" ? "Each person's first SSH principal" : "Password only") },
-                { label: "Host key", value: target.hostKey ? `Pinned ${target.hostKey.split(" ")[0]} key` : "Halo host certificate" },
-                { label: "Time limit", value: formatDuration(target.sessionLimit) },
-                { label: "Recording", value: target.record ? "Terminal output is recorded" : "Off" },
+                { label: d.host, value: `${target.host}:${target.port}`, mono: true },
+                { label: d.outpost, value: outpost ? `${outpost.name} · ${outpost.connected ? d.connected : d.notConnected}` : d.unknown },
+                { label: d.signsInWith, value: remoteMessages[locale].settings.auth[target.auth] },
+                { label: d.account, value: target.username || (target.protocol === "ssh" ? d.firstPrincipal : d.passwordOnly) },
+                { label: d.hostKey, value: target.hostKey ? d.pinned(target.hostKey.split(" ")[0]) : d.hostCertificate },
+                { label: d.timeLimit, value: t.duration(target.sessionLimit) },
+                { label: d.recording, value: target.record ? d.recorded : t.common.off },
               ]}
             />
           </CardBody>
@@ -514,9 +497,9 @@ function OverviewTab({ app, issuer, outposts }: { app: SamlApplication; issuer: 
     return (
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <Card className="min-w-0 xl:col-span-5">
-          <CardHeader title="Bookmark" description={`Opens from the account portal of everyone assigned to ${app.name}. Nobody signs in to it through Halo.`} />
+          <CardHeader title={t.protocols.bookmark} description={d.bookmarkHint(app.name)} />
           <CardBody>
-            <CopyField label="URL" value={app.homepage} />
+            <CopyField label={t.common.url} value={app.homepage} />
           </CardBody>
         </Card>
         <DangerZone id={app.id} name={app.name} disabled={app.status === "disabled"} bookmark className="xl:col-span-12" />
@@ -528,13 +511,13 @@ function OverviewTab({ app, issuer, outposts }: { app: SamlApplication; issuer: 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <Card className="min-w-0 xl:col-span-5">
           <CardHeader
-            title="Connection details"
-            description={`Enter these values in the RADIUS settings of ${app.name}. Use PAP, and send a Message-Authenticator with every request: Halo ignores requests without one. The shared secret is on the Credentials tab.`}
+            title={d.connectionDetails}
+            description={d.radiusHint(app.name)}
           />
           <CardBody className="flex flex-col gap-4">
-            <RadiusServerFields issuer={issuer} port={app.radiusPort} />
+            <RadiusServerFields issuer={issuer} port={app.radiusPort} locale={locale} />
             {app.redirectUris.map((address, index) => (
-              <CopyField key={address} label={app.redirectUris.length > 1 ? `Client address ${index + 1}` : "Client address"} value={address} />
+              <CopyField key={address} label={app.redirectUris.length > 1 ? `${t.fields.clientAddress} ${index + 1}` : t.fields.clientAddress} value={address} />
             ))}
           </CardBody>
         </Card>
@@ -546,9 +529,9 @@ function OverviewTab({ app, issuer, outposts }: { app: SamlApplication; issuer: 
     return (
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <Card className="min-w-0 xl:col-span-5">
-          <CardHeader title="Connection details" description={`What ${app.name} needs to read its people and groups from Halo over LDAP. It sees only the people in its assigned groups.`} />
+          <CardHeader title={d.connectionDetails} description={d.ldapHint(app.name)} />
           <CardBody className="flex flex-col gap-4">
-            <LdapConnectionFields ldap={app.ldap} />
+            <LdapConnectionFields ldap={app.ldap} locale={locale} />
           </CardBody>
         </Card>
         <DangerZone id={app.id} name={app.name} disabled={app.status === "disabled"} className="xl:col-span-12" />
@@ -559,21 +542,17 @@ function OverviewTab({ app, issuer, outposts }: { app: SamlApplication; issuer: 
     return (
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <Card className="min-w-0 xl:col-span-5">
-          <CardHeader title="Connection details" description={`What the reverse proxy in front of ${app.name} needs to ask Halo before every request.`} />
+          <CardHeader title={d.connectionDetails} description={d.forwardHint(app.name)} />
           <CardBody className="flex flex-col gap-4">
-            <CopyField
-              label="Verify endpoint"
-              value={`${issuer}/forward-auth/${app.id}/verify`}
-              hint="Halo reads X-Forwarded-Host and X-Forwarded-Uri only from addresses in HALO_TRUSTED_PROXIES. With more than one protected address, point the proxy at Halo's server directly."
-            />
+            <CopyField label={d.verifyEndpoint} value={`${issuer}/forward-auth/${app.id}/verify`} hint={d.verifyHint} />
             {app.redirectUris.map((uri, index) => (
-              <CopyField key={uri} label={app.redirectUris.length > 1 ? `Protected address ${index + 1}` : "Protected address"} value={uri} />
+              <CopyField key={uri} label={app.redirectUris.length > 1 ? `${t.fields.protectedAddress} ${index + 1}` : t.fields.protectedAddress} value={uri} />
             ))}
-            <CopyField label="Sign-out path" value="/_halo/sign-out" hint={`Link to it on ${app.name}'s own address. It ends the person's Halo session.`} />
+            <CopyField label={d.signOutPath} value="/_halo/sign-out" hint={d.signOutHint(app.name)} />
           </CardBody>
         </Card>
         <div id="setup-guide" className="flex min-w-0 scroll-mt-24 flex-col gap-6 xl:col-span-7">
-          {proxyGuides(app, issuer).map((guide) => (
+          {proxyGuides(app, issuer, locale).map((guide) => (
             <SetupGuideCard key={guide.title} guide={guide} />
           ))}
         </div>
@@ -585,37 +564,38 @@ function OverviewTab({ app, issuer, outposts }: { app: SamlApplication; issuer: 
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
       <Card className="min-w-0 xl:col-span-5">
         <CardHeader
-          title="Connection details"
-          description={saml ? `What ${app.name} needs to trust Halo as its identity provider.` : `What ${app.name} needs to sign in with Halo.`}
+          title={d.connectionDetails}
+          description={saml ? d.samlHint(app.name) : d.oidcHint(app.name)}
         />
         <CardBody className="flex flex-col gap-4">
           {app.saml ? <SamlConnectionFields idp={app.saml.idp} /> : null}
-          <CopyField label={saml ? "SP entity ID" : "Client ID"} value={app.clientId} />
+          <CopyField label={saml ? t.fields.spEntityId : t.fields.clientId} value={app.clientId} />
           {saml ? null : (
             <>
-              <CopyField label="Issuer" value={urls.issuer} />
-              <CopyField label="Discovery endpoint" value={urls.discovery} />
+              <CopyField label={t.fields.issuer} value={urls.issuer} />
+              <CopyField label={t.fields.discovery} value={urls.discovery} />
             </>
           )}
-          {app.type === "service" ? <CopyField label="Token endpoint" value={urls.token} /> : null}
+          {app.type === "service" ? <CopyField label={t.fields.tokenEndpoint} value={urls.token} /> : null}
           {app.redirectUris.map((uri, index) => (
             <CopyField
               key={uri}
-              label={saml ? "ACS URL" : app.redirectUris.length > 1 ? `Redirect URI ${index + 1}` : "Redirect URI"}
+              label={saml ? t.fields.acsUrl : app.redirectUris.length > 1 ? `${t.fields.redirectUri} ${index + 1}` : t.fields.redirectUri}
               value={uri}
             />
           ))}
         </CardBody>
       </Card>
       <div id="setup-guide" className="min-w-0 scroll-mt-24 xl:col-span-7">
-        <SetupGuideCard guide={setupGuide(app, issuer)} />
+        <SetupGuideCard guide={setupGuide(app, issuer, locale)} />
       </div>
       <DangerZone id={app.id} name={app.name} disabled={app.status === "disabled"} className="xl:col-span-12" />
     </div>
   );
 }
 
-function AuthenticationTab({ app, resources }: { app: SamlApplication; resources: ApiResource[] }) {
+async function AuthenticationTab({ app, resources }: { app: SamlApplication; resources: ApiResource[] }) {
+  const d = applicationsMessages[await requestLocale()].detail;
   if (app.saml) {
     return <SamlSettingsForm appId={app.id} appName={app.name} saml={app.saml} />;
   }
@@ -627,12 +607,12 @@ function AuthenticationTab({ app, resources }: { app: SamlApplication; resources
   return (
     <AuthenticationForm key={JSON.stringify([app.redirectUris, app.postLogoutUris, app.tokenPolicy])} app={app} resources={resources}>
       <Card>
-        <CardHeader title="Grants" description="How the application gets tokens from Halo." />
+        <CardHeader title={d.grants} description={d.grantsHint} />
         <CardBody>
           <DescriptionList
             items={[
               {
-                label: "Grant types",
+                label: d.grantTypes,
                 value: (
                   <span className="flex flex-wrap gap-2">
                     {grants.map((grant) => (
@@ -641,9 +621,9 @@ function AuthenticationTab({ app, resources }: { app: SamlApplication; resources
                   </span>
                 ),
               },
-              { label: "PKCE", value: service ? "Not used. Client credentials has no browser redirect." : "Required, S256" },
-              { label: "Client authentication", value: publicClient ? "None. Public client without a secret." : "Client secret, client_secret_basic" },
-              ...(app.tokenPolicy.exchange ? [{ label: "Token exchange", value: "urn:ietf:params:oauth:grant-type:token-exchange", mono: true }] : []),
+              { label: "PKCE", value: service ? d.pkceService : d.pkceRequired },
+              { label: d.clientAuthentication, value: publicClient ? d.publicClient : d.secretBasic },
+              ...(app.tokenPolicy.exchange ? [{ label: d.tokenExchange, value: "urn:ietf:params:oauth:grant-type:token-exchange", mono: true }] : []),
             ]}
           />
         </CardBody>

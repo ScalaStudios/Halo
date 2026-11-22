@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useLocale } from '@/lib/i18n/client';
+import { monitoringMessages } from '@/lib/i18n/console/monitoring';
 
 export type HoldButtonSize = 'sm' | 'md' | 'lg';
 export type HoldButtonDirection = 'right' | 'up';
@@ -115,6 +117,7 @@ const HoldButton: React.FC<HoldButtonProps> = ({
   const gesture = useRef<Gesture>({ pointerId: null, start: 0, rect: null });
   const timers = useRef({ complete: 0, reset: 0 });
   const hintId = useId();
+  const locale = useLocale();
 
   const go = (next: Phase, kind: Input = null) => {
     phaseRef.current = next;
@@ -349,7 +352,7 @@ const HoldButton: React.FC<HoldButtonProps> = ({
         </span>
       </span>
       <span id={hintId} className="absolute h-px w-px overflow-hidden whitespace-nowrap [clip-path:inset(50%)]">
-        Press and hold for {Math.round(holdTime / 100) / 10} seconds to confirm
+        {monitoringMessages[locale].controls.holdHint((Math.round(holdTime / 100) / 10).toLocaleString(locale))}
       </span>
     </button>
   );

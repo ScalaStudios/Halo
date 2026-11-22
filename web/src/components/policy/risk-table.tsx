@@ -8,115 +8,123 @@ import { Badge, StatusDot, type Tone } from "@/components/ui/badge";
 import { DataTable, facetFilter, type SavedView } from "@/components/ui/data-table";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { api } from "@/lib/api/client";
-import { formatDateTime, pluralize } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
+import { useLocale } from "@/lib/i18n/client";
+import { policyMessages } from "@/lib/i18n/console/policy";
+import type { Locale } from "@/lib/i18n/locale";
 import { RISK } from "@/lib/labels";
 import type { RiskEvent, RiskEventType } from "@/lib/policy-types";
-import { RISK_TYPE } from "./shared";
+import type { PolicyCopy } from "./shared";
 
 type Row = RiskEvent & { user: string };
 
-const STATUS: Record<RiskEvent["status"], { label: string; tone: Tone }> = {
-  open: { label: "Open", tone: "warning" },
-  resolved: { label: "Resolved", tone: "success" },
-  dismissed: { label: "Dismissed", tone: "neutral" },
+const STATUS: Record<RiskEvent["status"], Tone> = {
+  open: "warning",
+  resolved: "success",
+  dismissed: "neutral",
 };
 
-const columns: ColumnDef<Row, any>[] = [
-  {
-    id: "time",
-    accessorFn: (e) => new Date(e.time).getTime(),
-    header: "Time",
-    meta: { label: "Time", hideable: false },
-    cell: ({ row }) => (
-      <span className="tnum whitespace-nowrap text-fg-3" title={formatDateTime(row.original.time)}>
-        <RelativeTime iso={row.original.time} />
-      </span>
-    ),
-  },
-  {
-    id: "user",
-    accessorFn: (e) => e.user,
-    header: "User",
-    meta: { label: "User" },
-    cell: ({ row }) =>
-      row.original.userId ? (
-        <Link href={`/admin/users/${row.original.userId}`} className="font-medium whitespace-nowrap text-fg underline-offset-3 hover:underline">
-          {row.original.user}
-        </Link>
-      ) : (
-        <span className="text-fg-3">Unknown user</span>
-      ),
-  },
-  {
-    id: "type",
-    accessorFn: (e) => e.type,
-    header: "Event",
-    filterFn: facetFilter,
-    meta: { label: "Event" },
-    cell: ({ row }) => (
-      <span className="flex min-w-64 flex-col py-2">
-        <span className="text-fg">{RISK_TYPE[row.original.type]}</span>
-        <span className="text-caption text-fg-3">
-          {row.original.detail}
-          {row.original.signInId ? (
-            <>
-              {" "}
-              <Link href={`/admin/sign-ins?event=${row.original.signInId}`} className="text-link underline underline-offset-3 hover:text-ember">
-                View sign-in
-              </Link>
-            </>
-          ) : null}
+function riskColumns(copy: PolicyCopy, locale: Locale): ColumnDef<Row, any>[] {
+  const t = copy.risk;
+  return [
+    {
+      id: "time",
+      accessorFn: (e) => new Date(e.time).getTime(),
+      header: t.time,
+      meta: { label: t.time, hideable: false },
+      cell: ({ row }) => (
+        <span className="tnum whitespace-nowrap text-fg-3" title={formatDateTime(row.original.time, locale)}>
+          <RelativeTime iso={row.original.time} />
         </span>
-      </span>
-    ),
-  },
-  {
-    id: "level",
-    accessorFn: (e) => e.level,
-    header: "Risk",
-    filterFn: facetFilter,
-    meta: { label: "Risk" },
-    cell: ({ row }) => <Badge tone={RISK[row.original.level].tone}>{RISK[row.original.level].label}</Badge>,
-  },
-  {
-    id: "ip",
-    accessorFn: (e) => e.ip,
-    header: "IP address",
-    meta: { label: "IP address" },
-    cell: ({ row }) => <span className="font-mono text-code-sm whitespace-nowrap text-fg-3">{row.original.ip || "—"}</span>,
-  },
-  {
-    id: "device",
-    accessorFn: (e) => e.device,
-    header: "Device",
-    meta: { label: "Device" },
-    cell: ({ row }) => <span className="whitespace-nowrap text-fg-3">{row.original.device || "—"}</span>,
-  },
-  {
-    id: "status",
-    accessorFn: (e) => e.status,
-    header: "Status",
-    filterFn: facetFilter,
-    meta: { label: "Status" },
-    cell: ({ row }) => (
-      <span className="inline-flex items-center gap-2 whitespace-nowrap">
-        <StatusDot tone={STATUS[row.original.status].tone} />
-        {STATUS[row.original.status].label}
-      </span>
-    ),
-  },
-];
-
-const views: SavedView[] = [
-  { id: "open", label: "Open", filters: [{ id: "status", value: ["open"] }] },
-  { id: "resolved", label: "Resolved", filters: [{ id: "status", value: ["resolved"] }] },
-  { id: "dismissed", label: "Dismissed", filters: [{ id: "status", value: ["dismissed"] }] },
-  { id: "all", label: "All risk events", filters: [] },
-];
+      ),
+    },
+    {
+      id: "user",
+      accessorFn: (e) => e.user,
+      header: t.user,
+      meta: { label: t.user },
+      cell: ({ row }) =>
+        row.original.userId ? (
+          <Link href={`/admin/users/${row.original.userId}`} className="font-medium whitespace-nowrap text-fg underline-offset-3 hover:underline">
+            {row.original.user}
+          </Link>
+        ) : (
+          <span className="text-fg-3">{copy.unknownUser}</span>
+        ),
+    },
+    {
+      id: "type",
+      accessorFn: (e) => e.type,
+      header: t.event,
+      filterFn: facetFilter,
+      meta: { label: t.event },
+      cell: ({ row }) => (
+        <span className="flex min-w-64 flex-col py-2">
+          <span className="text-fg">{copy.labels.riskType[row.original.type]}</span>
+          <span className="text-caption text-fg-3">
+            {row.original.detail}
+            {row.original.signInId ? (
+              <>
+                {" "}
+                <Link href={`/admin/sign-ins?event=${row.original.signInId}`} className="text-link underline underline-offset-3 hover:text-ember">
+                  {t.viewSignIn}
+                </Link>
+              </>
+            ) : null}
+          </span>
+        </span>
+      ),
+    },
+    {
+      id: "level",
+      accessorFn: (e) => e.level,
+      header: t.risk,
+      filterFn: facetFilter,
+      meta: { label: t.risk },
+      cell: ({ row }) => <Badge tone={RISK[row.original.level].tone}>{copy.labels.risk[row.original.level]}</Badge>,
+    },
+    {
+      id: "ip",
+      accessorFn: (e) => e.ip,
+      header: t.ip,
+      meta: { label: t.ip },
+      cell: ({ row }) => <span className="font-mono text-code-sm whitespace-nowrap text-fg-3">{row.original.ip || "—"}</span>,
+    },
+    {
+      id: "device",
+      accessorFn: (e) => e.device,
+      header: t.device,
+      meta: { label: t.device },
+      cell: ({ row }) => <span className="whitespace-nowrap text-fg-3">{row.original.device || "—"}</span>,
+    },
+    {
+      id: "status",
+      accessorFn: (e) => e.status,
+      header: t.statusLabel,
+      filterFn: facetFilter,
+      meta: { label: t.statusLabel },
+      cell: ({ row }) => (
+        <span className="inline-flex items-center gap-2 whitespace-nowrap">
+          <StatusDot tone={STATUS[row.original.status]} />
+          {t.status[row.original.status]}
+        </span>
+      ),
+    },
+  ];
+}
 
 export function RiskTable({ events, userNames }: { events: RiskEvent[]; userNames: Record<string, string> }) {
+  const locale = useLocale();
+  const copy = policyMessages[locale];
+  const t = copy.risk;
   const { run, toast, router } = useMutation();
-  const rows = events.map((e) => ({ ...e, user: (e.userId && userNames[e.userId]) || "Unknown user" }));
+  const rows = events.map((e) => ({ ...e, user: (e.userId && userNames[e.userId]) || copy.unknownUser }));
+  const views: SavedView[] = [
+    { id: "open", label: t.status.open, filters: [{ id: "status", value: ["open"] }] },
+    { id: "resolved", label: t.status.resolved, filters: [{ id: "status", value: ["resolved"] }] },
+    { id: "dismissed", label: t.status.dismissed, filters: [{ id: "status", value: ["dismissed"] }] },
+    { id: "all", label: t.all, filters: [] },
+  ];
 
   function close(selected: Row[], action: "resolve" | "dismiss") {
     return run(
@@ -124,8 +132,8 @@ export function RiskTable({ events, userNames }: { events: RiskEvent[]; userName
       () => Promise.all(selected.map((e) => api(`/risk-events/${e.id}/${action}`, { method: "POST" }))),
       () =>
         toast({
-          title: `${pluralize(selected.length, "risk event")} ${action === "resolve" ? "resolved" : "dismissed"}`,
-          description: action === "resolve" ? "Marked as handled. Recorded in the audit log." : "Marked as not a threat. Recorded in the audit log.",
+          title: t.closed(selected.length, action),
+          description: action === "resolve" ? t.resolvedDescription : t.dismissedDescription,
         }),
     );
   }
@@ -133,26 +141,26 @@ export function RiskTable({ events, userNames }: { events: RiskEvent[]; userName
   return (
     <DataTable
       data={rows}
-      columns={columns}
+      columns={riskColumns(copy, locale)}
       getRowId={(e) => e.id}
-      label="Risk events"
-      noun={["risk event", "risk events"]}
+      label={t.label}
+      noun={t.noun}
       storageKey="risk-events"
-      searchText={(e) => `${e.user} ${RISK_TYPE[e.type]} ${e.detail} ${e.ip} ${e.device}`}
-      searchPlaceholder="Search user, event or IP"
+      searchText={(e) => `${e.user} ${copy.labels.riskType[e.type]} ${e.detail} ${e.ip} ${e.device}`}
+      searchPlaceholder={t.search}
       views={views}
       facets={[
-        { column: "type", label: "Event", options: (Object.keys(RISK_TYPE) as RiskEventType[]).map((value) => ({ value, label: RISK_TYPE[value] })) },
-        { column: "level", label: "Risk", options: (["high", "medium"] as const).map((value) => ({ value, label: RISK[value].label })) },
+        { column: "type", label: t.event, options: (Object.keys(copy.labels.riskType) as RiskEventType[]).map((value) => ({ value, label: copy.labels.riskType[value] })) },
+        { column: "level", label: t.risk, options: (["high", "medium"] as const).map((value) => ({ value, label: copy.labels.risk[value] })) },
       ]}
       rowActions={[
-        { label: "Resolve", icon: CircleCheck, onSelect: (e) => close([e], "resolve") },
-        { label: "Dismiss", icon: CircleSlash, onSelect: (e) => close([e], "dismiss") },
-        { label: "Open user", icon: UserRound, separatorBefore: true, onSelect: (e) => (e.userId ? router.push(`/admin/users/${e.userId}`) : undefined) },
+        { label: t.resolve, icon: CircleCheck, onSelect: (e) => close([e], "resolve") },
+        { label: t.dismiss, icon: CircleSlash, onSelect: (e) => close([e], "dismiss") },
+        { label: t.openUser, icon: UserRound, separatorBefore: true, onSelect: (e) => (e.userId ? router.push(`/admin/users/${e.userId}`) : undefined) },
       ]}
       bulkActions={[
-        { label: "Resolve", icon: CircleCheck, onSelect: (selected) => close(selected, "resolve") },
-        { label: "Dismiss", icon: CircleSlash, onSelect: (selected) => close(selected, "dismiss") },
+        { label: t.resolve, icon: CircleCheck, onSelect: (selected) => close(selected, "resolve") },
+        { label: t.dismiss, icon: CircleSlash, onSelect: (selected) => close(selected, "dismiss") },
       ]}
     />
   );

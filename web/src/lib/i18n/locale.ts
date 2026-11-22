@@ -1,8 +1,10 @@
-const supported = ["en", "es"] as const;
+export const locales = ["en", "es"] as const;
 
-export type Locale = (typeof supported)[number];
+export type Locale = (typeof locales)[number];
 
-export function preferredLocale(header: string | null): Locale {
+export const languageNames: Record<Locale, string> = { en: "English", es: "Español" };
+
+export function preferredLocale(header: string | null): Locale | null {
   const preferences = (header ?? "").split(",").flatMap((entry) => {
     const [tag, weight, ...extra] = entry.trim().toLowerCase().split(";").map((part) => part.trim());
     const language = tag.split("-")[0];
@@ -13,8 +15,8 @@ export function preferredLocale(header: string | null): Locale {
   const explicit = new Set(preferences.filter(({ language }) => language !== "*").map(({ language }) => language));
   for (const { language, quality } of preferences.sort((a, b) => b.quality - a.quality)) {
     if (quality === 0) break;
-    const match = supported.find((locale) => locale === language || (language === "*" && !explicit.has(locale)));
+    const match = locales.find((locale) => locale === language || (language === "*" && !explicit.has(locale)));
     if (match) return match;
   }
-  return "en";
+  return null;
 }

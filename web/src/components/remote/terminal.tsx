@@ -3,7 +3,7 @@
 import "@xterm/xterm/css/xterm.css";
 import Link from "next/link";
 import { ArrowLeft, CircleStop, RotateCw, ShieldAlert } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { FitAddon } from "@xterm/addon-fit";
 import type { Terminal } from "@xterm/xterm";
 import { Avatar } from "@/components/ui/avatar";
@@ -13,6 +13,8 @@ import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { api, ApiError } from "@/lib/api/client";
 import { formatTime } from "@/lib/format";
+import { useMessages } from "@/lib/i18n/client";
+import { remoteMessages } from "@/lib/i18n/console/infrastructure/remote";
 import type { RemoteProtocol, RemoteSession } from "@/lib/infra-types";
 
 type Phase = "starting" | "connecting" | "connected" | "ended" | "refused";
@@ -20,21 +22,18 @@ type DesktopRenderer = Awaited<ReturnType<typeof import("./desktop").remoteDeskt
 type Connected = { username: string; address: string; endsAt: string; recording: boolean };
 type ServerEvent = { type: "status" | "end"; message: string } | ({ type: "connected" } & Connected) | { type: "ping" };
 
-const PHASE: Record<Phase, { label: string; tone: Tone }> = {
-  starting: { label: "Checking access", tone: "info" },
-  connecting: { label: "Connecting", tone: "info" },
-  connected: { label: "Connected", tone: "success" },
-  ended: { label: "Disconnected", tone: "neutral" },
-  refused: { label: "Not connected", tone: "danger" },
-};
+const TONE: Record<Phase, Tone> = { starting: "info", connecting: "info", connected: "success", ended: "neutral", refused: "danger" };
 
 const SIGN_IN_AGAIN = ["ERR_SIGN_IN_AGAIN", "ERR_STRONGER_AUTH_REQUIRED"];
+
+const english = (text: string) => <span lang="en">{text}</span>;
 
 function token(name: string) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
 export function RemoteTerminal({ app }: { app: { id: string; name: string; logoUrl: string | null } }) {
+  const t = useMessages(remoteMessages).terminal;
   const container = useRef<HTMLDivElement>(null);
   const terminal = useRef<{ term: Terminal; fit: FitAddon } | null>(null);
   const desktop = useRef<ReturnType<DesktopRenderer> | null>(null);
@@ -42,7 +41,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
   const socket = useRef<WebSocket | null>(null);
   const attempt = useRef(0);
   const [phase, setPhase] = useState<Phase>("starting");
-  const [message, setMessage] = useState("Halo is checking your access and your organization's policies.");
+  const [message, setMessage] = useState<ReactNode>(t.checking);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [session, setSession] = useState<Connected | null>(null);
   const here = `/account/applications/${app.id}/connect`;
@@ -55,7 +54,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
     setPhase("starting");
     setSession(null);
     setRefusal(null);
-    setMessage("Halo is checking your access and your organization's policies.");
+    setMessage(t.checking);
     let started: RemoteSession;
     try {
       started = await api<RemoteSession>("/me/remote-sessions", { body: { applicationId: app.id } });
@@ -63,7 +62,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
       if (mine !== attempt.current) return;
       setPhase("refused");
       setRefusal(error instanceof ApiError ? error.code : null);
-      setMessage(error instanceof ApiError ? error.message : "Halo could not reach the server. Check your connection and try again.");
+      setMessage(error instanceof ApiError ? english(error.message) : t.unreachable);
       return;
     }
     if (mine !== attempt.current) return;
@@ -75,10 +74,10 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
         terminal.current?.term.dispose();
         terminal.current = null;
         const { remoteDesktop } = await import("./desktop");
-        const render = await remoteDesktop(host);
+        const render = await remoteDesktop(host, t.desktop);
         if (mine !== attempt.current) return;
         setPhase("connecting");
-        setMessage(`Opening the remote desktop at ${started.address}.`);
+        setMessage(t.openingDesktop(started.address));
         const scheme = window.location.protocol === "https:" ? "wss" : "ws";
         const width = Math.max(320, Math.min(host.clientWidth, 4096));
         const height = Math.max(320, Math.min(host.clientHeight, 4096));
@@ -96,7 +95,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
             return;
           }
           const e = JSON.parse(data) as ServerEvent;
-          if (e.type === "status") setMessage(e.message);
+          if (e.type === "status") setMessage(english(e.message));
           if (e.type === "connected") {
             desktop.current = render(ws, started);
             setPhase("connected");
@@ -105,7 +104,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
           if (e.type === "end") {
             ended = true;
             setPhase("ended");
-            setMessage(e.message);
+            setMessage(english(e.message));
           }
         };
         ws.onclose = () => {
@@ -116,7 +115,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
           desktop.current = null;
           if (!ended) {
             setPhase("ended");
-            setMessage("The connection to Halo was lost. Connect again to start a new session.");
+            setMessage(t.lost);
           }
         };
         return;
@@ -141,7 +140,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
       term.reset();
       fit.fit();
       setPhase("connecting");
-      setMessage(`Opening a session to ${started.address} as ${started.username}.`);
+      setMessage(t.opening(started.address, started.username));
       const scheme = window.location.protocol === "https:" ? "wss" : "ws";
       const ws = new WebSocket(`${scheme}://${window.location.host}/api/v1/me/remote-sessions/${started.id}/connect?cols=${term.cols}&rows=${term.rows}`);
       ws.binaryType = "arraybuffer";
@@ -163,7 +162,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
           return;
         }
         const e = JSON.parse(event.data) as ServerEvent;
-        if (e.type === "status") setMessage(e.message);
+        if (e.type === "status") setMessage(english(e.message));
         if (e.type === "connected") {
           setPhase("connected");
           setSession(e);
@@ -172,7 +171,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
         if (e.type === "end") {
           ended = true;
           setPhase("ended");
-          setMessage(e.message);
+          setMessage(english(e.message));
         }
       };
       ws.onclose = () => {
@@ -184,7 +183,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
         socket.current = null;
         if (!ended) {
           setPhase("ended");
-          setMessage("The connection to Halo was lost. Connect again to start a new session.");
+          setMessage(t.lost);
         }
       };
     } catch {
@@ -194,9 +193,9 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
       terminal.current?.term.dispose();
       terminal.current = null;
       setPhase("ended");
-      setMessage(`The ${started.protocol === "ssh" ? "terminal" : "remote desktop"} could not start. Connect again to retry.`);
+      setMessage(t.failed(started.protocol === "ssh"));
     }
-  }, [app.id]);
+  }, [app.id, t]);
 
   useEffect(() => {
     void connect();
@@ -222,7 +221,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
     desktop.current?.dispose();
     desktop.current = null;
     setPhase("ended");
-    setMessage("You closed the session. Connect again to start a new one.");
+    setMessage(t.closed);
   }
 
   const busy = phase === "starting" || phase === "connecting";
@@ -231,7 +230,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
     <div className="flex flex-col gap-6">
       <Link href="/account/applications" className="inline-flex w-fit items-center gap-2 rounded-sm text-body-sm text-fg-3 transition-colors duration-fast hover:text-fg">
         <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.75} />
-        Applications
+        {t.applications}
       </Link>
       <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-4">
@@ -239,8 +238,8 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
           <div className="flex min-w-0 flex-col gap-1">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="truncate text-h3 text-fg">{app.name}</h1>
-              <Badge tone={PHASE[phase].tone} dot>
-                {PHASE[phase].label}
+              <Badge tone={TONE[phase]} dot>
+                {t.phase[phase]}
               </Badge>
             </div>
             <p className="truncate text-body-sm text-fg-3">
@@ -249,11 +248,11 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
                   <span className="font-mono text-code-sm text-fg-2">
                     {session.username ? `${session.username}@` : ""}{session.address}
                   </span>
-                  {` · Ends at ${formatTime(session.endsAt)}`}
-                  {session.recording ? " · Recorded" : null}
+                  {t.endsAt(formatTime(session.endsAt))}
+                  {session.recording ? t.recorded : null}
                 </>
               ) : (
-                protocol ? `${protocol.toUpperCase()} session in your browser` : "Remote access"
+                protocol ? t.inBrowser(protocol.toUpperCase()) : t.remoteAccess
               )}
             </p>
           </div>
@@ -262,13 +261,13 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
           {phase === "connected" || phase === "connecting" ? (
             <Button size="sm" variant="secondary" onClick={disconnect}>
               <CircleStop aria-hidden="true" size={16} strokeWidth={1.75} />
-              Disconnect
+              {t.disconnect}
             </Button>
           ) : null}
           {phase === "ended" || phase === "refused" ? (
             <Button size="sm" variant="primary" onClick={() => void connect()}>
               <RotateCw aria-hidden="true" size={16} strokeWidth={1.75} />
-              {phase === "refused" ? "Try again" : "Connect again"}
+              {phase === "refused" ? t.tryAgain : t.connectAgain}
             </Button>
           ) : null}
         </div>
@@ -277,7 +276,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
       <Card className="relative overflow-hidden">
         <div
           role="region"
-          aria-label={`${protocol === "ssh" ? "Terminal" : protocol ? "Remote desktop" : "Remote session"} for ${app.name}`}
+          aria-label={t.region(protocol, app.name)}
           aria-busy={busy}
           className="h-[min(70dvh,720px)] min-h-80 bg-sunken p-2"
           onClick={() => terminal.current?.term.focus()}
@@ -296,12 +295,12 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
               <p className="text-body-sm text-fg-2">{message}</p>
               {phase === "refused" && refusal && SIGN_IN_AGAIN.includes(refusal) ? (
                 <Link href={`/sign-in?next=${encodeURIComponent(here)}`} className={buttonClasses("secondary", "sm")}>
-                  Sign in again
+                  {t.signInAgain}
                 </Link>
               ) : null}
               {phase === "refused" && refusal === "ERR_TERMS_REQUIRED" ? (
                 <Link href={`/account/terms?next=${encodeURIComponent(here)}`} className={buttonClasses("secondary", "sm")}>
-                  Review terms
+                  {t.reviewTerms}
                 </Link>
               ) : null}
             </div>
@@ -309,7 +308,7 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
         ) : null}
       </Card>
       <p role="status" aria-live="polite" className="sr-only">
-        {phase === "connected" ? `Connected to ${app.name}. The remote session has focus.` : null}
+        {phase === "connected" ? t.focused(app.name) : null}
       </p>
     </div>
   );

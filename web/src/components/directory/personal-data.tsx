@@ -9,33 +9,37 @@ import { Card, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
+import { useMessages } from "@/lib/i18n/client";
+import { directoryMessages } from "@/lib/i18n/console/directory";
 
 type Person = { id: string; name: string; email: string };
 
 export function PersonalData({ user, self }: { user: Person; self: boolean }) {
   const [deleting, setDeleting] = useState(false);
+  const m = useMessages(directoryMessages);
+  const t = m.personalData;
 
   return (
     <div className="flex flex-col gap-6">
       <Card>
-        <CardHeader title="Personal data" description="For access and portability requests under data protection law such as the GDPR." />
+        <CardHeader title={t.title} description={t.description} />
         <Row
-          title="Export personal data"
-          description={`Downloads everything Halo stores about ${user.name} as JSON: profile, sign-in methods without their secrets, groups, sessions, devices, sign-ins, audit entries about them, consents and access requests.`}
-          action={<ExportButton path={`/users/${user.id}/export`} label="Export" variant="secondary" size="sm" />}
+          title={t.export}
+          description={t.exportDescription(user.name)}
+          action={<ExportButton path={`/users/${user.id}/export`} label={t.exportButton} variant="secondary" size="sm" />}
         />
       </Card>
       {self ? null : (
         <div id="danger-zone" className="scroll-mt-24">
           <Card>
-            <CardHeader title="Danger zone" />
+            <CardHeader title={m.dangerZone} />
             <Row
-              title="Delete permanently"
-              description={`Removes ${user.name} with their sign-in methods, sessions, devices and group memberships, and replaces their name and email address in the logs with a pseudonym. This cannot be undone.`}
+              title={t.deletePermanently}
+              description={t.deleteDescription(user.name)}
               action={
                 <Button size="sm" variant="destructive" onClick={() => setDeleting(true)}>
                   <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
-                  Delete permanently
+                  {t.deletePermanently}
                 </Button>
               }
             />
@@ -63,6 +67,8 @@ function DeleteDialog({ user, open, onClose }: { user: Person; open: boolean; on
   const { pending, run, errorFor, clearError, toast, router } = useMutation();
   const formId = useId();
   const [typed, setTyped] = useState("");
+  const m = useMessages(directoryMessages);
+  const t = m.personalData;
   const confirmed = typed.trim().toLowerCase() === user.email.toLowerCase();
 
   function close() {
@@ -76,15 +82,15 @@ function DeleteDialog({ user, open, onClose }: { user: Person; open: boolean; on
       open={open}
       onOpenChange={(next) => (next ? undefined : close())}
       error={errorFor("delete")}
-      title={`Delete ${user.name} permanently?`}
-      description="Halo removes their account, sign-in methods, sessions, tokens, devices, group memberships and consents, and replaces their name and email address in the sign-in and audit logs with a pseudonym. You can't undo this. Export their data first if you need a copy."
+      title={t.deleteTitle(user.name)}
+      description={t.deleteDialogDescription}
       footer={
         <>
           <Button variant="secondary" onClick={close}>
-            Cancel
+            {m.cancel}
           </Button>
           <Button variant="destructive" type="submit" form={formId} disabled={!confirmed} loading={pending === "delete"}>
-            Delete permanently
+            {t.deletePermanently}
           </Button>
         </>
       }
@@ -99,14 +105,14 @@ function DeleteDialog({ user, open, onClose }: { user: Person; open: boolean; on
             "delete",
             () => api<{ pseudonym: string }>(`/users/${user.id}`, { method: "DELETE" }),
             ({ pseudonym }) => {
-              toast({ title: `${user.name} deleted`, description: `The logs now show them as ${pseudonym}. Recorded in the audit log.` });
+              toast({ title: t.deleted(user.name), description: t.deletedHint(pseudonym) });
               router.push("/admin/users");
             },
             "inline",
           );
         }}
       >
-        <Field label={`Type ${user.email} to confirm`}>
+        <Field label={t.confirm(user.email)}>
           {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={typed} onChange={(event) => setTyped(event.target.value)} />}
         </Field>
       </form>

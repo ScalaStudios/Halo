@@ -8,20 +8,23 @@ import { DescriptionList } from "@/components/ui/description-list";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
+import { useMessages } from "@/lib/i18n/client";
+import { directoryMessages } from "@/lib/i18n/console/directory";
 import type { PosixAccount, User } from "@/lib/types";
 
 export function LinuxAccountCard({ user, editable }: { user: User; editable: boolean }) {
   const [open, setOpen] = useState(false);
+  const t = useMessages(directoryMessages);
   const posix = user.posix;
   return (
     <Card>
       <CardHeader
-        title="Linux account"
-        description="The account this person logs in to on hosts that run halo-hostd, and that the LDAP server shows as posixAccount."
+        title={t.linux.title}
+        description={t.linux.description}
         actions={
           posix && editable ? (
             <Button size="sm" variant="quiet" onClick={() => setOpen(true)}>
-              Edit
+              {t.edit}
             </Button>
           ) : undefined
         }
@@ -31,14 +34,14 @@ export function LinuxAccountCard({ user, editable }: { user: User; editable: boo
           <DescriptionList
             columns={2}
             items={[
-              { label: "User name", value: posix.username, mono: true },
-              { label: "User and group number", value: String(posix.uidNumber), mono: true },
-              { label: "Login shell", value: posix.loginShell, mono: true },
-              { label: "Home directory", value: posix.homeDirectory, mono: true },
+              { label: t.linux.userName, value: posix.username, mono: true },
+              { label: t.linux.uid, value: String(posix.uidNumber), mono: true },
+              { label: t.linux.shell, value: posix.loginShell, mono: true },
+              { label: t.linux.home, value: posix.homeDirectory, mono: true },
             ]}
           />
         ) : (
-          <p className="text-body-sm text-fg-3">No Linux account yet. The user number range under Infrastructure access is used up; widen it and Halo assigns one.</p>
+          <p className="text-body-sm text-fg-3">{t.linux.none}</p>
         )}
       </CardBody>
       {open && posix ? <LinuxAccountDialog user={user} posix={posix} onClose={() => setOpen(false)} /> : null}
@@ -48,6 +51,7 @@ export function LinuxAccountCard({ user, editable }: { user: User; editable: boo
 
 function LinuxAccountDialog({ user, posix, onClose }: { user: User; posix: PosixAccount; onClose: () => void }) {
   const { pending, run, errorFor, toast } = useMutation();
+  const t = useMessages(directoryMessages);
   const [draft, setDraft] = useState({ username: posix.username, loginShell: posix.loginShell, homeDirectory: posix.homeDirectory });
 
   function save() {
@@ -55,7 +59,7 @@ function LinuxAccountDialog({ user, posix, onClose }: { user: User; posix: Posix
       "posix",
       () => api<User>(`/users/${user.id}/posix`, { method: "PUT", body: draft }),
       (saved) => {
-        toast({ title: `Linux account saved as ${saved.posix?.username ?? draft.username}`, description: "Hosts pick it up at their next refresh. Recorded in the audit log." });
+        toast({ title: t.linux.saved(saved.posix?.username ?? draft.username), description: t.linux.savedHint });
         onClose();
       },
       "inline",
@@ -69,15 +73,15 @@ function LinuxAccountDialog({ user, posix, onClose }: { user: User; posix: Posix
         if (!open) onClose();
       }}
       error={errorFor("posix")}
-      title={`Edit ${user.name}'s Linux account`}
-      description={`The user and group number ${posix.uidNumber} never changes. Renaming doesn't move the home directory on hosts that already have one.`}
+      title={t.linux.editTitle(user.name)}
+      description={t.linux.editDescription(posix.uidNumber)}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {t.cancel}
           </Button>
           <Button variant="primary" loading={pending === "posix"} onClick={save}>
-            Save account
+            {t.linux.save}
           </Button>
         </>
       }
@@ -89,13 +93,13 @@ function LinuxAccountDialog({ user, posix, onClose }: { user: User; posix: Posix
           save();
         }}
       >
-        <Field label="User name" hint="Up to 32 lowercase letters, digits, _ . or -, starting with a letter or _. Unique across people and groups.">
+        <Field label={t.linux.userName} hint={t.linux.userNameHint}>
           {(props) => <Input {...props} autoFocus mono autoComplete="off" spellCheck={false} value={draft.username} onChange={(event) => setDraft({ ...draft, username: event.target.value })} />}
         </Field>
-        <Field label="Login shell">
+        <Field label={t.linux.shell}>
           {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={draft.loginShell} onChange={(event) => setDraft({ ...draft, loginShell: event.target.value })} />}
         </Field>
-        <Field label="Home directory">
+        <Field label={t.linux.home}>
           {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={draft.homeDirectory} onChange={(event) => setDraft({ ...draft, homeDirectory: event.target.value })} />}
         </Field>
         <button type="submit" hidden />

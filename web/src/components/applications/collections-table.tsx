@@ -12,42 +12,48 @@ import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox, Field, Input } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
-import { GROUP_KIND } from "@/lib/labels";
+import { useLocale, useMessages } from "@/lib/i18n/client";
+import { applicationsMessages } from "@/lib/i18n/console/applications";
+import { directoryMessages } from "@/lib/i18n/console/directory";
+import type { Locale } from "@/lib/i18n/locale";
 import type { Application, Collection, Group } from "@/lib/types";
-import { PROTOCOL_LABEL } from "./shared";
 
 type Row = Collection & { applications: Application[]; groups: Group[] };
 
-const columns: ColumnDef<Row, any>[] = [
+const columns = (t: (typeof applicationsMessages)[Locale], locale: Locale): ColumnDef<Row, any>[] => [
   {
     id: "name",
     accessorFn: (c) => c.name,
-    header: "Collection",
-    meta: { label: "Collection", hideable: false },
+    header: t.collections.collection,
+    meta: { label: t.collections.collection, hideable: false },
     cell: ({ getValue }) => <span className="font-medium whitespace-nowrap text-fg">{getValue<string>()}</span>,
   },
   {
     id: "applications",
-    accessorFn: (c) => joinNames(c.applications),
-    header: "Applications",
-    meta: { label: "Applications" },
-    cell: ({ row }) => <Names names={row.original.applications} empty="No applications" />,
+    accessorFn: (c) => joinNames(c.applications, locale),
+    header: t.common.applications,
+    meta: { label: t.common.applications },
+    cell: ({ row }) => <Names names={row.original.applications} empty={t.collections.noApplications} />,
   },
   {
     id: "groups",
-    accessorFn: (c) => joinNames(c.groups),
-    header: "Shown to",
-    meta: { label: "Shown to" },
-    cell: ({ row }) => <Names names={row.original.groups} empty="Nobody" />,
+    accessorFn: (c) => joinNames(c.groups, locale),
+    header: t.collections.shownTo,
+    meta: { label: t.collections.shownTo },
+    cell: ({ row }) => <Names names={row.original.groups} empty={t.common.nobody} />,
   },
 ];
 
 function Names({ names, empty }: { names: { name: string }[]; empty: string }) {
-  return names.length ? <span className="block max-w-96 min-w-48 py-2">{joinNames(names)}</span> : <span className="whitespace-nowrap text-fg-3">{empty}</span>;
+  const locale = useLocale();
+  return names.length ? <span className="block max-w-96 min-w-48 py-2">{joinNames(names, locale)}</span> : <span className="whitespace-nowrap text-fg-3">{empty}</span>;
 }
 
 export function CollectionsTable({ collections, applications, groups }: { collections: Collection[]; applications: Application[]; groups: Group[] }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
+  const locale = useLocale();
+  const t = applicationsMessages[locale];
+  const c = t.collections;
   const [editing, setEditing] = useState<Row | "new" | null>(null);
   const [deleting, setDeleting] = useState<Row | null>(null);
   const rows = collections.map((c) => ({
@@ -59,7 +65,7 @@ export function CollectionsTable({ collections, applications, groups }: { collec
   const create = (
     <Button size="sm" variant="primary" onClick={() => setEditing("new")}>
       <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-      Create collection
+      {c.create}
     </Button>
   );
 
@@ -69,25 +75,25 @@ export function CollectionsTable({ collections, applications, groups }: { collec
         <Card>
           <EmptyState
             icon={Layers}
-            title="No collections yet"
-            description="Create a collection to give the account portal a named section, like Engineering or HR, for the groups you choose."
+            title={c.empty}
+            description={c.emptyHint}
             action={create}
           />
         </Card>
       ) : (
         <DataTable
           data={rows}
-          columns={columns}
+          columns={columns(t, locale)}
           getRowId={(c) => c.id}
-          label="Collections"
-          noun={["collection", "collections"]}
+          label={c.label}
+          noun={c.noun}
           storageKey="collections"
-          searchText={(c) => `${c.name} ${joinNames(c.applications)} ${joinNames(c.groups)}`}
-          searchPlaceholder="Search collections, applications or groups"
+          searchText={(c) => `${c.name} ${joinNames(c.applications, locale)} ${joinNames(c.groups, locale)}`}
+          searchPlaceholder={c.search}
           onRowOpen={setEditing}
           rowActions={[
-            { label: "Edit collection", icon: Pencil, onSelect: setEditing },
-            { label: "Delete collection", icon: Trash2, danger: true, separatorBefore: true, onSelect: setDeleting },
+            { label: c.edit, icon: Pencil, onSelect: setEditing },
+            { label: c.delete, icon: Trash2, danger: true, separatorBefore: true, onSelect: setDeleting },
           ]}
           toolbarEnd={create}
         />
@@ -108,12 +114,12 @@ export function CollectionsTable({ collections, applications, groups }: { collec
           clearError();
         }}
         error={errorFor("delete")}
-        title={`Delete ${deleting?.name ?? ""}?`}
-        description="People stop seeing this section in their account portal. The applications and their group assignments don't change."
+        title={t.common.deleteConfirm(deleting?.name ?? "")}
+        description={c.deleteHint}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleting(null)}>
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button
               variant="destructive"
@@ -124,14 +130,14 @@ export function CollectionsTable({ collections, applications, groups }: { collec
                   "delete",
                   () => api(`/collections/${deleting.id}`, { method: "DELETE" }),
                   () => {
-                    toast({ title: `${deleting.name} deleted`, description: "Recorded in the audit log." });
+                    toast({ title: t.common.deletedToast(deleting.name), description: t.common.audit });
                     setDeleting(null);
                   },
                   "inline",
                 )
               }
             >
-              Delete collection
+              {c.delete}
             </Button>
           </>
         }
@@ -146,9 +152,12 @@ function CollectionDialog({ collection, applications, groups, onClose }: { colle
   const [groupIds, setGroupIds] = useState<string[]>(collection?.groupIds ?? []);
   const [error, setError] = useState<string>();
   const { pending, run, errorFor, toast } = useMutation();
+  const t = useMessages(applicationsMessages);
+  const kinds = useMessages(directoryMessages).groupKind;
+  const c = t.collections;
 
   function submit() {
-    setError(name.trim() ? undefined : "Enter a collection name, like Engineering.");
+    setError(name.trim() ? undefined : c.nameRequired);
     if (!name.trim()) return;
     void run(
       "save",
@@ -159,7 +168,7 @@ function CollectionDialog({ collection, applications, groups, onClose }: { colle
         }),
       (saved) => {
         onClose();
-        toast({ title: `${saved.name} ${collection ? "saved" : "created"}`, description: "Members of its groups see it in their account portal." });
+        toast({ title: collection ? t.common.savedToast(saved.name) : t.common.createdToast(saved.name), description: c.savedHint });
       },
       "inline",
     );
@@ -170,15 +179,15 @@ function CollectionDialog({ collection, applications, groups, onClose }: { colle
       open
       onOpenChange={(open) => (open ? undefined : onClose())}
       error={errorFor("save")}
-      title={collection ? `Edit ${collection.name}` : "Create collection"}
-      description="A named section of the account portal. People see the applications in it that they already have access to."
+      title={collection ? t.common.edit(collection.name) : c.create}
+      description={c.dialogHint}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {t.common.cancel}
           </Button>
           <Button variant="primary" loading={pending === "save"} onClick={submit}>
-            {collection ? "Save collection" : "Create collection"}
+            {collection ? c.save : c.create}
           </Button>
         </>
       }
@@ -190,20 +199,20 @@ function CollectionDialog({ collection, applications, groups, onClose }: { colle
           submit();
         }}
       >
-        <Field label="Name" error={error}>
-          {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder="Engineering" />}
+        <Field label={t.common.name} error={error}>
+          {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder={c.placeholder} />}
         </Field>
         <Checklist
-          legend="Applications"
-          hint="Adding an application here doesn't give anyone access to it."
-          items={applications.map((a) => ({ id: a.id, label: a.name, detail: PROTOCOL_LABEL[a.protocol] }))}
+          legend={t.common.applications}
+          hint={c.applicationsHint}
+          items={applications.map((a) => ({ id: a.id, label: a.name, detail: t.protocols[a.protocol] }))}
           value={applicationIds}
           onChange={setApplicationIds}
         />
         <Checklist
-          legend="Shown to"
-          hint="Members of these groups see the collection."
-          items={groups.map((g) => ({ id: g.id, label: g.name, detail: GROUP_KIND[g.kind] }))}
+          legend={c.shownTo}
+          hint={c.shownToHint}
+          items={groups.map((g) => ({ id: g.id, label: g.name, detail: kinds[g.kind] }))}
           value={groupIds}
           onChange={setGroupIds}
         />

@@ -4,36 +4,39 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { DescriptionList } from "@/components/ui/description-list";
 import { SectionTitle } from "@/components/ui/section-title";
 import { FieldSkeleton, ListSkeleton, PageSkeleton, SkeletonText, TableSkeleton } from "@/components/ui/skeleton";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { provisioningMessages } from "@/lib/i18n/console/infrastructure/provisioning";
+import { requestLocale } from "@/lib/i18n/server";
 
-export default function Loading() {
+export default async function Loading() {
+  const locale = await requestLocale();
+  const nav = frameMessages[locale].nav.items;
+  const t = provisioningMessages[locale];
   return (
-    <PageSkeleton
-      title="Provisioning"
-      description="SCIM 2.0 in both directions and LDAP directory sync: your HR system, identity provider or directory keeps people in Halo current, and Halo keeps accounts in your applications current."
-    >
+    <PageSkeleton title={nav.provisioning.label} description={t.page.description}>
       <section className="flex flex-col gap-6">
-        <SectionTitle title="Inbound" description="Workday, BambooHR, Okta or Microsoft Entra ID create, update and deactivate people and groups in Halo." />
+        <SectionTitle title={t.page.inbound} description={t.page.inboundHint} />
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
           <Card className="min-w-0 xl:col-span-5">
-            <CardHeader title="Connection details" description="Enter these in the provisioning settings of the source system." />
+            <CardHeader title={t.page.connection} description={t.page.connectionHint} />
             <CardBody className="flex flex-col gap-6">
-              <FieldSkeleton label="SCIM base URL" />
+              <FieldSkeleton label={t.page.scimBaseUrl} />
               <DescriptionList
                 items={[
-                  { label: "Authentication", value: "Bearer token: an API key with the scim scope" },
-                  { label: "Required role", value: "User administrator on the key's service account" },
-                  { label: "Supported", value: "Users and assigned groups, PATCH, filters on userName, externalId and emails, enterprise department and manager" },
+                  { label: t.page.authentication, value: t.page.authenticationValue },
+                  { label: t.page.requiredRole, value: t.page.requiredRoleValue },
+                  { label: t.page.supported, value: t.page.supportedValue },
                 ]}
               />
             </CardBody>
           </Card>
           <Card className="min-w-0 xl:col-span-7">
             <CardHeader
-              title="Connectors"
-              description="Service accounts with an active SCIM key."
+              title={t.page.connectors}
+              description={t.page.connectorsHint}
               actions={
                 <Link href="/admin/service-accounts" className={buttonClasses("quiet", "sm")}>
-                  Manage
+                  {t.page.manage}
                 </Link>
               }
             />
@@ -42,11 +45,11 @@ export default function Loading() {
         </div>
         <Card>
           <CardHeader
-            title="Recent SCIM changes"
-            description="The latest changes connectors made in Halo."
+            title={t.page.recent}
+            description={t.page.recentHint}
             actions={
               <Link href="/admin/audit" className={buttonClasses("quiet", "sm")}>
-                Audit log
+                {nav.audit.label}
               </Link>
             }
           />
@@ -55,13 +58,13 @@ export default function Loading() {
       </section>
       <section className="flex flex-col gap-6">
         <SectionTitle
-          title="LDAP directories"
-          description="Halo reads people and groups from Active Directory or OpenLDAP, keeps their profiles and group members in step, and suspends people who leave or are disabled. It never writes to the directory."
+          title={t.ldap.heading}
+          description={t.ldap.headingHint}
         />
         <TableSkeleton simple columns={5} rows={1} />
       </section>
       <section className="flex flex-col gap-6">
-        <SectionTitle title="Outbound" description={<SkeletonText chars={190} />} />
+        <SectionTitle title={t.page.outbound} description={<SkeletonText chars={190} />} />
         <TableSkeleton simple columns={5} rows={6} />
       </section>
     </PageSkeleton>

@@ -12,9 +12,10 @@ import { HoldToConfirm } from "@/components/ui/hold-to-confirm";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
-import { METHOD, RISK } from "@/lib/labels";
+import { useMessages } from "@/lib/i18n/client";
+import { policyMessages } from "@/lib/i18n/console/policy";
 import type { AccessPolicy, ComplianceCondition, DeviceCondition, NetworkCondition, PolicyConditions, PolicyEffect, PolicyMode } from "@/lib/policy-types";
-import { COMPLIANCE_CONDITION, DEVICE_CONDITION, EFFECT, HALO_APP, MODE, NETWORK_CONDITION, POLICY_METHODS, RISK_LEVELS, describePolicy, policyState, type Names } from "./shared";
+import { HALO_APP, POLICY_METHODS, RISK_LEVELS, describePolicy, policyState, type Names } from "./shared";
 
 export type Option = { id: string; name: string; detail?: string };
 
@@ -135,6 +136,7 @@ function ReferenceField({
 }
 
 function PeoplePicker({ label, users, selected, onChange }: { label: string; users: Option[]; selected: string[]; onChange: (ids: string[]) => void }) {
+  const t = useMessages(policyMessages).form;
   const names = nameMap(users);
   return (
     <div className="flex flex-col gap-3">
@@ -147,7 +149,7 @@ function PeoplePicker({ label, users, selected, onChange }: { label: string; use
               if (event.target.value) onChange([...selected, event.target.value]);
             }}
           >
-            <option value="">Add a person</option>
+            <option value="">{t.addPerson}</option>
             {users
               .filter((u) => !selected.includes(u.id))
               .map((u) => (
@@ -162,10 +164,10 @@ function PeoplePicker({ label, users, selected, onChange }: { label: string; use
         <ul className="flex flex-wrap gap-2" aria-label={label}>
           {selected.map((id) => (
             <li key={id} className="inline-flex h-8 items-center gap-1 rounded-md border border-border-strong bg-sunken pr-1 pl-3 text-body-sm text-fg">
-              {names[id] ?? "Deleted user"}
+              {names[id] ?? t.deletedUser}
               <button
                 type="button"
-                aria-label={`Remove ${names[id] ?? "deleted user"}`}
+                aria-label={names[id] ? t.removePerson(names[id]) : t.removeDeletedUser}
                 onClick={() => onChange(selected.filter((v) => v !== id))}
                 className="grid size-6 place-items-center rounded-sm text-fg-3 transition-colors duration-fast hover:bg-hover hover:text-fg"
               >
@@ -196,6 +198,8 @@ export function PolicyForm({
   terms: Option[];
   contexts: Option[];
 }) {
+  const copy = useMessages(policyMessages);
+  const t = copy.form;
   const { pending, run, errorFor, toast, router } = useMutation();
   const [name, setName] = useState(policy?.name ?? "");
   const [description, setDescription] = useState(policy?.description ?? "");
@@ -207,16 +211,16 @@ export function PolicyForm({
   const [c, setC] = useState<PolicyConditions>(policy?.conditions ?? BLANK);
   const [attempted, setAttempted] = useState(false);
 
-  const apps: Option[] = [{ id: HALO_APP, name: "Halo", detail: "The admin console and the account portal" }, ...applications];
+  const apps: Option[] = [{ id: HALO_APP, name: "Halo", detail: t.haloDetail }, ...applications];
   const names: Names = { groups: nameMap(groups), users: nameMap(users), apps: nameMap(applications), zones: nameMap(zones), terms: nameMap(terms), contexts: nameMap(contexts) };
-  const state = policyState({ enabled, mode });
+  const state = policyState({ enabled, mode }, copy);
   const problems = {
-    name: name.trim() ? undefined : "Enter a name, for example “Block high-risk sign-ins”.",
-    users: c.allUsers || c.groupIds.length + c.userIds.length ? undefined : "Choose at least one group or person, or apply the policy to all users.",
-    apps: c.allApps || c.appIds.length ? undefined : "Choose at least one application, or cover all applications.",
-    zones: c.network === "any" || c.zoneIds.length ? undefined : "Choose at least one network, or match any network.",
-    terms: effect !== "require-terms" || termsId ? undefined : "Choose the terms of use people must accept.",
-    context: effect !== "require-context" || contextId ? undefined : "Choose the authentication context sign-ins must meet.",
+    name: name.trim() ? undefined : copy.enterName(t.nameExample),
+    users: c.allUsers || c.groupIds.length + c.userIds.length ? undefined : t.usersRequired,
+    apps: c.allApps || c.appIds.length ? undefined : t.appsRequired,
+    zones: c.network === "any" || c.zoneIds.length ? undefined : t.zonesRequired,
+    terms: effect !== "require-terms" || termsId ? undefined : t.termsRequired,
+    context: effect !== "require-context" || contextId ? undefined : t.contextRequired,
   };
   const invalid = Object.values(problems).some(Boolean);
   const errors: Partial<typeof problems> = attempted ? problems : {};
@@ -239,8 +243,8 @@ export function PolicyForm({
       () => (policy ? api(`/policies/${policy.id}`, { method: "PUT", body }) : api("/policies", { body })),
       () => {
         toast({
-          title: policy ? `${name.trim()} saved` : `${name.trim()} created`,
-          description: !enabled ? "It stays off until you turn it on." : mode === "report" ? MODE.report.description : "It applies from the next sign-in.",
+          title: policy ? copy.saved(name.trim()) : t.created(name.trim()),
+          description: !enabled ? t.staysOff : mode === "report" ? copy.labels.mode.report : t.appliesNext,
         });
         router.push("/admin/policies");
       },
@@ -251,7 +255,7 @@ export function PolicyForm({
   async function remove() {
     if (!policy) return false;
     return run("delete", () => api(`/policies/${policy.id}`, { method: "DELETE" }), () => {
-      toast({ title: `${policy.name} deleted`, description: "Halo no longer evaluates it. Recorded in the audit log." });
+      toast({ title: copy.deleted(policy.name), description: copy.list.deletedDescription });
       router.push("/admin/policies");
     }, "inline");
   }
@@ -266,63 +270,63 @@ export function PolicyForm({
     >
       <div className="flex min-w-0 flex-col gap-6 xl:col-span-8">
         <Card>
-          <CardHeader title="Details" />
+          <CardHeader title={t.details} />
           <CardBody className="flex flex-col gap-6">
-            <Field label="Name" error={errors.name}>
-              {(props) => <Input {...props} autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder="Block high-risk sign-ins" />}
+            <Field label={copy.name} error={errors.name}>
+              {(props) => <Input {...props} autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder={t.nameExample} />}
             </Field>
-            <Field label="Description" hint="Optional. Say why the policy exists so other administrators know whether they can change it.">
+            <Field label={t.description} hint={t.descriptionHint}>
               {(props) => <Textarea {...props} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} />}
             </Field>
           </CardBody>
         </Card>
 
         <Card>
-          <CardHeader title="People" description="Who the policy applies to. Exclusions always win." />
+          <CardHeader title={t.people} description={t.peopleDescription} />
           <CardBody className="flex flex-col gap-6">
-            <Field label="Applies to">
+            <Field label={t.appliesTo}>
               {(props) => (
                 <Select {...props} value={c.allUsers ? "all" : "selected"} onChange={(event) => set("allUsers", event.target.value === "all")}>
-                  <option value="all">All users</option>
-                  <option value="selected">Selected groups and people</option>
+                  <option value="all">{t.allUsers}</option>
+                  <option value="selected">{t.selectedPeople}</option>
                 </Select>
               )}
             </Field>
             {c.allUsers ? null : (
               <div className="flex flex-col gap-6">
-                <CheckList legend="Groups" options={groups} selected={c.groupIds} onToggle={(id, on) => toggle("groupIds", id, on)} empty="There are no groups yet." />
-                <PeoplePicker label="People" users={users} selected={c.userIds} onChange={(ids) => set("userIds", ids)} />
+                <CheckList legend={copy.groups} options={groups} selected={c.groupIds} onToggle={(id, on) => toggle("groupIds", id, on)} empty={copy.noGroups} />
+                <PeoplePicker label={t.people} users={users} selected={c.userIds} onChange={(ids) => set("userIds", ids)} />
                 <FieldError>{errors.users}</FieldError>
               </div>
             )}
             <div className="flex flex-col gap-6 border-t border-border pt-6">
               <CheckList
-                legend="Exclude groups"
+                legend={t.excludeGroups}
                 options={groups}
                 selected={c.excludeGroupIds}
                 onToggle={(id, on) => toggle("excludeGroupIds", id, on)}
-                empty="There are no groups yet."
+                empty={copy.noGroups}
               />
-              <PeoplePicker label="Exclude people" users={users} selected={c.excludeUserIds} onChange={(ids) => set("excludeUserIds", ids)} />
-              <p className="text-caption text-fg-3">Blocking policies never apply to emergency access accounts. Exclude a break-glass group too, so an administrator can always sign in if a policy misfires.</p>
+              <PeoplePicker label={t.excludePeople} users={users} selected={c.excludeUserIds} onChange={(ids) => set("excludeUserIds", ids)} />
+              <p className="text-caption text-fg-3">{t.breakGlass}</p>
             </div>
           </CardBody>
         </Card>
 
         <Card>
-          <CardHeader title="Applications" description="Where the sign-in goes. Halo itself counts as an application." />
+          <CardHeader title={t.applications} description={t.applicationsDescription} />
           <CardBody className="flex flex-col gap-6">
-            <Field label="Covers">
+            <Field label={t.covers}>
               {(props) => (
                 <Select {...props} value={c.allApps ? "all" : "selected"} onChange={(event) => set("allApps", event.target.value === "all")}>
-                  <option value="all">All applications, including Halo</option>
-                  <option value="selected">Selected applications</option>
+                  <option value="all">{t.allApps}</option>
+                  <option value="selected">{t.selectedApps}</option>
                 </Select>
               )}
             </Field>
             {c.allApps ? null : (
               <div className="flex flex-col gap-2">
-                <CheckList legend="Applications" options={apps} selected={c.appIds} onToggle={(id, on) => toggle("appIds", id, on)} empty="There are no applications yet." />
+                <CheckList legend={t.applications} options={apps} selected={c.appIds} onToggle={(id, on) => toggle("appIds", id, on)} empty={t.noApps} />
                 <FieldError>{errors.apps}</FieldError>
               </div>
             )}
@@ -330,14 +334,14 @@ export function PolicyForm({
         </Card>
 
         <Card>
-          <CardHeader title="Conditions" description="All of these must match. Leave a condition at its default to match everything." />
+          <CardHeader title={t.conditions} description={t.conditionsDescription} />
           <CardBody className="flex flex-col gap-6">
-            <Field label="Network">
+            <Field label={t.network}>
               {(props) => (
                 <Select {...props} value={c.network} onChange={(event) => set("network", event.target.value as NetworkCondition)}>
-                  {(Object.keys(NETWORK_CONDITION) as NetworkCondition[]).map((value) => (
+                  {(Object.keys(copy.labels.network) as NetworkCondition[]).map((value) => (
                     <option key={value} value={value}>
-                      {NETWORK_CONDITION[value]}
+                      {copy.labels.network[value]}
                     </option>
                   ))}
                 </Select>
@@ -346,15 +350,15 @@ export function PolicyForm({
             {c.network === "any" ? null : (
               <div className="flex flex-col gap-2">
                 <CheckList
-                  legend="Networks"
+                  legend={t.networks}
                   options={zones}
                   selected={c.zoneIds}
                   onToggle={(id, on) => toggle("zoneIds", id, on)}
                   empty={
                     <>
-                      There are no networks yet.{" "}
+                      {t.noNetworks}{" "}
                       <Link href="/admin/policies?tab=networks" className="text-link underline underline-offset-3 hover:text-ember">
-                        Add one on the Networks tab
+                        {t.addNetwork}
                       </Link>
                       .
                     </>
@@ -363,33 +367,30 @@ export function PolicyForm({
                 <FieldError>{errors.zones}</FieldError>
               </div>
             )}
-            <Field label="Device" hint="Administrators trust or block devices on the Devices page. Blocked devices are always refused.">
+            <Field label={t.device} hint={t.deviceHint}>
               {(props) => (
                 <Select {...props} value={c.device} onChange={(event) => set("device", event.target.value as DeviceCondition)}>
-                  {(Object.keys(DEVICE_CONDITION) as DeviceCondition[]).map((value) => (
+                  {(Object.keys(copy.labels.device) as DeviceCondition[]).map((value) => (
                     <option key={value} value={value}>
-                      {DEVICE_CONDITION[value]}
+                      {copy.labels.device[value]}
                     </option>
                   ))}
                 </Select>
               )}
             </Field>
-            <Field
-              label="Device compliance"
-              hint="Set by the compliance sources on the Devices page. A device no source reports on, or whose last report is older than the source allows, isn't compliant."
-            >
+            <Field label={t.compliance} hint={t.complianceHint}>
               {(props) => (
                 <Select {...props} value={c.compliance} onChange={(event) => set("compliance", event.target.value as ComplianceCondition)}>
-                  {(Object.keys(COMPLIANCE_CONDITION) as ComplianceCondition[]).map((value) => (
+                  {(Object.keys(copy.labels.complianceCondition) as ComplianceCondition[]).map((value) => (
                     <option key={value} value={value}>
-                      {COMPLIANCE_CONDITION[value]}
+                      {copy.labels.complianceCondition[value]}
                     </option>
                   ))}
                 </Select>
               )}
             </Field>
             <fieldset className="flex flex-col gap-3">
-              <legend className="mb-2 text-label text-fg">Sign-in risk</legend>
+              <legend className="mb-2 text-label text-fg">{t.risk}</legend>
               <div className="flex flex-wrap gap-x-6 gap-y-3">
                 {RISK_LEVELS.map((level) => (
                   <label key={level} className="flex cursor-pointer items-center gap-2 text-body-sm text-fg">
@@ -397,16 +398,14 @@ export function PolicyForm({
                       checked={c.risk.includes(level)}
                       onChange={(event) => set("risk", event.target.checked ? [...c.risk, level] : c.risk.filter((v) => v !== level))}
                     />
-                    {RISK[level].label}
+                    {copy.labels.risk[level]}
                   </label>
                 ))}
               </div>
-              <p className="text-caption text-fg-3">
-                High: a risky network or 5 failed sign-ins in 15 minutes. Medium: a new device. Low: a new network for that person, or a sign-in with a password. None checked matches any risk.
-              </p>
+              <p className="text-caption text-fg-3">{t.riskHint}</p>
             </fieldset>
             <fieldset className="flex flex-col gap-3">
-              <legend className="mb-2 text-label text-fg">Sign-in method</legend>
+              <legend className="mb-2 text-label text-fg">{t.method}</legend>
               <div className="flex flex-wrap gap-x-6 gap-y-3">
                 {POLICY_METHODS.map((kind) => (
                   <label key={kind} className="flex cursor-pointer items-center gap-2 text-body-sm text-fg">
@@ -414,24 +413,24 @@ export function PolicyForm({
                       checked={c.methods.includes(kind)}
                       onChange={(event) => set("methods", event.target.checked ? [...c.methods, kind] : c.methods.filter((v) => v !== kind))}
                     />
-                    {METHOD[kind].label}
+                    {copy.labels.method[kind]}
                   </label>
                 ))}
               </div>
-              <p className="text-caption text-fg-3">None checked matches every method.</p>
+              <p className="text-caption text-fg-3">{t.methodHint}</p>
             </fieldset>
           </CardBody>
         </Card>
 
         <Card>
-          <CardHeader title="Effect" description="What happens when every condition matches." />
+          <CardHeader title={t.effect} description={t.effectDescription} />
           <CardBody className="flex flex-col gap-6">
-            <Field label="Effect" hint="If several enforced policies match, block beats requiring a passkey, which beats allow. Terms of use and authentication contexts are asked for as well, unless the sign-in is blocked.">
+            <Field label={t.effect} hint={t.effectHint}>
               {(props) => (
                 <Select {...props} value={effect} onChange={(event) => setEffect(event.target.value as PolicyEffect)}>
-                  {(Object.keys(EFFECT) as PolicyEffect[]).map((value) => (
+                  {(Object.keys(copy.labels.effect) as PolicyEffect[]).map((value) => (
                     <option key={value} value={value}>
-                      {EFFECT[value].label}
+                      {copy.labels.effect[value]}
                     </option>
                   ))}
                 </Select>
@@ -439,12 +438,12 @@ export function PolicyForm({
             </Field>
             {effect === "require-terms" ? (
               <ReferenceField
-                label="Terms of use"
-                hint="People accept each version once, at sign-in or in their account. Publishing a new version asks them again at their next sign-in."
-                placeholder="Choose terms of use"
-                empty="There are no terms of use yet."
+                label={t.terms}
+                hint={t.termsHint}
+                placeholder={t.chooseTerms}
+                empty={t.noTerms}
                 tab="terms"
-                link="Add them on the Terms tab"
+                link={t.addTerms}
                 options={terms}
                 value={termsId}
                 onChange={setTermsId}
@@ -453,31 +452,31 @@ export function PolicyForm({
             ) : null}
             {effect === "require-context" ? (
               <ReferenceField
-                label="Authentication context"
-                hint="People whose sign-in doesn't meet it are asked to sign in again with a method it allows."
-                placeholder="Choose an authentication context"
-                empty="There are no authentication contexts yet."
+                label={t.context}
+                hint={t.contextHint}
+                placeholder={t.chooseContext}
+                empty={t.noContexts}
                 tab="contexts"
-                link="Add one on the Contexts tab"
+                link={t.addContext}
                 options={contexts}
                 value={contextId}
                 onChange={setContextId}
                 error={errors.context}
               />
             ) : null}
-            <Field label="Mode" hint={MODE[mode].description}>
+            <Field label={t.mode} hint={copy.labels.mode[mode]}>
               {(props) => (
                 <Select {...props} value={mode} onChange={(event) => setMode(event.target.value as PolicyMode)}>
-                  <option value="report">Report-only</option>
-                  <option value="enforce">Enforce</option>
+                  <option value="report">{copy.labels.state.report}</option>
+                  <option value="enforce">{t.enforce}</option>
                 </Select>
               )}
             </Field>
             <label className="flex cursor-pointer items-start gap-3">
               <Checkbox className="mt-0.5" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
               <span className="flex flex-col">
-                <span className="text-body-sm text-fg">Policy is on</span>
-                <span className="text-caption text-fg-3">Turn it off to keep the policy without Halo evaluating it.</span>
+                <span className="text-body-sm text-fg">{t.enabled}</span>
+                <span className="text-caption text-fg-3">{t.enabledHint}</span>
               </span>
             </label>
           </CardBody>
@@ -487,33 +486,33 @@ export function PolicyForm({
       <aside className="xl:col-span-4">
         <div className="flex flex-col gap-6 xl:sticky xl:top-24">
           <Card>
-            <CardHeader title="Summary" actions={<Badge tone={state.tone} dot>{state.label}</Badge>} />
+            <CardHeader title={t.summary} actions={<Badge tone={state.tone} dot>{state.label}</Badge>} />
             <CardBody className="flex flex-col gap-4">
-              <p className="text-body text-fg">{describePolicy({ effect, termsId, contextId, conditions: c }, names)}</p>
+              <p className="text-body text-fg">{describePolicy({ effect, termsId, contextId, conditions: c }, names, copy)}</p>
               {lockout ? (
                 <div role="note" className="flex gap-3 rounded-md border border-warning/20 bg-warning-container p-4">
                   <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-warning" />
-                  <p className="text-body-sm text-fg-2">This applies to everyone, including you. Exclude a break-glass group or account, or save it as report-only first. Halo refuses to save it if no global administrator could still sign in.</p>
+                  <p className="text-body-sm text-fg-2">{t.lockout}</p>
                 </div>
               ) : null}
               <ActionError message={errorFor("save")} />
               <div className="flex flex-wrap gap-2 pt-2">
                 <Button type="submit" variant="primary" loading={pending === "save"}>
-                  {policy ? "Save policy" : "Create policy"}
+                  {policy ? t.save : copy.page.create}
                 </Button>
                 <Link href="/admin/policies" className={buttonClasses("secondary")}>
-                  Cancel
+                  {copy.cancel}
                 </Link>
               </div>
-              {attempted && invalid ? <p className="text-caption text-danger">Fix the fields marked in red, then save again.</p> : null}
+              {attempted && invalid ? <p className="text-caption text-danger">{t.fixFields}</p> : null}
             </CardBody>
           </Card>
           {policy ? (
             <Card>
-              <CardHeader title="Delete policy" description="Halo stops evaluating it immediately. Its changes stay in the audit log." />
+              <CardHeader title={copy.list.delete} description={copy.list.deleteDescription} />
               <CardBody className="flex flex-col items-start gap-3">
-                <HoldToConfirm size="sm" doneLabel="Deleted" onConfirm={remove}>
-                  Hold to delete
+                <HoldToConfirm size="sm" doneLabel={t.deletedLabel} onConfirm={remove}>
+                  {t.holdToDelete}
                 </HoldToConfirm>
                 <ActionError message={errorFor("delete")} />
               </CardBody>

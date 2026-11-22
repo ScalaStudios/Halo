@@ -12,6 +12,9 @@ import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { remoteBody, remoteDraft, remoteErrors, RemoteFields, type RemoteErrors } from "@/components/remote/settings";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
+import { useLocale } from "@/lib/i18n/client";
+import { applicationsMessages } from "@/lib/i18n/console/applications";
+import type { Locale } from "@/lib/i18n/locale";
 import type { Outpost } from "@/lib/infra-types";
 import { NAME_ID_FORMATS, type NameIdFormat, type SamlApplication } from "@/lib/saml-types";
 import { endpoints, setupGuide } from "@/lib/setup-guides";
@@ -23,43 +26,18 @@ type Source = "values" | "metadata";
 type Platform = "web" | "spa" | "native";
 type Template = { value: string; label: string; uri: string; entityId?: string; guide: string; platform?: Platform; hint?: string; more?: string[]; scopes?: string[] };
 type Option<T extends string> = { value: T; label: string; description: string; icon?: LucideIcon };
+type Step = "protocol" | "platform" | "provider" | "details";
 
-const PROTOCOLS: Option<Protocol>[] = [
-  { value: "oidc", label: "OpenID Connect", description: "Sign-in for web, single-page and command-line apps. Use this unless the app only supports SAML.", icon: KeyRound },
-  { value: "saml", label: "SAML 2.0", description: "Sign-in for applications that only support SAML, like AWS IAM Identity Center and Slack.", icon: FileKey },
-  { value: "oauth", label: "OAuth 2.0 service", description: "Machine-to-machine access with client credentials. Nobody signs in.", icon: ServerCog },
-  {
-    value: "forward-auth",
-    label: "Forward auth",
-    description: "Sign-in in front of applications without OpenID Connect or SAML. Traefik, nginx or Caddy asks Halo before every request.",
-    icon: ShieldCheck,
-  },
-  {
-    value: "radius",
-    label: "RADIUS",
-    description: "Password sign-in for VPNs and network devices that ask a RADIUS server, limited to the groups you assign.",
-    icon: Network,
-  },
-  {
-    value: "ldap",
-    label: "LDAP",
-    description: "A read-only directory for applications and devices that only speak LDAP, like Proxmox VE, NAS and printers.",
-    icon: BookUser,
-  },
-  {
-    value: "remote",
-    label: "Remote access",
-    description: "An SSH, RDP or VNC session in the browser through an outpost. Halo checks access and encrypts stored host credentials.",
-    icon: SquareTerminal,
-  },
-  { value: "bookmark", label: "Bookmark", description: "A link in the account portal, like an intranet page, status page or helpdesk. Nobody signs in through Halo.", icon: Bookmark },
-];
-
-const PLATFORMS: Option<Platform>[] = [
-  { value: "web", label: "Web application", description: "Runs on a server and keeps a client secret, like Grafana or Nextcloud.", icon: TYPE_ICON.web },
-  { value: "spa", label: "Single-page app", description: "Runs entirely in the browser. Signs in with PKCE and has no secret.", icon: TYPE_ICON.spa },
-  { value: "native", label: "Native or CLI", description: "Desktop, mobile and command-line tools like kubectl. Redirects to localhost with PKCE.", icon: TYPE_ICON.native },
-];
+const PROTOCOL_ICON: Record<Protocol, LucideIcon> = {
+  oidc: KeyRound,
+  saml: FileKey,
+  oauth: ServerCog,
+  "forward-auth": ShieldCheck,
+  radius: Network,
+  ldap: BookUser,
+  remote: SquareTerminal,
+  bookmark: Bookmark,
+};
 
 const TEMPLATES: Template[] = [
   { value: "grafana", label: "Grafana", uri: "https://grafana.example.com/login/generic_oauth", guide: "grafana" },
@@ -95,45 +73,43 @@ const SAML_TEMPLATES: Template[] = [
   { value: "custom", label: "Custom", entityId: "", uri: "", guide: "generic-saml" },
 ];
 
-const SOURCES: Option<Source>[] = [
-  { value: "values", label: "Enter values", description: "Entity ID and ACS URL" },
-  { value: "metadata", label: "Paste metadata", description: "The service provider's metadata XML" },
-];
-
 const PLACEHOLDER: Record<Platform, string> = {
   web: "https://app.example.com/oidc/callback",
   spa: "https://app.example.com/callback",
   native: "http://localhost:8000",
 };
 
-export function uriError(value: string, empty = "Enter where Halo sends people after they sign in, like https://app.example.com/callback."): string | undefined {
+export function uriError(value: string, locale: Locale, empty = applicationsMessages[locale].setup.validation.uriEmpty): string | undefined {
+  const v = applicationsMessages[locale].setup.validation;
   const raw = value.trim();
   if (!raw) return empty;
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    return "This is not a full URL. Include https:// and the host, like https://app.example.com/callback.";
+    return v.notUrl;
   }
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
   if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) {
-    return "Use https:// so sign-in responses are never sent in plain text. Plain http:// is only allowed for localhost.";
+    return v.https;
   }
-  if (url.hash) return `Remove “${url.hash}” from the end. Halo cannot redirect to a URI with a fragment.`;
+  if (url.hash) return v.fragment(url.hash);
   return undefined;
 }
 
-export function originError(value: string): string | undefined {
-  const error = uriError(value, "Enter the address people open the application at, like https://files.example.com.");
+export function originError(value: string, locale: Locale): string | undefined {
+  const v = applicationsMessages[locale].setup.validation;
+  const error = uriError(value, locale, v.originEmpty);
   if (error) return error;
   const url = new URL(value.trim());
-  return url.pathname !== "/" || url.search ? "Use only the scheme and host, like https://files.example.com. Halo protects every path on it." : undefined;
+  return url.pathname !== "/" || url.search ? v.originPath : undefined;
 }
 
-export function clientAddressError(value: string): string | undefined {
+export function clientAddressError(value: string, locale: Locale): string | undefined {
+  const v = applicationsMessages[locale].setup.validation;
   const raw = value.trim();
-  if (!raw) return "Enter the address the RADIUS client sends from, like 10.0.0.5 or 10.0.0.0/24.";
-  return /^[0-9a-f.:]+(\/\d{1,3})?$/i.test(raw) ? undefined : "Enter an IP address or CIDR range, like 10.0.0.5 or 10.0.0.0/24. Halo recognizes RADIUS clients by the address they send from.";
+  if (!raw) return v.clientAddressEmpty;
+  return /^[0-9a-f.:]+(\/\d{1,3})?$/i.test(raw) ? undefined : v.clientAddress;
 }
 
 export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: string; featuresOff: string[]; outposts: Outpost[] }) {
@@ -155,18 +131,22 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
   const [remote, setRemote] = useState(() => remoteDraft(outposts));
   const [remoteProblems, setRemoteProblems] = useState<RemoteErrors>({});
   const { pending, run, errorFor, router, toast } = useMutation();
+  const locale = useLocale();
+  const t = applicationsMessages[locale];
+  const s = t.setup;
+  const v = s.validation;
 
-  const steps = protocol === "oidc" ? ["Protocol", "Platform", "Details"] : protocol === "saml" ? ["Protocol", "Service provider", "Details"] : ["Protocol", "Details"];
+  const steps: Step[] = protocol === "oidc" ? ["protocol", "platform", "details"] : protocol === "saml" ? ["protocol", "provider", "details"] : ["protocol", "details"];
   const current = steps[step];
   const needsUri = protocol !== "oauth";
   const urls = endpoints(issuer);
-  const picked = TEMPLATES.find((t) => t.value === template);
-  const platformTemplates = TEMPLATES.filter((t) => t.value === "custom" || (t.platform ?? "web") === platform);
+  const picked = TEMPLATES.find((item) => item.value === template);
+  const platformTemplates = TEMPLATES.filter((item) => item.value === "custom" || (item.platform ?? "web") === platform);
   const aether = template === "aether";
   const base = address.trim().replace(/\/+$/, "");
 
   function pickTemplate(value: string, list = TEMPLATES) {
-    const picked = list.find((t) => t.value === value);
+    const picked = list.find((item) => item.value === value);
     setTemplate(value);
     setName(value === "custom" ? "" : (picked?.label ?? ""));
     setUri(picked?.uri ?? "");
@@ -186,7 +166,7 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (current !== "Details") {
+    if (current !== "details") {
       setStep(step + 1);
       return;
     }
@@ -215,10 +195,10 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
       return;
     }
     const next = {
-      name: name.trim() ? undefined : "Enter a name. People see it on the Halo sign-in screen.",
-      uri: needsUri && !aether ? uriError(uri) : undefined,
-      address: aether ? uriError(address, "Enter the address people open Aether at, like https://mail.example.com.") : undefined,
-      slug: aether && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(slug.trim()) ? "Use lowercase letters, digits and hyphens, like halo." : undefined,
+      name: name.trim() ? undefined : v.nameSignIn,
+      uri: needsUri && !aether ? uriError(uri, locale) : undefined,
+      address: aether ? uriError(address, locale, v.aetherAddress) : undefined,
+      slug: aether && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(slug.trim()) ? v.slug : undefined,
     };
     setErrors(next);
     if (next.name || next.uri || next.address || next.slug) return;
@@ -244,12 +224,12 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
   function submitBookmark() {
     const url = address.trim();
     const next = {
-      name: name.trim() ? undefined : "Enter a name. People see it in their account portal.",
+      name: name.trim() ? undefined : v.namePortal,
       address: !url
-        ? "Enter the address the bookmark opens, like https://status.example.com."
+        ? v.bookmarkEmpty
         : /^https?:\/\/[^/\s]+/.test(url)
           ? undefined
-          : "Enter a full address that starts with https:// or http://, like https://status.example.com.",
+          : v.bookmarkInvalid,
     };
     setErrors(next);
     if (next.name || next.address) return;
@@ -257,7 +237,7 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
       "create",
       () => api<{ application: SamlApplication }>("/applications", { body: { name: name.trim(), protocol, homepage: url } }),
       ({ application }) => {
-        toast({ title: `${application.name} created`, description: "Assign groups so people see it in their account portal." });
+        toast({ title: t.common.createdToast(application.name), description: s.bookmarkCreated });
         router.push(`/admin/applications/${application.id}?tab=users`);
       },
       "inline",
@@ -265,14 +245,14 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
   }
 
   function submitForwardAuth() {
-    const next = { name: name.trim() ? undefined : "Enter a name. People see it on the Halo sign-in screen.", address: originError(address) };
+    const next = { name: name.trim() ? undefined : v.nameSignIn, address: originError(address, locale) };
     setErrors(next);
     if (next.name || next.address) return;
     void run(
       "create",
       () => api<{ application: SamlApplication }>("/applications", { body: { name: name.trim(), protocol, redirectUris: [address.trim()] } }),
       ({ application }) => {
-        toast({ title: `${application.name} created`, description: "Add the proxy configuration below, then assign groups." });
+        toast({ title: t.common.createdToast(application.name), description: s.forwardCreated });
         router.push(`/admin/applications/${application.id}`);
       },
       "inline",
@@ -280,7 +260,7 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
   }
 
   function submitRadius() {
-    const next = { name: name.trim() ? undefined : "Enter a name. It appears in the sign-in log.", address: clientAddressError(address) };
+    const next = { name: name.trim() ? undefined : v.nameLog, address: clientAddressError(address, locale) };
     setErrors(next);
     if (next.name || next.address) return;
     void run(
@@ -292,7 +272,7 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
   }
 
   function submitLdap() {
-    const next = { name: name.trim() ? undefined : "Enter a name. People see it in the sign-in log and their account portal." };
+    const next = { name: name.trim() ? undefined : v.nameLdap };
     setErrors(next);
     if (next.name) return;
     void run(
@@ -304,8 +284,8 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
   }
 
   function submitRemote() {
-    const next = { name: name.trim() ? undefined : "Enter a name. People see it in their account portal." };
-    const problems = remoteErrors(remote, false);
+    const next = { name: name.trim() ? undefined : v.namePortal };
+    const problems = remoteErrors(remote, false, locale);
     setErrors(next);
     setRemoteProblems(problems);
     if (next.name || Object.values(problems).some(Boolean)) return;
@@ -313,7 +293,7 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
       "create",
       () => api<{ application: SamlApplication }>("/applications", { body: { name: name.trim(), protocol, remote: remoteBody(remote) } }),
       ({ application }) => {
-        toast({ title: `${application.name} created`, description: "Assign groups so people can connect to it from their account portal." });
+        toast({ title: t.common.createdToast(application.name), description: s.remoteCreated });
         router.push(`/admin/applications/${application.id}?tab=users`);
       },
       "inline",
@@ -323,10 +303,10 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
   function submitSaml() {
     const values = source === "values";
     const next = {
-      name: name.trim() ? undefined : "Enter a name. People see it on the Halo sign-in screen.",
-      entityId: values && !entityId.trim() ? "Enter the entity ID from the application's SAML settings, like https://slack.com." : undefined,
-      uri: values ? uriError(uri, "Enter the ACS URL, where Halo posts the SAML response, like https://app.example.com/saml/acs.") : undefined,
-      metadata: !values && !metadata.trim() ? "Paste the service provider's metadata XML. Applications usually offer it as a download or at a metadata URL." : undefined,
+      name: name.trim() ? undefined : v.nameSignIn,
+      entityId: values && !entityId.trim() ? v.entityId : undefined,
+      uri: values ? uriError(uri, locale, v.acsEmpty) : undefined,
+      metadata: !values && !metadata.trim() ? v.metadata : undefined,
     };
     setErrors(next);
     if (next.name || next.entityId || next.uri || next.metadata) return;
@@ -337,7 +317,7 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
           body: {
             name: name.trim(),
             protocol,
-            setupGuide: SAML_TEMPLATES.find((t) => t.value === template)?.guide ?? "generic-saml",
+            setupGuide: SAML_TEMPLATES.find((item) => item.value === template)?.guide ?? "generic-saml",
             saml: values ? { entityId: entityId.trim(), acsUrls: [uri.trim()], nameIdFormat: format } : { metadataXml: metadata, nameIdFormat: format },
           },
         }),
@@ -350,70 +330,66 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
     const { application, clientSecret } = created;
     const appName = application.name;
     const radius = application.protocol === "radius";
-    const guide = setupGuide(application, issuer);
+    const guide = setupGuide(application, issuer, locale);
     return (
       <div className="flex animate-enter flex-col gap-6">
         <Card>
           <CardHeader
-            title="Application created"
+            title={s.created}
             description={
               application.ldap
-                ? `Give ${appName} these values, then assign groups. It sees only the people in them.`
+                ? s.createdLdap(appName)
                 : application.saml
-                  ? `Give ${appName} these values so it trusts Halo, or point it at the metadata URL.`
+                  ? s.createdSaml(appName)
                   : radius
-                    ? `Enter these values in the RADIUS settings of ${appName}. Use PAP, and send a Message-Authenticator with every request: Halo ignores requests without one.`
+                    ? s.createdRadius(appName)
                     : clientSecret
-                      ? `Add these values to ${appName} to finish connecting it to Halo.`
-                      : `Add these values to ${appName}. It is a public client, so it has no secret and must sign in with PKCE.`
+                      ? s.createdSecret(appName)
+                      : s.createdPublic(appName)
             }
           />
           <CardBody className="flex flex-col gap-4">
             {application.ldap ? (
               <>
-                <LdapConnectionFields ldap={application.ldap} />
-                {clientSecret ? <CopyField label="Bind password" value={clientSecret} secret /> : null}
+                <LdapConnectionFields ldap={application.ldap} locale={locale} />
+                {clientSecret ? <CopyField label={t.fields.bindPassword} value={clientSecret} secret /> : null}
               </>
             ) : application.saml ? (
               <>
                 <SamlConnectionFields idp={application.saml.idp} />
-                <CopyField label="SP entity ID" value={application.clientId} />
+                <CopyField label={t.fields.spEntityId} value={application.clientId} />
               </>
             ) : radius ? (
               <>
-                <RadiusServerFields issuer={issuer} port={application.radiusPort} />
-                {clientSecret ? <CopyField label="Shared secret" value={clientSecret} secret /> : null}
+                <RadiusServerFields issuer={issuer} port={application.radiusPort} locale={locale} />
+                {clientSecret ? <CopyField label={t.fields.sharedSecret} value={clientSecret} secret /> : null}
               </>
             ) : (
               <>
-                <CopyField label="Issuer" value={urls.issuer} />
-                <CopyField label="Client ID" value={application.clientId} />
-                {clientSecret ? <CopyField label="Client secret" value={clientSecret} secret /> : null}
-                <CopyField label={protocol === "oauth" ? "Token endpoint" : "Discovery endpoint"} value={protocol === "oauth" ? urls.token : urls.discovery} />
+                <CopyField label={t.fields.issuer} value={urls.issuer} />
+                <CopyField label={t.fields.clientId} value={application.clientId} />
+                {clientSecret ? <CopyField label={t.fields.clientSecret} value={clientSecret} secret /> : null}
+                <CopyField label={protocol === "oauth" ? t.fields.tokenEndpoint : t.fields.discovery} value={protocol === "oauth" ? urls.token : urls.discovery} />
               </>
             )}
             {application.redirectUris.map((redirect) => (
-              <CopyField key={redirect} label={application.saml ? "ACS URL" : radius ? "Client address" : "Redirect URI"} value={redirect} />
+              <CopyField key={redirect} label={application.saml ? t.fields.acsUrl : radius ? t.fields.clientAddress : t.fields.redirectUri} value={redirect} />
             ))}
             {clientSecret && application.ldap ? (
-              <SecretWarning>
-                This is the only time Halo shows the bind password. Store it in your secret manager now. If you lose it, rotate it from the application page.
-              </SecretWarning>
+              <SecretWarning>{s.bindOnce}</SecretWarning>
             ) : clientSecret ? (
-              <SecretWarning>
-                This is the only time Halo shows the {radius ? "shared" : "client"} secret. Store it in your secret manager now. If you lose it, rotate it from the Credentials tab.
-              </SecretWarning>
+              <SecretWarning>{radius ? s.sharedOnce : s.clientOnce}</SecretWarning>
             ) : null}
           </CardBody>
         </Card>
         <div className="flex flex-wrap justify-end gap-2">
           {radius || application.ldap ? null : (
             <Button variant="secondary" aria-expanded={guideOpen} onClick={() => setGuideOpen(!guideOpen)}>
-              {guideOpen ? "Hide setup guide" : "View setup guide"}
+              {guideOpen ? s.hideGuide : s.viewGuide}
             </Button>
           )}
           <Link href={`/admin/applications/${application.id}`} className={buttonClasses("primary")}>
-            Open application
+            {s.open}
           </Link>
         </div>
         {guideOpen ? <SetupGuideCard guide={guide} className="animate-enter" /> : null}
@@ -423,10 +399,10 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
 
   return (
     <Card>
-      <ol aria-label="Steps" className="flex gap-6 overflow-x-auto border-b border-border px-6">
-        {steps.map((label, index) => (
+      <ol aria-label={s.stepsLabel} className="flex gap-6 overflow-x-auto border-b border-border px-6">
+        {steps.map((key, index) => (
           <li
-            key={label}
+            key={key}
             aria-current={index === step ? "step" : undefined}
             className={cn(
               "relative flex h-12 shrink-0 items-center gap-2 text-body-sm font-medium",
@@ -434,69 +410,77 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
             )}
           >
             {index < step ? <Check aria-hidden="true" size={16} strokeWidth={1.75} className="text-fg-3" /> : <span className="tnum">{index + 1}</span>}
-            {label}
+            {s.steps[key]}
             {index === step ? <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-ember" /> : null}
           </li>
         ))}
       </ol>
       <form onSubmit={submit} noValidate>
         <div key={current} className="flex animate-enter flex-col gap-8 p-6">
-          {current === "Protocol" ? (
+          {current === "protocol" ? (
             <Choices
-              legend="Choose a protocol"
+              legend={s.chooseProtocol}
               name="protocol"
-              options={PROTOCOLS.filter((p) => !featuresOff.includes(p.value === "remote" ? "remote-access" : p.value))}
+              options={(Object.keys(PROTOCOL_ICON) as Protocol[])
+                .filter((value) => !featuresOff.includes(value === "remote" ? "remote-access" : value))
+                .map((value) => ({ value, ...s.protocols[value], icon: PROTOCOL_ICON[value] }))}
               value={protocol}
               onChange={pickProtocol}
             />
           ) : null}
-          {current === "Platform" ? (
+          {current === "platform" ? (
             <>
-              <Choices legend="Where does the application run?" name="platform" options={PLATFORMS} value={platform} onChange={pickPlatform} />
+              <Choices
+                legend={s.whereRuns}
+                name="platform"
+                options={(["web", "spa", "native"] as const).map((value) => ({ value, ...s.platforms[value], icon: TYPE_ICON[value] }))}
+                value={platform}
+                onChange={pickPlatform}
+              />
               {platformTemplates.length > 1 ? (
                 <Choices
-                  legend="Start from a template"
-                  hint="Fills in the name and redirect URI. You can change both on the next step."
+                  legend={s.template}
+                  hint={s.templateHint}
                   name="template"
                   compact
-                  options={platformTemplates.map((t) => ({ value: t.value, label: t.label, description: t.hint ?? (t.uri ? new URL(t.uri).host : "Your own redirect URI") }))}
+                  options={platformTemplates.map((item) => ({ value: item.value, label: item.value === "custom" ? s.custom : item.label, description: item.hint ?? (item.uri ? new URL(item.uri).host : s.ownRedirect) }))}
                   value={template}
                   onChange={pickTemplate}
                 />
               ) : null}
             </>
           ) : null}
-          {current === "Service provider" ? (
+          {current === "provider" ? (
             <>
               <Choices
-                legend="Start from a template"
-                hint="Fills in the name, entity ID and ACS URL. You can change them on the next step."
+                legend={s.template}
+                hint={s.samlTemplateHint}
                 name="template"
                 compact
-                options={SAML_TEMPLATES.map((t) => ({ value: t.value, label: t.label, description: t.uri ? new URL(t.uri).host : "Your own service provider" }))}
+                options={SAML_TEMPLATES.map((item) => ({ value: item.value, label: item.value === "custom" ? s.custom : item.label, description: item.uri ? new URL(item.uri).host : s.ownProvider }))}
                 value={template}
                 onChange={(value) => pickTemplate(value, SAML_TEMPLATES)}
               />
-              <Choices legend="How do you want to add it?" name="source" compact options={SOURCES} value={source} onChange={setSource} />
+              <Choices legend={s.howAdd} name="source" compact options={(["values", "metadata"] as const).map((value) => ({ value, ...s.sources[value] }))} value={source} onChange={setSource} />
             </>
           ) : null}
-          {current === "Details" && protocol === "saml" ? (
+          {current === "details" && protocol === "saml" ? (
             <div className="flex flex-col gap-6">
-              <h2 className="text-h4 text-fg">Application details</h2>
-              <Field label="Name" error={errors.name}>
-                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Team wiki" />}
+              <h2 className="text-h4 text-fg">{s.applicationDetails}</h2>
+              <Field label={t.common.name} error={errors.name}>
+                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={s.teamWiki} />}
               </Field>
               {source === "values" ? (
                 <>
-                  <Field label="Entity ID" error={errors.entityId} hint="The service provider's issuer, from its SAML settings or metadata.">
+                  <Field label={s.entityId} error={errors.entityId} hint={s.entityIdHint}>
                     {(props) => <Input {...props} mono value={entityId} onChange={(e) => setEntityId(e.target.value)} placeholder="https://app.example.com/saml/metadata" />}
                   </Field>
-                  <Field label="ACS URL" error={errors.uri} hint="Where Halo posts the SAML response. Must use https, except for localhost.">
+                  <Field label={t.fields.acsUrl} error={errors.uri} hint={s.acsHint}>
                     {(props) => <Input {...props} mono value={uri} onChange={(e) => setUri(e.target.value)} placeholder="https://app.example.com/saml/acs" />}
                   </Field>
                 </>
               ) : (
-                <Field label="Metadata XML" error={errors.metadata} hint="Halo reads the entity ID and every HTTP-POST ACS URL from it.">
+                <Field label={s.metadataXml} error={errors.metadata} hint={s.metadataHint}>
                   {(props) => (
                     <Textarea
                       {...props}
@@ -509,12 +493,12 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
                   )}
                 </Field>
               )}
-              <Field label="NameID format" hint={`Halo sends ${NAME_ID_FORMATS[format].value} as the NameID. Most applications expect the email address.`}>
+              <Field label={s.nameIdFormat} hint={s.nameIdHint(NAME_ID_FORMATS[format].value)}>
                 {(props) => (
                   <Select {...props} value={format} onChange={(e) => setFormat(e.target.value as NameIdFormat)}>
                     {(Object.keys(NAME_ID_FORMATS) as NameIdFormat[]).map((key) => (
                       <option key={key} value={key}>
-                        {NAME_ID_FORMATS[key].label}
+                        {s.nameIdFormats[key]}
                       </option>
                     ))}
                   </Select>
@@ -522,89 +506,73 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
               </Field>
             </div>
           ) : null}
-          {current === "Details" && protocol === "forward-auth" ? (
+          {current === "details" && protocol === "forward-auth" ? (
             <div className="flex flex-col gap-6">
-              <h2 className="text-h4 text-fg">Application details</h2>
-              <Field label="Name" error={errors.name}>
-                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="File server" />}
+              <h2 className="text-h4 text-fg">{s.applicationDetails}</h2>
+              <Field label={t.common.name} error={errors.name}>
+                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={s.fileServer} />}
               </Field>
-              <Field
-                label="Protected address"
-                error={errors.address}
-                hint="Where people open the application. Halo only sends people back to its protected addresses. Add more on the Authentication tab."
-              >
+              <Field label={t.fields.protectedAddress} error={errors.address} hint={s.protectedHint}>
                 {(props) => <Input {...props} type="url" mono value={address} onChange={(e) => setAddress(e.target.value)} placeholder="https://files.example.com" />}
               </Field>
             </div>
           ) : null}
-          {current === "Details" && protocol === "radius" ? (
+          {current === "details" && protocol === "radius" ? (
             <div className="flex flex-col gap-6">
-              <h2 className="text-h4 text-fg">RADIUS client details</h2>
-              <Field label="Name" error={errors.name}>
-                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Office VPN" />}
+              <h2 className="text-h4 text-fg">{s.radiusDetails}</h2>
+              <Field label={t.common.name} error={errors.name}>
+                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={s.officeVpn} />}
               </Field>
-              <Field
-                label="Client address"
-                error={errors.address}
-                hint="The IP address or CIDR range the VPN or device sends RADIUS requests from. Add more on the Authentication tab."
-              >
+              <Field label={t.fields.clientAddress} error={errors.address} hint={s.clientAddressHint}>
                 {(props) => <Input {...props} mono value={address} onChange={(e) => setAddress(e.target.value)} placeholder="10.0.0.5" />}
               </Field>
             </div>
           ) : null}
-          {current === "Details" && protocol === "ldap" ? (
+          {current === "details" && protocol === "ldap" ? (
             <div className="flex flex-col gap-6">
-              <h2 className="text-h4 text-fg">Application details</h2>
-              <Field label="Name" error={errors.name} hint="Halo creates its bind DN and password next. Assign groups after you create it.">
+              <h2 className="text-h4 text-fg">{s.applicationDetails}</h2>
+              <Field label={t.common.name} error={errors.name} hint={s.ldapNameHint}>
                 {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Proxmox VE" />}
               </Field>
             </div>
           ) : null}
-          {current === "Details" && protocol === "remote" ? (
+          {current === "details" && protocol === "remote" ? (
             <div className="flex flex-col gap-6">
-              <h2 className="text-h4 text-fg">Remote access details</h2>
-              <Field label="Name" error={errors.name} hint="People see it in their account portal and open the terminal from there.">
-                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Database host" />}
+              <h2 className="text-h4 text-fg">{s.remoteDetails}</h2>
+              <Field label={t.common.name} error={errors.name} hint={s.remoteNameHint}>
+                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={s.databaseHost} />}
               </Field>
               <RemoteFields draft={remote} onChange={setRemote} errors={remoteProblems} outposts={outposts} />
             </div>
           ) : null}
-          {current === "Details" && protocol === "bookmark" ? (
+          {current === "details" && protocol === "bookmark" ? (
             <div className="flex flex-col gap-6">
-              <h2 className="text-h4 text-fg">Bookmark details</h2>
-              <Field label="Name" error={errors.name}>
-                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Status page" />}
+              <h2 className="text-h4 text-fg">{s.bookmarkDetails}</h2>
+              <Field label={t.common.name} error={errors.name}>
+                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={s.statusPage} />}
               </Field>
-              <Field label="URL" error={errors.address} hint="The address the bookmark opens. Add a logo and assign groups after you create it.">
+              <Field label={t.common.url} error={errors.address} hint={s.bookmarkUrlHint}>
                 {(props) => <Input {...props} type="url" mono value={address} onChange={(e) => setAddress(e.target.value)} placeholder="https://status.example.com" />}
               </Field>
             </div>
           ) : null}
-          {current === "Details" && (protocol === "oidc" || protocol === "oauth") ? (
+          {current === "details" && (protocol === "oidc" || protocol === "oauth") ? (
             <div className="flex flex-col gap-6">
-              <h2 className="text-h4 text-fg">Application details</h2>
-              <Field label="Name" error={errors.name}>
-                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Team wiki" />}
+              <h2 className="text-h4 text-fg">{s.applicationDetails}</h2>
+              <Field label={t.common.name} error={errors.name}>
+                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={s.teamWiki} />}
               </Field>
               {aether ? (
                 <>
-                  <Field label="Aether address" error={errors.address} hint="The address people open Aether at, its AETHER_PUBLIC_URL.">
+                  <Field label={s.aetherAddress} error={errors.address} hint={s.aetherAddressHint}>
                     {(props) => <Input {...props} type="url" mono value={address} onChange={(e) => setAddress(e.target.value)} placeholder="https://mail.example.com" />}
                   </Field>
-                  <Field label="Provider slug" error={errors.slug} hint="The slug you give Halo in Aether. It is part of the redirect URI.">
+                  <Field label={s.slug} error={errors.slug} hint={s.slugHint}>
                     {(props) => <Input {...props} mono value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="halo" />}
                   </Field>
                 </>
               ) : needsUri ? (
-                <Field
-                  label="Redirect URI"
-                  error={errors.uri}
-                  hint={
-                    picked?.more
-                      ? `Halo also registers ${picked.more.join(", ")} for when the first port is busy. Edit redirect URIs later on the Authentication tab.`
-                      : "Where Halo sends people after they sign in. Must use https, except for localhost."
-                  }
-                >
+                <Field label={t.fields.redirectUri} error={errors.uri} hint={picked?.more ? s.moreRedirects(picked.more.join(", ")) : s.redirectHint}>
                   {(props) => <Input {...props} mono value={uri} onChange={(e) => setUri(e.target.value)} placeholder={PLACEHOLDER[platform]} />}
                 </Field>
               ) : null}
@@ -615,15 +583,15 @@ export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: 
         <div className="flex items-center justify-between gap-4 border-t border-border px-6 py-4">
           {step === 0 ? (
             <Link href="/admin/applications" className={buttonClasses("quiet")}>
-              Cancel
+              {t.common.cancel}
             </Link>
           ) : (
             <Button variant="secondary" onClick={() => setStep(step - 1)}>
-              Back
+              {t.common.back}
             </Button>
           )}
           <Button type="submit" variant="primary" loading={pending === "create"}>
-            {current === "Details" ? (protocol === "bookmark" ? "Create bookmark" : "Create application") : "Continue"}
+            {current === "details" ? (protocol === "bookmark" ? s.createBookmark : s.createApplication) : t.common.continue}
           </Button>
         </div>
       </form>

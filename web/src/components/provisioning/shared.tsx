@@ -2,36 +2,28 @@ import { StatusDot, Tag, type Tone } from "@/components/ui/badge";
 import { CardBody } from "@/components/ui/card";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { formatDateTime } from "@/lib/format";
+import { provisioningMessages } from "@/lib/i18n/console/infrastructure/provisioning";
+import type { Locale } from "@/lib/i18n/locale";
 import type { ApiKey, KeyScope, RoleKey, ServiceAccount } from "@/lib/provisioning-types";
 import type { AuditEvent } from "@/lib/types";
 
-export const ROLES: Record<RoleKey, { label: string; description: string }> = {
-  global_admin: { label: "Global administrator", description: "Every permission in Halo, including roles, service accounts and API keys." },
-  security_admin: { label: "Security administrator", description: "Suspend people, end sessions, and manage service accounts and API keys." },
-  user_admin: { label: "User administrator", description: "Invite, suspend and restore people, and manage groups. Required for SCIM provisioning." },
-  helpdesk_admin: { label: "Helpdesk administrator", description: "Reset authentication methods and end sessions." },
-  app_admin: { label: "Application administrator", description: "Register applications, rotate secrets, assign groups and set up provisioning." },
-  auditor: { label: "Auditor", description: "Read every administration page and the audit log without changing anything." },
-};
+export function rolesFor(locale: Locale): Record<RoleKey, { label: string; description: string }> {
+  return provisioningMessages[locale].role;
+}
 
-export const SCOPES: Record<KeyScope, { label: string; description: string }> = {
-  api: { label: "Management API", description: "Everything the service account's roles allow under /api/v1." },
-  scim: { label: "SCIM provisioning", description: "Create, update and deactivate people and groups under /scim/v2." },
-  registration: { label: "Client registration", description: "Register OAuth clients at /oauth2/register when client registration asks for an initial access token." },
-};
+export const ROLES = rolesFor("en");
 
-export const ACCOUNT_STATUS: Record<ServiceAccount["status"], { label: string; tone: Tone }> = {
-  active: { label: "Active", tone: "success" },
-  suspended: { label: "Disabled", tone: "neutral" },
-};
+export function scopesFor(locale: Locale): Record<KeyScope, { label: string; description: string }> {
+  return provisioningMessages[locale].scope;
+}
+
+export const SCOPES = scopesFor("en");
+
+export const ACCOUNT_STATUS: Record<ServiceAccount["status"], Tone> = { active: "success", suspended: "neutral" };
 
 type KeyState = "active" | "expired" | "revoked";
 
-export const KEY_STATE: Record<KeyState, { label: string; tone: Tone }> = {
-  active: { label: "Active", tone: "success" },
-  expired: { label: "Expired", tone: "warning" },
-  revoked: { label: "Revoked", tone: "neutral" },
-};
+export const KEY_STATE: Record<KeyState, Tone> = { active: "success", expired: "warning", revoked: "neutral" };
 
 export function keyState(key: ApiKey): KeyState {
   if (key.revokedAt) return "revoked";
@@ -66,8 +58,8 @@ export function StatusLabel({ label, tone }: { label: string; tone: Tone }) {
   );
 }
 
-export function RateLimitHits({ hits }: { hits: number }) {
-  return hits ? <span className="tnum text-warning">{hits.toLocaleString("en")}</span> : <span className="text-fg-3">None</span>;
+export function RateLimitHits({ hits, locale }: { hits: number; locale: Locale }) {
+  return hits ? <span className="tnum text-warning">{hits.toLocaleString(locale)}</span> : <span className="text-fg-3">{provisioningMessages[locale].none}</span>;
 }
 
 export function ScopeTags({ scopes }: { scopes: KeyScope[] }) {
@@ -80,7 +72,7 @@ export function ScopeTags({ scopes }: { scopes: KeyScope[] }) {
   );
 }
 
-export function ActivityList({ events, actorNames, empty }: { events: AuditEvent[]; actorNames: Record<string, string>; empty: string }) {
+export function ActivityList({ events, actorNames, empty, locale }: { events: AuditEvent[]; actorNames: Record<string, string>; empty: string; locale: Locale }) {
   if (events.length === 0) {
     return (
       <CardBody>
@@ -97,7 +89,7 @@ export function ActivityList({ events, actorNames, empty }: { events: AuditEvent
           </span>
           <span className="flex flex-wrap items-center gap-2 text-caption text-fg-3">
             <Tag>{event.action}</Tag>
-            <span title={formatDateTime(event.time)}>
+            <span title={formatDateTime(event.time, locale)}>
               {event.actorId ? (actorNames[event.actorId] ?? event.actorId) : "Halo"} · <RelativeTime iso={event.time} />
             </span>
           </span>

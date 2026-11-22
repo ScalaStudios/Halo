@@ -3,7 +3,6 @@
 import { Check, Plus, X } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useMutation } from "@/components/console/use-mutation";
-import { ROLES } from "@/components/provisioning/shared";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, StatusDot } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,10 +10,12 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Select } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
-import { formatTime, pluralize } from "@/lib/format";
+import { formatTime } from "@/lib/format";
+import { useMessages } from "@/lib/i18n/client";
+import { settingsMessages } from "@/lib/i18n/console/settings";
 import type { RoleKey } from "@/lib/provisioning-types";
 import type { Group, RoleScopes, User } from "@/lib/types";
-import { CAPABILITIES, keysOf, ROLE_ORDER, SCOPED_ROLES, scopeNames } from "./roles";
+import { keysOf, ROLE_ORDER, SCOPED_ROLES, scopeNames } from "./roles";
 
 type Person = Pick<User, "id" | "name" | "email" | "roles" | "status" | "eligibleRoles" | "activations" | "roleScopes" | "eligibleScopes">;
 
@@ -23,6 +24,7 @@ type Adding = { role: RoleKey; eligible: boolean };
 export function RolesBoard({ people, groups, meId, canEdit }: { people: Person[]; groups: Group[]; meId: string; canEdit: boolean }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [adding, setAdding] = useState<Adding | null>(null);
+  const t = useMessages(settingsMessages).roles;
 
   function setRoles(person: Person, roles: RoleKey[], title: string, eligible = false, scopes?: RoleScopes) {
     void run(
@@ -30,7 +32,7 @@ export function RolesBoard({ people, groups, meId, canEdit }: { people: Person[]
       () => api(`/users/${person.id}/${eligible ? "eligible-roles" : "roles"}`, { method: "PUT", body: { roles, ...(scopes ? { scopes } : {}) } }),
       () => {
         setAdding(null);
-        toast({ title, description: "Takes effect on their next request. Recorded in the audit log." });
+        toast({ title, description: t.takesEffect });
       },
       adding ? "inline" : undefined,
     );
@@ -45,17 +47,17 @@ export function RolesBoard({ people, groups, meId, canEdit }: { people: Person[]
           return (
             <Card key={role} className="flex flex-col">
               <CardHeader
-                title={ROLES[role].label}
-                description={ROLES[role].description}
+                title={t.names[role]}
+                description={t.descriptions[role]}
                 actions={
                   <Badge tone={members.length ? "neutral" : "warning"}>
-                    <span className="tnum">{pluralize(members.length, "member")}</span>
+                    <span className="tnum">{t.memberCount(members.length)}</span>
                   </Badge>
                 }
               />
               <CardBody className="flex flex-1 flex-col gap-6">
                 <ul className="flex flex-col gap-2">
-                  {CAPABILITIES[role].map((item) => (
+                  {t.capabilities[role].map((item) => (
                     <li key={item} className="flex items-start gap-2 text-body-sm text-fg-2">
                       <Check aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-fg-3" />
                       {item}
@@ -63,7 +65,7 @@ export function RolesBoard({ people, groups, meId, canEdit }: { people: Person[]
                   ))}
                 </ul>
                 <div className="mt-auto flex flex-col gap-3">
-                  <h3 className="text-label text-fg-3">Members</h3>
+                  <h3 className="text-label text-fg-3">{t.members}</h3>
                   {members.length ? (
                     <ul className="flex flex-col rounded-md border border-border">
                       {members.map((person) => (
@@ -72,9 +74,9 @@ export function RolesBoard({ people, groups, meId, canEdit }: { people: Person[]
                             <Button
                               size="icon-sm"
                               variant="quiet"
-                              aria-label={`Remove ${person.name} from ${ROLES[role].label}`}
+                              aria-label={t.removeMember(person.name, t.names[role])}
                               loading={pending === `member-${person.id}`}
-                              onClick={() => setRoles(person, keysOf(person).filter((key) => key !== role), `${person.name} is no longer a ${ROLES[role].label.toLowerCase()}`)}
+                              onClick={() => setRoles(person, keysOf(person).filter((key) => key !== role), t.noLongerMember(person.name, t.names[role]))}
                             >
                               <X aria-hidden="true" size={16} strokeWidth={1.75} />
                             </Button>
@@ -83,19 +85,19 @@ export function RolesBoard({ people, groups, meId, canEdit }: { people: Person[]
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-body-sm text-fg-3">Nobody holds this role.</p>
+                    <p className="text-body-sm text-fg-3">{t.nobody}</p>
                   )}
                   {canEdit ? (
                     <div>
                       <Button size="sm" variant="secondary" onClick={() => setAdding({ role, eligible: false })}>
                         <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-                        Add member
+                        {t.addMember}
                       </Button>
                     </div>
                   ) : null}
                 </div>
                 <div className="flex flex-col gap-3">
-                  <h3 className="text-label text-fg-3">Eligible</h3>
+                  <h3 className="text-label text-fg-3">{t.eligible}</h3>
                   {eligible.length ? (
                     <ul className="flex flex-col rounded-md border border-border">
                       {eligible.map((person) => {
@@ -110,7 +112,7 @@ export function RolesBoard({ people, groups, meId, canEdit }: { people: Person[]
                                 {active ? (
                                   <span className="flex items-center gap-2 text-caption text-fg-2">
                                     <StatusDot tone="success" />
-                                    Active until {formatTime(active.expiresAt)}
+                                    {t.activeUntil(formatTime(active.expiresAt))}
                                   </span>
                                 ) : null}
                               </>
@@ -120,13 +122,13 @@ export function RolesBoard({ people, groups, meId, canEdit }: { people: Person[]
                               <Button
                                 size="icon-sm"
                                 variant="quiet"
-                                aria-label={`Remove ${person.name}'s eligibility for ${ROLES[role].label}`}
+                                aria-label={t.removeEligible(person.name, t.names[role])}
                                 loading={pending === `eligible-${person.id}`}
                                 onClick={() =>
                                   setRoles(
                                     person,
                                     person.eligibleRoles.filter((key) => key !== role),
-                                    `${person.name} is no longer eligible for ${ROLES[role].label.toLowerCase()}`,
+                                    t.noLongerEligible(person.name, t.names[role]),
                                     true,
                                   )
                                 }
@@ -139,13 +141,13 @@ export function RolesBoard({ people, groups, meId, canEdit }: { people: Person[]
                       })}
                     </ul>
                   ) : (
-                    <p className="text-body-sm text-fg-3">Nobody can activate this role.</p>
+                    <p className="text-body-sm text-fg-3">{t.nobodyEligible}</p>
                   )}
                   {canEdit ? (
                     <div>
                       <Button size="sm" variant="secondary" onClick={() => setAdding({ role, eligible: true })}>
                         <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-                        Add eligible person
+                        {t.addEligible}
                       </Button>
                     </div>
                   ) : null}
@@ -167,8 +169,8 @@ export function RolesBoard({ people, groups, meId, canEdit }: { people: Person[]
           failure={errorFor("add")}
           onAdd={(person, scope) => {
             const scopes = scope.length ? { [adding.role]: scope } : undefined;
-            if (adding.eligible) setRoles(person, [...person.eligibleRoles, adding.role], `${person.name} can now activate ${ROLES[adding.role].label.toLowerCase()}`, true, scopes);
-            else setRoles(person, [...keysOf(person), adding.role], `${person.name} is now a ${ROLES[adding.role].label.toLowerCase()}`, false, scopes);
+            if (adding.eligible) setRoles(person, [...person.eligibleRoles, adding.role], t.canActivate(person.name, t.names[adding.role]), true, scopes);
+            else setRoles(person, [...keysOf(person), adding.role], t.isNow(person.name, t.names[adding.role]), false, scopes);
           }}
           onClose={() => {
             clearError();
@@ -181,7 +183,8 @@ export function RolesBoard({ people, groups, meId, canEdit }: { people: Person[]
 }
 
 function ScopeNote({ scope, groups }: { scope?: string[]; groups: Group[] }) {
-  return scope ? <span className="truncate text-caption text-fg-2">Limited to {scopeNames(scope, groups)}</span> : null;
+  const t = useMessages(settingsMessages).roles;
+  return scope ? <span className="truncate text-caption text-fg-2">{t.limitedTo(scopeNames(scope, groups, t.deletedGroup))}</span> : null;
 }
 
 function PersonRow({ person, note, children }: { person: Person; note?: ReactNode; children: ReactNode }) {
@@ -221,24 +224,8 @@ function AddMemberDialog({
   const [scope, setScope] = useState<string[]>([]);
   const [error, setError] = useState<string>();
   const person = candidates.find((p) => p.id === personId);
-  const label = ROLES[role].label.toLowerCase();
-  const copy = eligible
-    ? {
-        title: `Make someone eligible for ${label}`,
-        description: `They can activate the role for up to 8 hours with a reason, under Access in their account portal. Halo removes it when the time ends.`,
-        submit: "Make eligible",
-        missing: "Choose the person to make eligible.",
-        hint: "Only active people who aren't eligible yet are listed. You can't make yourself eligible.",
-        none: "Everyone active is already eligible",
-      }
-    : {
-        title: `Add a ${label}`,
-        description: `${ROLES[role].description} Their other roles stay as they are.`,
-        submit: "Add member",
-        missing: "Choose the person to give this role.",
-        hint: "Only active people who don't already hold this role are listed. You can't give yourself a role.",
-        none: "Everyone active already holds this role",
-      };
+  const { roles: t, common } = useMessages(settingsMessages);
+  const copy = eligible ? t.eligibleDialog : t.memberDialog;
 
   return (
     <Dialog
@@ -247,12 +234,12 @@ function AddMemberDialog({
         if (!open) onClose();
       }}
       error={failure}
-      title={copy.title}
-      description={copy.description}
+      title={copy.title(t.names[role])}
+      description={eligible ? t.eligibleDialog.description : t.memberDialog.description(t.descriptions[role])}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {common.cancel}
           </Button>
           <Button
             variant="primary"
@@ -268,10 +255,10 @@ function AddMemberDialog({
       }
     >
       <div className="flex flex-col gap-6">
-        <Field label="Person" error={error} hint={candidates.length ? copy.hint : undefined}>
+        <Field label={t.person} error={error} hint={candidates.length ? copy.hint : undefined}>
           {(props) => (
             <Select {...props} autoFocus value={personId} disabled={!candidates.length} onChange={(event) => setPersonId(event.target.value)}>
-              <option value="">{candidates.length ? "Choose a person" : copy.none}</option>
+              <option value="">{candidates.length ? t.choosePerson : copy.none}</option>
               {candidates.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name} · {p.email}
@@ -282,7 +269,7 @@ function AddMemberDialog({
         </Field>
         {groups.length ? (
           <fieldset className="flex flex-col gap-3">
-            <legend className="mb-3 text-label text-fg">Limit to groups</legend>
+            <legend className="mb-3 text-label text-fg">{t.limitGroups}</legend>
             <div className="flex max-h-56 flex-col gap-3 overflow-y-auto rounded-md border border-border p-4">
               {groups.map((group) => (
                 <label key={group.id} className="flex cursor-pointer items-start gap-3">
@@ -293,15 +280,13 @@ function AddMemberDialog({
                   />
                   <span className="flex flex-col">
                     <span className="text-body-sm text-fg">{group.name}</span>
-                    <span className="text-caption text-fg-3">{group.kind === "dynamic" ? `Rule: ${group.rule}` : group.description}</span>
+                    <span className="text-caption text-fg-3">{group.kind === "dynamic" ? t.rule(group.rule ?? "") : group.description}</span>
                   </span>
                 </label>
               ))}
             </div>
             <p className="text-caption text-fg-3">
-              {scope.length
-                ? "They see and change only members of the chosen groups. Other administration pages stay closed to them."
-                : "Leave every group unticked to cover the whole organization."}
+              {scope.length ? t.scoped : t.unscoped}
             </p>
           </fieldset>
         ) : null}

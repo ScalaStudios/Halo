@@ -14,22 +14,20 @@ import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/compo
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
-import { formatDate, pluralize } from "@/lib/format";
+import { formatDate } from "@/lib/format";
+import { useLocale, useMessages } from "@/lib/i18n/client";
+import { provisioningMessages } from "@/lib/i18n/console/infrastructure/provisioning";
 import type { ApiKey, KeyScope, RoleKey, ServiceAccount } from "@/lib/provisioning-types";
 import { RoleCheckboxes } from "./service-accounts-table";
-import { KEY_STATE, ROLES, RateLimitHits, SCOPES, ScopeTags, StatusLabel, activeKeys, canProvision, keyState } from "./shared";
+import { KEY_STATE, RateLimitHits, ScopeTags, StatusLabel, activeKeys, canProvision, keyState } from "./shared";
 
-const EXPIRY = [
-  { value: "30", label: "30 days" },
-  { value: "90", label: "90 days" },
-  { value: "365", label: "1 year" },
-  { value: "never", label: "No expiry" },
-];
+const EXPIRY = ["30", "90", "365", "never"];
 
 export function AccountActions({ account, scimUrl }: { account: ServiceAccount; scimUrl: string }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [creating, setCreating] = useState(false);
   const [disabling, setDisabling] = useState(false);
+  const t = useMessages(provisioningMessages);
   const disabled = account.status === "suspended";
 
   function setDisabled(next: boolean) {
@@ -38,7 +36,7 @@ export function AccountActions({ account, scimUrl }: { account: ServiceAccount; 
       () => api(`/service-accounts/${account.id}`, { method: "PATCH", body: { disabled: next } }),
       () => {
         setDisabling(false);
-        toast(next ? { title: `${account.name} disabled`, description: "Its API keys stopped working. Recorded in the audit log." } : { title: `${account.name} enabled`, description: "Its API keys work again." });
+        toast(next ? { title: t.account.disabled(account.name), description: t.account.disabledHint } : { title: t.account.enabled(account.name), description: t.account.enabledHint });
       },
       next ? "inline" : undefined,
     );
@@ -48,11 +46,11 @@ export function AccountActions({ account, scimUrl }: { account: ServiceAccount; 
     <div className="flex flex-wrap items-center gap-2">
       <Button size="sm" variant="primary" onClick={() => setCreating(true)}>
         <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-        Create API key
+        {t.account.createKey}
       </Button>
       <Menu>
         <MenuTrigger asChild>
-          <Button size="icon-sm" variant="quiet" aria-label="More actions" loading={pending === "status" && !disabling}>
+          <Button size="icon-sm" variant="quiet" aria-label={t.account.moreActions} loading={pending === "status" && !disabling}>
             <Ellipsis aria-hidden="true" size={16} strokeWidth={1.75} />
           </Button>
         </MenuTrigger>
@@ -61,19 +59,19 @@ export function AccountActions({ account, scimUrl }: { account: ServiceAccount; 
             icon={Copy}
             onSelect={() => {
               void navigator.clipboard?.writeText(account.id);
-              toast({ title: "Service account ID copied", description: account.id });
+              toast({ title: t.serviceAccounts.idCopied, description: account.id });
             }}
           >
-            Copy service account ID
+            {t.serviceAccounts.copyId}
           </MenuItem>
           <MenuSeparator />
           {disabled ? (
             <MenuItem icon={Power} onSelect={() => setDisabled(false)}>
-              Enable service account
+              {t.account.enable}
             </MenuItem>
           ) : (
             <MenuItem icon={Power} danger onSelect={() => setDisabling(true)}>
-              Disable service account
+              {t.account.disable}
             </MenuItem>
           )}
         </MenuContent>
@@ -86,8 +84,8 @@ export function AccountActions({ account, scimUrl }: { account: ServiceAccount; 
           setDisabling(next);
         }}
         error={errorFor("status")}
-        title={`Disable ${account.name}?`}
-        description={`Its ${pluralize(activeKeys(account.keys).length, "active API key")} stop working immediately. Nothing is deleted, and you can enable it again later.`}
+        title={t.account.disableTitle(account.name)}
+        description={t.account.disableHint(activeKeys(account.keys).length)}
         footer={
           <>
             <Button
@@ -97,10 +95,10 @@ export function AccountActions({ account, scimUrl }: { account: ServiceAccount; 
                 setDisabling(false);
               }}
             >
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "status"} onClick={() => setDisabled(true)}>
-              Disable service account
+              {t.account.disable}
             </Button>
           </>
         }
@@ -116,6 +114,8 @@ function CreateKeyDialog({ account, scimUrl, open, onOpenChange }: { account: Se
   const [errors, setErrors] = useState<{ label?: string; scopes?: string }>({});
   const [issued, setIssued] = useState<{ key: ApiKey; secret: string } | null>(null);
   const { pending, run, errorFor, clearError } = useMutation();
+  const locale = useLocale();
+  const t = provisioningMessages[locale];
 
   function close() {
     onOpenChange(false);
@@ -129,8 +129,8 @@ function CreateKeyDialog({ account, scimUrl, open, onOpenChange }: { account: Se
 
   function submit() {
     const next = {
-      label: label.trim() ? undefined : "Enter a label that says where the key is used.",
-      scopes: scopes.length ? undefined : "Choose at least one scope.",
+      label: label.trim() ? undefined : t.account.labelError,
+      scopes: scopes.length ? undefined : t.account.scopesError,
     };
     setErrors(next);
     if (next.label || next.scopes) return;
@@ -143,24 +143,20 @@ function CreateKeyDialog({ account, scimUrl, open, onOpenChange }: { account: Se
       open={open}
       onOpenChange={(next) => (next ? onOpenChange(true) : close())}
       error={errorFor("create")}
-      title={issued ? "New API key" : "Create API key"}
-      description={
-        issued
-          ? `${account.name} authenticates with this key as Authorization: Bearer <key>. ${issued.key.expiresAt ? `It expires ${formatDate(issued.key.expiresAt)}.` : "It does not expire."}`
-          : `The key acts as ${account.name}, with its roles. Halo stores only a hash, so you see the key once.`
-      }
+      title={issued ? t.account.newKey : t.account.createKey}
+      description={issued ? t.account.issuedHint(account.name, issued.key.expiresAt ? formatDate(issued.key.expiresAt, locale) : null) : t.account.createHint(account.name)}
       footer={
         issued ? (
           <Button variant="primary" onClick={close}>
-            Done
+            {t.done}
           </Button>
         ) : (
           <>
             <Button variant="secondary" onClick={close}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="primary" loading={pending === "create"} onClick={submit}>
-              Create API key
+              {t.account.createKey}
             </Button>
           </>
         )
@@ -168,9 +164,9 @@ function CreateKeyDialog({ account, scimUrl, open, onOpenChange }: { account: Se
     >
       {issued ? (
         <div className="flex animate-enter flex-col gap-4">
-          <CopyField label="API key" value={issued.secret} secret />
-          {issued.key.scopes.includes("scim") ? <CopyField label="SCIM base URL" value={scimUrl} /> : null}
-          <SecretWarning>This is the only time Halo shows this key. Store it in your secret manager before closing this dialog.</SecretWarning>
+          <CopyField label={t.account.apiKey} value={issued.secret} secret />
+          {issued.key.scopes.includes("scim") ? <CopyField label={t.page.scimBaseUrl} value={scimUrl} /> : null}
+          <SecretWarning>{t.account.onlyOnce}</SecretWarning>
         </div>
       ) : (
         <form
@@ -180,16 +176,16 @@ function CreateKeyDialog({ account, scimUrl, open, onOpenChange }: { account: Se
             submit();
           }}
         >
-          <Field label="Label" error={errors.label}>
-            {(props) => <Input {...props} autoFocus autoComplete="off" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Production CI" />}
+          <Field label={t.account.label} error={errors.label}>
+            {(props) => <Input {...props} autoFocus autoComplete="off" value={label} onChange={(event) => setLabel(event.target.value)} placeholder={t.account.labelPlaceholder} />}
           </Field>
           <ScopeFieldset account={account} scopes={scopes} onChange={setScopes} error={errors.scopes} />
-          <Field label="Expires">
+          <Field label={t.apiKeys.expires}>
             {(props) => (
               <Select {...props} value={expiry} onChange={(event) => setExpiry(event.target.value)}>
-                {EXPIRY.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
+                {EXPIRY.map((value) => (
+                  <option key={value} value={value}>
+                    {t.account.expiry[value]}
                   </option>
                 ))}
               </Select>
@@ -203,19 +199,20 @@ function CreateKeyDialog({ account, scimUrl, open, onOpenChange }: { account: Se
 }
 
 export function ScopeFieldset({ account, scopes, onChange, error }: { account: ServiceAccount; scopes: KeyScope[]; onChange: (scopes: KeyScope[]) => void; error?: string }) {
+  const t = useMessages(provisioningMessages);
   return (
     <fieldset className="flex flex-col gap-3" aria-describedby={error ? "scopes-error" : undefined}>
-      <legend className="mb-3 text-label text-fg">Scopes</legend>
-      {(Object.keys(SCOPES) as KeyScope[]).map((scope) => (
+      <legend className="mb-3 text-label text-fg">{t.scopes}</legend>
+      {(Object.keys(t.scope) as KeyScope[]).map((scope) => (
         <label key={scope} className="flex cursor-pointer items-start gap-3">
           <Checkbox className="mt-0.5" checked={scopes.includes(scope)} onChange={(event) => onChange(event.target.checked ? [...scopes, scope] : scopes.filter((s) => s !== scope))} />
           <span className="flex flex-col">
             <span className="text-body-sm text-fg">
-              {SCOPES[scope].label} <span className="font-mono text-code-sm text-fg-3">{scope}</span>
+              {t.scope[scope].label} <span className="font-mono text-code-sm text-fg-3">{scope}</span>
             </span>
-            <span className="text-caption text-fg-3">{SCOPES[scope].description}</span>
+            <span className="text-caption text-fg-3">{t.scope[scope].description}</span>
             {scope === "scim" && scopes.includes("scim") && !canProvision(account) ? (
-              <span className="text-caption text-warning">{account.name} doesn&apos;t have the User administrator role, so SCIM requests are rejected until you add it.</span>
+              <span className="text-caption text-warning">{t.account.missingRole(account.name)}</span>
             ) : null}
           </span>
         </label>
@@ -233,6 +230,7 @@ export function RolesCard({ account }: { account: ServiceAccount }) {
   const [editing, setEditing] = useState(false);
   const [roles, setRoles] = useState<RoleKey[]>(account.roles);
   const { pending, run, errorFor, clearError, toast } = useMutation();
+  const t = useMessages(provisioningMessages);
 
   function save() {
     void run(
@@ -240,7 +238,7 @@ export function RolesCard({ account }: { account: ServiceAccount }) {
       () => api<ServiceAccount>(`/service-accounts/${account.id}/roles`, { method: "PUT", body: { roles } }),
       () => {
         setEditing(false);
-        toast({ title: "Roles updated", description: `${account.name} now acts with ${pluralize(roles.length, "role")}. Recorded in the audit log.` });
+        toast({ title: t.account.rolesUpdated, description: t.account.rolesUpdatedHint(account.name, roles.length) });
       },
       "inline",
     );
@@ -249,8 +247,8 @@ export function RolesCard({ account }: { account: ServiceAccount }) {
   return (
     <Card>
       <CardHeader
-        title="Roles"
-        description="What requests with this service account's keys may change."
+        title={t.roles}
+        description={t.account.rolesHint}
         actions={
           <Button
             size="sm"
@@ -260,7 +258,7 @@ export function RolesCard({ account }: { account: ServiceAccount }) {
               setEditing(true);
             }}
           >
-            Edit roles
+            {t.account.editRoles}
           </Button>
         }
       />
@@ -269,13 +267,13 @@ export function RolesCard({ account }: { account: ServiceAccount }) {
           <ul className="flex flex-col gap-3">
             {account.roles.map((role) => (
               <li key={role} className="flex flex-col gap-1 rounded-md border border-border p-4">
-                <span className="text-body-sm font-semibold text-fg">{ROLES[role].label}</span>
-                <span className="text-caption text-fg-3">{ROLES[role].description}</span>
+                <span className="text-body-sm font-semibold text-fg">{t.role[role].label}</span>
+                <span className="text-caption text-fg-3">{t.role[role].description}</span>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-body-sm text-fg-3">No roles. Requests with this service account&apos;s keys are rejected until you add one.</p>
+          <p className="text-body-sm text-fg-3">{t.account.noRoles}</p>
         )}
       </CardBody>
       <Dialog
@@ -285,15 +283,15 @@ export function RolesCard({ account }: { account: ServiceAccount }) {
           setEditing(next);
         }}
         error={errorFor("roles")}
-        title={`Edit ${account.name}'s roles`}
-        description="You can only give roles you hold yourself. Global administrators can give any role."
+        title={t.account.editRolesTitle(account.name)}
+        description={t.account.editRolesHint}
         footer={
           <>
             <Button variant="secondary" onClick={() => setEditing(false)}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="primary" loading={pending === "roles"} onClick={save}>
-              Save roles
+              {t.account.saveRoles}
             </Button>
           </>
         }
@@ -309,6 +307,8 @@ export function RateLimitCard({ account }: { account: ServiceAccount }) {
   const [limit, setLimit] = useState(String(account.rateLimit));
   const [invalid, setInvalid] = useState<string>();
   const { pending, run, errorFor, clearError, toast } = useMutation();
+  const locale = useLocale();
+  const t = provisioningMessages[locale];
 
   function close() {
     clearError();
@@ -319,7 +319,7 @@ export function RateLimitCard({ account }: { account: ServiceAccount }) {
   function save() {
     const next = Number(limit);
     if (!Number.isInteger(next) || next < 1 || next > 100_000) {
-      setInvalid("Enter a whole number between 1 and 100,000.");
+      setInvalid(t.account.limitError);
       return;
     }
     setInvalid(undefined);
@@ -328,7 +328,7 @@ export function RateLimitCard({ account }: { account: ServiceAccount }) {
       () => api<ServiceAccount>(`/service-accounts/${account.id}`, { method: "PATCH", body: { rateLimit: next } }),
       () => {
         close();
-        toast({ title: "Rate limit updated", description: `${account.name}'s keys are limited to ${pluralize(next, "request")} per minute each. Recorded in the audit log.` });
+        toast({ title: t.account.limitUpdated, description: t.account.limitUpdatedHint(account.name, next) });
       },
       "inline",
     );
@@ -337,8 +337,8 @@ export function RateLimitCard({ account }: { account: ServiceAccount }) {
   return (
     <Card>
       <CardHeader
-        title="Rate limit"
-        description="Requests per minute that each of this service account's keys may send to the management API."
+        title={t.account.rateLimit}
+        description={t.account.rateLimitHint}
         actions={
           <Button
             size="sm"
@@ -348,27 +348,27 @@ export function RateLimitCard({ account }: { account: ServiceAccount }) {
               setEditing(true);
             }}
           >
-            Edit rate limit
+            {t.account.editRateLimit}
           </Button>
         }
       />
       <CardBody className="flex flex-col gap-1">
-        <span className="tnum text-body-sm font-semibold text-fg">{account.rateLimit.toLocaleString("en")} per minute for each key</span>
-        <span className="text-caption text-fg-3">SCIM requests are counted apart, up to 3,000 per minute for each key.</span>
+        <span className="tnum text-body-sm font-semibold text-fg">{t.account.perKey(account.rateLimit.toLocaleString(locale))}</span>
+        <span className="text-caption text-fg-3">{t.account.scimLimit}</span>
       </CardBody>
       <Dialog
         open={editing}
         onOpenChange={(next) => (next ? setEditing(true) : close())}
         error={errorFor("rate-limit")}
-        title={`Edit ${account.name}'s rate limit`}
-        description="Requests over the limit are rejected with 429 Too Many Requests until the next minute starts."
+        title={t.account.editRateLimitTitle(account.name)}
+        description={t.account.editRateLimitHint}
         footer={
           <>
             <Button variant="secondary" onClick={close}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="primary" loading={pending === "rate-limit"} onClick={save}>
-              Save rate limit
+              {t.account.saveRateLimit}
             </Button>
           </>
         }
@@ -380,7 +380,7 @@ export function RateLimitCard({ account }: { account: ServiceAccount }) {
             save();
           }}
         >
-          <Field label="Requests per minute for each key" hint="Between 1 and 100,000. New service accounts start at 600." error={invalid}>
+          <Field label={t.account.limitField} hint={t.account.limitFieldHint} error={invalid}>
             {(props) => (
               <div className="w-32">
                 <Input {...props} autoFocus type="number" inputMode="numeric" min={1} max={100_000} step={1} className="tnum" value={limit} onChange={(event) => setLimit(event.target.value)} />
@@ -396,16 +396,18 @@ export function RateLimitCard({ account }: { account: ServiceAccount }) {
 
 export function KeyTable({ keys, accountName }: { keys: ApiKey[]; accountName: string }) {
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
+  const locale = useLocale();
+  const t = provisioningMessages[locale];
 
   if (keys.length === 0) {
-    return <EmptyState icon={KeyRound} title="No API keys" description={`Create a key so ${accountName} can call the Halo API or provision people over SCIM.`} />;
+    return <EmptyState icon={KeyRound} title={t.account.noKeys} description={t.account.noKeysHint(accountName)} />;
   }
 
   return (
     <>
       <SimpleTable
-        caption="API keys"
-        head={["Key", "Scopes", "Status", "Created", "Last used", "Rate limited (24 h)", "Expires", "Actions"]}
+        caption={t.apiKeys.label}
+        head={[t.apiKeys.key, t.scopes, t.status, t.created, t.lastUsed, t.apiKeys.rateLimited, t.apiKeys.expires, t.actions]}
         rows={keys.map((key) => {
           const state = keyState(key);
           return [
@@ -414,19 +416,19 @@ export function KeyTable({ keys, accountName }: { keys: ApiKey[]; accountName: s
               <span className="font-mono text-code-sm text-fg-3">{key.prefix}…</span>
             </span>,
             <ScopeTags key="s" scopes={key.scopes} />,
-            <StatusLabel key="t" {...KEY_STATE[state]} />,
+            <StatusLabel key="t" tone={KEY_STATE[state]} label={t.keyState[state]} />,
             <span key="c" className="tnum whitespace-nowrap">
-              {formatDate(key.createdAt)}
+              {formatDate(key.createdAt, locale)}
             </span>,
             <span key="u" className="whitespace-nowrap">
-              {key.lastUsedAt ? <RelativeTime iso={key.lastUsedAt} /> : "Never"}
+              {key.lastUsedAt ? <RelativeTime iso={key.lastUsedAt} /> : t.never}
             </span>,
-            <RateLimitHits key="r" hits={key.rateLimitHits} />,
-            state === "revoked" ? "—" : key.expiresAt ? <ExpiryText key="e" iso={key.expiresAt} /> : "Never",
+            <RateLimitHits key="r" hits={key.rateLimitHits} locale={locale} />,
+            state === "revoked" ? "—" : key.expiresAt ? <ExpiryText key="e" iso={key.expiresAt} /> : t.never,
             <span key="a" className="flex justify-end">
               {state === "revoked" ? null : (
                 <Button size="sm" variant="secondary" onClick={() => setRevoking(key)}>
-                  Revoke
+                  {t.account.revoke}
                 </Button>
               )}
             </span>,
@@ -440,6 +442,7 @@ export function KeyTable({ keys, accountName }: { keys: ApiKey[]; accountName: s
 
 export function RevokeKeyDialog({ apiKey, onClose }: { apiKey: ApiKey | null; onClose: () => void }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
+  const t = useMessages(provisioningMessages);
 
   function close() {
     clearError();
@@ -451,12 +454,12 @@ export function RevokeKeyDialog({ apiKey, onClose }: { apiKey: ApiKey | null; on
       open={apiKey !== null}
       onOpenChange={(next) => (next ? undefined : close())}
       error={errorFor("revoke")}
-      title={`Revoke “${apiKey?.label ?? ""}”?`}
-      description={apiKey ? `Requests that use ${apiKey.prefix}… fail immediately. ${apiKey.serviceAccountName} keeps its other keys. A revoked key can't be restored.` : undefined}
+      title={t.account.revokeTitle(apiKey?.label ?? "")}
+      description={apiKey ? t.account.revokeHint(apiKey.prefix, apiKey.serviceAccountName) : undefined}
       footer={
         <>
           <Button variant="secondary" onClick={close}>
-            Cancel
+            {t.cancel}
           </Button>
           <Button
             variant="destructive"
@@ -468,13 +471,13 @@ export function RevokeKeyDialog({ apiKey, onClose }: { apiKey: ApiKey | null; on
                 () => api(`/api-keys/${apiKey.id}`, { method: "DELETE" }),
                 () => {
                   onClose();
-                  toast({ title: `“${apiKey.label}” revoked`, description: "Recorded in the audit log." });
+                  toast({ title: t.account.revoked(apiKey.label), description: t.account.revokedHint });
                 },
                 "inline",
               )
             }
           >
-            Revoke key
+            {t.apiKeys.revoke}
           </Button>
         </>
       }

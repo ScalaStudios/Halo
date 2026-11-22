@@ -12,15 +12,14 @@ import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
 import { formatDate } from "@/lib/format";
+import { useLocale, useMessages } from "@/lib/i18n/client";
+import { policyMessages } from "@/lib/i18n/console/policy";
 import type { CertificateAuthority } from "@/lib/policy-types";
 
-const MAPPING: Record<CertificateAuthority["mapping"], { label: string; hint: string }> = {
-  email: { label: "Email address", hint: "The first email address in the certificate's subject alternative name." },
-  upn: { label: "User principal name", hint: "The UPN in the subject alternative name, as on Active Directory smart cards." },
-  subject: { label: "Subject common name", hint: "The certificate's common name (CN), when your authority puts the person's email address there." },
-};
-
 export function CertificateAuthorities({ authorities }: { authorities: CertificateAuthority[] }) {
+  const locale = useLocale();
+  const copy = policyMessages[locale];
+  const t = copy.authorities;
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<CertificateAuthority | null>(null);
@@ -30,49 +29,49 @@ export function CertificateAuthorities({ authorities }: { authorities: Certifica
     if (!ca) return;
     void run("delete", () => api(`/certificate-authorities/${ca.id}`, { method: "DELETE" }), () => {
       setDeleting(null);
-      toast({ title: `${ca.name} no longer trusted`, description: "Its certificates can't sign anyone in. Recorded in the audit log." });
+      toast({ title: t.untrusted(ca.name), description: t.untrustedDescription });
     }, "inline");
   }
 
   return (
     <div className="flex flex-col gap-6">
       <SectionTitle
-        title="Trusted certificate authorities"
-        description="Client certificates must chain to one of these. Your reverse proxy checks the certificate and passes it in the header HALO_CLIENT_CERT_HEADER names, replacing that header when the browser sends it. Halo asks the OCSP responder or CRL each certificate names over HTTP whether it was revoked, and refuses the certificate when it can't."
+        title={t.title}
+        description={t.description}
         action={
           <Button size="sm" variant="primary" onClick={() => setAdding(true)}>
             <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-            Add authority
+            {t.add}
           </Button>
         }
       />
       {authorities.length ? (
         <SimpleTable
-          caption="Trusted certificate authorities"
-          head={["Name", "Matches people by", "Certificates", "Actions"]}
+          caption={t.title}
+          head={[copy.name, t.matches, t.certificates, copy.actions]}
           rows={authorities.map((ca) => [
             <span key="name" className="font-medium whitespace-nowrap text-fg">
               {ca.name}
             </span>,
             <span key="mapping" className="whitespace-nowrap">
-              {MAPPING[ca.mapping].label}
+              {t.mapping[ca.mapping].label}
             </span>,
             <ul key="certificates" className="flex flex-col gap-1">
               {ca.certificates.map((c) => (
                 <li key={c.subject} className="flex flex-col">
                   <span className="break-all text-fg">{c.subject}</span>
-                  <span className="text-caption text-fg-3">Expires {formatDate(c.expiresAt)}</span>
+                  <span className="text-caption text-fg-3">{t.expires(formatDate(c.expiresAt, locale))}</span>
                 </li>
               ))}
             </ul>,
-            <Button key="actions" size="icon-sm" variant="quiet" aria-label={`Stop trusting ${ca.name}`} onClick={() => setDeleting(ca)}>
+            <Button key="actions" size="icon-sm" variant="quiet" aria-label={t.stopTrusting(ca.name)} onClick={() => setDeleting(ca)}>
               <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
             </Button>,
           ])}
         />
       ) : (
         <Card>
-          <EmptyState icon={IdCard} title="No certificate authorities yet" description="Add the authority that issues your people's client certificates before you allow client certificates above." />
+          <EmptyState icon={IdCard} title={t.empty} description={t.emptyDescription} />
         </Card>
       )}
       {adding ? <AuthorityDialog onClose={() => setAdding(false)} /> : null}
@@ -84,15 +83,15 @@ export function CertificateAuthorities({ authorities }: { authorities: Certifica
           clearError();
         }}
         error={errorFor("delete")}
-        title={`Stop trusting ${deleting?.name ?? "this authority"}?`}
-        description="Certificates it issued stop signing anyone in from the next attempt. People who are already signed in stay signed in."
+        title={t.confirmStop(deleting?.name ?? t.stopFallback)}
+        description={t.stopDescription}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleting(null)}>
-              Cancel
+              {copy.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "delete"} onClick={remove}>
-              Stop trusting
+              {t.stop}
             </Button>
           </>
         }
@@ -102,6 +101,8 @@ export function CertificateAuthorities({ authorities }: { authorities: Certifica
 }
 
 function AuthorityDialog({ onClose }: { onClose: () => void }) {
+  const copy = useMessages(policyMessages);
+  const t = copy.authorities;
   const { pending, run, errorFor, toast } = useMutation();
   const [name, setName] = useState("");
   const [mapping, setMapping] = useState<CertificateAuthority["mapping"]>("email");
@@ -110,8 +111,8 @@ function AuthorityDialog({ onClose }: { onClose: () => void }) {
 
   function save() {
     const next = {
-      name: name.trim() ? undefined : "Enter a name, for example “Corporate PKI”.",
-      certificates: certificates.includes("-----BEGIN CERTIFICATE-----") ? undefined : "Paste the authority's certificate in PEM format, starting with -----BEGIN CERTIFICATE-----.",
+      name: name.trim() ? undefined : copy.enterName(t.nameExample),
+      certificates: certificates.includes("-----BEGIN CERTIFICATE-----") ? undefined : t.certificatesRequired,
     };
     setErrors(next);
     if (next.name || next.certificates) return;
@@ -119,7 +120,7 @@ function AuthorityDialog({ onClose }: { onClose: () => void }) {
       "save",
       () => api<CertificateAuthority>("/certificate-authorities", { body: { name: name.trim(), mapping, certificates } }),
       (saved) => {
-        toast({ title: `${saved.name} trusted`, description: "Its certificates can sign people in from the next attempt. Recorded in the audit log." });
+        toast({ title: t.trusted(saved.name), description: t.trustedDescription });
         onClose();
       },
       "inline",
@@ -133,15 +134,15 @@ function AuthorityDialog({ onClose }: { onClose: () => void }) {
         if (!open) onClose();
       }}
       error={errorFor("save")}
-      title="Add certificate authority"
-      description="A certificate that chains to it signs in the person whose email address matches the field you choose."
+      title={t.addTitle}
+      description={t.addDescription}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {copy.cancel}
           </Button>
           <Button variant="primary" loading={pending === "save"} onClick={save}>
-            Add authority
+            {t.add}
           </Button>
         </>
       }
@@ -153,21 +154,21 @@ function AuthorityDialog({ onClose }: { onClose: () => void }) {
           save();
         }}
       >
-        <Field label="Name" error={errors.name}>
-          {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder="Corporate PKI" />}
+        <Field label={copy.name} error={errors.name}>
+          {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder={t.nameExample} />}
         </Field>
-        <Field label="Match people by" hint={MAPPING[mapping].hint}>
+        <Field label={t.matchBy} hint={t.mapping[mapping].hint}>
           {(props) => (
             <Select {...props} value={mapping} onChange={(event) => setMapping(event.target.value as CertificateAuthority["mapping"])}>
-              {(Object.keys(MAPPING) as CertificateAuthority["mapping"][]).map((key) => (
+              {(Object.keys(t.mapping) as CertificateAuthority["mapping"][]).map((key) => (
                 <option key={key} value={key}>
-                  {MAPPING[key].label}
+                  {t.mapping[key].label}
                 </option>
               ))}
             </Select>
           )}
         </Field>
-        <Field label="Certificates" error={errors.certificates} hint="The PEM certificate of the authority that signs your client certificates, not only its root. Paste more issuing authorities one after another.">
+        <Field label={t.certificates} error={errors.certificates} hint={t.certificatesHint}>
           {(props) => (
             <Textarea {...props} mono rows={8} spellCheck={false} value={certificates} onChange={(event) => setCertificates(event.target.value)} placeholder="-----BEGIN CERTIFICATE-----" />
           )}

@@ -15,6 +15,8 @@ import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
 import { formatDate } from "@/lib/format";
+import { useLocale, useMessages } from "@/lib/i18n/client";
+import { settingsMessages } from "@/lib/i18n/console/settings";
 import type { Domain } from "@/lib/settings-types";
 import { ReadOnlyNote } from "./shared";
 
@@ -22,12 +24,14 @@ export function DomainsManager({ domains, canEdit }: { domains: Domain[]; canEdi
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<Domain | null>(null);
+  const locale = useLocale();
+  const { domains: t, common } = settingsMessages[locale];
   const waiting = domains.filter((d) => !d.verifiedAt);
   const verified = domains.filter((d) => d.verifiedAt);
 
   function verify(domain: Domain) {
     void run(`verify-${domain.id}`, () => api<Domain>(`/domains/${domain.id}/verify`, { method: "POST" }), () =>
-      toast({ title: `${domain.name} verified`, description: "You can remove the TXT record now, or keep it to verify again later." }),
+      toast({ title: t.verifiedToast(domain.name), description: t.verifiedHint }),
       "inline",
     );
   }
@@ -37,20 +41,20 @@ export function DomainsManager({ domains, canEdit }: { domains: Domain[]; canEdi
     if (!domain) return;
     void run("remove", () => api(`/domains/${domain.id}`, { method: "DELETE" }), () => {
       setRemoving(null);
-      toast({ title: `${domain.name} removed`, description: "Recorded in the audit log." });
+      toast({ title: t.removed(domain.name), description: common.recorded });
     }, "inline");
   }
 
   const add = canEdit ? (
     <Button size="sm" variant="primary" onClick={() => setAdding(true)}>
       <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-      Add domain
+      {t.add}
     </Button>
   ) : null;
 
   const removeButton = (domain: Domain) =>
     canEdit ? (
-      <Button size="icon-sm" variant="quiet" aria-label={`Remove ${domain.name}`} onClick={() => setRemoving(domain)}>
+      <Button size="icon-sm" variant="quiet" aria-label={t.removeLabel(domain.name)} onClick={() => setRemoving(domain)}>
         <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
       </Button>
     ) : null;
@@ -61,8 +65,8 @@ export function DomainsManager({ domains, canEdit }: { domains: Domain[]; canEdi
         <Card>
           <EmptyState
             icon={Globe}
-            title="No domains yet"
-            description="Add the domains in your people's email addresses, such as example.com. You prove ownership with a DNS TXT record."
+            title={t.emptyTitle}
+            description={t.emptyDescription}
             action={add}
           />
         </Card>
@@ -70,16 +74,16 @@ export function DomainsManager({ domains, canEdit }: { domains: Domain[]; canEdi
         <>
           {waiting.length ? (
             <section className="flex flex-col gap-6">
-              <SectionTitle title="Waiting for verification" description="Add this TXT record at the domain's DNS provider, then select Verify." action={add} />
+              <SectionTitle title={t.waitingTitle} description={t.waitingHint} action={add} />
               {waiting.map((domain) => (
                 <Card key={domain.id}>
                   <CardHeader
                     title={domain.name}
-                    description={`Added ${formatDate(domain.createdAt)}`}
+                    description={t.added(formatDate(domain.createdAt, locale))}
                     actions={
                       <>
                         <Badge tone="warning" dot>
-                          Not verified
+                          {t.notVerified}
                         </Badge>
                         {removeButton(domain)}
                       </>
@@ -87,14 +91,14 @@ export function DomainsManager({ domains, canEdit }: { domains: Domain[]; canEdi
                   />
                   <CardBody className="flex flex-col gap-6">
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_2fr]">
-                      <CopyField label="Host" value={domain.name} hint="Some DNS providers write the apex as @." />
-                      <CopyField label="TXT value" value={`halo-verification=${domain.token}`} />
+                      <CopyField label={t.host} value={domain.name} hint={t.hostHint} />
+                      <CopyField label={t.txt} value={`halo-verification=${domain.token}`} />
                     </div>
                     {canEdit ? (
                       <div className="flex flex-wrap items-center gap-4">
                         <Button variant="secondary" loading={pending === `verify-${domain.id}`} onClick={() => verify(domain)}>
                           <ShieldCheck aria-hidden="true" size={16} strokeWidth={1.75} />
-                          Verify {domain.name}
+                          {t.verify(domain.name)}
                         </Button>
                         <ActionError message={errorFor(`verify-${domain.id}`)} />
                       </div>
@@ -105,23 +109,23 @@ export function DomainsManager({ domains, canEdit }: { domains: Domain[]; canEdi
             </section>
           ) : null}
           <section className="flex flex-col gap-6">
-            <SectionTitle title="Verified domains" description="Halo confirmed a TXT record at each of these domains." action={waiting.length ? null : add} />
+            <SectionTitle title={t.verifiedTitle} description={t.verifiedDescription} action={waiting.length ? null : add} />
             {verified.length ? (
               <SimpleTable
-                caption="Verified domains"
-                head={["Domain", "Status", "Added", "Verified", "Actions"]}
+                caption={t.verifiedTitle}
+                head={[t.domain, common.status, t.addedColumn, t.verified, common.actions]}
                 rows={verified.map((domain) => [
                   <span key="name" className="font-medium whitespace-nowrap text-fg">
                     {domain.name}
                   </span>,
                   <Badge key="status" tone="success" dot>
-                    Verified
+                    {t.verified}
                   </Badge>,
                   <span key="added" className="tnum whitespace-nowrap">
-                    {formatDate(domain.createdAt)}
+                    {formatDate(domain.createdAt, locale)}
                   </span>,
                   <span key="verified" className="tnum whitespace-nowrap">
-                    {formatDate(domain.verifiedAt!)}
+                    {formatDate(domain.verifiedAt!, locale)}
                   </span>,
                   <span key="actions" className="flex justify-end">
                     {removeButton(domain)}
@@ -131,14 +135,14 @@ export function DomainsManager({ domains, canEdit }: { domains: Domain[]; canEdi
             ) : (
               <Card>
                 <CardBody className="pt-6">
-                  <p className="text-body-sm text-fg-3">No domain is verified yet.</p>
+                  <p className="text-body-sm text-fg-3">{t.noneVerified}</p>
                 </CardBody>
               </Card>
             )}
           </section>
         </>
       )}
-      {canEdit ? null : <ReadOnlyNote>Only a global administrator can add, verify or remove domains.</ReadOnlyNote>}
+      {canEdit ? null : <ReadOnlyNote>{t.readOnly}</ReadOnlyNote>}
       {adding ? <AddDomainDialog onClose={() => setAdding(false)} /> : null}
       <Dialog
         open={removing !== null}
@@ -148,15 +152,15 @@ export function DomainsManager({ domains, canEdit }: { domains: Domain[]; canEdi
           clearError();
         }}
         error={errorFor("remove")}
-        title={`Remove ${removing?.name ?? "domain"}?`}
-        description="Halo forgets the domain and its verification. To use it again, add it and publish a new TXT record."
+        title={t.removeTitle(removing?.name ?? t.fallback)}
+        description={t.removeDescription}
         footer={
           <>
             <Button variant="secondary" onClick={() => setRemoving(null)}>
-              Cancel
+              {common.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "remove"} onClick={remove}>
-              Remove domain
+              {t.removeButton}
             </Button>
           </>
         }
@@ -169,15 +173,16 @@ function AddDomainDialog({ onClose }: { onClose: () => void }) {
   const { pending, run, errorFor, toast } = useMutation();
   const [name, setName] = useState("");
   const [error, setError] = useState<string>();
+  const { domains: t, common } = useMessages(settingsMessages);
 
   function submit() {
     const value = name.trim().toLowerCase().replace(/\.$/, "");
     if (!/^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/.test(value)) {
-      setError("Enter a domain name such as example.com, without https:// or a path.");
+      setError(t.invalid);
       return;
     }
     void run("add", () => api<Domain>("/domains", { body: { name: value } }), (domain) => {
-      toast({ title: `${domain.name} added`, description: "Publish the TXT record shown on this page, then verify it." });
+      toast({ title: t.addedToast(domain.name), description: t.addedHint });
       onClose();
     }, "inline");
   }
@@ -189,15 +194,15 @@ function AddDomainDialog({ onClose }: { onClose: () => void }) {
         if (!open) onClose();
       }}
       error={errorFor("add")}
-      title="Add domain"
-      description="Halo gives you a TXT record to publish at the domain. Verification proves your organization controls it."
+      title={t.add}
+      description={t.addDescription}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {common.cancel}
           </Button>
           <Button variant="primary" loading={pending === "add"} onClick={submit}>
-            Add domain
+            {t.add}
           </Button>
         </>
       }
@@ -209,7 +214,7 @@ function AddDomainDialog({ onClose }: { onClose: () => void }) {
           submit();
         }}
       >
-        <Field label="Domain" error={error}>
+        <Field label={t.domain} error={error}>
           {(props) => <Input {...props} mono autoFocus autoComplete="off" spellCheck={false} value={name} placeholder="example.com" onChange={(event) => setName(event.target.value)} />}
         </Field>
         <button type="submit" hidden />

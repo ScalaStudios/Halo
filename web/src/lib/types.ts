@@ -1,3 +1,4 @@
+import type { Locale } from "./i18n/locale";
 import type { NamedRef } from "./governance-types";
 import type { RoleKey } from "./provisioning-types";
 import type { RemoteTarget } from "./infra-types";
@@ -44,6 +45,7 @@ export type User = {
   directory: NamedRef | null;
   attributes: Record<string, AttributeValue>;
   posix: PosixAccount | null;
+  locale: Locale | null;
   impersonation?: Impersonation;
 };
 

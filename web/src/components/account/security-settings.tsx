@@ -19,7 +19,11 @@ import { SectionTitle } from "@/components/ui/section-title";
 import { Spinner } from "@/components/ui/spinner";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/api/client";
-import { formatDate, now, pluralize } from "@/lib/format";
+import { formatDate, now } from "@/lib/format";
+import { accountMessages } from "@/lib/i18n/account";
+import { authMessages } from "@/lib/i18n/auth";
+import { useLocale } from "@/lib/i18n/client";
+import { monitoringMessages } from "@/lib/i18n/console/monitoring";
 import { METHOD } from "@/lib/labels";
 import type { AuthMethod } from "@/lib/types";
 import { createCredential } from "@/lib/webauthn";
@@ -28,29 +32,7 @@ type Enrollable = "passkey" | "security-key" | "totp";
 type TotpSetup = { ceremony: string; secret: string; uri: string };
 export type PasskeyRules = { groups: string[]; deviceBound: boolean; attestation: boolean; approvedModels: boolean; minimum: number; keys: number };
 
-const SECTIONS: { kind: Enrollable; title: string; description: string; action: string; empty: string }[] = [
-  {
-    kind: "passkey",
-    title: "Passkeys",
-    description: "Sign in with your fingerprint, face or screen lock. Passkeys can't be phished or reused on another site.",
-    action: "Add passkey",
-    empty: "Add a passkey to sign in without codes. It's the fastest and safest way into Halo.",
-  },
-  {
-    kind: "security-key",
-    title: "Security keys",
-    description: "A hardware key such as a YubiKey. Works on any computer with a USB port or NFC reader.",
-    action: "Add security key",
-    empty: "A security key is a good backup if you lose your phone or laptop.",
-  },
-  {
-    kind: "totp",
-    title: "Authenticator apps",
-    description: "Six-digit codes from an app like 1Password or Aegis. Useful as a backup, but codes can be phished.",
-    action: "Set up authenticator app",
-    empty: "No authenticator app set up. You don't need one while you have a passkey and a security key.",
-  },
-];
+const SECTIONS: Enrollable[] = ["passkey", "security-key", "totp"];
 
 export function SecuritySettings({
   methods,
@@ -65,6 +47,9 @@ export function SecuritySettings({
 }) {
   const router = useRouter();
   const toast = useToast();
+  const locale = useLocale();
+  const copy = accountMessages(locale);
+  const t = copy.security;
   const [adding, setAdding] = useState<"passkey" | "security-key" | null>(null);
   const [totp, setTotp] = useState<TotpSetup | null>(null);
   const [codes, setCodes] = useState<{ codes: string[]; replaced: boolean } | null>(null);
@@ -72,14 +57,10 @@ export function SecuritySettings({
   const [changingPassword, setChangingPassword] = useState(false);
   const recovery = methods.find((m) => m.kind === "recovery-codes");
   const current = methods.find((m) => m.kind === "password");
-  const passwordNote = !password.allowed
-    ? "Your organization doesn't let you sign in with a password, so this one doesn't work right now."
-    : password.secondFactor && !methods.some((m) => m.kind === "totp")
-      ? "Signing in with a password also needs a code from an authenticator app. Set one up above so your password works."
-      : null;
+  const passwordNote = !password.allowed ? t.passwordOff : password.secondFactor && !methods.some((m) => m.kind === "totp") ? t.passwordNeedsCode : null;
 
   function fail(error: unknown) {
-    toast({ title: "That didn't work", description: describeFailure(error), tone: "danger" });
+    toast({ title: copy.sessions.failed, description: describeFailure(error), tone: "danger" });
   }
 
   function changed() {
@@ -116,7 +97,8 @@ export function SecuritySettings({
   return (
     <div className="flex flex-col gap-12">
       {rules.groups.length > 0 ? <PasskeyRulesNote rules={rules} /> : null}
-      {SECTIONS.map((section) => {
+      {SECTIONS.map((kind) => {
+        const section = { kind, ...t.sections[kind] };
         const list = methods.filter((m) => m.kind === section.kind);
         return (
           <section key={section.kind} className="flex flex-col gap-4">
@@ -150,13 +132,13 @@ export function SecuritySettings({
       {password.allowed || current ? (
         <section className="flex flex-col gap-4">
           <SectionTitle
-            title="Password"
-            description="For computers that can't use a passkey. A password can be phished or guessed, so use a passkey whenever you can."
+            title={t.password}
+            description={t.passwordHint}
             action={
               password.allowed ? (
                 <Button size="sm" onClick={() => setChangingPassword(true)}>
                   <RectangleEllipsis aria-hidden="true" size={16} strokeWidth={1.75} />
-                  {current ? "Change password" : "Set password"}
+                  {current ? t.changePassword : t.setPassword}
                 </Button>
               ) : undefined
             }
@@ -164,7 +146,7 @@ export function SecuritySettings({
           {current ? (
             <MethodList key={current.addedAt} methods={[current]} />
           ) : (
-            <p className="rounded-lg border border-border px-6 py-4 text-body-sm text-fg-3">No password set. You don&apos;t need one on devices that can use a passkey.</p>
+            <p className="rounded-lg border border-border px-6 py-4 text-body-sm text-fg-3">{t.noPassword}</p>
           )}
           {passwordNote ? (
             <p className="flex items-start gap-2 text-body-sm text-warning">
@@ -177,12 +159,12 @@ export function SecuritySettings({
 
       <section className="flex flex-col gap-4">
         <SectionTitle
-          title="Recovery"
-          description="One-time codes for when you can't use any passkey or security key. Keep them in a password manager or somewhere safe offline."
+          title={t.recovery}
+          description={t.recoveryHint}
           action={
             <Button size="sm" loading={busy === "recovery"} onClick={generate}>
               <RefreshCw aria-hidden="true" size={16} strokeWidth={1.75} />
-              Generate new codes
+              {t.generate}
             </Button>
           }
         />
@@ -191,9 +173,9 @@ export function SecuritySettings({
             <ListOrdered aria-hidden="true" size={20} strokeWidth={1.75} />
           </span>
           <div className="flex min-w-0 flex-col gap-1">
-            <p className="tnum text-body-sm font-semibold text-fg">{recovery ? (recovery.detail ?? "Recovery codes ready") : "No recovery codes yet"}</p>
+            <p className="tnum text-body-sm font-semibold text-fg">{recovery ? (recovery.detail ?? t.recoveryReady) : t.noRecovery}</p>
             <p className="text-caption text-fg-3">
-              {recovery ? `Generated ${formatDate(recovery.addedAt)} · Each code works once` : "Generate codes so you can get back in if you lose your devices."}
+              {recovery ? t.generated(formatDate(recovery.addedAt, locale)) : t.generateHint}
             </p>
           </div>
         </div>
@@ -211,7 +193,8 @@ export function SecuritySettings({
 
 function PasskeyRulesNote({ rules }: { rules: PasskeyRules }) {
   const titleId = useId();
-  const needs = [rules.deviceBound && "stay on one device", rules.attestation && "prove their make and model", rules.approvedModels && "be a model your administrator approved"].filter(
+  const t = accountMessages(useLocale()).security;
+  const needs = [rules.deviceBound && t.needs.deviceBound, rules.attestation && t.needs.attestation, rules.approvedModels && t.needs.approvedModels].filter(
     (need): need is string => typeof need === "string",
   );
   const short = rules.minimum - rules.keys;
@@ -222,20 +205,16 @@ function PasskeyRulesNote({ rules }: { rules: PasskeyRules }) {
       </span>
       <div className="flex min-w-0 flex-col gap-1">
         <h2 id={titleId} className="text-body-sm font-semibold text-fg">
-          Passkey rules for {joinList(rules.groups, "and")}
+          {t.rulesFor(joinList(rules.groups, t.and))}
         </h2>
-        {needs.length ? <p className="text-body-sm text-fg-3">New passkeys and security keys must {joinList(needs, "and")}.</p> : null}
+        {needs.length ? <p className="text-body-sm text-fg-3">{t.mustMeet(joinList(needs, t.and))}</p> : null}
         {rules.minimum > 0 ? (
-          <p className="tnum text-body-sm text-fg-3">
-            Keep at least {pluralize(rules.minimum, "passkey or security key that meets", "passkeys or security keys that meet")} these rules.
-          </p>
+          <p className="tnum text-body-sm text-fg-3">{t.keepAtLeast(rules.minimum)}</p>
         ) : null}
         {short > 0 ? (
           <p className="flex items-start gap-2 text-body-sm text-warning">
             <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0" />
-            <span className="tnum">
-              You have {rules.keys} that {rules.keys === 1 ? "meets" : "meet"} them. Add {short} more.
-            </span>
+            <span className="tnum">{t.short(rules.keys, short)}</span>
           </p>
         ) : null}
       </div>
@@ -245,10 +224,14 @@ function PasskeyRulesNote({ rules }: { rules: PasskeyRules }) {
 
 function EnrollDialog({ kind, onClose, onAdded }: { kind: "passkey" | "security-key"; onClose: () => void; onAdded: () => void }) {
   const toast = useToast();
+  const locale = useLocale();
+  const copy = accountMessages(locale);
+  const t = copy.security;
+  const method = monitoringMessages[locale].methods[kind];
   const formId = useId();
   const cancelRef = useRef<HTMLButtonElement>(null);
   const attempt = useRef<AbortController | null>(null);
-  const [name, setName] = useState(() => (kind === "passkey" ? deviceLabel() : "Security key"));
+  const [name, setName] = useState(() => (kind === "passkey" ? deviceLabel(authMessages(locale)) : method));
   const [error, setError] = useState(false);
   const [waiting, setWaiting] = useState(false);
   const passkey = kind === "passkey";
@@ -270,12 +253,12 @@ function EnrollDialog({ kind, onClose, onAdded }: { kind: "passkey" | "security-
       const { ceremony, options } = await api<Ceremony>("/me/passkeys/begin", { body: { kind } });
       const credential = await createCredential(options, controller.signal);
       await api("/me/passkeys/finish", { body: { ceremony, credential, label } });
-      toast({ title: `${METHOD[kind].label} added`, description: `You can now sign in to Halo with “${label}”.` });
+      toast({ title: t.added(method), description: t.addedHint(label) });
       onAdded();
     } catch (error) {
       if (controller.signal.aborted) return;
       setWaiting(false);
-      if (!cancelled(error)) toast({ title: `Couldn't add the ${METHOD[kind].label.toLowerCase()}`, description: describeFailure(error), tone: "danger" });
+      if (!cancelled(error)) toast({ title: t.addFailed(method), description: describeFailure(error), tone: "danger" });
     }
   }
 
@@ -285,20 +268,16 @@ function EnrollDialog({ kind, onClose, onAdded }: { kind: "passkey" | "security-
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title={passkey ? "Add a passkey" : "Add a security key"}
-      description={
-        passkey
-          ? "Your device creates a passkey and keeps the private part to itself. Halo only stores a public key."
-          : "Have your security key ready. You'll insert it and touch it to confirm."
-      }
+      title={passkey ? t.addPasskey : t.addSecurityKey}
+      description={passkey ? t.passkeyIntro : t.securityKeyIntro}
       footer={
         <>
           <Button ref={cancelRef} variant="secondary" onClick={onClose}>
-            Cancel
+            {copy.cancel}
           </Button>
           {waiting ? null : (
             <Button variant="primary" type="submit" form={formId}>
-              Continue
+              {copy.continue}
             </Button>
           )}
         </>
@@ -308,20 +287,16 @@ function EnrollDialog({ kind, onClose, onAdded }: { kind: "passkey" | "security-
         <div role="status" className="flex items-start gap-4 rounded-lg border border-border bg-sunken p-4">
           <Spinner size={20} className="mt-px shrink-0" />
           <div className="flex flex-col gap-1">
-            <p className="text-body-sm font-semibold text-fg">Waiting for your device</p>
-            <p className="text-body-sm text-fg-3">
-              {passkey
-                ? "Follow the prompt from your browser and confirm with your fingerprint, face or screen lock."
-                : "Insert your security key and touch it when it flashes."}
-            </p>
+            <p className="text-body-sm font-semibold text-fg">{t.waiting}</p>
+            <p className="text-body-sm text-fg-3">{passkey ? t.passkeyWaiting : t.securityKeyWaiting}</p>
           </div>
         </div>
       ) : (
         <form id={formId} noValidate onSubmit={submit}>
           <Field
-            label="Name"
-            hint="Helps you tell your methods apart later, for example the browser and device."
-            error={error ? "Give it a name you'll recognise, like “Firefox on Linux”." : undefined}
+            label={t.name}
+            hint={t.nameHint}
+            error={error ? t.nameRequired : undefined}
           >
             {(field) => (
               <Input
@@ -343,6 +318,8 @@ function EnrollDialog({ kind, onClose, onAdded }: { kind: "passkey" | "security-
 
 function PasswordDialog({ email, replacing, onClose, onSaved }: { email: string; replacing: boolean; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
+  const copy = accountMessages(useLocale());
+  const t = copy.security;
   const formId = useId();
   const [value, setValue] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
@@ -351,13 +328,13 @@ function PasswordDialog({ email, replacing, onClose, onSaved }: { email: string;
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!value) {
-      setProblem("Enter a password of at least 15 characters.");
+      setProblem(t.passwordRequired);
       return;
     }
     setSaving(true);
     try {
       await api("/me/password", { method: "PUT", body: { password: value } });
-      toast({ title: replacing ? "Password changed" : "Password set", description: "Use it to sign in on computers that can't use a passkey." });
+      toast({ title: replacing ? t.passwordChanged : t.passwordSet, description: t.passwordSavedHint });
       onSaved();
     } catch (error) {
       setProblem(describeFailure(error));
@@ -371,22 +348,22 @@ function PasswordDialog({ email, replacing, onClose, onSaved }: { email: string;
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title={replacing ? "Change your password" : "Set a password"}
-      description="Use at least 15 characters and don't reuse a password from another site. A few unrelated words make a password that is long and easy to remember."
+      title={replacing ? t.changeTitle : t.setTitle}
+      description={t.passwordDialogHint}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {copy.cancel}
           </Button>
           <Button variant="primary" type="submit" form={formId} loading={saving}>
-            Save password
+            {t.savePassword}
           </Button>
         </>
       }
     >
       <form id={formId} noValidate onSubmit={submit}>
         <input type="email" name="email" autoComplete="username" value={email} readOnly hidden />
-        <Field label="New password" error={problem}>
+        <Field label={t.newPassword} error={problem}>
           {(field) => (
             <PasswordInput
               {...field}
@@ -408,12 +385,15 @@ function PasswordDialog({ email, replacing, onClose, onSaved }: { email: string;
 
 function AuthenticatorDialog({ setup, email, onClose, onAdded }: { setup: TotpSetup; email: string; onClose: () => void; onAdded: () => void }) {
   const toast = useToast();
+  const locale = useLocale();
+  const copy = accountMessages(locale);
+  const t = copy.security;
   const qr = encode(setup.uri, { border: 4 });
   const modules = qr.data.flatMap((row, y) => row.map((dark, x) => (dark ? `M${x} ${y}h1v1h-1z` : ""))).join("");
 
   async function verify(code: string) {
     await api("/me/totp/confirm", { body: { ceremony: setup.ceremony, code } });
-    toast({ title: "Authenticator app added", description: "Use it when you don't have a passkey or security key with you." });
+    toast({ title: t.authenticatorAdded, description: t.authenticatorAddedHint });
     onAdded();
   }
 
@@ -423,11 +403,11 @@ function AuthenticatorDialog({ setup, email, onClose, onAdded }: { setup: TotpSe
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title="Set up an authenticator app"
-      description="Scan the code with 1Password, Aegis, Google Authenticator or any app that supports time-based codes."
+      title={t.authenticatorTitle}
+      description={t.authenticatorIntro}
       footer={
         <Button variant="secondary" onClick={onClose}>
-          Cancel
+          {copy.cancel}
         </Button>
       }
     >
@@ -436,17 +416,17 @@ function AuthenticatorDialog({ setup, email, onClose, onAdded }: { setup: TotpSe
           <svg
             viewBox={`0 0 ${qr.size} ${qr.size}`}
             role="img"
-            aria-label={`QR code for Halo, ${email}`}
+            aria-label={t.qrCode(email)}
             shapeRendering="crispEdges"
             className="size-40 shrink-0 rounded-md bg-white text-ink"
           >
             <path fill="currentColor" d={modules} />
           </svg>
-          <CopyField label="Setup key" value={setup.secret} hint="Can't scan the code? Enter this key in the app instead." className="w-full min-w-0 flex-1" />
+          <CopyField label={t.setupKey} value={setup.secret} hint={t.setupKeyHint} className="w-full min-w-0 flex-1" />
         </div>
         <div className="flex flex-col items-center gap-3 border-t border-border pt-6">
-          <p className="text-label text-fg">Enter the 6-digit code from the app</p>
-          <VerifyCode label="Code from your authenticator app" hint="This confirms the app is set up correctly." verify={verify} />
+          <p className="text-label text-fg">{t.enterCode}</p>
+          <VerifyCode label={t.codeLabel} hint={t.codeHint} accepted={authMessages(locale).codeAccepted} verify={verify} />
         </div>
       </div>
     </Dialog>
@@ -454,8 +434,11 @@ function AuthenticatorDialog({ setup, email, onClose, onAdded }: { setup: TotpSe
 }
 
 function RecoveryCodesDialog({ codes, replaced, email, onClose }: { codes: string[]; replaced: boolean; email: string; onClose: () => void }) {
+  const locale = useLocale();
+  const t = accountMessages(locale).security;
+
   function download() {
-    const text = [`Halo recovery codes for ${email}`, `Generated ${formatDate(now().toISOString())}`, "Each code works once.", "", ...codes, ""].join("\n");
+    const text = [...t.codesFile(email, formatDate(now().toISOString(), locale)), "", ...codes, ""].join("\n");
     const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
     const link = document.createElement("a");
     link.href = url;
@@ -470,11 +453,11 @@ function RecoveryCodesDialog({ codes, replaced, email, onClose }: { codes: strin
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title="Your new recovery codes"
-      description="Each code signs you in once if you can't use any passkey or security key."
+      title={t.codesTitle}
+      description={t.codesIntro}
       footer={
         <Button variant="primary" onClick={onClose}>
-          I saved my codes
+          {t.codesSaved}
         </Button>
       }
     >
@@ -482,19 +465,20 @@ function RecoveryCodesDialog({ codes, replaced, email, onClose }: { codes: strin
         <div className="flex items-start gap-3 rounded-md border border-warning/20 bg-warning-container p-4">
           <TriangleAlert aria-hidden="true" size={20} strokeWidth={1.75} className="mt-px shrink-0 text-warning" />
           <p className="text-body-sm text-fg-2">
-            {replaced ? "Your old codes stopped working. " : ""}Save these now — Halo won&apos;t show them again.
+            {replaced ? t.oldCodesStopped : ""}
+            {t.saveNow}
           </p>
         </div>
-        <ol aria-label="Recovery codes" className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-border bg-sunken p-6 font-mono text-code-sm text-fg">
+        <ol aria-label={t.codes} className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-lg border border-border bg-sunken p-6 font-mono text-code-sm text-fg">
           {codes.map((code) => (
             <li key={code}>{code}</li>
           ))}
         </ol>
         <div className="flex flex-wrap gap-2">
-          <CopyButton value={codes.join("\n")} label="Copy all" />
+          <CopyButton value={codes.join("\n")} label={t.copyAll} />
           <Button size="sm" variant="quiet" onClick={download}>
             <Download aria-hidden="true" size={16} strokeWidth={1.75} />
-            Download as .txt
+            {t.downloadTxt}
           </Button>
         </div>
       </div>

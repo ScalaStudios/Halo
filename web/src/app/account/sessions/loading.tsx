@@ -1,12 +1,11 @@
 import { ListSkeleton, PageSkeleton, Skeleton, SkeletonText } from "@/components/ui/skeleton";
+import { accountMessages } from "@/lib/i18n/account";
+import { requestLocale } from "@/lib/i18n/server";
 
-export default function Loading() {
+export default async function Loading() {
+  const copy = accountMessages(await requestLocale());
   return (
-    <PageSkeleton
-      large
-      title="Sessions"
-      description="Browsers, devices and Halo CLI sign-ins on your Halo account. If you don't recognise one, sign it out and review your security."
-    >
+    <PageSkeleton large title={copy.nav.sessions} description={copy.sessions.intro}>
       <div className="flex flex-col gap-4">
         <ListSkeleton rows={2} media className="overflow-hidden rounded-lg border border-border bg-surface" />
         <div aria-hidden="true" className="flex items-center gap-4 rounded-lg border border-border px-6 py-4">

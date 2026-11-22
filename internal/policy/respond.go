@@ -17,7 +17,7 @@ var responseOrder = []string{"suspend", "revoke-sessions", "require-passkey", "n
 type riskNotice struct {
 	user     store.User
 	event    store.RiskEvent
-	response string
+	response []string
 }
 
 func respond(ctx context.Context, st *store.Store, mailer mail.Mailer, issuer string, now time.Time) error {
@@ -70,20 +70,20 @@ func respond(ctx context.Context, st *store.Store, mailer mail.Mailer, issuer st
 					if err != nil {
 						return err
 					}
-					steps, response, ended = append(steps, "Suspended the account and ended "+plural(n, "session", "sessions")), append(response, "Halo suspended your account until an administrator restores it."), true
+					steps, response, ended = append(steps, "Suspended the account and ended "+plural(n, "session", "sessions")), append(response, action), true
 				case "revoke-sessions", "require-passkey":
 					if !ended {
 						n, err := tx.RevokeUserSessions(ctx, u.ID, "")
 						if err != nil {
 							return err
 						}
-						steps, response, ended = append(steps, "Ended "+plural(n, "session", "sessions")+" and revoked their tokens"), append(response, "Halo ended your sessions, so you need to sign in again."), true
+						steps, response, ended = append(steps, "Ended "+plural(n, "session", "sessions")+" and revoked their tokens"), append(response, "revoke-sessions"), true
 					}
 					if action == "require-passkey" {
 						if err := tx.SetPasskeyRequired(ctx, u.ID, true); err != nil {
 							return err
 						}
-						steps, response = append(steps, "Asked for a passkey or security key at the next sign-in"), append(response, "Your next sign-in needs a passkey or security key.")
+						steps, response = append(steps, "Asked for a passkey or security key at the next sign-in"), append(response, action)
 					}
 				case "notify":
 					if notify = !slices.Contains(settings.SecurityEmailsOff, "risk_response"); notify {
@@ -92,7 +92,7 @@ func respond(ctx context.Context, st *store.Store, mailer mail.Mailer, issuer st
 				}
 			}
 			if notify {
-				notices = append(notices, riskNotice{user: u, event: e, response: strings.Join(response, " ")})
+				notices = append(notices, riskNotice{user: u, event: e, response: response})
 			}
 			if len(steps) == 0 {
 				continue

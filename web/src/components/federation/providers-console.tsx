@@ -17,22 +17,24 @@ import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
 import type { IdentityProvider, ProfileField, ProviderKind, ProviderMapping } from "@/lib/federation-types";
-import { pluralize } from "@/lib/format";
+import { useMessages } from "@/lib/i18n/client";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { settingsMessages } from "@/lib/i18n/console/settings";
 import type { Group } from "@/lib/types";
 
-const KIND: Record<ProviderKind, { label: string; name: string; scopes: string; description: string }> = {
-  google: { label: "Google", name: "Google", scopes: "openid email profile", description: "Google Workspace and Google accounts." },
-  microsoft: { label: "Microsoft Entra ID", name: "Microsoft", scopes: "openid email profile", description: "Work accounts from one Entra tenant." },
-  github: { label: "GitHub", name: "GitHub", scopes: "read:user user:email", description: "GitHub.com or GitHub Enterprise Server." },
-  oidc: { label: "OpenID Connect", name: "", scopes: "openid email profile", description: "Okta, Keycloak, Authentik or any OIDC provider." },
-  saml: { label: "SAML 2.0", name: "", scopes: "", description: "Universities, government schemes and enterprise IdPs that only speak SAML." },
+const KIND: Record<ProviderKind, { label: string; name: string; scopes: string }> = {
+  google: { label: "Google", name: "Google", scopes: "openid email profile" },
+  microsoft: { label: "Microsoft Entra ID", name: "Microsoft", scopes: "openid email profile" },
+  github: { label: "GitHub", name: "GitHub", scopes: "read:user user:email" },
+  oidc: { label: "OpenID Connect", name: "", scopes: "openid email profile" },
+  saml: { label: "SAML 2.0", name: "", scopes: "" },
 };
 
-const FIELD: Record<ProfileField, string> = { name: "Name", title: "Job title", department: "Department", location: "Location" };
+const FIELDS: ProfileField[] = ["name", "title", "department", "location"];
 
 type Source = "url" | "xml" | "values";
 
-const SOURCES: Record<Source, string> = { url: "Metadata URL", xml: "Metadata file or XML", values: "Entity ID, SSO URL and certificate" };
+const SOURCES: Source[] = ["url", "xml", "values"];
 
 const ENTRA = /^https:\/\/login\.microsoftonline\.com\/([^/]+)\/v2\.0$/;
 const TEST_NEXT = "/admin/identity-providers";
@@ -49,18 +51,20 @@ export function ProvidersConsole({ callbackUrl, providers, groups }: { callbackU
   const [editing, setEditing] = useState<IdentityProvider | "new" | null>(null);
   const [deleting, setDeleting] = useState<IdentityProvider | null>(null);
   const enabled = providers.filter((p) => p.enabled).length;
+  const { providers: t, common } = useMessages(settingsMessages);
+  const title = useMessages(frameMessages).nav.items.identityProviders.label;
   const add = (
     <Button size="sm" variant="primary" onClick={() => setEditing("new")}>
       <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-      Add identity provider
+      {t.add}
     </Button>
   );
 
   function toggle(p: IdentityProvider) {
     void run(p.id, () => api(`/identity-providers/${p.id}/${p.enabled ? "disable" : "enable"}`, { method: "POST" }), () =>
       toast({
-        title: `${p.name} turned ${p.enabled ? "off" : "on"}`,
-        description: p.enabled ? "Its sign-in button is gone and its linked accounts can't sign in." : "People with a linked account can sign in with it again.",
+        title: p.enabled ? t.turnedOff(p.name) : t.turnedOn(p.name),
+        description: p.enabled ? t.offHint : t.onHint,
       }),
     );
   }
@@ -70,28 +74,28 @@ export function ProvidersConsole({ callbackUrl, providers, groups }: { callbackU
     if (!p) return;
     void run("delete", () => api(`/identity-providers/${p.id}`, { method: "DELETE" }), () => {
       setDeleting(null);
-      toast({ title: `${p.name} deleted`, description: `${pluralize(p.linkedCount, "linked account")} unlinked. Recorded in the audit log.` });
+      toast({ title: t.deleted(p.name), description: t.deletedHint(p.linkedCount) });
     }, "inline");
   }
 
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        title="Identity providers"
-        description={`${pluralize(providers.length, "provider")}, ${enabled} turned on. People sign in with their account at these providers; Halo still applies your access policies and application assignments.`}
+        title={title}
+        description={t.description(providers.length, enabled)}
         actions={add}
       />
       <Card className="p-6">
         <CopyField
-          label="Callback URL"
+          label={t.callback}
           value={callbackUrl}
-          hint="Register this exact URL in each provider's app registration: as the redirect URI for Google, Microsoft Entra and OpenID Connect, and as the authorization callback URL for GitHub. SAML providers get their own metadata URL instead, shown when you edit one."
+          hint={t.callbackHint}
         />
       </Card>
       {providers.length ? (
         <SimpleTable
-          caption="Identity providers"
-          head={["Provider", "Status", "Email domains", "New people", "Linked accounts", "Actions"]}
+          caption={title}
+          head={[common.provider, common.status, t.emailDomains, t.newPeople, t.linkedAccounts, common.actions]}
           rows={providers.map((p) => [
             <span key="name" className="flex min-w-48 flex-col">
               <span className="font-medium text-fg">{p.name}</span>
@@ -99,39 +103,39 @@ export function ProvidersConsole({ callbackUrl, providers, groups }: { callbackU
             </span>,
             <span key="status" className="flex flex-col items-start gap-1">
               <Badge tone={p.enabled ? "success" : "neutral"} dot>
-                {p.enabled ? "On" : "Off"}
+                {p.enabled ? t.on : t.off}
               </Badge>
-              {p.enabled && !p.showOnSignIn ? <span className="text-caption whitespace-nowrap text-fg-3">Hidden from sign-in page</span> : null}
-              {p.enabled && p.routeByDomain ? <span className="text-caption whitespace-nowrap text-fg-3">Routes by email domain</span> : null}
+              {p.enabled && !p.showOnSignIn ? <span className="text-caption whitespace-nowrap text-fg-3">{t.hidden}</span> : null}
+              {p.enabled && p.routeByDomain ? <span className="text-caption whitespace-nowrap text-fg-3">{t.routes}</span> : null}
             </span>,
             <span key="domains" className="flex flex-wrap gap-1">
-              {p.allowedDomains.length ? p.allowedDomains.map((d) => <Tag key={d}>{d}</Tag>) : <span className="text-fg-3">Any domain</span>}
+              {p.allowedDomains.length ? p.allowedDomains.map((d) => <Tag key={d}>{d}</Tag>) : <span className="text-fg-3">{t.anyDomain}</span>}
             </span>,
             <span key="jit" className="whitespace-nowrap">
-              {p.jit ? "Created on first sign-in" : "Existing accounts only"}
+              {p.jit ? t.jitOn : t.jitOff}
             </span>,
             <span key="linked" className="tnum">
               {p.linkedCount}
             </span>,
             <Menu key="actions">
               <MenuTrigger asChild>
-                <Button size="icon-sm" variant="quiet" aria-label={`Actions for ${p.name}`} loading={pending === p.id}>
+                <Button size="icon-sm" variant="quiet" aria-label={t.actionsFor(p.name)} loading={pending === p.id}>
                   <Ellipsis aria-hidden="true" size={16} strokeWidth={1.75} />
                 </Button>
               </MenuTrigger>
               <MenuContent>
                 <MenuItem icon={Pencil} onSelect={() => setEditing(p)}>
-                  Edit
+                  {t.edit}
                 </MenuItem>
                 <MenuItem icon={LogIn} disabled={!p.enabled} onSelect={() => window.location.assign(providerStartUrl(p.id, undefined, TEST_NEXT))}>
-                  Test sign-in
+                  {t.test}
                 </MenuItem>
                 <MenuItem icon={Power} onSelect={() => toggle(p)}>
-                  {p.enabled ? "Turn off" : "Turn on"}
+                  {p.enabled ? t.turnOff : t.turnOn}
                 </MenuItem>
                 <MenuSeparator />
                 <MenuItem icon={Trash2} danger onSelect={() => setDeleting(p)}>
-                  Delete
+                  {t.delete}
                 </MenuItem>
               </MenuContent>
             </Menu>,
@@ -141,16 +145,14 @@ export function ProvidersConsole({ callbackUrl, providers, groups }: { callbackU
         <Card>
           <EmptyState
             icon={Network}
-            title="No identity providers yet"
-            description="Add Google, Microsoft Entra ID, GitHub, any OpenID Connect provider or a SAML 2.0 identity provider so people can sign in with the account they already have."
+            title={t.emptyTitle}
+            description={t.emptyDescription}
             action={add}
           />
         </Card>
       )}
       {providers.length ? (
-        <p className="text-caption text-fg-3">
-          Test sign-in signs you in through the provider in this browser and returns here. Use a private window to test with a different account.
-        </p>
+        <p className="text-caption text-fg-3">{t.testNote}</p>
       ) : null}
       {editing ? (
         <ProviderDialog
@@ -169,15 +171,15 @@ export function ProvidersConsole({ callbackUrl, providers, groups }: { callbackU
           clearError();
         }}
         error={errorFor("delete")}
-        title={`Delete ${deleting?.name ?? "identity provider"}?`}
-        description={`${pluralize(deleting?.linkedCount ?? 0, "linked account")} will be unlinked. People who only sign in with ${deleting?.name ?? "it"} can't sign in until they get another method.`}
+        title={t.deleteTitle(deleting?.name ?? t.deleteFallback)}
+        description={t.deleteDescription(deleting?.linkedCount ?? 0, deleting?.name ?? t.itFallback)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleting(null)}>
-              Cancel
+              {common.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "delete"} onClick={remove}>
-              Delete provider
+              {t.deleteButton}
             </Button>
           </>
         }
@@ -219,8 +221,9 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
     >
   >({});
   const file = useRef<HTMLInputElement>(null);
+  const { providers: t, common } = useMessages(settingsMessages);
   const mapped = kind !== "github";
-  const unusedFields = (Object.keys(FIELD) as ProfileField[]).filter((f) => !profileMap.some((m) => m.field === f));
+  const unusedFields = FIELDS.filter((f) => !profileMap.some((m) => m.field === f));
   const assigned = groups.filter((g) => g.kind === "assigned");
   const saml = kind === "saml";
   const secretRequired = !provider?.hasSecret && kind !== "oidc" && !saml;
@@ -235,35 +238,35 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
 
   function save() {
     const next = {
-      name: name.trim() ? undefined : "Enter the name people see on the sign-in button.",
-      tenant: kind === "microsoft" && !tenant.trim() ? "Enter the directory (tenant) ID from the Entra app's overview page." : undefined,
+      name: name.trim() ? undefined : t.errors.name,
+      tenant: kind === "microsoft" && !tenant.trim() ? t.errors.tenant : undefined,
       issuer:
         kind === "oidc" && !issuer.trim()
-          ? "Enter the issuer URL, for example https://auth.example.com."
+          ? t.errors.issuer
           : saml && source === "values" && !issuer.trim()
-            ? "Enter the identity provider's entity ID."
+            ? t.errors.entityId
             : undefined,
       metadata:
         saml && source === "url" && !metadataUrl.trim()
-          ? "Enter the metadata URL, starting with https://."
+          ? t.errors.metadataUrl
           : saml && source === "xml" && !metadataXml.trim()
-            ? "Paste the metadata XML, or choose the metadata file."
+            ? t.errors.metadataXml
             : undefined,
-      ssoUrl: saml && source === "values" && !ssoUrl.trim() ? "Enter the single sign-on URL, starting with https://." : undefined,
-      certificate: saml && source === "values" && !certificate.trim() ? "Paste the signing certificate in PEM format." : undefined,
-      clientId: saml || clientId.trim() ? undefined : "Enter the client ID from the provider's app registration.",
-      clientSecret: secretRequired && !clientSecret.trim() ? "Enter the client secret from the provider's app registration." : undefined,
+      ssoUrl: saml && source === "values" && !ssoUrl.trim() ? t.errors.ssoUrl : undefined,
+      certificate: saml && source === "values" && !certificate.trim() ? t.errors.certificate : undefined,
+      clientId: saml || clientId.trim() ? undefined : t.errors.clientId,
+      clientSecret: secretRequired && !clientSecret.trim() ? t.errors.clientSecret : undefined,
       domains:
         words(domains).length > 0
           ? undefined
           : jit
-            ? "Add at least one domain so only people from your organization get an account."
+            ? t.errors.domainsJit
             : routeByDomain
-              ? "Add at least one domain to send people straight to this provider."
+              ? t.errors.domainsRoute
               : undefined,
-      profileMap: mapped && profileMap.some((m) => !m.claim.trim()) ? "Enter the claim for every profile field." : undefined,
-      groupClaim: mapped && groupMap.length && !groupClaim.trim() ? "Enter the claim that lists the person's groups." : undefined,
-      groupMap: mapped && groupMap.some((m) => !m.value.trim() || !m.groupId) ? "Enter a value and choose a group on every row." : undefined,
+      profileMap: mapped && profileMap.some((m) => !m.claim.trim()) ? t.errors.profileMap : undefined,
+      groupClaim: mapped && groupMap.length && !groupClaim.trim() ? t.errors.groupClaim : undefined,
+      groupMap: mapped && groupMap.some((m) => !m.value.trim() || !m.groupId) ? t.errors.groupMap : undefined,
     };
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
@@ -301,14 +304,14 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
           : api<IdentityProvider>("/identity-providers", { body }),
       (saved) => {
         toast({
-          title: provider ? `${saved.name} saved` : `${saved.name} added`,
+          title: provider ? t.saved(saved.name) : t.added(saved.name),
           description: saved.showOnSignIn
-            ? "Its button is on the sign-in page."
+            ? t.onSignIn
             : saved.routeByDomain
-              ? `People from ${saved.allowedDomains.join(", ")} go straight to it when they sign in.`
+              ? t.routed(saved.allowedDomains.join(", "))
               : saved.kind === "saml" && !provider
-                ? "Open Edit to copy Halo's metadata URL into the identity provider, then use Test sign-in."
-                : "Use Test sign-in to check it, then show it on the sign-in page.",
+                ? t.samlNext
+                : t.testNext,
         });
         onClose();
       },
@@ -323,19 +326,15 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
         if (!open) onClose();
       }}
       error={errorFor("save")}
-      title={provider ? `Edit ${provider.name}` : "Add identity provider"}
-      description={
-        saml
-          ? "Import the identity provider's metadata. Halo signs in as a SAML service provider with its own metadata URL for each provider."
-          : "Create an app registration at the provider with the callback URL from this page, then copy its client ID and secret here."
-      }
+      title={provider ? t.editTitle(provider.name) : t.add}
+      description={saml ? t.samlDescription : t.oauthDescription}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {common.cancel}
           </Button>
           <Button variant="primary" loading={pending === "save"} onClick={save}>
-            {provider ? "Save provider" : "Add provider"}
+            {provider ? t.save : t.addButton}
           </Button>
         </>
       }
@@ -349,7 +348,7 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
       >
         {provider ? null : (
           <fieldset className="flex flex-col gap-3">
-            <legend className="mb-3 text-label text-fg">Provider</legend>
+            <legend className="mb-3 text-label text-fg">{common.provider}</legend>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {(Object.keys(KIND) as ProviderKind[]).map((option) => (
                 <label
@@ -361,29 +360,29 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
                 >
                   <input type="radio" name="kind" value={option} checked={option === kind} onChange={() => pick(option)} className="sr-only" />
                   <span className="text-body-sm font-semibold text-fg">{KIND[option].label}</span>
-                  <span className="text-caption text-fg-3">{KIND[option].description}</span>
+                  <span className="text-caption text-fg-3">{t.kinds[option]}</span>
                 </label>
               ))}
             </div>
           </fieldset>
         )}
-        <Field label="Name" hint="Shown on the sign-in button, as in “Continue with Google”." error={errors.name}>
+        <Field label={common.name} hint={t.nameHint} error={errors.name}>
           {(props) => <Input {...props} autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder="Acme SSO" />}
         </Field>
         {kind === "microsoft" ? (
-          <Field label="Directory (tenant) ID" hint="From the Entra app's overview page. Only this tenant's accounts can sign in." error={errors.tenant}>
+          <Field label={t.tenant} hint={t.tenantHint} error={errors.tenant}>
             {(props) => (
               <Input {...props} mono autoComplete="off" spellCheck={false} value={tenant} onChange={(event) => setTenant(event.target.value)} placeholder="72f988bf-86f1-41af-91ab-2d7cd011db47" />
             )}
           </Field>
         ) : null}
         {kind === "github" ? (
-          <Field label="GitHub URL" hint="Leave empty for GitHub.com. Enter your server's address for GitHub Enterprise Server.">
+          <Field label={t.githubUrl} hint={t.githubHint}>
             {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={issuer} onChange={(event) => setIssuer(event.target.value)} placeholder="https://github.com" />}
           </Field>
         ) : null}
         {kind === "oidc" ? (
-          <Field label="Issuer URL" hint="Halo reads the provider's settings from /.well-known/openid-configuration under this URL." error={errors.issuer}>
+          <Field label={t.issuer} hint={t.issuerHint} error={errors.issuer}>
             {(props) => (
               <Input {...props} mono autoComplete="off" spellCheck={false} value={issuer} onChange={(event) => setIssuer(event.target.value)} placeholder="https://auth.example.com" />
             )}
@@ -393,23 +392,23 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
           <>
             {serviceProvider ? (
               <>
-                <CopyField label="Halo metadata URL" value={`${serviceProvider}/metadata`} hint="Give this to the identity provider. It is also Halo's entity ID for this provider." />
-                <CopyField label="ACS URL" value={`${serviceProvider}/acs`} hint="Where the identity provider posts its SAML response, with the HTTP-POST binding." />
+                <CopyField label={t.spMetadata} value={`${serviceProvider}/metadata`} hint={t.spMetadataHint} />
+                <CopyField label={t.acs} value={`${serviceProvider}/acs`} hint={t.acsHint} />
               </>
             ) : null}
-            <Field label="Identity provider settings">
+            <Field label={t.idpSettings}>
               {(props) => (
                 <Select {...props} value={source} onChange={(event) => setSource(event.target.value as Source)}>
-                  {(Object.keys(SOURCES) as Source[]).map((key) => (
+                  {SOURCES.map((key) => (
                     <option key={key} value={key}>
-                      {SOURCES[key]}
+                      {t.sources[key]}
                     </option>
                   ))}
                 </Select>
               )}
             </Field>
             {source === "url" ? (
-              <Field label="Metadata URL" hint="Halo downloads the metadata when you save. Only public https:// addresses work." error={errors.metadata}>
+              <Field label={t.metadataUrl} hint={t.metadataUrlHint} error={errors.metadata}>
                 {(props) => (
                   <Input
                     {...props}
@@ -424,7 +423,7 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
               </Field>
             ) : null}
             {source === "xml" ? (
-              <Field label="Metadata XML" hint="Halo reads the entity ID, single sign-on URL and signing certificates from it." error={errors.metadata}>
+              <Field label={t.metadataXml} hint={t.metadataXmlHint} error={errors.metadata}>
                 {(props) => (
                   <div className="flex flex-col gap-3">
                     <Textarea
@@ -448,7 +447,7 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
                       }}
                     />
                     <Button size="sm" variant="secondary" className="self-start" onClick={() => file.current?.click()}>
-                      Choose metadata file
+                      {t.chooseFile}
                     </Button>
                   </div>
                 )}
@@ -456,12 +455,12 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
             ) : null}
             {source === "values" ? (
               <>
-                <Field label="Entity ID" hint="The identity provider's issuer, from its SAML settings." error={errors.issuer}>
+                <Field label={t.entityId} hint={t.entityIdHint} error={errors.issuer}>
                   {(props) => (
                     <Input {...props} mono autoComplete="off" spellCheck={false} value={issuer} onChange={(event) => setIssuer(event.target.value)} placeholder="https://idp.example.com" />
                   )}
                 </Field>
-                <Field label="Single sign-on URL" hint="Halo sends signed AuthnRequests here with the HTTP-Redirect binding." error={errors.ssoUrl}>
+                <Field label={t.ssoUrl} hint={t.ssoUrlHint} error={errors.ssoUrl}>
                   {(props) => (
                     <Input
                       {...props}
@@ -474,7 +473,7 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
                     />
                   )}
                 </Field>
-                <Field label="Signing certificate" hint="The X.509 certificate the identity provider signs responses with, in PEM." error={errors.certificate}>
+                <Field label={t.certificate} hint={t.certificateHint} error={errors.certificate}>
                   {(props) => (
                     <Textarea
                       {...props}
@@ -489,7 +488,7 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
                 </Field>
               </>
             ) : null}
-            <Field label="Email attribute" hint="The attribute that holds the email address, by name or friendly name, like mail. Leave empty to use the NameID.">
+            <Field label={t.emailAttribute} hint={t.emailAttributeHint}>
               {(props) => (
                 <Input {...props} mono autoComplete="off" spellCheck={false} value={emailAttribute} onChange={(event) => setEmailAttribute(event.target.value)} placeholder="NameID" />
               )}
@@ -497,61 +496,55 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
           </>
         ) : (
           <>
-            <Field label="Client ID" error={errors.clientId}>
+            <Field label={t.clientId} error={errors.clientId}>
               {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={clientId} onChange={(event) => setClientId(event.target.value)} />}
             </Field>
             <Field
-              label="Client secret"
-              hint={
-                provider?.hasSecret
-                  ? "Leave empty to keep the current secret. Halo stores it encrypted and never shows it again."
-                  : kind === "oidc"
-                    ? "Optional for public clients that use PKCE. Stored encrypted."
-                    : "Stored encrypted. Halo never shows it again."
-              }
+              label={t.clientSecret}
+              hint={provider?.hasSecret ? common.keepSecret : kind === "oidc" ? t.pkce : common.storedEncrypted}
               error={errors.clientSecret}
             >
               {(props) => (
                 <Input {...props} mono type="password" autoComplete="new-password" spellCheck={false} value={clientSecret} onChange={(event) => setClientSecret(event.target.value)} />
               )}
             </Field>
-            <Field label="Scopes" hint="Separated by spaces. Halo needs the email address and a stable account ID.">
+            <Field label={t.scopes} hint={t.scopesHint}>
               {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={scopes} onChange={(event) => setScopes(event.target.value)} />}
             </Field>
           </>
         )}
         <Field
-          label="Allowed email domains"
-          hint="Separated by spaces. Only verified addresses at these domains can link to a Halo account. Leave empty to link any verified address that matches an existing account."
+          label={common.allowedDomains}
+          hint={t.domainsHint}
           error={errors.domains}
         >
           {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={domains} onChange={(event) => setDomains(event.target.value)} placeholder="example.com" />}
         </Field>
         <fieldset className="flex flex-col gap-4">
-          <legend className="mb-3 text-label text-fg">Sign-in</legend>
-          <Toggle checked={enabled} onChange={setEnabled} label="Turned on" description="People with a linked account can sign in with it. Test sign-in needs it on." />
+          <legend className="mb-3 text-label text-fg">{t.signIn}</legend>
+          <Toggle checked={enabled} onChange={setEnabled} label={t.enabled} description={t.enabledHint} />
           <Toggle
             checked={showOnSignIn}
             onChange={setShowOnSignIn}
-            label="Show on the sign-in page"
-            description="Leave off to test it from here before everyone sees the button, or to reach it only by email domain."
+            label={t.show}
+            description={t.showHint}
           />
           <Toggle
             checked={routeByDomain}
             onChange={setRouteByDomain}
-            label="Send allowed domains straight to this provider"
-            description="People who enter an address at an allowed domain skip the other sign-in options. Works with the button hidden."
+            label={t.route}
+            description={t.routeHint}
           />
           <Toggle
             checked={jit}
             onChange={setJit}
-            label="Create accounts on first sign-in"
-            description="New people from the allowed domains get an active Halo account. Off means only existing accounts can sign in."
+            label={t.jit}
+            description={t.jitHint}
           />
         </fieldset>
         {jit ? (
           <fieldset className="flex animate-enter flex-col gap-3">
-            <legend className="mb-3 text-label text-fg">Add new people to</legend>
+            <legend className="mb-3 text-label text-fg">{t.addTo}</legend>
             {assigned.length ? (
               assigned.map((g) => (
                 <label key={g.id} className="flex cursor-pointer items-center gap-3 text-body-sm text-fg">
@@ -563,20 +556,20 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
                 </label>
               ))
             ) : (
-              <p className="text-body-sm text-fg-3">No assigned groups yet. Dynamic groups pick people up from their profile.</p>
+              <p className="text-body-sm text-fg-3">{common.noAssignedGroups}</p>
             )}
           </fieldset>
         ) : null}
         {mapped ? (
           <>
             <fieldset className="flex flex-col gap-3">
-              <legend className="mb-3 text-label text-fg">Profile from claims</legend>
+              <legend className="mb-3 text-label text-fg">{t.profile}</legend>
               {profileMap.map((m, index) => (
                 <div key={index} className="flex items-center gap-2">
                   <Input
                     mono
                     className="min-w-0"
-                    aria-label={`Claim for ${FIELD[m.field]}`}
+                    aria-label={t.claimFor(t.fields[m.field])}
                     autoComplete="off"
                     spellCheck={false}
                     value={m.claim}
@@ -584,22 +577,22 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
                     placeholder="department"
                   />
                   <Select
-                    aria-label={`Profile field ${index + 1}`}
+                    aria-label={t.profileField(index + 1)}
                     value={m.field}
                     onChange={(event) =>
                       setProfileMap((current) => current.map((c, i) => (i === index ? { ...c, field: event.target.value as ProfileField } : c)))
                     }
                   >
-                    {(Object.keys(FIELD) as ProfileField[]).map((f) => (
+                    {FIELDS.map((f) => (
                       <option key={f} value={f} disabled={f !== m.field && !unusedFields.includes(f)}>
-                        {FIELD[f]}
+                        {t.fields[f]}
                       </option>
                     ))}
                   </Select>
                   <Button
                     size="icon"
                     variant="quiet"
-                    aria-label={`Stop mapping ${FIELD[m.field]}`}
+                    aria-label={t.stopMapping(t.fields[m.field])}
                     onClick={() => setProfileMap((current) => current.filter((_, i) => i !== index))}
                   >
                     <X aria-hidden="true" size={16} strokeWidth={1.75} />
@@ -614,22 +607,20 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
                 onClick={() => setProfileMap((current) => [...current, { claim: "", field: unusedFields[0] }])}
               >
                 <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-                Map a profile field
+                {t.mapField}
               </Button>
               {errors.profileMap ? (
                 <p className="text-caption text-danger">{errors.profileMap}</p>
               ) : (
-                <p className="text-caption text-fg-3">
-                  Copied on every sign-in. A claim the provider leaves out keeps the current value; an empty one clears it, except the name.
-                </p>
+                <p className="text-caption text-fg-3">{t.profileNote}</p>
               )}
             </fieldset>
             <fieldset className="flex flex-col gap-3">
-              <legend className="mb-3 text-label text-fg">Groups from claims</legend>
+              <legend className="mb-3 text-label text-fg">{t.groups}</legend>
               {assigned.length ? (
                 <>
                   {groupMap.length ? (
-                    <Field label="Groups claim" error={errors.groupClaim}>
+                    <Field label={t.groupsClaim} error={errors.groupClaim}>
                       {(props) => (
                         <Input
                           {...props}
@@ -648,20 +639,20 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
                       <Input
                         mono
                         className="min-w-0"
-                        aria-label={`Provider value ${index + 1}`}
+                        aria-label={t.providerValue(index + 1)}
                         autoComplete="off"
                         spellCheck={false}
                         value={m.value}
                         onChange={(event) => setGroupMap((current) => current.map((c, i) => (i === index ? { ...c, value: event.target.value } : c)))}
-                        placeholder="Group name or ID"
+                        placeholder={t.valuePlaceholder}
                       />
                       <Select
-                        aria-label={`Halo group for value ${index + 1}`}
+                        aria-label={t.haloGroup(index + 1)}
                         value={m.groupId}
                         onChange={(event) => setGroupMap((current) => current.map((c, i) => (i === index ? { ...c, groupId: event.target.value } : c)))}
                       >
                         <option value="" disabled>
-                          Choose a group
+                          {common.chooseGroup}
                         </option>
                         {assigned.map((g) => (
                           <option key={g.id} value={g.id}>
@@ -672,7 +663,7 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
                       <Button
                         size="icon"
                         variant="quiet"
-                        aria-label={`Remove group row ${index + 1}`}
+                        aria-label={t.removeRow(index + 1)}
                         onClick={() => setGroupMap((current) => current.filter((_, i) => i !== index))}
                       >
                         <X aria-hidden="true" size={16} strokeWidth={1.75} />
@@ -687,19 +678,16 @@ function ProviderDialog({ provider, callbackUrl, groups, onClose }: { provider: 
                     onClick={() => setGroupMap((current) => [...current, { value: "", groupId: "" }])}
                   >
                     <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-                    Map a group
+                    {t.mapGroup}
                   </Button>
                   {errors.groupMap ? (
                     <p className="text-caption text-danger">{errors.groupMap}</p>
                   ) : (
-                    <p className="text-caption text-fg-3">
-                      On every sign-in, people join a group while the claim contains its value and leave it when the value is gone. Groups not listed here are
-                      never changed.
-                    </p>
+                    <p className="text-caption text-fg-3">{t.groupsNote}</p>
                   )}
                 </>
               ) : (
-                <p className="text-body-sm text-fg-3">No assigned groups yet. Create one to map provider groups to it.</p>
+                <p className="text-body-sm text-fg-3">{t.noAssignedMap}</p>
               )}
             </fieldset>
           </>

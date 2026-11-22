@@ -12,14 +12,19 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { apiGet } from "@/lib/api/server";
-import { formatDate, formatDateTime, formatDuration, now, pluralize } from "@/lib/format";
+import { formatDate, formatDateTime, now } from "@/lib/format";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { infrastructureMessages } from "@/lib/i18n/console/infrastructure";
+import { requestLocale } from "@/lib/i18n/server";
 import type { HostGroup, PosixSettings, PrincipalMapping, SshAuthority, SshCertificate, SshHost, SshHostAuthority } from "@/lib/infra-types";
 import type { Group, Organization } from "@/lib/types";
 
-export const metadata = { title: "Infrastructure access" };
+export async function generateMetadata() {
+  return { title: frameMessages[await requestLocale()].nav.items.infrastructure.label };
+}
 
 export default async function InfrastructurePage() {
-  const [authority, mappings, certificates, groups, org, hostAuthority, hosts, hostGroups, posix] = await Promise.all([
+  const [authority, mappings, certificates, groups, org, hostAuthority, hosts, hostGroups, posix, locale] = await Promise.all([
     apiGet<SshAuthority>("/ssh/authority"),
     apiGet<PrincipalMapping[]>("/ssh/principal-mappings"),
     apiGet<SshCertificate[]>("/ssh/certificates"),
@@ -29,41 +34,40 @@ export default async function InfrastructurePage() {
     apiGet<SshHost[]>("/ssh/hosts"),
     apiGet<HostGroup[]>("/ssh/host-groups"),
     apiGet<PosixSettings>("/ssh/posix"),
+    requestLocale(),
   ]);
+  const t = infrastructureMessages[locale];
   const current = now();
   const valid = certificates.filter((c) => new Date(c.validBefore) > current).length;
 
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        title="Infrastructure access"
-        description={`Halo signs SSH certificates that last ${formatDuration(authority.certificateLifetime)} for people in mapped groups. ${pluralize(valid, "certificate is", "certificates are")} valid right now.`}
+        title={frameMessages[locale].nav.items.infrastructure.label}
+        description={t.page.description(t.duration(authority.certificateLifetime), valid)}
       />
 
       <Card>
-        <CardHeader title="Certificate authority" description="Servers that trust this key accept any certificate Halo signs, for the principals written into it." />
+        <CardHeader title={t.page.authority} description={t.page.authorityHint} />
         <CardBody className="flex flex-col gap-6">
-          <CopyField label="CA public key" value={authority.publicKey} hint={`Also served without signing in at ${org.issuer}/api/v1/ssh/ca.pub`} />
+          <CopyField label={t.page.caPublicKey} value={authority.publicKey} hint={t.page.servedAt(`${org.issuer}/api/v1/ssh/ca.pub`)} />
           <DescriptionList
             columns={2}
             items={[
-              { label: "Fingerprint", value: authority.fingerprint, mono: true },
-              { label: "Created", value: formatDate(authority.createdAt) },
+              { label: t.fingerprint, value: authority.fingerprint, mono: true },
+              { label: t.created, value: formatDate(authority.createdAt, locale) },
             ]}
           />
           <LifetimeSetting lifetime={authority.certificateLifetime} />
-          <SecretWarning>
-            sshd has no online revocation check: a certificate keeps working until it expires, even after you suspend the person or remove their group. Short lifetimes are the control, so keep
-            them as short as your team tolerates.
-          </SecretWarning>
+          <SecretWarning>{t.page.noRevocation}</SecretWarning>
         </CardBody>
       </Card>
 
       <SetupGuideCard
         guide={{
-          title: "Trust Halo on your servers",
-          description: "Run these commands on each server once. People then sign in with halo login, request a certificate with halo ssh-cert and connect with plain ssh.",
-          file: "Server setup",
+          title: t.page.trustGuide,
+          description: t.page.trustGuideHint,
+          file: t.page.trustGuideFile,
           code: [
             `curl -fsS ${org.issuer}/api/v1/ssh/ca.pub | sudo tee /etc/ssh/halo_ca.pub`,
             `echo "TrustedUserCAKeys /etc/ssh/halo_ca.pub" | sudo tee -a /etc/ssh/sshd_config`,
@@ -75,17 +79,17 @@ export default async function InfrastructurePage() {
       <MappingsSection mappings={mappings} groups={groups} />
 
       <div className="flex flex-col gap-6">
-        <SectionTitle title="Issued certificates" description="The 200 most recent certificates. Each key ID is halo:<user id>:<serial>, which sshd writes to its log on every login." />
+        <SectionTitle title={t.page.issued} description={t.page.issuedHint} />
         {certificates.length ? (
           <SimpleTable
-            caption="Issued certificates"
-            head={["Serial", "User", "Principals", "Key fingerprint", "Issued", "Valid until"]}
+            caption={t.page.issued}
+            head={t.page.issuedHead}
             rows={certificates.map((c) => [
               <span key="serial" className="tnum font-mono text-code-sm text-fg">
                 {c.serial}
               </span>,
               <span key="user" className="whitespace-nowrap text-fg">
-                {c.userName || "Deleted user"}
+                {c.userName || t.page.deletedUser}
               </span>,
               <span key="principals" className="flex flex-wrap gap-1">
                 {c.principals.map((p) => (
@@ -97,18 +101,18 @@ export default async function InfrastructurePage() {
                 <span className="text-caption text-fg-3">{c.keyType}</span>
               </span>,
               <span key="issued" className="flex flex-col whitespace-nowrap">
-                <span>{formatDateTime(c.createdAt)}</span>
+                <span>{formatDateTime(c.createdAt, locale)}</span>
                 <span className="font-mono text-code-sm text-fg-3">{c.ip}</span>
               </span>,
               <span key="until" className="flex flex-col items-start gap-1 whitespace-nowrap">
                 {new Date(c.validBefore) > current ? (
                   <Badge tone="success" dot>
-                    Valid
+                    {t.valid}
                   </Badge>
                 ) : (
-                  <Badge dot>Expired</Badge>
+                  <Badge dot>{t.expired}</Badge>
                 )}
-                <span className="text-caption text-fg-3">{formatDateTime(c.validBefore)}</span>
+                <span className="text-caption text-fg-3">{formatDateTime(c.validBefore, locale)}</span>
               </span>,
             ])}
           />
@@ -116,45 +120,42 @@ export default async function InfrastructurePage() {
           <Card>
             <EmptyState
               icon={FileBadge}
-              title="No certificates issued yet"
-              description="Certificates appear here when someone in a mapped group runs halo ssh-cert."
+              title={t.page.noCertificates}
+              description={t.page.noCertificatesHint}
             />
           </Card>
         )}
       </div>
 
       <Card>
-        <CardHeader title="Host certificate authority" description="A separate key that signs the host keys of registered servers, so ssh trusts them without asking on the first connection." />
+        <CardHeader title={t.page.hostAuthority} description={t.page.hostAuthorityHint} />
         <CardBody className="flex flex-col gap-6">
           {hostAuthority.knownHosts ? (
-            <CopyField label="known_hosts line" value={hostAuthority.knownHosts} hint={`halo ssh-cert adds it to ~/.ssh/known_hosts. Also served without signing in at ${org.issuer}/api/v1/ssh/known_hosts`} />
+            <CopyField label={t.page.knownHosts} value={hostAuthority.knownHosts} hint={t.page.knownHostsHint(`${org.issuer}/api/v1/ssh/known_hosts`)} />
           ) : (
-            <SecretWarning>
-              Verify a domain under Settings, Domains. Clients trust this authority only for hosts in your verified domains and their subdomains, so halo ssh-cert adds no known_hosts line until one is
-              verified.
-            </SecretWarning>
+            <SecretWarning>{t.page.verifyDomain}</SecretWarning>
           )}
           <DescriptionList
             columns={2}
             items={[
-              { label: "Fingerprint", value: hostAuthority.fingerprint, mono: true },
-              { label: "Created", value: formatDate(hostAuthority.createdAt) },
+              { label: t.fingerprint, value: hostAuthority.fingerprint, mono: true },
+              { label: t.created, value: formatDate(hostAuthority.createdAt, locale) },
             ]}
           />
           <LifetimeSetting host lifetime={hostAuthority.certificateLifetime} />
           <CopyField
-            label="Revoked host keys"
+            label={t.page.revokedHostKeys}
             value={`${org.issuer}/api/v1/ssh/revoked-hosts.krl`}
-            hint="An OpenSSH key revocation list. ssh refuses revoked hosts when RevokedHostKeys in ssh_config points at a copy of it, and refuses every host while that copy is missing."
+            hint={t.page.revokedHostKeysHint}
           />
         </CardBody>
       </Card>
 
       <SetupGuideCard
         guide={{
-          title: "Sign your servers' host keys",
-          description: "Register a host below to get its enrollment token, then run these commands on it. The cron job renews the certificate every day.",
-          file: "Host setup",
+          title: t.page.hostGuide,
+          description: t.page.hostGuideHint,
+          file: t.page.hostGuideFile,
           code: [
             `sudo halo ssh-host enroll --server ${org.issuer} --token <enrollment token>`,
             `echo "HostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub" | sudo tee -a /etc/ssh/sshd_config`,
@@ -170,10 +171,9 @@ export default async function InfrastructurePage() {
 
       <SetupGuideCard
         guide={{
-          title: "Log in with Linux accounts from Halo",
-          description:
-            "Run these commands as root on each enrolled Debian or Ubuntu host, with halo-hostd from CGO_ENABLED=0 go build ./cmd/halo-hostd. People in the host group's rules then log in as themselves with their halo ssh-cert certificate, and lose access at the next refresh after you suspend them.",
-          file: "Host login setup",
+          title: t.page.loginGuide,
+          description: t.page.loginGuideHint,
+          file: t.page.loginGuideFile,
           code: [
             "apt install libnss-extrausers",
             "install -m 0755 halo-hostd /usr/local/bin/halo-hostd",

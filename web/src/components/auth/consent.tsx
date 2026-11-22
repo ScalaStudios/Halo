@@ -6,6 +6,8 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { api, ApiError } from "@/lib/api/client";
+import { authMessages } from "@/lib/i18n/auth";
+import { useLocale } from "@/lib/i18n/client";
 import { scopeLabel } from "@/lib/labels";
 import type { Scope } from "@/lib/types";
 import { describeFailure } from "./passkey";
@@ -13,6 +15,9 @@ import { describeFailure } from "./passkey";
 type Pending = { application: { name: string; homepage: string; logoUrl: string | null }; email: string; scopes: Scope[] };
 
 export function ConsentStep({ authRequest }: { authRequest: string }) {
+  const locale = useLocale();
+  const messages = authMessages(locale);
+  const t = messages.consent;
   const listId = useId();
   const [pending, setPending] = useState<Pending | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -53,20 +58,20 @@ export function ConsentStep({ authRequest }: { authRequest: string }) {
     <div className="flex animate-enter flex-col gap-8">
       <div className="flex flex-col gap-3 text-center">
         {app ? <Avatar name={app.name} src={app.logoUrl} size="lg" square className="self-center" /> : null}
-        <h1 className="text-h3 text-fg">{app ? `Allow ${app.name} to access your account?` : "Allow access to your account?"}</h1>
-        {pending ? <p className="text-body text-fg-3">Signed in as {pending.email}</p> : null}
+        <h1 className="text-h3 text-fg">{t.heading(app?.name)}</h1>
+        {pending ? <p className="text-body text-fg-3">{t.signedInAs(pending.email)}</p> : null}
       </div>
       {app && pending ? (
         <div className="flex flex-col gap-4">
           <section aria-labelledby={listId} className="flex flex-col gap-3 rounded-md border border-border bg-surface p-4">
             <h2 id={listId} className="text-body-sm font-semibold text-fg">
-              {app.name} will be able to
+              {t.willBeAbleTo(app.name)}
             </h2>
             <ul className="flex flex-col gap-3">
               {pending.scopes.map((scope) => (
                 <li key={scope.name} className="flex items-start gap-3 text-body-sm text-fg-2">
                   <Check aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-fg-3" />
-                  {scopeLabel(scope)}
+                  {scopeLabel(scope, locale)}
                 </li>
               ))}
             </ul>
@@ -74,7 +79,7 @@ export function ConsentStep({ authRequest }: { authRequest: string }) {
           <p className="text-body-sm text-fg-3">
             {host ? (
               <>
-                {app.name} gives{" "}
+                {t.websiteBefore(app.name)}
                 <a
                   href={app.homepage}
                   target="_blank"
@@ -83,19 +88,19 @@ export function ConsentStep({ authRequest }: { authRequest: string }) {
                 >
                   {host}
                   <ExternalLink aria-hidden="true" size={16} strokeWidth={1.75} />
-                  <span className="sr-only">(opens in a new tab)</span>
-                </a>{" "}
-                as its website.{" "}
+                  <span className="sr-only">{messages.newTab}</span>
+                </a>
+                {t.websiteAfter}
               </>
             ) : null}
-            Only allow applications you trust. You can remove access later under Applications in your Halo account.
+            {t.trust}
           </p>
         </div>
       ) : null}
       {!pending && !problem ? (
         <div role="status" className="flex items-center justify-center gap-3 text-body-sm text-fg-3">
           <Spinner size={20} />
-          Loading what the application asks for
+          {t.loading}
         </div>
       ) : null}
       {problem ? (
@@ -107,10 +112,10 @@ export function ConsentStep({ authRequest }: { authRequest: string }) {
       {expired ? null : (
         <div className="flex flex-col gap-2">
           <Button variant="primary" size="lg" className="w-full" disabled={!pending || busy !== null} loading={busy === "allow"} onClick={() => decide(true)}>
-            Allow
+            {t.allow}
           </Button>
           <Button size="lg" className="w-full" disabled={!pending || busy !== null} loading={busy === "deny"} onClick={() => decide(false)}>
-            Don&apos;t allow
+            {t.deny}
           </Button>
         </div>
       )}

@@ -10,6 +10,9 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { useToast } from "@/components/ui/toast";
 import { api, ApiError } from "@/lib/api/client";
 import { formatDate } from "@/lib/format";
+import { accountMessages } from "@/lib/i18n/account";
+import { useLocale } from "@/lib/i18n/client";
+import { monitoringMessages } from "@/lib/i18n/console/monitoring";
 import { METHOD } from "@/lib/labels";
 import type { AuthMethod } from "@/lib/types";
 
@@ -25,6 +28,9 @@ export function MethodList({
   strongElsewhere?: number;
 }) {
   const self = userId === undefined;
+  const locale = useLocale();
+  const account = accountMessages(locale);
+  const t = account.methods;
   const [items, setItems] = useState(methods);
   const [pending, setPending] = useState<AuthMethod | null>(null);
   const [removing, setRemoving] = useState(false);
@@ -38,18 +44,18 @@ export function MethodList({
     try {
       await api(self ? `/me/methods/${pending.id}` : `/users/${userId}/methods/${pending.id}`, { method: "DELETE" });
       setItems((current) => current.filter((m) => m.id !== pending.id));
-      toast({ title: `${pending.label} removed`, description: self ? "It can no longer be used to sign in to Halo." : "The user can no longer sign in with it." });
+      toast({ title: t.removed(pending.label), description: self ? t.removedSelf : t.removedUser });
       setPending(null);
       router.refresh();
     } catch (error) {
-      toast({ title: "That didn't work", description: error instanceof ApiError ? error.message : "Halo could not reach the server. Try again.", tone: "danger" });
+      toast({ title: account.sessions.failed, description: error instanceof ApiError ? error.message : account.sessions.connectionFailed, tone: "danger" });
     } finally {
       setRemoving(false);
     }
   }
 
   if (items.length === 0) {
-    return <EmptyState icon={ShieldCheck} title="No sign-in methods" description={empty ?? "This user has not enrolled a method yet."} />;
+    return <EmptyState icon={ShieldCheck} title={t.empty} description={empty ?? t.emptyHint} />;
   }
 
   const lastStrong = pending && METHOD[pending.kind].phishingResistant && strongCount === 1;
@@ -59,6 +65,7 @@ export function MethodList({
       <ul className="overflow-hidden rounded-lg border border-border bg-surface">
         {items.map((method) => {
           const meta = METHOD[method.kind];
+          const kind = monitoringMessages[locale].methods[method.kind];
           const Icon = meta.icon;
           return (
             <li key={method.id} className="flex flex-col gap-4 border-t border-border p-4 first:border-t-0 sm:flex-row sm:items-center sm:px-6">
@@ -67,25 +74,25 @@ export function MethodList({
               </span>
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <p className="flex flex-wrap items-center gap-2 text-body-sm font-semibold text-fg">
-                  {method.label}
+                  {method.kind === "recovery-codes" ? kind : method.label}
                   {meta.phishingResistant ? (
                     <span className="inline-flex items-center gap-1 text-caption font-normal text-success">
                       <ShieldCheck aria-hidden="true" size={16} strokeWidth={1.75} />
-                      Phishing-resistant
+                      {account.strength["phishing-resistant"]}
                     </span>
                   ) : null}
                 </p>
                 <p className="text-body-sm text-fg-3">
-                  {meta.label}
+                  {kind}
                   {method.detail ? ` · ${method.detail}` : ""}
                 </p>
                 <p className="text-caption text-fg-3">
-                  Added {formatDate(method.addedAt)} · {method.lastUsedAt ? <>Last used <RelativeTime iso={method.lastUsedAt} lowercase /></> : "Never used"}
+                  {t.added(formatDate(method.addedAt, locale))} · {method.lastUsedAt ? <>{t.lastUsed} <RelativeTime iso={method.lastUsedAt} lowercase /></> : t.neverUsed}
                 </p>
               </div>
-              <Button size="sm" variant="quiet" onClick={() => setPending(method)} className="self-start sm:self-center" aria-label={`Remove ${method.label}`}>
+              <Button size="sm" variant="quiet" onClick={() => setPending(method)} className="self-start sm:self-center" aria-label={t.removeMethod(method.label)}>
                 <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
-                Remove
+                {t.remove}
               </Button>
             </li>
           );
@@ -96,21 +103,15 @@ export function MethodList({
         onOpenChange={(open) => {
           if (!open) setPending(null);
         }}
-        title={`Remove ${pending?.label ?? "method"}?`}
-        description={
-          lastStrong
-            ? "This is the last phishing-resistant method. Sign-in will fall back to weaker methods until a new passkey or security key is added."
-            : self
-              ? "You will not be able to sign in with it again unless you add it back."
-              : "The user will not be able to sign in with it. Their active sessions are not affected."
-        }
+        title={t.removeTitle(pending?.label)}
+        description={lastStrong ? t.lastStrong : self ? t.removeSelf : t.removeUser}
         footer={
           <>
             <Button variant="secondary" onClick={() => setPending(null)}>
-              Cancel
+              {account.cancel}
             </Button>
             <Button variant="destructive" loading={removing} onClick={remove}>
-              Remove
+              {t.remove}
             </Button>
           </>
         }

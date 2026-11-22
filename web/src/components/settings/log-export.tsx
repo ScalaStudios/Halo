@@ -11,7 +11,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { api } from "@/lib/api/client";
-import { pluralize } from "@/lib/format";
+import { useMessages } from "@/lib/i18n/client";
+import { settingsMessages } from "@/lib/i18n/console/settings";
 import { PROTOCOLS } from "@/lib/labels";
 import type { LogExportProtocol, LogExportResponse } from "@/lib/settings-types";
 import { ReadOnlyNote } from "./shared";
@@ -19,14 +20,15 @@ import { ReadOnlyNote } from "./shared";
 export function LogExportStatus({ data, canEdit }: { data: LogExportResponse; canEdit: boolean }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [deleting, setDeleting] = useState(false);
+  const { logExport: t, common } = useMessages(settingsMessages);
   const exporter = data.exporter;
   if (!exporter) return null;
 
   return (
     <Card>
       <CardHeader
-        title="Delivery"
-        description="Halo sends new events every 10 seconds. While the collector is down they wait in the database, and Halo retries with a growing delay of up to 5 minutes."
+        title={t.delivery}
+        description={t.deliveryHint}
         actions={
           canEdit ? (
             <>
@@ -35,15 +37,15 @@ export function LogExportStatus({ data, canEdit }: { data: LogExportResponse; ca
                 loading={pending === "test"}
                 onClick={() =>
                   void run("test", () => api("/log-export/test", { method: "POST" }), () =>
-                    toast({ title: "Test event sent", description: `A log_export.test event went to ${exporter.endpoint}.` }),
+                    toast({ title: t.testSent, description: t.testSentHint(exporter.endpoint) }),
                   )
                 }
               >
                 <Send aria-hidden="true" size={16} strokeWidth={1.75} />
-                Send test event
+                {common.sendTestEvent}
               </Button>
               {data.environment ? null : (
-                <Button size="icon" variant="secondary" aria-label="Stop streaming" onClick={() => setDeleting(true)}>
+                <Button size="icon" variant="secondary" aria-label={t.stop} onClick={() => setDeleting(true)}>
                   <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
                 </Button>
               )}
@@ -55,14 +57,14 @@ export function LogExportStatus({ data, canEdit }: { data: LogExportResponse; ca
         <DescriptionList
           columns={2}
           items={[
-            { label: "Last successful send", value: exporter.lastSentAt ? <RelativeTime iso={exporter.lastSentAt} /> : "Never" },
-            { label: "Waiting to be sent", value: pluralize(data.queued, "event") },
+            { label: t.lastSent, value: exporter.lastSentAt ? <RelativeTime iso={exporter.lastSentAt} /> : t.never },
+            { label: t.waiting, value: t.eventCount(data.queued) },
           ]}
         />
         {exporter.lastError ? (
           <p role="status" className="text-body-sm text-danger">
-            {exporter.failures > 0 ? `${pluralize(exporter.failures, "failed send")} in a row. ` : null}
-            {exporter.lastError}
+            {exporter.failures > 0 ? t.failures(exporter.failures) : null}
+            <span lang="en">{exporter.lastError}</span>
           </p>
         ) : null}
       </CardBody>
@@ -73,12 +75,12 @@ export function LogExportStatus({ data, canEdit }: { data: LogExportResponse; ca
           setDeleting(next);
         }}
         error={errorFor("delete")}
-        title="Stop streaming?"
-        description="Halo stops sending sign-in and audit events and forgets the saved headers. Events still waiting are not sent."
+        title={t.stopTitle}
+        description={t.stopDescription}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleting(false)}>
-              Cancel
+              {common.cancel}
             </Button>
             <Button
               variant="destructive"
@@ -86,11 +88,11 @@ export function LogExportStatus({ data, canEdit }: { data: LogExportResponse; ca
               onClick={() =>
                 void run("delete", () => api("/log-export", { method: "DELETE" }), () => {
                   setDeleting(false);
-                  toast({ title: "Streaming stopped", description: "Recorded in the audit log." });
+                  toast({ title: t.stopped, description: common.recorded });
                 }, "inline")
               }
             >
-              Stop streaming
+              {t.stop}
             </Button>
           </>
         }
@@ -107,8 +109,9 @@ export function LogExportForm({ data, canEdit }: { data: LogExportResponse; canE
   const [allowPrivate, setAllowPrivate] = useState(saved?.allowPrivate ?? false);
   const [headers, setHeaders] = useState("");
   const [attempted, setAttempted] = useState(false);
+  const t = useMessages(settingsMessages).logExport;
   const editable = canEdit && !data.environment;
-  const endpointError = endpoint.trim() ? undefined : "Enter where Halo sends the events.";
+  const endpointError = endpoint.trim() ? undefined : t.endpointError;
   const dirty = !saved || protocol !== saved.protocol || endpoint.trim() !== saved.endpoint || allowPrivate !== saved.allowPrivate || headers.trim() !== "";
 
   function submit() {
@@ -120,7 +123,7 @@ export function LogExportForm({ data, canEdit }: { data: LogExportResponse; canE
       (result) => {
         setHeaders("");
         setEndpoint(result.exporter?.endpoint ?? endpoint.trim());
-        toast({ title: saved ? "Log streaming saved" : "Log streaming started", description: "New sign-in and audit events are sent within 10 seconds." });
+        toast({ title: saved ? t.saved : t.started, description: t.savedHint });
       },
       "inline",
     );
@@ -128,7 +131,7 @@ export function LogExportForm({ data, canEdit }: { data: LogExportResponse; canE
 
   return (
     <Card>
-      <CardHeader title="Destination" description="Each event is the same JSON as a webhook's, with secret values already redacted from audit changes." />
+      <CardHeader title={t.destination} description={t.destinationHint} />
       <CardBody>
         <form
           noValidate
@@ -138,18 +141,18 @@ export function LogExportForm({ data, canEdit }: { data: LogExportResponse; canE
             submit();
           }}
         >
-          <Field label="Protocol" hint={PROTOCOLS[protocol].hint}>
+          <Field label={t.protocol} hint={t.protocols[protocol].hint}>
             {(props) => (
               <Select {...props} disabled={!editable} value={protocol} onChange={(event) => setProtocol(event.target.value as LogExportProtocol)}>
-                {Object.entries(PROTOCOLS).map(([value, p]) => (
+                {Object.keys(PROTOCOLS).map((value) => (
                   <option key={value} value={value}>
-                    {p.label}
+                    {t.protocols[value as LogExportProtocol].label}
                   </option>
                 ))}
               </Select>
             )}
           </Field>
-          <Field label={protocol === "otlp-http" ? "Collector URL" : "Server"} hint={protocol === "otlp-http" ? undefined : "Host name and port."} error={attempted ? endpointError : undefined}>
+          <Field label={protocol === "otlp-http" ? t.collector : t.server} hint={protocol === "otlp-http" ? undefined : t.serverHint} error={attempted ? endpointError : undefined}>
             {(props) => (
               <Input
                 {...props}
@@ -165,12 +168,8 @@ export function LogExportForm({ data, canEdit }: { data: LogExportResponse; canE
           </Field>
           {protocol === "otlp-http" ? (
             <Field
-              label="Headers"
-              hint={
-                saved?.headersSet
-                  ? "Leave empty to keep the saved headers. Halo stores them encrypted and never shows them again."
-                  : "Optional name=value pairs, one per line, such as Authorization=Bearer <token>. Stored encrypted."
-              }
+              label={t.headers}
+              hint={saved?.headersSet ? t.headersKeep : t.headersHint}
             >
               {(props) => <Textarea {...props} mono rows={3} spellCheck={false} disabled={!editable} value={headers} onChange={(event) => setHeaders(event.target.value)} />}
             </Field>
@@ -178,21 +177,21 @@ export function LogExportForm({ data, canEdit }: { data: LogExportResponse; canE
           <label className="flex cursor-pointer items-start gap-3">
             <Checkbox className="mt-0.5" disabled={!editable} checked={allowPrivate} onChange={(event) => setAllowPrivate(event.target.checked)} />
             <span className="flex flex-col">
-              <span className="text-body-sm text-fg">Allow private addresses</span>
-              <span className="text-caption text-fg-3">Send to a collector on your own network, and allow http:// for OpenTelemetry. Otherwise Halo only connects to public addresses.</span>
+              <span className="text-body-sm text-fg">{t.allowPrivate}</span>
+              <span className="text-caption text-fg-3">{t.allowPrivateHint}</span>
             </span>
           </label>
           {data.environment ? (
-            <ReadOnlyNote>Set by HALO_LOG_EXPORT_* environment variables. Change them and restart Halo.</ReadOnlyNote>
+            <ReadOnlyNote>{t.environment}</ReadOnlyNote>
           ) : canEdit ? (
             <div className="flex flex-wrap items-center gap-4">
               <Button type="submit" variant="primary" loading={pending === "save"} disabled={!dirty}>
-                {saved ? "Save destination" : "Start streaming"}
+                {saved ? t.save : t.start}
               </Button>
               <ActionError message={errorFor("save")} />
             </div>
           ) : (
-            <ReadOnlyNote>Only security and global administrators can change log streaming.</ReadOnlyNote>
+            <ReadOnlyNote>{t.readOnly}</ReadOnlyNote>
           )}
         </form>
       </CardBody>

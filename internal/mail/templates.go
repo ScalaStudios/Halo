@@ -333,8 +333,15 @@ func Preview(ctx context.Context, cfg config.Config, st *store.Store, t Template
 	return Message{Subject: subject, Text: text + footer(org)}, err
 }
 
-func build(kind, to string, vars map[string]string) Message {
+func (t Template) defaults(locale string) store.EmailTemplate {
+	if text, ok := translations[locale][t.Kind]; ok {
+		return text
+	}
+	return t.Default
+}
+
+func build(kind, to string, vars map[string]any) Message {
 	t, _ := Lookup(kind)
-	subject, text, _ := t.Render(t.Default, vars)
+	subject, text, _ := t.Render(t.Default, values(vars, "en"))
 	return Message{To: to, Subject: subject, Text: text, kind: kind, vars: vars}
 }

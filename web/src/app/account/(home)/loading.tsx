@@ -3,15 +3,17 @@ import { ChevronRight, LayoutGrid, MonitorSmartphone } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { DescriptionList } from "@/components/ui/description-list";
 import { PageSkeleton, Skeleton, SkeletonText } from "@/components/ui/skeleton";
+import { accountMessages } from "@/lib/i18n/account";
+import { requestLocale } from "@/lib/i18n/server";
 
-const links = [
-  { href: "/account/sessions", icon: MonitorSmartphone, label: "Sessions" },
-  { href: "/account/applications", icon: LayoutGrid, label: "Applications" },
-];
-
-export default function Loading() {
+export default async function Loading() {
+  const copy = accountMessages(await requestLocale());
+  const links = [
+    { href: "/account/sessions", icon: MonitorSmartphone, label: copy.nav.sessions },
+    { href: "/account/applications", icon: LayoutGrid, label: copy.nav.applications },
+  ];
   return (
-    <PageSkeleton large title="Account" description={62}>
+    <PageSkeleton large title={copy.nav.account} description={62}>
       <div className="flex flex-col gap-8">
         <Card className="flex flex-col gap-6 p-6">
           <div className="flex min-w-0 items-center gap-4">
@@ -25,7 +27,7 @@ export default function Loading() {
               </p>
             </div>
           </div>
-          <DescriptionList columns={2} items={["Title", "Department", "Location"].map((label) => ({ label, value: <SkeletonText chars={14} /> }))} />
+          <DescriptionList columns={2} items={[copy.job, copy.department, copy.location].map((label) => ({ label, value: <SkeletonText chars={14} /> }))} />
           <p className="border-t border-border pt-4 text-caption">
             <SkeletonText chars={90} />
           </p>

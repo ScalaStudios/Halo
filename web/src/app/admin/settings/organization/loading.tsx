@@ -1,30 +1,32 @@
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { FieldSkeleton, PageSkeleton, Skeleton } from "@/components/ui/skeleton";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { settingsMessages } from "@/lib/i18n/console/settings";
+import { requestLocale } from "@/lib/i18n/server";
 
-export default function Loading() {
+export default async function Loading() {
+  const locale = await requestLocale();
+  const { organization: t, retention } = settingsMessages[locale];
   return (
-    <PageSkeleton
-      title="Organization"
-      description="The name and contact address people see when they sign in, the issuer URL your applications trust, and how long Halo keeps its logs."
-      className="max-w-4xl"
-    >
+    <PageSkeleton title={frameMessages[locale].nav.items.organization.label} description={t.description} className="max-w-4xl">
       <Card>
-        <CardHeader title="Profile" description="How Halo names your organization to the people who sign in." />
+        <CardHeader title={t.title} description={t.titleHint} />
         <CardBody>
           <div className="flex max-w-xl flex-col gap-6">
-            <FieldSkeleton label="Organization name" hint={110} />
-            <FieldSkeleton label="Contact email" hint="The sign-in page links to this address under Get help. Leave empty to hide the link." />
-            <FieldSkeleton label="Issuer URL" hint="Set by HALO_PUBLIC_URL when Halo starts. Applications discover every protocol endpoint from it." />
+            <FieldSkeleton label={t.name} hint={110} />
+            <FieldSkeleton label={t.email} hint={t.emailHint} />
+            <FieldSkeleton label={t.language} hint={t.languageHint} />
+            <FieldSkeleton label={t.issuer} hint={t.issuerHint} />
             <Skeleton className="h-10 w-44 rounded-md" />
           </div>
         </CardBody>
       </Card>
       <Card>
-        <CardHeader title="Log retention" description="How long Halo keeps sign-in and audit log entries. Once a day it deletes older entries and records how many in the audit log." />
+        <CardHeader title={retention.title} description={retention.description} />
         <CardBody>
           <div className="flex max-w-xl flex-col gap-6">
-            <FieldSkeleton label="Sign-in log" hint={90} />
-            <FieldSkeleton label="Audit log" hint={60} />
+            <FieldSkeleton label={retention.signInLogDays.label} hint={90} />
+            <FieldSkeleton label={retention.auditLogDays.label} hint={60} />
             <Skeleton className="h-10 w-40 rounded-md" />
           </div>
         </CardBody>

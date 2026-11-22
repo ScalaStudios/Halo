@@ -109,13 +109,6 @@ func answersText(answers []store.AccessAnswer) string {
 	return strings.Join(lines, "\n")
 }
 
-func requestDuration(req store.AccessRequest) string {
-	if req.Extends != nil && req.DurationDays != nil {
-		return "for " + plural(*req.DurationDays, "more day")
-	}
-	return durationText(req.DurationDays)
-}
-
 func requestState(req store.AccessRequest) map[string]any {
 	return map[string]any{"status": req.Status, "stage": req.Stage, "expiresAt": req.ExpiresAt}
 }
@@ -284,7 +277,7 @@ func (h *handler) createRequest(w http.ResponseWriter, r *http.Request, u store.
 	}
 	h.notifyApprovers(r.Context(), req, false)
 	if requestedBy != nil {
-		h.send(r.Context(), mail.AccessRequestedForYou(beneficiary.Email, u.Name, pkg.Name, requestDuration(req), h.cfg.Issuer()+"/account/access"))
+		h.send(r.Context(), mail.AccessRequestedForYou(beneficiary.Email, u.Name, pkg.Name, req.DurationDays, req.Extends != nil, h.cfg.Issuer()+"/account/access"))
 	}
 	return httpx.JSON(w, http.StatusCreated, req)
 }
@@ -438,7 +431,7 @@ func (h *handler) notifyApprovers(ctx context.Context, req store.AccessRequest, 
 		if c.Admin {
 			link = h.cfg.Issuer() + "/admin/requests"
 		}
-		h.send(ctx, mail.AccessRequested(c.Email, req.Requester.Name, req.Requester.Email, requestedBy, req.Package.Name, requestDuration(req), req.Justification, answersText(req.Answers), link))
+		h.send(ctx, mail.AccessRequested(c.Email, req.Requester.Name, req.Requester.Email, requestedBy, req.Package.Name, req.DurationDays, req.Extends != nil, req.Justification, answersText(req.Answers), link))
 	}
 }
 
@@ -448,15 +441,11 @@ func (h *handler) notifyRequester(ctx context.Context, req store.AccessRequest) 
 		h.send(ctx, mail.AccessExpired(req.Requester.Email, req.Package.Name, link))
 		return
 	}
-	decider := "An approver"
+	decider := ""
 	if req.DecidedBy != nil {
 		decider = req.DecidedBy.Name
 	}
-	expires := ""
-	if req.ExpiresAt != nil {
-		expires = formatTime(*req.ExpiresAt)
-	}
-	h.send(ctx, mail.AccessDecided(req.Requester.Email, req.Status == "approved", decider, req.Package.Name, expires, names(req.Groups), req.DecisionNote, link))
+	h.send(ctx, mail.AccessDecided(req.Requester.Email, req.Status == "approved", decider, req.Package.Name, req.ExpiresAt, req.Groups, req.DecisionNote, link))
 }
 
 func (h *handler) timeOutRequests(ctx context.Context, now time.Time) error {

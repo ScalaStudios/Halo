@@ -2,13 +2,17 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { DescriptionList } from "@/components/ui/description-list";
 import { SectionTitle } from "@/components/ui/section-title";
 import { DetailHeaderSkeleton, PageSkeleton, SkeletonText, TableSkeleton } from "@/components/ui/skeleton";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { infrastructureMessages } from "@/lib/i18n/console/infrastructure";
+import { requestLocale } from "@/lib/i18n/server";
 
-const facts = ["Events", "Last delivery", "Created", "Endpoint ID"];
-
-export default function Loading() {
+export default async function Loading() {
+  const locale = await requestLocale();
+  const t = infrastructureMessages[locale];
+  const facts = [t.webhooks.events, t.webhooks.lastDelivery, t.created, t.webhooks.endpointId];
   return (
     <PageSkeleton
-      back={{ href: "/admin/webhooks", label: "Webhooks" }}
+      back={{ href: "/admin/webhooks", label: frameMessages[locale].nav.items.webhooks.label }}
       heading={
         <>
           <DetailHeaderSkeleton media="icon" actions={2} />
@@ -20,13 +24,13 @@ export default function Loading() {
       }
     >
       <section className="flex flex-col gap-6">
-        <SectionTitle title="Deliveries" description={<SkeletonText chars={110} />} />
+        <SectionTitle title={t.webhooks.deliveries} description={<SkeletonText chars={110} />} />
         <TableSkeleton simple columns={6} rows={3} />
       </section>
       <Card>
         <CardHeader
-          title="Verify the signature"
-          description="Every request carries Halo-Signature: t=<unix time>,v1=<hex HMAC-SHA256 of t, a dot and the raw body, keyed with the signing secret>. Reject requests with a wrong signature or a timestamp more than 5 minutes old, and use the id field to ignore repeats."
+          title={t.webhooks.verify}
+          description={t.webhooks.verifyHint}
         />
         <CardBody>
           <div className="h-96 rounded-md border border-border bg-sunken" />

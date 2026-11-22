@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 
@@ -17,6 +18,20 @@ func (s *Store) UpdateUserProfile(ctx context.Context, u User) error {
 		return conflict(notFound(err))
 	}
 	return s.emailChanged(ctx, u.ID, previous, u.Email)
+}
+
+func (s *Store) SetUserLocale(ctx context.Context, userID string, locale *string) error {
+	_, err := s.db.Exec(ctx, `update users set locale = $2, updated_at = now() where id = $1`, userID, locale)
+	return err
+}
+
+func (s *Store) LocaleFor(ctx context.Context, email string) (*string, error) {
+	var locale *string
+	err := s.db.QueryRow(ctx, `select locale from users where lower(email) = lower($1)`, strings.TrimSpace(email)).Scan(&locale)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	return locale, err
 }
 
 func (s *Store) SetUserAttributes(ctx context.Context, userID string, values map[string]any) error {

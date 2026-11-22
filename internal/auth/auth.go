@@ -112,6 +112,7 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 		"POST /api/v1/me/sessions/revoke-others": h.revokeOtherSessions,
 		"GET /api/v1/me/security-emails":         h.securityEmails,
 		"PUT /api/v1/me/security-emails":         h.setSecurityEmails,
+		"PUT /api/v1/me/locale":                  h.setLocale,
 		"GET /api/v1/me/applications":            h.applications,
 		"PUT /api/v1/me/applications":            h.arrangeApplications,
 		"GET /api/v1/me/collections":             h.collections,

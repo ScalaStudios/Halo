@@ -1,19 +1,18 @@
 import { SectionTitle } from "@/components/ui/section-title";
 import { ListSkeleton, PageSkeleton } from "@/components/ui/skeleton";
+import { accountMessages } from "@/lib/i18n/account";
+import { requestLocale } from "@/lib/i18n/server";
 
-const sections = [
-  { title: "Your requests", description: "You get an email when an approver decides." },
-  { title: "Access you were granted", description: "Approved packages. Halo removes the access when it ends." },
-  { title: "Your roles", description: "Administrative roles in Halo. Most people have none." },
-];
-
-export default function Loading() {
+export default async function Loading() {
+  const copy = accountMessages(await requestLocale());
+  const t = copy.access;
+  const sections = [
+    { title: t.requests, description: t.requestsHint },
+    { title: t.grants, description: t.grantsHint },
+    { title: t.roles, description: t.rolesLoadingHint },
+  ];
   return (
-    <PageSkeleton
-      large
-      title="Access"
-      description="What you can reach and why. Groups decide which applications you see; roles decide what you can change in Halo."
-    >
+    <PageSkeleton large title={copy.nav.access} description={t.description}>
       {sections.map((section) => (
         <section key={section.title} className="flex flex-col gap-4">
           <SectionTitle title={section.title} description={section.description} />

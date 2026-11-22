@@ -5,12 +5,15 @@ import { BrandStyle } from "@/components/brand-style";
 import { ConsoleShell } from "@/components/console/shell";
 import { limitedOnly } from "@/components/settings/roles";
 import { apiGet } from "@/lib/api/server";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { requestLocale } from "@/lib/i18n/server";
 import type { OrganizationProfile } from "@/lib/settings-types";
 import type { User } from "@/lib/types";
 
-export const metadata: Metadata = {
-  title: { default: "Halo administration", template: "%s · Halo administration" },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { title } = frameMessages[await requestLocale()];
+  return { title: { default: title, template: `%s · ${title}` } };
+}
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   const [me, org] = await Promise.all([apiGet<User>("/me"), apiGet<OrganizationProfile>("/organization")]);

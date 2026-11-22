@@ -2,12 +2,12 @@ package mail
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
@@ -28,7 +28,8 @@ type Message struct {
 	Text    string
 	HTML    string
 	kind    string
-	vars    map[string]string
+	vars    map[string]any
+	lookup  string
 }
 
 type Mailer interface {
@@ -73,30 +74,37 @@ func footer(org string) string {
 	return "\n\nHalo · " + org + "\n"
 }
 
-func (o *Outbox) customise(ctx context.Context, m Message, org string) Message {
+func (o *Outbox) localise(ctx context.Context, m Message, org string) Message {
 	t, ok := Lookup(m.kind)
 	if !ok {
 		return m
 	}
 	settings, _ := o.st.Settings(ctx)
-	custom, ok := settings.EmailTemplates[m.kind]
-	if !ok {
-		return m
+	locale := cmp.Or(settings.Locale, "en")
+	if chosen, err := o.st.LocaleFor(ctx, cmp.Or(m.lookup, m.To)); err != nil {
+		slog.WarnContext(ctx, "email sent in the organization's language", "template", m.kind, "error", err)
+	} else if chosen != nil {
+		locale = *chosen
 	}
-	vars := maps.Clone(m.vars)
+	vars := values(m.vars, locale)
 	vars["Organization"] = org
-	subject, text, err := t.Render(custom, vars)
-	if err != nil {
+	if custom, ok := settings.EmailTemplates[m.kind]; ok {
+		subject, text, err := t.Render(custom, vars)
+		if err == nil {
+			m.Subject, m.Text = subject, text
+			return m
+		}
 		slog.WarnContext(ctx, "custom email template not used, sent Halo's default", "template", m.kind, "error", err)
-		return m
 	}
-	m.Subject, m.Text = subject, text
+	if subject, text, err := t.Render(t.defaults(locale), vars); err == nil {
+		m.Subject, m.Text = subject, text
+	}
 	return m
 }
 
 func (o *Outbox) Send(ctx context.Context, m Message) error {
 	org := organization(ctx, o.cfg, o.st)
-	m = o.customise(ctx, m, org)
+	m = o.localise(ctx, m, org)
 	msg, err := o.st.QueueMail(ctx, m.To, m.Subject, m.Text+footer(org), m.HTML, o.Configured())
 	if err != nil {
 		return err

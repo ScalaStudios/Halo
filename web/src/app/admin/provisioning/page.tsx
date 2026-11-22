@@ -16,7 +16,10 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionTitle } from "@/components/ui/section-title";
 import { apiGet } from "@/lib/api/server";
-import { formatRelative, pluralize } from "@/lib/format";
+import { formatRelative } from "@/lib/format";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { provisioningMessages } from "@/lib/i18n/console/infrastructure/provisioning";
+import { requestLocale } from "@/lib/i18n/server";
 import type {
   AppProvisioning,
   LDAPDirectory,
@@ -25,10 +28,14 @@ import type {
 import type { OrganizationProfile } from "@/lib/settings-types";
 import type { Application, Attribute, AuditEvent, Group } from "@/lib/types";
 
-export const metadata = { title: "Provisioning" };
+export async function generateMetadata() {
+  return { title: frameMessages[await requestLocale()].nav.items.provisioning.label };
+}
 
 export default async function ProvisioningPage() {
-  const org = await apiGet<OrganizationProfile>("/organization");
+  const [org, locale] = await Promise.all([apiGet<OrganizationProfile>("/organization"), requestLocale()]);
+  const nav = frameMessages[locale].nav.items;
+  const t = provisioningMessages[locale];
   const inbound = !org.featuresOff.includes("scim");
   const outbound = !org.featuresOff.includes("provisioning");
   const [
@@ -78,41 +85,40 @@ export default async function ProvisioningPage() {
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        title="Provisioning"
-        description="SCIM 2.0 in both directions and LDAP directory sync: your HR system, identity provider or directory keeps people in Halo current, and Halo keeps accounts in your applications current."
+        title={nav.provisioning.label}
+        description={t.page.description}
       />
 
       {inbound ? (
         <section className="flex flex-col gap-6">
           <SectionTitle
-            title="Inbound"
-            description="Workday, BambooHR, Okta or Microsoft Entra ID create, update and deactivate people and groups in Halo."
+            title={t.page.inbound}
+            description={t.page.inboundHint}
           />
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
             <Card className="min-w-0 xl:col-span-5">
               <CardHeader
-                title="Connection details"
-                description="Enter these in the provisioning settings of the source system."
+                title={t.page.connection}
+                description={t.page.connectionHint}
               />
               <CardBody className="flex flex-col gap-6">
                 <CopyField
-                  label="SCIM base URL"
+                  label={t.page.scimBaseUrl}
                   value={`${org.issuer}/scim/v2`}
                 />
                 <DescriptionList
                   items={[
                     {
-                      label: "Authentication",
-                      value: "Bearer token: an API key with the scim scope",
+                      label: t.page.authentication,
+                      value: t.page.authenticationValue,
                     },
                     {
-                      label: "Required role",
-                      value: "User administrator on the key's service account",
+                      label: t.page.requiredRole,
+                      value: t.page.requiredRoleValue,
                     },
                     {
-                      label: "Supported",
-                      value:
-                        "Users and assigned groups, PATCH, filters on userName, externalId and emails, enterprise department and manager",
+                      label: t.page.supported,
+                      value: t.page.supportedValue,
                     },
                   ]}
                 />
@@ -120,28 +126,28 @@ export default async function ProvisioningPage() {
             </Card>
             <Card className="min-w-0 xl:col-span-7">
               <CardHeader
-                title="Connectors"
-                description="Service accounts with an active SCIM key."
+                title={t.page.connectors}
+                description={t.page.connectorsHint}
                 actions={
                   <Link
                     href="/admin/service-accounts"
                     className={buttonClasses("quiet", "sm")}
                   >
-                    Manage
+                    {t.page.manage}
                   </Link>
                 }
               />
               {connectors.length === 0 ? (
                 <EmptyState
                   icon={Bot}
-                  title="No connectors yet"
-                  description="Create a service account with the User administrator role, then give it an API key with the scim scope."
+                  title={t.page.noConnectors}
+                  description={t.page.noConnectorsHint}
                   action={
                     <Link
                       href="/admin/service-accounts"
                       className={buttonClasses("secondary", "sm")}
                     >
-                      Open service accounts
+                      {t.page.openServiceAccounts}
                     </Link>
                   }
                 />
@@ -163,19 +169,18 @@ export default async function ProvisioningPage() {
                           </Link>
                           {canProvision(account) ? (
                             <span className="text-caption text-fg-3">
-                              {pluralize(keys.length, "SCIM key")}
+                              {t.page.scimKeys(keys.length)}
                             </span>
                           ) : (
                             <span className="text-caption text-warning">
-                              Missing the User administrator role, so its
-                              requests are rejected
+                              {t.page.missingRole}
                             </span>
                           )}
                         </span>
                         <span className="shrink-0 text-caption text-fg-3">
                           {used
-                            ? `Used ${formatRelative(used).toLowerCase()}`
-                            : "Never used"}
+                            ? t.page.used(formatRelative(used, locale).toLowerCase())
+                            : t.page.neverUsed}
                         </span>
                       </li>
                     );
@@ -186,21 +191,22 @@ export default async function ProvisioningPage() {
           </div>
           <Card>
             <CardHeader
-              title="Recent SCIM changes"
-              description="The latest changes connectors made in Halo."
+              title={t.page.recent}
+              description={t.page.recentHint}
               actions={
                 <Link
                   href="/admin/audit"
                   className={buttonClasses("quiet", "sm")}
                 >
-                  Audit log
+                  {nav.audit.label}
                 </Link>
               }
             />
             <ActivityList
               events={activity}
               actorNames={actorNames}
-              empty="No SCIM changes yet. They appear here as soon as a connector creates or updates someone."
+              empty={t.page.noChanges}
+              locale={locale}
             />
           </Card>
         </section>
@@ -211,8 +217,8 @@ export default async function ProvisioningPage() {
       {outbound ? (
         <section className="flex flex-col gap-6">
           <SectionTitle
-            title="Outbound"
-            description={`Every 2 minutes Halo creates accounts for people assigned to an application, updates changed profiles, deactivates people who lose access or are suspended, and keeps the groups you choose in step. ${on} of ${pluralize(apps.length, "application")} on.`}
+            title={t.page.outbound}
+            description={t.page.outboundHint(on, apps.length)}
           />
           <OutboundTable apps={apps} groups={groups} />
         </section>

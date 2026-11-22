@@ -3,13 +3,15 @@ import type { ReactNode } from "react";
 import { AccountShell } from "@/components/account/shell";
 import { BrandStyle } from "@/components/brand-style";
 import { apiGet } from "@/lib/api/server";
+import { accountMessages } from "@/lib/i18n/account";
 import { requestLocale } from "@/lib/i18n/server";
 import type { OrganizationProfile } from "@/lib/settings-types";
 import type { User } from "@/lib/types";
 
-export const metadata: Metadata = {
-  title: { default: "Halo account", template: "%s · Halo account" },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = accountMessages(await requestLocale());
+  return { title: { default: t.title, template: t.titleTemplate } };
+}
 
 export default async function AccountLayout({ children }: { children: ReactNode }) {
   const [user, org, locale] = await Promise.all([apiGet<User>("/me"), apiGet<OrganizationProfile>("/organization"), requestLocale()]);

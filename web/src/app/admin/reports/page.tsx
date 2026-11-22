@@ -8,8 +8,12 @@ import { PageHeader } from "@/components/ui/page-header";
 import { TabNav } from "@/components/ui/tab-nav";
 import { apiGet } from "@/lib/api/server";
 import { cn } from "@/lib/cn";
-import { formatDate, isoDay, pluralize } from "@/lib/format";
-import { METHOD } from "@/lib/labels";
+import { formatDate, isoDay } from "@/lib/format";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { governanceMessages } from "@/lib/i18n/console/governance";
+import { monitoringMessages } from "@/lib/i18n/console/monitoring";
+import type { Locale } from "@/lib/i18n/locale";
+import { requestLocale } from "@/lib/i18n/server";
 import type {
   ApplicationUsageReport,
   Group,
@@ -21,23 +25,13 @@ import type {
   User,
 } from "@/lib/types";
 
-export const metadata = { title: "Reports" };
+export async function generateMetadata() {
+  return { title: frameMessages[await requestLocale()].nav.items.reports.label };
+}
 
 type Params = { report?: string; days?: string; filter?: string; group?: string };
 
-const REPORTS = [
-  { id: "methods", label: "Sign-in methods" },
-  { id: "usage", label: "Method usage" },
-  { id: "inactive", label: "Inactive people" },
-  { id: "applications", label: "Application usage" },
-];
-
-const FILTERS: Record<RegistrationFilter, string> = {
-  "no-passkey": "No passkey",
-  "password-only": "Password only",
-  "authenticator-only": "Authenticator app only",
-  "no-method": "Email or identity provider only",
-};
+const REPORTS = ["methods", "usage", "inactive", "applications"] as const;
 
 function href(params: Params) {
   const query = new URLSearchParams(Object.entries(params).filter((entry): entry is [string, string] => Boolean(entry[1])));
@@ -87,20 +81,21 @@ function BarList({ label, items, max }: { label: string; items: { label: string;
   );
 }
 
-function periodText(period: ReportPeriod, days: number) {
-  const range = `from ${formatDate(period.from)} to ${formatDate(period.to)}`;
-  return period.limitedByRetention && days > period.retentionDays
-    ? `${range}. The sign-in log keeps ${pluralize(period.retentionDays, "day")}, so older sign-ins are not counted.`
-    : `${range}.`;
+function periodText(period: ReportPeriod, days: number, locale: Locale) {
+  const t = governanceMessages[locale].reports;
+  const range = t.range(formatDate(period.from, locale), formatDate(period.to, locale));
+  return period.limitedByRetention && days > period.retentionDays ? t.retention(range, period.retentionDays) : `${range}.`;
 }
 
 export default async function ReportsPage({ searchParams }: { searchParams: Promise<Params> }) {
-  const params = await searchParams;
-  const report = REPORTS.some((r) => r.id === params.report) ? params.report! : "methods";
+  const [params, locale] = await Promise.all([searchParams, requestLocale()]);
+  const t = governanceMessages[locale].reports;
+  const title = frameMessages[locale].nav.items.reports.label;
+  const report = REPORTS.some((r) => r === params.report) ? params.report! : "methods";
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader title="Reports" description="Who signs in, with which methods and to which applications. Each report downloads as CSV and is available in the API." />
-      <TabNav label="Reports" tabs={REPORTS} active={report} hrefFor={(id) => href({ report: id === "methods" ? undefined : id })} />
+      <PageHeader title={title} description={t.description} />
+      <TabNav label={title} tabs={REPORTS.map((id) => ({ id, label: t.tabs[id] }))} active={report} hrefFor={(id) => href({ report: id === "methods" ? undefined : id })} />
       <div key={report} className="flex animate-enter flex-col gap-8">
         {report === "methods" ? <Registration params={params} /> : null}
         {report === "usage" ? <MethodUsage params={params} /> : null}
@@ -111,33 +106,37 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   );
 }
 
-function PeriodFilters({ report, days }: { report: string; days: number }) {
-  return <Filters label="Period" items={[7, 30, 90, 365].map((n) => ({ label: `${n} days`, href: href({ report, days: String(n) }), current: n === days }))} />;
+async function PeriodFilters({ report, days }: { report: string; days: number }) {
+  const t = governanceMessages[await requestLocale()].reports;
+  return <Filters label={t.period} items={[7, 30, 90, 365].map((n) => ({ label: t.days(n), href: href({ report, days: String(n) }), current: n === days }))} />;
 }
 
 async function Registration({ params }: { params: Params }) {
-  const filter = params.filter && params.filter in FILTERS ? (params.filter as RegistrationFilter) : undefined;
+  const locale = await requestLocale();
+  const g = governanceMessages[locale];
+  const t = g.reports;
+  const filter = params.filter && params.filter in t.filters ? (params.filter as RegistrationFilter) : undefined;
   const query = new URLSearchParams(Object.entries({ filter, group: params.group }).filter((entry): entry is [string, string] => Boolean(entry[1])));
   const [data, groups] = await Promise.all([apiGet<MethodRegistrationReport>(`/reports/method-registration?${query}`), apiGet<Group[]>("/groups")]);
   const total = data.counts.people;
-  const share = (n: number) => `${n} of ${total}${total ? ` (${Math.round((n / total) * 100)}%)` : ""}`;
+  const share = (n: number) => `${t.share(n, total)}${total ? ` (${Math.round((n / total) * 100)}%)` : ""}`;
   return (
     <>
       <Card>
         <CardHeader
-          title="Registered methods"
-          description={`${pluralize(total, "active person", "active people")}${params.group ? " in this group" : ""}. ${pluralize(data.counts.filters["no-passkey"] ?? 0, "person has", "people have")} no passkey or security key.`}
+          title={t.registered}
+          description={t.registeredDescription(total, Boolean(params.group), data.counts.filters["no-passkey"] ?? 0)}
         />
         <CardBody>
-          <BarList label="People per registered method" max={total} items={data.methods.map((m) => ({ label: METHOD[m.method].label, value: m.people, detail: share(m.people) }))} />
+          <BarList label={t.perMethod} max={total} items={data.methods.map((m) => ({ label: monitoringMessages[locale].methods[m.method], value: m.people, detail: share(m.people) }))} />
         </CardBody>
       </Card>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <Filters
-          label="Registered methods"
+          label={t.registered}
           items={[
-            { label: "Everyone", count: total, href: href({ group: params.group }), current: !filter },
-            ...Object.entries(FILTERS).map(([id, label]) => ({
+            { label: g.everyone, count: total, href: href({ group: params.group }), current: !filter },
+            ...Object.entries(t.filters).map(([id, label]) => ({
               label,
               count: data.counts.filters[id as RegistrationFilter] ?? 0,
               href: href({ filter: id, group: params.group }),
@@ -155,7 +154,8 @@ async function Registration({ params }: { params: Params }) {
 async function MethodUsage({ params }: { params: Params }) {
   const days = pick(params.days, [7, 30, 90, 365], 30);
   const query = `from=${isoDay(-days)}`;
-  const data = await apiGet<MethodUsageReport>(`/reports/method-usage?${query}`);
+  const [data, locale] = await Promise.all([apiGet<MethodUsageReport>(`/reports/method-usage?${query}`), requestLocale()]);
+  const t = governanceMessages[locale].reports;
   const methods = [...data.methods].sort((a, b) => b.signIns - a.signIns);
   const total = methods.reduce((sum, m) => sum + m.signIns, 0);
   return (
@@ -163,18 +163,18 @@ async function MethodUsage({ params }: { params: Params }) {
       <PeriodFilters report="usage" days={days} />
       <Card>
         <CardHeader
-          title="Sign-ins by method"
-          description={`${pluralize(total, "successful sign-in")} ${periodText(data.period, days)}`}
-          actions={<ExportButton path={`/reports/method-usage?${query}&format=csv`} label="Export CSV" variant="secondary" size="sm" recorded={false} />}
+          title={t.byMethod}
+          description={t.successful(total, periodText(data.period, days, locale))}
+          actions={<ExportButton path={`/reports/method-usage?${query}&format=csv`} label={t.exportCsv} variant="secondary" size="sm" recorded={false} />}
         />
         <CardBody>
           <BarList
-            label="Successful sign-ins per method"
+            label={t.successfulPerMethod}
             max={Math.max(0, ...methods.map((m) => m.signIns))}
             items={methods.map((m) => ({
-              label: METHOD[m.method].label,
+              label: monitoringMessages[locale].methods[m.method],
               value: m.signIns,
-              detail: m.signIns ? `${pluralize(m.signIns, "sign-in")} by ${pluralize(m.people, "person", "people")}` : "Not used",
+              detail: m.signIns ? t.usage(m.signIns, m.people) : t.notUsed,
             }))}
           />
         </CardBody>
@@ -186,18 +186,16 @@ async function MethodUsage({ params }: { params: Params }) {
 async function InactivePeople({ params }: { params: Params }) {
   const days = pick(params.days, [30, 60, 90, 180], 90);
   const query = new URLSearchParams({ days: String(days), ...(params.group ? { group: params.group } : {}) });
-  const [data, groups, me] = await Promise.all([apiGet<InactivePeopleReport>(`/reports/inactive-people?${query}`), apiGet<Group[]>("/groups"), apiGet<User>("/me")]);
+  const [data, groups, me, locale] = await Promise.all([apiGet<InactivePeopleReport>(`/reports/inactive-people?${query}`), apiGet<Group[]>("/groups"), apiGet<User>("/me"), requestLocale()]);
+  const t = governanceMessages[locale].reports;
   const never = data.people.filter((p) => !p.lastSignInAt).length;
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <Filters label="No sign-in for" items={[30, 60, 90, 180].map((n) => ({ label: `${n} days`, href: href({ report: "inactive", days: String(n), group: params.group }), current: n === days }))} />
+        <Filters label={t.noSignInFor} items={[30, 60, 90, 180].map((n) => ({ label: t.days(n), href: href({ report: "inactive", days: String(n), group: params.group }), current: n === days }))} />
         <GroupFilter groups={groups} value={params.group ?? ""} query={{ report: "inactive", days: String(days) }} />
       </div>
-      <p className="text-body-sm text-fg-3">
-        {pluralize(data.people.length, "active or invited person", "active or invited people")} without a sign-in in the last {days} days, including {never} who never signed in. People who never signed in
-        count from when they were added.
-      </p>
+      <p className="text-body-sm text-fg-3">{t.inactive(data.people.length, days, never)}</p>
       <InactiveTable
         key={query.toString()}
         people={data.people}
@@ -212,14 +210,12 @@ async function InactivePeople({ params }: { params: Params }) {
 async function ApplicationUsage({ params }: { params: Params }) {
   const days = pick(params.days, [7, 30, 90, 365], 30);
   const query = `from=${isoDay(-days)}`;
-  const data = await apiGet<ApplicationUsageReport>(`/reports/application-usage?${query}`);
+  const [data, locale] = await Promise.all([apiGet<ApplicationUsageReport>(`/reports/application-usage?${query}`), requestLocale()]);
   const unused = data.applications.filter((a) => a.signIns === 0).length;
   return (
     <>
       <PeriodFilters report="applications" days={days} />
-      <p className="text-body-sm text-fg-3">
-        Successful sign-ins and the people who made them {periodText(data.period, days)} {pluralize(unused, "application")} had no sign-ins. Bookmarks and service applications are not listed.
-      </p>
+      <p className="text-body-sm text-fg-3">{governanceMessages[locale].reports.applications(periodText(data.period, days, locale), unused)}</p>
       <ApplicationsTable key={query} applications={data.applications} exportPath={`/reports/application-usage?${query}&format=csv`} />
     </>
   );

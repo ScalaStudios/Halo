@@ -1,35 +1,20 @@
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { CopyField } from "@/components/ui/copy-field";
+import { infrastructureMessages } from "@/lib/i18n/console/infrastructure";
+import { requestLocale } from "@/lib/i18n/server";
 import { endpoints } from "@/lib/setup-guides";
 
-export function TokenValidationCard({ issuer, identifier, algorithm }: { issuer: string; identifier: string; algorithm: string }) {
-  const checks = [
-    <>Verify the {algorithm} signature with the key from the JWKS whose kid matches the token header. Cache the key set and fetch it again when an unknown kid appears.</>,
-    <>
-      Check that <code className="font-mono text-code-sm text-fg">iss</code> equals <code className="font-mono text-code-sm text-fg">{issuer}</code>.
-    </>,
-    <>
-      Check that <code className="font-mono text-code-sm text-fg">aud</code> contains <code className="font-mono text-code-sm text-fg">{identifier}</code>.
-    </>,
-    <>
-      Check that <code className="font-mono text-code-sm text-fg">exp</code> is in the future, allowing a minute of clock skew.
-    </>,
-    <>
-      Check that <code className="font-mono text-code-sm text-fg">scope</code> contains the scope the endpoint needs. ID tokens never carry a scope claim, so this check also refuses an ID
-      token sent in place of an access token.
-    </>,
-    <>
-      Use <code className="font-mono text-code-sm text-fg">sub</code> as the caller: a user ID, or the client ID for service applications.{" "}
-      <code className="font-mono text-code-sm text-fg">client_id</code> names the application that requested the token.
-    </>,
-  ];
+export async function TokenValidationCard({ issuer, identifier, algorithm }: { issuer: string; identifier: string; algorithm: string }) {
+  const t = infrastructureMessages[await requestLocale()].tokens;
+  const code = (text: string) => <code key={text} className="font-mono text-code-sm text-fg">{text}</code>;
+  const checks = [t.signature(algorithm), t.iss(code, issuer), t.aud(code, identifier), t.exp(code), t.scope(code), t.sub(code)];
   return (
     <Card>
-      <CardHeader title="Validate tokens in the API" description="Access tokens for this API are JWTs signed by Halo. The API validates them itself, without calling Halo on each request." />
+      <CardHeader title={t.title} description={t.hint} />
       <CardBody className="flex flex-col gap-6">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <CopyField label="Issuer" value={issuer} />
-          <CopyField label="JWKS URL" value={endpoints(issuer).jwks} />
+          <CopyField label={t.issuer} value={issuer} />
+          <CopyField label={t.jwks} value={endpoints(issuer).jwks} />
         </div>
         <ol className="flex list-decimal flex-col gap-2 pl-6 text-body-sm text-fg-2 marker:text-fg-3">
           {checks.map((check, i) => (

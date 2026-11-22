@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { api, handleReauth } from "@/lib/api/client";
+import { authMessages } from "@/lib/i18n/auth";
+import { useLocale } from "@/lib/i18n/client";
 import { getAssertion } from "@/lib/webauthn";
 import { cancelled, describeFailure, type Ceremony } from "./passkey";
 import { VerifyCode } from "./verify-code";
@@ -25,6 +27,8 @@ function Status({ title, children }: { title: string; children?: string }) {
 }
 
 export function ReauthPrompt() {
+  const messages = authMessages(useLocale());
+  const t = messages.reauth;
   const settle = useRef<((confirmed: boolean) => void) | null>(null);
   const attempt = useRef<AbortController | null>(null);
   const [open, setOpen] = useState(false);
@@ -91,24 +95,18 @@ export function ReauthPrompt() {
       onOpenChange={(next) => {
         if (!next) close(false);
       }}
-      title="Confirm it's you"
-      description={
-        passkey
-          ? "Sensitive changes need a recent sign-in. Use your passkey or security key to continue."
-          : totp
-            ? "Sensitive changes need a recent sign-in. Enter the code from your authenticator app to continue."
-            : "Sensitive changes need a recent sign-in."
-      }
+      title={t.title}
+      description={passkey ? t.passkey : totp ? t.totp : t.generic}
       error={error}
       footer={
         <>
           <Button variant="secondary" onClick={() => close(false)}>
-            Cancel
+            {messages.cancel}
           </Button>
           {passkey && !waiting ? (
             <Button variant="primary" onClick={confirmWithPasskey}>
               <Fingerprint aria-hidden="true" size={16} strokeWidth={1.75} />
-              Use passkey
+              {t.usePasskey}
             </Button>
           ) : null}
         </>
@@ -116,14 +114,15 @@ export function ReauthPrompt() {
     >
       {totp ? (
         <VerifyCode
-          label="Authenticator app code"
-          hint="Enter the six-digit code from your authenticator app."
+          label={t.codeLabel}
+          hint={t.codeHint}
+          accepted={messages.codeAccepted}
           verify={(code) => api("/me/reauthenticate", { body: { code } }).then(() => close(true))}
         />
       ) : waiting ? (
-        <Status title="Waiting for your device">Follow the prompt from your browser and confirm with your fingerprint, face, screen lock or security key.</Status>
+        <Status title={t.waiting}>{t.waitingHint}</Status>
       ) : !begun && !error ? (
-        <Status title="Getting ready" />
+        <Status title={t.preparing} />
       ) : null}
     </Dialog>
   );

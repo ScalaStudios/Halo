@@ -8,15 +8,19 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
 import { formatDate, isoDay } from "@/lib/format";
+import { useLocale, useMessages } from "@/lib/i18n/client";
+import { directoryMessages } from "@/lib/i18n/console/directory";
+import type { Locale } from "@/lib/i18n/locale";
 import type { User } from "@/lib/types";
 
 export type GuestTerms = { sponsorId: string; ends: string };
 type GuestErrors = { sponsor?: string; ends?: string };
 
-export function checkGuest(terms: GuestTerms, withSponsor: boolean): GuestErrors {
+export function checkGuest(terms: GuestTerms, withSponsor: boolean, locale: Locale): GuestErrors {
+  const t = directoryMessages[locale].guestAccess;
   return {
-    sponsor: !withSponsor || terms.sponsorId ? undefined : "Choose the person responsible for this guest.",
-    ends: terms.ends >= isoDay(0) && terms.ends <= isoDay(364) ? undefined : "Choose a day within the next year.",
+    sponsor: !withSponsor || terms.sponsorId ? undefined : t.sponsorRequired,
+    ends: terms.ends >= isoDay(0) && terms.ends <= isoDay(364) ? undefined : t.endsInvalid,
   };
 }
 
@@ -26,14 +30,15 @@ export function guestEnd(day: string) {
 
 export function GuestFields({ value, onChange, directory, errors }: { value: GuestTerms; onChange: (value: GuestTerms) => void; directory?: User[]; errors: GuestErrors }) {
   const sponsors = directory?.filter((u) => !u.guest && u.status === "active");
+  const t = useMessages(directoryMessages).guestAccess;
   return (
     <>
       {sponsors ? (
-        <Field label="Sponsor" error={errors.sponsor} hint="The person at your organization who is responsible for this guest. They're emailed two weeks before access ends and can extend it.">
+        <Field label={t.sponsor} error={errors.sponsor} hint={t.sponsorHint}>
           {(props) => <PeoplePicker {...props} people={sponsors} value={value.sponsorId ? [value.sponsorId] : []} onChange={(ids) => onChange({ ...value, sponsorId: ids.at(-1) ?? "" })} />}
         </Field>
       ) : null}
-      <Field label="Access ends" error={errors.ends} hint="Halo suspends the account at the end of this day, UTC, unless the sponsor extends it. Up to a year ahead.">
+      <Field label={t.accessEnds} error={errors.ends} hint={t.accessEndsHint}>
         {(props) => <Input {...props} type="date" min={isoDay(0)} max={isoDay(364)} value={value.ends} onChange={(event) => onChange({ ...value, ends: event.target.value })} />}
       </Field>
     </>
@@ -46,9 +51,11 @@ export function GuestAccessButton({ guest, directory }: { guest: Pick<User, "id"
   const [terms, setTerms] = useState<GuestTerms>(current);
   const [errors, setErrors] = useState<GuestErrors>({});
   const { pending, run, errorFor, clearError, toast } = useMutation();
+  const locale = useLocale();
+  const t = directoryMessages[locale];
 
   function save() {
-    const next = checkGuest(terms, Boolean(directory));
+    const next = checkGuest(terms, Boolean(directory), locale);
     setErrors(next);
     if (next.sponsor || next.ends) return;
     const body = directory && terms.sponsorId !== guest.sponsor?.id ? { expiresAt: guestEnd(terms.ends), sponsorId: terms.sponsorId } : { expiresAt: guestEnd(terms.ends) };
@@ -57,7 +64,7 @@ export function GuestAccessButton({ guest, directory }: { guest: Pick<User, "id"
       () => api(`/users/${guest.id}/guest`, { method: "PUT", body }),
       () => {
         setOpen(false);
-        toast({ title: "Guest access saved", description: `${guest.name} keeps access until ${formatDate(guestEnd(terms.ends))}. Recorded in the audit log.` });
+        toast({ title: t.guestAccess.saved, description: t.guestAccess.savedHint(guest.name, formatDate(guestEnd(terms.ends), locale)) });
       },
       "inline",
     );
@@ -75,21 +82,21 @@ export function GuestAccessButton({ guest, directory }: { guest: Pick<User, "id"
           setOpen(true);
         }}
       >
-        {directory ? "Edit" : "Extend"}
+        {directory ? t.edit : t.guestAccess.extend}
       </Button>
       <Dialog
         open={open}
         onOpenChange={setOpen}
         error={errorFor("guest")}
-        title={directory ? `Guest access for ${guest.name}` : `Extend ${guest.name}'s access`}
-        description="Choose when their access ends. Halo emails the sponsor again two weeks before the new date."
+        title={directory ? t.guestAccess.editTitle(guest.name) : t.guestAccess.extendTitle(guest.name)}
+        description={t.guestAccess.description}
         footer={
           <>
             <Button variant="secondary" onClick={() => setOpen(false)}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="primary" loading={pending === "guest"} onClick={save}>
-              Save
+              {t.save}
             </Button>
           </>
         }

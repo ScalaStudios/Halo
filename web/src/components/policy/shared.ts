@@ -1,97 +1,45 @@
 import { Ban, Check, FileCheck, KeyRound, ShieldCheck, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/badge";
-import { pluralize } from "@/lib/format";
 import { METHOD } from "@/lib/labels";
-import type {
-  AccessPolicy,
-  ComplianceCondition,
-  ComplianceState,
-  DeviceCondition,
-  DeviceTrust,
-  NetworkCondition,
-  NetworkZone,
-  PolicyEffect,
-  PolicyMode,
-  PolicyWithActivity,
-  RiskEventType,
-} from "@/lib/policy-types";
+import type { policyMessages } from "@/lib/i18n/console/policy";
+import type { AccessPolicy, ComplianceState, DeviceTrust, NetworkZone, PolicyEffect, PolicyMode, PolicyWithActivity } from "@/lib/policy-types";
 import type { MethodKind, RiskLevel } from "@/lib/types";
+
+export type PolicyCopy = (typeof policyMessages)["en"];
 
 export const HALO_APP = "halo";
 
-export const EFFECT: Record<PolicyEffect, { label: string; verb: string; icon: LucideIcon; color: string }> = {
-  allow: { label: "Allow", verb: "Allow", icon: Check, color: "text-success" },
-  "require-phishing-resistant": { label: "Require a passkey or security key", verb: "Require a passkey or security key for", icon: KeyRound, color: "text-warning" },
-  "require-terms": { label: "Require accepting terms of use", verb: "Require accepting terms of use for", icon: FileCheck, color: "text-info" },
-  "require-context": { label: "Require an authentication context", verb: "Require an authentication context for", icon: ShieldCheck, color: "text-warning" },
-  block: { label: "Block", verb: "Block", icon: Ban, color: "text-danger" },
+export const EFFECT: Record<PolicyEffect, { icon: LucideIcon; color: string }> = {
+  allow: { icon: Check, color: "text-success" },
+  "require-phishing-resistant": { icon: KeyRound, color: "text-warning" },
+  "require-terms": { icon: FileCheck, color: "text-info" },
+  "require-context": { icon: ShieldCheck, color: "text-warning" },
+  block: { icon: Ban, color: "text-danger" },
 };
 
-export const MODE: Record<PolicyMode, { label: string; description: string }> = {
-  report: { label: "Report-only", description: "Halo records what the policy would do without changing any sign-in." },
-  enforce: { label: "Enforced", description: "The policy decides sign-ins." },
-};
-
-export function policyState(p: { enabled: boolean; mode: PolicyMode }): { label: string; tone: Tone } {
-  if (!p.enabled) return { label: "Off", tone: "neutral" };
-  return p.mode === "enforce" ? { label: "Enforced", tone: "success" } : { label: "Report-only", tone: "info" };
+export function policyState(p: { enabled: boolean; mode: PolicyMode }, t: PolicyCopy): { label: string; tone: Tone } {
+  if (!p.enabled) return { label: t.labels.state.off, tone: "neutral" };
+  return p.mode === "enforce" ? { label: t.labels.state.enforced, tone: "success" } : { label: t.labels.state.report, tone: "info" };
 }
 
-export const NETWORK_CONDITION: Record<NetworkCondition, string> = {
-  any: "Any network",
-  in: "Inside selected networks",
-  "not-in": "Outside selected networks",
+export const COMPLIANCE: Record<ComplianceState, { tone: Tone }> = {
+  compliant: { tone: "success" },
+  "non-compliant": { tone: "danger" },
+  unknown: { tone: "neutral" },
 };
 
-export const DEVICE_CONDITION: Record<DeviceCondition, string> = {
-  any: "Any device",
-  trusted: "Trusted devices only",
-  untrusted: "Devices that aren't trusted",
+export const TRUST: Record<DeviceTrust, { tone: Tone }> = {
+  unknown: { tone: "neutral" },
+  trusted: { tone: "success" },
+  blocked: { tone: "danger" },
 };
 
-export const COMPLIANCE_CONDITION: Record<ComplianceCondition, string> = {
-  any: "Any compliance state",
-  compliant: "Compliant devices only",
-  "not-compliant": "Devices that aren't compliant",
-};
-
-export const COMPLIANCE: Record<ComplianceState, { label: string; tone: Tone }> = {
-  compliant: { label: "Compliant", tone: "success" },
-  "non-compliant": { label: "Non-compliant", tone: "danger" },
-  unknown: { label: "Unknown", tone: "neutral" },
-};
-
-export const TRUST: Record<DeviceTrust, { label: string; tone: Tone }> = {
-  unknown: { label: "Unknown", tone: "neutral" },
-  trusted: { label: "Trusted", tone: "success" },
-  blocked: { label: "Blocked", tone: "danger" },
-};
-
-export const ZONE_KIND: Record<NetworkZone["kind"], { label: string; tone: Tone; description: string }> = {
-  trusted: { label: "Trusted", tone: "success", description: "Networks you control, such as offices and VPN egress." },
-  risky: { label: "Risky", tone: "danger", description: "Sign-ins from these networks are rated high risk." },
-};
-
-export const RISK_TYPE: Record<RiskEventType, string> = {
-  "risky-network": "Risky network",
-  "failed-sign-ins": "Repeated failed sign-ins",
-  "new-device": "New device",
+export const ZONE_KIND: Record<NetworkZone["kind"], { tone: Tone }> = {
+  trusted: { tone: "success" },
+  risky: { tone: "danger" },
 };
 
 export const RISK_LEVELS: RiskLevel[] = ["none", "low", "medium", "high"];
-
-export const METHOD_PLURAL: Record<MethodKind, string> = {
-  passkey: "passkeys",
-  "security-key": "security keys",
-  totp: "authenticator apps",
-  "magic-link": "magic links",
-  "recovery-codes": "recovery codes",
-  password: "passwords",
-  federated: "identity providers",
-  "access-pass": "temporary access passes",
-  certificate: "client certificates",
-  kerberos: "Kerberos tickets",
-};
 
 export const POLICY_METHODS = (Object.keys(METHOD) as MethodKind[]).filter((kind) => kind !== "access-pass");
 
@@ -109,48 +57,43 @@ export function joinList(items: string[], joiner = "or"): string {
   return `${items.slice(0, -1).join(", ")} ${joiner} ${items[items.length - 1]}`;
 }
 
-function people(groupIds: string[], userIds: string[], names: Names, joiner: string): string {
-  const groups = groupIds.map((id) => names.groups[id] ?? "a deleted group");
-  return joinList([...(groups.length ? [`members of ${joinList(groups, joiner)}`] : []), ...userIds.map((id) => names.users[id] ?? "a deleted user")], joiner);
+function people(groupIds: string[], userIds: string[], names: Names, joiner: string, t: PolicyCopy): string {
+  const groups = groupIds.map((id) => names.groups[id] ?? t.describe.deletedGroup);
+  return joinList([...(groups.length ? [t.describe.membersOf(joinList(groups, joiner))] : []), ...userIds.map((id) => names.users[id] ?? t.describe.deletedUser)], joiner);
 }
 
-export function describePolicy(p: Pick<AccessPolicy, "effect" | "termsId" | "contextId" | "conditions">, names: Names): string {
+export function describePolicy(p: Pick<AccessPolicy, "effect" | "termsId" | "contextId" | "conditions">, names: Names, t: PolicyCopy): string {
   const c = p.conditions;
-  const who = c.allUsers ? "anyone" : people(c.groupIds, c.userIds, names, "or") || "nobody yet";
-  const excluded = people(c.excludeGroupIds, c.excludeUserIds, names, "and");
-  const apps = c.allApps ? "any application" : joinList(c.appIds.map((id) => (id === HALO_APP ? "Halo" : (names.apps[id] ?? "a deleted application")))) || "no application yet";
-  const zones = joinList(c.zoneIds.map((id) => `“${names.zones[id] ?? "a deleted network"}”`));
-  const parts = [`by ${who}${excluded ? ` except ${excluded}` : ""}`, `to ${apps}`];
-  if (c.network === "in") parts.push(`from ${zones || "the selected networks"}`);
-  if (c.network === "not-in") parts.push(`from outside ${zones || "the selected networks"}`);
-  if (c.device === "trusted") parts.push("on trusted devices");
-  if (c.device === "untrusted") parts.push("on devices that aren't trusted");
-  if (c.compliance === "compliant") parts.push("on compliant devices");
-  if (c.compliance === "not-compliant") parts.push("on devices that aren't compliant");
-  if (c.risk.length) parts.push(`with ${joinList(RISK_LEVELS.filter((level) => c.risk.includes(level)))} risk`);
-  if (c.methods.length) parts.push(`using ${joinList(c.methods.map((m) => METHOD_PLURAL[m]))}`);
+  const d = t.describe;
+  const who = c.allUsers ? d.anyone : people(c.groupIds, c.userIds, names, t.or, t) || d.nobody;
+  const excluded = people(c.excludeGroupIds, c.excludeUserIds, names, t.and, t);
+  const apps = c.allApps ? d.anyApp : joinList(c.appIds.map((id) => (id === HALO_APP ? "Halo" : (names.apps[id] ?? d.deletedApp))), t.or) || d.noApp;
+  const zones = joinList(c.zoneIds.map((id) => d.quote(names.zones[id] ?? d.deletedNetwork)), t.or);
+  const parts = [d.by(who, excluded), d.to(apps)];
+  if (c.network === "in") parts.push(d.from(zones || d.selectedNetworks));
+  if (c.network === "not-in") parts.push(d.fromOutside(zones || d.selectedNetworks));
+  if (c.device === "trusted") parts.push(d.trusted);
+  if (c.device === "untrusted") parts.push(d.untrusted);
+  if (c.compliance === "compliant") parts.push(d.compliant);
+  if (c.compliance === "not-compliant") parts.push(d.notCompliant);
+  if (c.risk.length) parts.push(d.risk(joinList(RISK_LEVELS.filter((level) => c.risk.includes(level)).map((level) => d.riskLevel[level]), t.or)));
+  if (c.methods.length) parts.push(d.methods(joinList(c.methods.map((m) => t.labels.methodPlural[m]), t.or)));
   const verb =
     p.effect === "require-terms"
-      ? `Require accepting “${(p.termsId && names.terms[p.termsId]) || "terms of use"}” for`
+      ? d.requireTerms((p.termsId && names.terms[p.termsId]) || d.termsOfUse)
       : p.effect === "require-context" && p.contextId
-        ? `Require “${names.contexts[p.contextId] ?? p.contextId}” for`
-        : EFFECT[p.effect].verb;
-  return `${verb} sign-ins ${parts.join(" ")}.`;
+        ? d.requireContext(names.contexts[p.contextId] ?? p.contextId)
+        : d.verb[p.effect];
+  return d.sentence(verb, parts.join(" "));
 }
 
-export function activityText(p: PolicyWithActivity): string {
+export function activityText(p: PolicyWithActivity, t: PolicyCopy): string {
   const { matched, stopped } = p.activity;
   const report = p.mode === "report";
-  if (matched === 0) return "No matching sign-ins in the last 24 hours.";
-  if (p.effect === "block") return `${report ? "Would have blocked" : "Blocked"} ${pluralize(stopped, "sign-in")} in the last 24 hours.`;
-  if (p.effect === "require-phishing-resistant") {
-    return `${report ? "Would have required" : "Required"} a passkey or security key for ${stopped} of ${pluralize(matched, "matching sign-in")} in the last 24 hours.`;
-  }
-  if (p.effect === "require-context") {
-    return `${report ? "Would have asked" : "Asked"} for a stronger sign-in in ${stopped} of ${pluralize(matched, "matching sign-in")} in the last 24 hours.`;
-  }
-  if (p.effect === "require-terms") {
-    return `${report ? "Would have asked" : "Asked"} for the terms of use in ${stopped} of ${pluralize(matched, "matching sign-in")} in the last 24 hours.`;
-  }
-  return `Matched ${pluralize(matched, "sign-in")} in the last 24 hours.`;
+  if (matched === 0) return t.activity.none;
+  if (p.effect === "block") return t.activity.blocked(report, stopped);
+  if (p.effect === "require-phishing-resistant") return t.activity.required(report, stopped, matched);
+  if (p.effect === "require-context") return t.activity.context(report, stopped, matched);
+  if (p.effect === "require-terms") return t.activity.terms(report, stopped, matched);
+  return t.activity.matched(matched);
 }

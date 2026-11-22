@@ -13,21 +13,13 @@ import { Field, Select } from "@/components/ui/input";
 import { SectionTitle } from "@/components/ui/section-title";
 import { DeliveryLog } from "@/components/settings/webhooks";
 import { api } from "@/lib/api/client";
-import { formatDateTime, pluralize } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
+import { useLocale } from "@/lib/i18n/client";
+import { applicationsMessages } from "@/lib/i18n/console/applications";
 import type { WebhookDelivery } from "@/lib/settings-types";
 import type { SignalReceiver, SignalStream, SubjectFormat } from "@/lib/types";
 
-const FORMATS: Record<SubjectFormat, string> = {
-  iss_sub: "Issuer and subject (iss_sub)",
-  email: "Email address (email)",
-  opaque: "Opaque ID (opaque)",
-};
-
-const STREAM_STATUS: Record<SignalStream["status"], { label: string; tone: Tone }> = {
-  enabled: { label: "Enabled", tone: "success" },
-  paused: { label: "Paused", tone: "warning" },
-  disabled: { label: "Disabled", tone: "neutral" },
-};
+const STREAM_TONE: Record<SignalStream["status"], Tone> = { enabled: "success", paused: "warning", disabled: "neutral" };
 
 const eventName = (uri: string) => uri.slice(uri.lastIndexOf("/") + 1);
 
@@ -36,6 +28,9 @@ export function SharedSignals({ appId, appName, issuer, receiver, deliveries }: 
   const [format, setFormat] = useState<SubjectFormat>(receiver?.subjectFormat ?? "iss_sub");
   const [removing, setRemoving] = useState(false);
   const stream = receiver?.stream;
+  const locale = useLocale();
+  const t = applicationsMessages[locale];
+  const s = t.signals;
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -44,8 +39,8 @@ export function SharedSignals({ appId, appName, issuer, receiver, deliveries }: 
       () => api(`/applications/${appId}/shared-signals`, { method: "PUT", body: { subjectFormat: format } }),
       () =>
         toast({
-          title: receiver ? "Subject format saved" : "Shared signals turned on",
-          description: receiver ? `Events not yet delivered to ${appName} name people by ${format}. Recorded in the audit log.` : `${appName} can now create its stream. Recorded in the audit log.`,
+          title: receiver ? s.formatSaved : s.turnedOn,
+          description: receiver ? s.formatHint(appName, format) : s.turnedOnHint(appName),
         }),
       "inline",
     );
@@ -55,16 +50,16 @@ export function SharedSignals({ appId, appName, issuer, receiver, deliveries }: 
     <>
       <Card>
         <CardHeader
-          title="Shared signals"
-          description={`Halo sends ${appName} signed security events about every person under the OpenID Shared Signals Framework: ended sessions, credential and device compliance changes (CAEP), and suspensions, restores, deletions and email changes (RISC). ${appName} creates and manages its stream with a client credentials token.`}
+          title={s.title}
+          description={s.description(appName)}
         />
         <form onSubmit={submit} noValidate>
           <CardBody className="flex flex-col gap-6">
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              <Field label="Subject format" hint="How each event names the person. Email changes are sent only with email subjects.">
+              <Field label={s.subjectFormat} hint={s.subjectFormatHint}>
                 {(props) => (
                   <Select {...props} value={format} onChange={(event) => setFormat(event.target.value as SubjectFormat)}>
-                    {Object.entries(FORMATS).map(([value, label]) => (
+                    {Object.entries(s.formats).map(([value, label]) => (
                       <option key={value} value={value}>
                         {label}
                       </option>
@@ -72,24 +67,24 @@ export function SharedSignals({ appId, appName, issuer, receiver, deliveries }: 
                   </Select>
                 )}
               </Field>
-              <CopyField label="Transmitter configuration" value={`${issuer}/.well-known/ssf-configuration`} hint={`Give this URL to ${appName}. It lists the stream, status, verification and key endpoints.`} />
+              <CopyField label={s.transmitter} value={`${issuer}/.well-known/ssf-configuration`} hint={s.transmitterHint(appName)} />
             </div>
             {stream ? (
               <DescriptionList
                 columns={2}
                 items={[
                   {
-                    label: "Stream",
+                    label: s.stream,
                     value: (
-                      <Badge tone={STREAM_STATUS[stream.status].tone} dot>
-                        {STREAM_STATUS[stream.status].label}
+                      <Badge tone={STREAM_TONE[stream.status]} dot>
+                        {s.streamStatus[stream.status]}
                         {stream.reason ? ` · ${stream.reason}` : ""}
                       </Badge>
                     ),
                   },
-                  { label: "Delivery", value: stream.deliveryMethod === "urn:ietf:rfc:8935" ? `Pushed to ${new URL(stream.endpointUrl).host}` : `Polled by ${appName}` },
+                  { label: s.delivery, value: stream.deliveryMethod === "urn:ietf:rfc:8935" ? s.pushed(new URL(stream.endpointUrl).host) : s.polled(appName) },
                   {
-                    label: "Events requested",
+                    label: s.events,
                     value: stream.eventsRequested.length ? (
                       <span className="flex flex-wrap gap-2">
                         {stream.eventsRequested.map((uri) => (
@@ -97,25 +92,25 @@ export function SharedSignals({ appId, appName, issuer, receiver, deliveries }: 
                         ))}
                       </span>
                     ) : (
-                      "None"
+                      t.common.none
                     ),
                   },
-                  { label: "Created", value: formatDateTime(stream.createdAt) },
+                  { label: t.common.created, value: formatDateTime(stream.createdAt, locale) },
                 ]}
               />
             ) : receiver ? (
-              <p className="text-body-sm text-fg-3">{appName} has not created its stream yet.</p>
+              <p className="text-body-sm text-fg-3">{s.noStream(appName)}</p>
             ) : null}
           </CardBody>
           <div className="flex flex-wrap items-center justify-end gap-4 border-t border-border px-6 py-4">
             <ActionError message={errorFor("save")} />
             {receiver ? (
               <Button variant="secondary" onClick={() => setRemoving(true)}>
-                Turn off
+                {s.turnOff}
               </Button>
             ) : null}
             <Button type="submit" variant="primary" loading={pending === "save"} disabled={receiver?.subjectFormat === format}>
-              {receiver ? "Save subject format" : "Turn on shared signals"}
+              {receiver ? s.saveFormat : s.turnOn}
             </Button>
           </div>
         </form>
@@ -126,12 +121,12 @@ export function SharedSignals({ appId, appName, issuer, receiver, deliveries }: 
             setRemoving(next);
           }}
           error={errorFor("remove")}
-          title="Turn off shared signals?"
-          description={`Halo deletes ${appName}'s stream with its undelivered events and refuses its stream requests until shared signals are turned on again.`}
+          title={s.turnOffTitle}
+          description={s.turnOffHint(appName)}
           footer={
             <>
               <Button variant="secondary" onClick={() => setRemoving(false)}>
-                Cancel
+                {t.common.cancel}
               </Button>
               <Button
                 variant="destructive"
@@ -142,13 +137,13 @@ export function SharedSignals({ appId, appName, issuer, receiver, deliveries }: 
                     () => api(`/applications/${appId}/shared-signals`, { method: "DELETE" }),
                     () => {
                       setRemoving(false);
-                      toast({ title: "Shared signals turned off", description: "Recorded in the audit log." });
+                      toast({ title: s.turnedOff, description: t.common.audit });
                     },
                     "inline",
                   )
                 }
               >
-                Turn off
+                {s.turnOff}
               </Button>
             </>
           }
@@ -156,10 +151,10 @@ export function SharedSignals({ appId, appName, issuer, receiver, deliveries }: 
       </Card>
       {deliveries.length > 0 ? (
         <section className="flex flex-col gap-6">
-          <SectionTitle title="Security event deliveries" description={`The latest ${pluralize(deliveries.length, "security event token")}, newest first. The event ID is the token's jti.`} />
+          <SectionTitle title={s.deliveries} description={s.deliveriesHint(deliveries.length)} />
           <DeliveryLog
             deliveries={deliveries.map((d) => ({ ...d, eventType: eventName(d.eventType) }))}
-            payloadNote="The person and event Halo signs a Security Event Token from. Retries and polls carry the same jti."
+            payloadNote={s.payloadNote}
           />
         </section>
       ) : null}

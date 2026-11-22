@@ -11,47 +11,33 @@ import { Dialog } from "@/components/ui/dialog";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
 import { formatDate } from "@/lib/format";
+import { useLocale } from "@/lib/i18n/client";
+import { settingsMessages } from "@/lib/i18n/console/settings";
 import type { SigningKeys as Keys } from "@/lib/settings-types";
 import { ReadOnlyNote } from "./shared";
 
 type Rotation = "oidc" | "saml";
 
-const ROTATION: Record<Rotation, { path: string; title: string; description: string; confirm: string; done: string; result: string }> = {
-  oidc: {
-    path: "/signing-keys/rotate",
-    title: "Rotate the token signing keys?",
-    description:
-      "Halo creates a new key for each signing algorithm in use and signs every new ID token and access token with it. The current keys stay published at /oauth2/keys for 7 days, so tokens they already signed keep verifying, and then Halo retires them. Applications pick up the new keys from /oauth2/keys on their own.",
-    confirm: "Rotate signing keys",
-    done: "Signing keys rotated",
-    result: "New tokens use the new keys. The previous keys stay published for 7 days.",
-  },
-  saml: {
-    path: "/saml/certificate/rotate",
-    title: "Rotate the SAML certificate?",
-    description: "Halo signs every SAML response with a new certificate from now on. The current certificate stays listed here until you remove it.",
-    confirm: "Rotate certificate",
-    done: "SAML certificate rotated",
-    result: "Upload the new certificate to every SAML application. Their sign-ins fail until you do.",
-  },
-};
+const PATHS: Record<Rotation, string> = { oidc: "/signing-keys/rotate", saml: "/saml/certificate/rotate" };
 
-function keyManager(ref: string) {
+type Messages = (typeof settingsMessages)["en"]["signingKeys"];
+
+function keyManager(ref: string, t: Messages) {
   if (ref.startsWith("arn:")) return "AWS KMS";
   if (ref.startsWith("projects/")) return "Google Cloud KMS";
   if (ref.includes("://")) return "Azure Key Vault";
-  if (ref.startsWith("pkcs11:")) return "PKCS #11 token";
+  if (ref.startsWith("pkcs11:")) return t.pkcs11;
   return "Vault Transit";
 }
 
-function storedIn(externalKey: string | null) {
+function storedIn(externalKey: string | null, t: Messages) {
   return externalKey ? (
     <span key="l" className="whitespace-nowrap" title={externalKey}>
-      {keyManager(externalKey)}
+      {keyManager(externalKey, t)}
     </span>
   ) : (
     <span key="l" className="whitespace-nowrap text-fg-3">
-      Halo database
+      {t.database}
     </span>
   );
 }
@@ -59,18 +45,20 @@ function storedIn(externalKey: string | null) {
 export function SigningKeys({ keys, canRotate }: { keys: Keys; canRotate: boolean }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [confirming, setConfirming] = useState<Rotation | null>(null);
-  const rotation = confirming ? ROTATION[confirming] : null;
+  const locale = useLocale();
+  const { signingKeys: t, common } = settingsMessages[locale];
+  const rotation = confirming ? t.rotation[confirming] : null;
 
   function rotate(kind: Rotation) {
-    void run(kind, () => api<Keys>(ROTATION[kind].path, { method: "POST" }), () => {
+    void run(kind, () => api<Keys>(PATHS[kind], { method: "POST" }), () => {
       setConfirming(null);
-      toast({ title: ROTATION[kind].done, description: ROTATION[kind].result });
+      toast({ title: t.rotation[kind].done, description: t.rotation[kind].result });
     }, "inline");
   }
 
   function remove(id: string) {
     void run(`remove-${id}`, () => api(`/saml/certificates/${id}`, { method: "DELETE" }), () =>
-      toast({ title: "Previous certificate removed", description: "Recorded in the audit log." }),
+      toast({ title: t.removed, description: common.recorded }),
     );
   }
 
@@ -84,7 +72,7 @@ export function SigningKeys({ keys, canRotate }: { keys: Keys; canRotate: boolea
 
   return (
     <Card>
-      <CardHeader title="Signing keys" description="The keys Halo signs OpenID Connect tokens and SAML responses with. Every rotation is recorded in the audit log." />
+      <CardHeader title={t.title} description={t.description} />
       <CardBody className="flex flex-col gap-8">
         <section aria-labelledby="oidc-keys" className="flex flex-col gap-4">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -93,39 +81,43 @@ export function SigningKeys({ keys, canRotate }: { keys: Keys; canRotate: boolea
                 OpenID Connect
               </h3>
               <p className="text-body-sm text-fg-3">
-                Published at <code className="font-mono text-code-sm text-fg-2">/oauth2/keys</code>, one signing key per algorithm. Previous keys stay published for 7 days after a rotation.
+                {t.oidcBefore}
+                <code className="font-mono text-code-sm text-fg-2">/oauth2/keys</code>
+                {t.oidcAfter}
               </p>
             </div>
-            {rotateButton("oidc", "Rotate keys")}
+            {rotateButton("oidc", t.rotateKeys)}
           </div>
           {keys.oidc.length === 0 ? (
             <p className="rounded-lg border border-border px-6 py-4 text-body-sm text-fg-3">
-              No signing key yet. Halo creates the first one when it signs a token or publishes <code className="font-mono text-code-sm text-fg-2">/oauth2/keys</code>.
+              {t.noKeyBefore}
+              <code className="font-mono text-code-sm text-fg-2">/oauth2/keys</code>
+              {t.noKeyAfter}
             </p>
           ) : (
             <SimpleTable
-              caption="OpenID Connect signing keys"
-              head={["Key ID", "Algorithm", "Stored in", "Created", "Status"]}
+              caption={t.oidcCaption}
+              head={[t.keyId, t.algorithm, t.storedIn, t.created, common.status]}
               rows={keys.oidc.map((key) => [
                 <span key="k" className="font-mono text-code-sm text-fg">
                   {key.kid}
                 </span>,
                 key.algorithm,
-                storedIn(key.externalKey),
+                storedIn(key.externalKey, t),
                 <span key="c" className="tnum whitespace-nowrap">
-                  {formatDate(key.createdAt)}
+                  {formatDate(key.createdAt, locale)}
                 </span>,
                 key.active ? (
                   <Badge key="s" tone="success" dot>
-                    Signing
+                    {t.signing}
                   </Badge>
                 ) : key.retiredAt ? (
                   <span key="s" className="whitespace-nowrap text-fg-3">
-                    Retired {formatDate(key.retiredAt)}
+                    {t.retired(formatDate(key.retiredAt, locale))}
                   </span>
                 ) : (
                   <Badge key="s" tone="info" dot>
-                    Published until {formatDate(key.retiresAt ?? key.createdAt)}
+                    {t.publishedUntil(formatDate(key.retiresAt ?? key.createdAt, locale))}
                   </Badge>
                 ),
               ])}
@@ -139,34 +131,36 @@ export function SigningKeys({ keys, canRotate }: { keys: Keys; canRotate: boolea
               <h3 id="saml-certificates" className="text-body font-semibold text-fg">
                 SAML
               </h3>
-              <p className="text-body-sm text-fg-3">SAML applications trust only the certificate they were given. After a rotation, upload the new one to each of them.</p>
+              <p className="text-body-sm text-fg-3">{t.samlHint}</p>
             </div>
-            {rotateButton("saml", "Rotate certificate")}
+            {rotateButton("saml", t.rotateCertificate)}
           </div>
           {keys.saml.length === 0 ? (
             <p className="rounded-lg border border-border px-6 py-4 text-body-sm text-fg-3">
-              No SAML certificate yet. Halo creates one when the first SAML application or <code className="font-mono text-code-sm text-fg-2">/saml/metadata</code> needs it.
+              {t.noCertBefore}
+              <code className="font-mono text-code-sm text-fg-2">/saml/metadata</code>
+              {t.noCertAfter}
             </p>
           ) : (
             <SimpleTable
-              caption="SAML signing certificates"
-              head={canRotate ? ["SHA-256 fingerprint", "Stored in", "Expires", "Status", "Actions"] : ["SHA-256 fingerprint", "Stored in", "Expires", "Status"]}
+              caption={t.samlCaption}
+              head={canRotate ? [t.fingerprint, t.storedIn, t.expires, common.status, common.actions] : [t.fingerprint, t.storedIn, t.expires, common.status]}
               rows={keys.saml.map((cert) => {
                 const row = [
                   <span key="f" className="block max-w-80 truncate font-mono text-code-sm text-fg" title={cert.fingerprint}>
                     {cert.fingerprint}
                   </span>,
-                  storedIn(cert.externalKey),
+                  storedIn(cert.externalKey, t),
                   <span key="e" className="tnum whitespace-nowrap">
-                    {formatDate(cert.notAfter)}
+                    {formatDate(cert.notAfter, locale)}
                   </span>,
                   cert.retiredAt ? (
                     <span key="s" className="whitespace-nowrap text-fg-3">
-                      Replaced {formatDate(cert.retiredAt)}
+                      {t.replaced(formatDate(cert.retiredAt, locale))}
                     </span>
                   ) : (
                     <Badge key="s" tone="success" dot>
-                      Signing
+                      {t.signing}
                     </Badge>
                   ),
                 ];
@@ -175,11 +169,11 @@ export function SigningKeys({ keys, canRotate }: { keys: Keys; canRotate: boolea
                     cert.retiredAt ? (
                       <Button key="a" size="sm" variant="quiet" loading={pending === `remove-${cert.id}`} onClick={() => remove(cert.id)}>
                         <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
-                        Remove
+                        {common.remove}
                       </Button>
                     ) : (
                       <a key="a" href="/saml/certificate" className="text-body-sm whitespace-nowrap text-link hover:underline">
-                        Download .pem
+                        {t.download}
                       </a>
                     ),
                   );
@@ -190,7 +184,7 @@ export function SigningKeys({ keys, canRotate }: { keys: Keys; canRotate: boolea
           )}
         </section>
 
-        {canRotate ? null : <ReadOnlyNote>Only a global administrator can rotate signing keys.</ReadOnlyNote>}
+        {canRotate ? null : <ReadOnlyNote>{t.readOnly}</ReadOnlyNote>}
       </CardBody>
 
       <Dialog
@@ -206,7 +200,7 @@ export function SigningKeys({ keys, canRotate }: { keys: Keys; canRotate: boolea
         footer={
           <>
             <Button variant="secondary" onClick={() => setConfirming(null)}>
-              Cancel
+              {common.cancel}
             </Button>
             <Button variant="primary" loading={confirming !== null && pending === confirming} onClick={() => confirming && rotate(confirming)}>
               {rotation?.confirm}
@@ -216,7 +210,7 @@ export function SigningKeys({ keys, canRotate }: { keys: Keys; canRotate: boolea
       >
         {confirming === "saml" ? (
           <SecretWarning>
-            Sign-ins to every SAML application fail until you upload the new certificate, or its new metadata, to that application. Download it from /saml/certificate after rotating.
+            {t.samlWarning}
           </SecretWarning>
         ) : null}
       </Dialog>

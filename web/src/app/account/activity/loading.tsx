@@ -1,19 +1,19 @@
 import { Card, CardHeader } from "@/components/ui/card";
 import { ListSkeleton, PageSkeleton } from "@/components/ui/skeleton";
+import { accountMessages } from "@/lib/i18n/account";
+import { requestLocale } from "@/lib/i18n/server";
 
-export default function Loading() {
+export default async function Loading() {
+  const copy = accountMessages(await requestLocale());
+  const t = copy.activity;
   return (
-    <PageSkeleton
-      large
-      title="Activity"
-      description="Recent sign-ins and changes to how you sign in. If something looks unfamiliar, sign out of that session and remove the method."
-    >
+    <PageSkeleton large title={copy.nav.activity} description={t.description}>
       <Card>
-        <CardHeader title="Recent sign-ins" description="Your latest sign-ins to Halo and the applications it protects, newest first." />
+        <CardHeader title={t.recent} description={t.recentHint} />
         <ListSkeleton className="border-t border-border" />
       </Card>
       <Card>
-        <CardHeader title="Security events" description="Methods added to your account and recovery codes generated." />
+        <CardHeader title={t.events} description={t.eventsHint} />
         <ListSkeleton rows={4} media className="border-t border-border" />
       </Card>
     </PageSkeleton>

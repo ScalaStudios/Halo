@@ -13,7 +13,7 @@ type ExportSection struct {
 }
 
 var ExportSections = []ExportSection{
-	{"users", "users", `select id, email, name, title, department, location, status, kind, manager_id, source, external_id, created_at, updated_at, last_sign_in_at, guest, sponsor_id, expires_at, attributes from users order by created_at, id`},
+	{"users", "users", `select id, email, name, title, department, location, status, kind, manager_id, source, external_id, created_at, updated_at, last_sign_in_at, guest, sponsor_id, expires_at, attributes, locale from users order by created_at, id`},
 	{"attributes", "user_attributes", `select id, name, label, type, self_service, created_at, updated_at from user_attributes order by name`},
 	{"groups", "groups", `select g.id, g.name, g.description, g.kind, g.rule, g.join_policy, g.source, g.external_id, g.created_at,
 		array(select o.user_id from group_owners o where o.group_id = g.id order by o.user_id) as owner_ids from groups g order by g.name`},

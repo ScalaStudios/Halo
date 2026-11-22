@@ -6,7 +6,10 @@ import { DeliveryLog, EnabledBadge, EventTags } from "@/components/settings/webh
 import { DescriptionList } from "@/components/ui/description-list";
 import { SectionTitle } from "@/components/ui/section-title";
 import { apiGet } from "@/lib/api/server";
-import { formatRelative, pluralize } from "@/lib/format";
+import { formatRelative } from "@/lib/format";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { policyMessages } from "@/lib/i18n/console/policy";
+import { requestLocale } from "@/lib/i18n/server";
 import { DESTINATIONS } from "@/lib/labels";
 import type { NotificationRule, WebhookDelivery, WebhookEventFamily } from "@/lib/settings-types";
 import type { User } from "@/lib/types";
@@ -21,11 +24,13 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function NotificationRulePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [{ rule, deliveries }, eventTypes, me] = await Promise.all([
+  const [{ rule, deliveries }, eventTypes, me, locale] = await Promise.all([
     apiGet<Detail>(`/notification-rules/${encodeURIComponent(id)}`),
     apiGet<WebhookEventFamily[]>("/webhooks/event-types"),
     apiGet<User>("/me"),
+    requestLocale(),
   ]);
+  const t = policyMessages[locale].notificationRules;
   const failed = deliveries.filter((d) => d.status === "failed").length;
 
   return (
@@ -33,7 +38,7 @@ export default async function NotificationRulePage({ params }: { params: Promise
       <div className="flex flex-col gap-6">
         <Link href="/admin/notification-rules" className="inline-flex w-fit items-center gap-2 rounded-sm text-body-sm text-fg-3 transition-colors duration-fast hover:text-fg">
           <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.75} />
-          Notification rules
+          {frameMessages[locale].nav.items.notificationRules.label}
         </Link>
         <header className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex min-w-0 items-center gap-4">
@@ -55,18 +60,18 @@ export default async function NotificationRulePage({ params }: { params: Promise
         <DescriptionList
           className="grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-4"
           items={[
-            { label: "Events", value: <EventTags events={rule.events} /> },
-            { label: "Conditions", value: <RuleConditions rule={rule} /> },
-            { label: "Last message", value: rule.lastSentAt ? formatRelative(rule.lastSentAt) : "Nothing sent yet" },
-            { label: "Rule ID", value: rule.id, mono: true },
+            { label: t.events, value: <EventTags events={rule.events} /> },
+            { label: t.conditions, value: <RuleConditions rule={rule} /> },
+            { label: t.lastMessage, value: rule.lastSentAt ? formatRelative(rule.lastSentAt, locale) : t.nothingSent },
+            { label: t.ruleId, value: rule.id, mono: true },
           ]}
         />
       </div>
 
       <section className="flex flex-col gap-6">
         <SectionTitle
-          title="Messages"
-          description={`${deliveries.length ? `The latest ${pluralize(deliveries.length, "message")}, newest first.` : ""}${failed ? ` ${failed} gave up after 8 attempts.` : ""} Failed requests are retried after 30 seconds, then 1, 2, 4, 8, 16 and 32 minutes.`.trim()}
+          title={t.messages}
+          description={t.messagesDescription(deliveries.length, failed)}
         />
         <DeliveryLog deliveries={deliveries} />
       </section>

@@ -1,13 +1,14 @@
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { FieldSkeleton, PageSkeleton, Skeleton, TabsSkeleton } from "@/components/ui/skeleton";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { settingsMessages } from "@/lib/i18n/console/settings";
+import { requestLocale } from "@/lib/i18n/server";
 
-export default function Loading() {
+export default async function Loading() {
+  const locale = await requestLocale();
+  const t = settingsMessages[locale].emailTemplates;
   return (
-    <PageSkeleton
-      title="Email templates"
-      description="The subject and text of the emails Halo sends for invitations, resets, sign-in, access requests and security notices. Every email ends with Halo and your organization name."
-      className="max-w-6xl"
-    >
+    <PageSkeleton title={frameMessages[locale].nav.items.emailTemplates.label} description={t.description} className="max-w-6xl">
       <div className="flex flex-col gap-6">
         <TabsSkeleton labels={["Invitation", "Authentication reset", "Sign-in link", "Sign-in code", "Access request", "Access approved", "Access denied"]} />
         <Card>
@@ -15,8 +16,8 @@ export default function Loading() {
           <CardBody>
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
               <div className="flex flex-col gap-6">
-                <FieldSkeleton label="Subject" />
-                <FieldSkeleton label="Body" hint={90} tall />
+                <FieldSkeleton label={t.subject} />
+                <FieldSkeleton label={t.body} hint={90} tall />
               </div>
               <Skeleton className="h-80 rounded-lg" />
             </div>

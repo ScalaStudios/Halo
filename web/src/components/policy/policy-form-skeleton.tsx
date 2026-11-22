@@ -1,26 +1,30 @@
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { FieldSkeleton, Skeleton, SkeletonText } from "@/components/ui/skeleton";
+import { policyMessages } from "@/lib/i18n/console/policy";
+import { requestLocale } from "@/lib/i18n/server";
 
-export function PolicyFormSkeleton() {
+export async function PolicyFormSkeleton() {
+  const copy = policyMessages[await requestLocale()];
+  const t = copy.form;
   return (
     <div className="grid grid-cols-1 gap-8 xl:grid-cols-12">
       <div className="flex min-w-0 flex-col gap-6 xl:col-span-8">
         <Card>
-          <CardHeader title="Details" />
+          <CardHeader title={t.details} />
           <CardBody className="flex flex-col gap-6">
-            <FieldSkeleton label="Name" />
-            <FieldSkeleton label="Description" hint="Optional. Say why the policy exists so other administrators know whether they can change it." tall />
+            <FieldSkeleton label={copy.name} />
+            <FieldSkeleton label={t.description} hint={t.descriptionHint} tall />
           </CardBody>
         </Card>
         <Card>
-          <CardHeader title="People" description="Who the policy applies to. Exclusions always win." />
+          <CardHeader title={t.people} description={t.peopleDescription} />
           <CardBody className="flex flex-col gap-6">
-            <FieldSkeleton label="Applies to" />
+            <FieldSkeleton label={t.appliesTo} />
             <div className="h-40 rounded-md border border-border bg-sunken" />
           </CardBody>
         </Card>
         <Card>
-          <CardHeader title="Applications" description="Where the sign-in goes. Halo itself counts as an application." />
+          <CardHeader title={t.applications} description={t.applicationsDescription} />
           <CardBody>
             <FieldSkeleton />
           </CardBody>
@@ -28,7 +32,7 @@ export function PolicyFormSkeleton() {
       </div>
       <div className="xl:col-span-4">
         <Card>
-          <CardHeader title="Summary" actions={<Skeleton className="h-6 w-24 rounded-full" />} />
+          <CardHeader title={t.summary} actions={<Skeleton className="h-6 w-24 rounded-full" />} />
           <CardBody className="flex flex-col gap-4">
             <p className="text-body">
               <SkeletonText chars={60} />

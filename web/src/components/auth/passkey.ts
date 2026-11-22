@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { ApiError } from "@/lib/api/client";
+import type { SignInMessages } from "@/lib/i18n/auth";
 import { describeWebAuthnError, passkeysSupported, type getAssertion } from "@/lib/webauthn";
 
 export type Ceremony = { ceremony: string; options: Parameters<typeof getAssertion>[0] };
@@ -20,9 +21,9 @@ export function describeFailure(error: unknown) {
   return "Halo could not reach the server. Try again.";
 }
 
-export function deviceLabel() {
+export function deviceLabel(messages: SignInMessages) {
   const ua = navigator.userAgent;
   const browser = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : null;
   const os = /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iOS" : /Mac OS X/.test(ua) ? "macOS" : /Windows/.test(ua) ? "Windows" : /Linux|X11/.test(ua) ? "Linux" : null;
-  return browser && os ? `${browser} on ${os}` : (browser ?? os ?? "");
+  return browser && os ? messages.deviceName(browser, os) : (browser ?? os ?? "");
 }

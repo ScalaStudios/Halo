@@ -4,7 +4,7 @@ import { AppWindow, ArrowRight, ClipboardCheck, FileKey, Inbox, Laptop, LogIn, S
 import { OrgLogo } from "@/components/console/org-logo";
 import { PendingRequests } from "@/components/governance/requests";
 import { ReportInsights } from "@/components/policy/policy-list";
-import { hasRole } from "@/components/settings/roles";
+import { hasRole, roleLabel } from "@/components/settings/roles";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, StatusDot } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
@@ -14,40 +14,43 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ListSkeleton, Skeleton, SkeletonText } from "@/components/ui/skeleton";
 import { apiGet } from "@/lib/api/server";
 import { cn } from "@/lib/cn";
-import { formatRelative, pluralize } from "@/lib/format";
+import { formatRelative } from "@/lib/format";
+import { monitoringMessages } from "@/lib/i18n/console/monitoring";
+import type { Locale } from "@/lib/i18n/locale";
 import { RESULT, signInApp, signInUser } from "@/lib/labels";
 import type { AccessRequest, AccessReview } from "@/lib/governance-types";
 import type { Device, PolicyWithActivity, RiskEvent } from "@/lib/policy-types";
 import type { Feature, OrganizationProfile, SignUp } from "@/lib/settings-types";
 import type { Application, Group, Overview, User } from "@/lib/types";
 
-function names(list: string[]) {
-  return list.length > 5 ? `${list.slice(0, 5).join(", ")} and ${list.length - 5} more` : list.join(", ");
+function names(list: string[], more: (count: number) => string) {
+  return list.length > 5 ? `${list.slice(0, 5).join(", ")} ${more(list.length - 5)}` : list.join(", ");
 }
 
 const shortcuts = [
-  { label: "Invite a user", href: "/admin/users?invite=1" },
-  { label: "Sign-in logs", href: "/admin/sign-ins" },
-  { label: "Audit log", href: "/admin/audit" },
-  { label: "Sign-in methods", href: "/admin/methods" },
-  { label: "Suspended users", href: "/admin/users?view=suspended" },
-  { label: "Access policies", href: "/admin/policies" },
-  { label: "Network zones", href: "/admin/policies?tab=networks" },
-  { label: "Risk events", href: "/admin/risk" },
-  { label: "Sessions", href: "/admin/sessions" },
-  { label: "Domains", href: "/admin/settings/domains" },
-  { label: "Roles", href: "/admin/roles" },
-];
+  { id: "invite", href: "/admin/users?invite=1" },
+  { id: "signIns", href: "/admin/sign-ins" },
+  { id: "audit", href: "/admin/audit" },
+  { id: "methods", href: "/admin/methods" },
+  { id: "suspended", href: "/admin/users?view=suspended" },
+  { id: "policies", href: "/admin/policies" },
+  { id: "networks", href: "/admin/policies?tab=networks" },
+  { id: "risk", href: "/admin/risk" },
+  { id: "sessions", href: "/admin/sessions" },
+  { id: "domains", href: "/admin/settings/domains" },
+  { id: "roles", href: "/admin/roles" },
+] as const;
 
-export function Shortcuts() {
+export function Shortcuts({ locale }: { locale: Locale }) {
+  const t = monitoringMessages[locale].overview;
   return (
     <section className="flex flex-col gap-4">
-      <h2 className="text-h4 text-fg">Shortcuts</h2>
+      <h2 className="text-h4 text-fg">{t.shortcuts}</h2>
       <ul className="flex flex-wrap gap-2">
         {shortcuts.map((shortcut) => (
-          <li key={shortcut.label}>
+          <li key={shortcut.id}>
             <Link href={shortcut.href} className={buttonClasses("secondary", "sm")}>
-              {shortcut.label}
+              {t.shortcut[shortcut.id]}
             </Link>
           </li>
         ))}
@@ -56,7 +59,8 @@ export function Shortcuts() {
   );
 }
 
-export async function OrganizationCard({ org }: { org: OrganizationProfile }) {
+export async function OrganizationCard({ org, locale }: { org: OrganizationProfile; locale: Locale }) {
+  const t = monitoringMessages[locale].overview;
   const [me, users, groups, devices, applications, features] = await Promise.all([
     apiGet<User>("/me"),
     apiGet<User[]>("/users"),
@@ -67,10 +71,10 @@ export async function OrganizationCard({ org }: { org: OrganizationProfile }) {
   ]);
   const off = features.filter((f) => !f.enabled).map((f) => f.name);
   const directory: { value: number; label: string; action: string; href: string; icon: LucideIcon }[] = [
-    { value: users.length, label: "Users", action: "View users", href: "/admin/users", icon: UserRound },
-    { value: groups.length, label: "Groups", action: "View groups", href: "/admin/groups", icon: UsersRound },
-    { value: devices.length, label: "Devices", action: "View devices", href: "/admin/devices", icon: Laptop },
-    { value: applications.length, label: "Applications", action: "View apps", href: "/admin/applications", icon: AppWindow },
+    { value: users.length, label: t.users, action: t.viewUsers, href: "/admin/users", icon: UserRound },
+    { value: groups.length, label: t.groups, action: t.viewGroups, href: "/admin/groups", icon: UsersRound },
+    { value: devices.length, label: t.devices, action: t.viewDevices, href: "/admin/devices", icon: Laptop },
+    { value: applications.length, label: t.applications, action: t.viewApps, href: "/admin/applications", icon: AppWindow },
   ];
   return (
     <Card className="flex flex-col">
@@ -78,15 +82,15 @@ export async function OrganizationCard({ org }: { org: OrganizationProfile }) {
         <OrgLogo name={org.name} logoUrl={org.logoUrl} canEdit={hasRole(me)} />
       </div>
       <div className="flex min-w-0 items-center gap-2 px-6 pt-4 text-body-sm">
-        <span className="shrink-0 font-semibold text-fg">Issuer</span>
+        <span className="shrink-0 font-semibold text-fg">{t.issuer}</span>
         <span className="min-w-0 truncate font-mono text-code-sm text-fg-2">{org.issuer}</span>
-        <CopyButton value={org.issuer} label="Copy" className="ml-auto" />
+        <CopyButton value={org.issuer} label={t.copy} className="ml-auto" />
       </div>
       <div className="flex min-w-0 items-center gap-2 px-6 pt-2 text-body-sm">
-        <span className="shrink-0 font-semibold text-fg">Features</span>
-        <span className="min-w-0 truncate text-fg-2">{off.length ? `${features.length - off.length} of ${features.length} on. Off: ${off.join(", ")}` : `All ${features.length} on`}</span>
+        <span className="shrink-0 font-semibold text-fg">{t.features}</span>
+        <span className="min-w-0 truncate text-fg-2">{off.length ? t.featuresOff(features.length - off.length, features.length, off.join(", ")) : t.featuresOn(features.length)}</span>
         <Link href="/admin/settings/features" className={buttonClasses("quiet", "sm", "ml-auto shrink-0")}>
-          Manage
+          {t.manage}
         </Link>
       </div>
       <ul className="mx-6 mt-4 mb-6 grid grid-cols-2 gap-x-4 gap-y-6 border-t border-border pt-6">
@@ -112,7 +116,8 @@ export async function OrganizationCard({ org }: { org: OrganizationProfile }) {
   );
 }
 
-export function OrganizationCardSkeleton() {
+export function OrganizationCardSkeleton({ locale }: { locale: Locale }) {
+  const t = monitoringMessages[locale].overview;
   return (
     <Card className="flex flex-col">
       <div className="flex items-center gap-4 px-6 pt-6">
@@ -122,11 +127,11 @@ export function OrganizationCardSkeleton() {
         </p>
       </div>
       <div className="flex min-w-0 items-center gap-2 px-6 pt-4 text-body-sm">
-        <span className="shrink-0 font-semibold text-fg">Issuer</span>
+        <span className="shrink-0 font-semibold text-fg">{t.issuer}</span>
         <SkeletonText chars={24} />
       </div>
       <div className="flex min-w-0 items-center gap-2 px-6 pt-2 text-body-sm">
-        <span className="shrink-0 font-semibold text-fg">Features</span>
+        <span className="shrink-0 font-semibold text-fg">{t.features}</span>
         <SkeletonText chars={12} />
       </div>
       <ul aria-hidden="true" className="mx-6 mt-4 mb-6 grid grid-cols-2 gap-x-4 gap-y-6 border-t border-border pt-6">
@@ -146,7 +151,8 @@ export function OrganizationCardSkeleton() {
   );
 }
 
-export async function ProfileCard() {
+export async function ProfileCard({ locale }: { locale: Locale }) {
+  const t = monitoringMessages[locale].overview;
   const me = await apiGet<User>("/me");
   return (
     <Card className="flex flex-col">
@@ -154,38 +160,39 @@ export async function ProfileCard() {
         <Avatar name={me.name} src={me.avatarUrl} size="lg" />
         <div className="flex min-w-0 flex-col items-start gap-1">
           <h2 className="max-w-full truncate text-h3 text-fg">{me.name}</h2>
-          {me.roles[0] ? <Badge tone="ember">{me.roles[0]}</Badge> : null}
+          {me.roles[0] ? <Badge tone="ember">{roleLabel(me.roles[0], locale)}</Badge> : null}
         </div>
       </div>
       <div className="flex min-w-0 items-center gap-2 px-6 pt-4 text-body-sm">
-        <span className="shrink-0 font-semibold text-fg">User ID</span>
+        <span className="shrink-0 font-semibold text-fg">{t.userId}</span>
         <span className="min-w-0 truncate font-mono text-code-sm text-fg-2">{me.id}</span>
-        <CopyButton value={me.id} label="Copy" className="ml-auto" />
+        <CopyButton value={me.id} label={t.copy} className="ml-auto" />
       </div>
       <div className="px-6 pt-1">
         <Link href="/account" className={buttonClasses("quiet", "sm", "-ml-2")}>
-          Your account
+          {t.yourAccount}
           <ArrowRight aria-hidden="true" size={16} strokeWidth={1.75} />
         </Link>
       </div>
       <div className="mx-6 mt-4 flex flex-1 flex-col gap-3 border-t border-border pt-6 pb-6">
-        <h3 className="text-body font-semibold text-fg">Your roles</h3>
+        <h3 className="text-body font-semibold text-fg">{t.yourRoles}</h3>
         <ul className="flex flex-wrap gap-2">
           {me.roles.map((role) => (
             <li key={role}>
-              <Badge>{role}</Badge>
+              <Badge>{roleLabel(role, locale)}</Badge>
             </li>
           ))}
         </ul>
         <Link href="/admin/roles" className={buttonClasses("secondary", "sm", "mt-auto self-start")}>
-          Manage roles
+          {t.manageRoles}
         </Link>
       </div>
     </Card>
   );
 }
 
-export function ProfileCardSkeleton() {
+export function ProfileCardSkeleton({ locale }: { locale: Locale }) {
+  const t = monitoringMessages[locale].overview;
   return (
     <Card className="flex flex-col">
       <div className="flex items-center gap-4 px-6 pt-6">
@@ -198,20 +205,20 @@ export function ProfileCardSkeleton() {
         </div>
       </div>
       <div className="flex min-w-0 items-center gap-2 px-6 pt-4 text-body-sm">
-        <span className="shrink-0 font-semibold text-fg">User ID</span>
+        <span className="shrink-0 font-semibold text-fg">{t.userId}</span>
         <SkeletonText chars={28} />
       </div>
       <div className="px-6 pt-1">
         <Link href="/account" className={buttonClasses("quiet", "sm", "-ml-2")}>
-          Your account
+          {t.yourAccount}
           <ArrowRight aria-hidden="true" size={16} strokeWidth={1.75} />
         </Link>
       </div>
       <div className="mx-6 mt-4 flex flex-1 flex-col gap-3 border-t border-border pt-6 pb-6">
-        <h3 className="text-body font-semibold text-fg">Your roles</h3>
+        <h3 className="text-body font-semibold text-fg">{t.yourRoles}</h3>
         <Skeleton className="h-5 w-32 rounded-full" />
         <Link href="/admin/roles" className={buttonClasses("secondary", "sm", "mt-auto self-start")}>
-          Manage roles
+          {t.manageRoles}
         </Link>
       </div>
     </Card>
@@ -220,19 +227,21 @@ export function ProfileCardSkeleton() {
 
 const riskCard = "flex flex-col lg:col-span-2 min-[1400px]:col-span-1";
 
-export async function RiskCard() {
+export async function RiskCard({ locale }: { locale: Locale }) {
+  const m = monitoringMessages[locale];
+  const t = m.overview;
   const [risks, users] = await Promise.all([apiGet<RiskEvent[]>("/risk-events"), apiGet<User[]>("/users")]);
   const userNames = Object.fromEntries(users.map((u) => [u.id, u.name]));
   const openRisks = risks.filter((event) => event.status === "open");
   return (
     <Card className={riskCard}>
-      <CardHeader title="Sign-ins at risk" description={openRisks.length ? pluralize(openRisks.length, "open risk event") : undefined} />
+      <CardHeader title={t.atRisk} description={openRisks.length ? t.openRisks(openRisks.length) : undefined} />
       <div className="flex flex-1 flex-col px-6 pb-6">
         {openRisks.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8 text-center">
             <ShieldCheck aria-hidden="true" size={24} strokeWidth={1.75} className="text-success" />
-            <p className="text-body font-semibold text-fg">No open risk events</p>
-            <p className="max-w-[32ch] text-body-sm text-fg-3">No medium- or high-risk sign-in is waiting for a security administrator.</p>
+            <p className="text-body font-semibold text-fg">{t.noRisks}</p>
+            <p className="max-w-[32ch] text-body-sm text-fg-3">{t.noRisksHint}</p>
           </div>
         ) : (
           <ul className="flex flex-1 flex-col">
@@ -240,9 +249,9 @@ export async function RiskCard() {
               <li key={event.id} className="flex items-start gap-3 border-b border-border py-3 last:border-b-0">
                 <StatusDot tone={event.level === "high" ? "danger" : "warning"} className="mt-2" />
                 <div className="flex min-w-0 flex-col">
-                  <span className="truncate text-body-sm font-medium text-fg">{event.userId ? (userNames[event.userId] ?? "Unknown user") : "Unknown user"}</span>
+                  <span className="truncate text-body-sm font-medium text-fg">{event.userId ? (userNames[event.userId] ?? m.unknownUser) : m.unknownUser}</span>
                   <span className="truncate text-caption text-fg-3">
-                    {event.detail} · {formatRelative(event.time)}
+                    {event.detail} · {formatRelative(event.time, locale)}
                   </span>
                 </div>
               </li>
@@ -250,17 +259,18 @@ export async function RiskCard() {
           </ul>
         )}
         <Link href="/admin/risk" className={buttonClasses("secondary", "sm", "mt-4 self-start")}>
-          View risk events
+          {t.viewRisks}
         </Link>
       </div>
     </Card>
   );
 }
 
-export function RiskCardSkeleton() {
+export function RiskCardSkeleton({ locale }: { locale: Locale }) {
+  const t = monitoringMessages[locale].overview;
   return (
     <Card className={riskCard}>
-      <CardHeader title="Sign-ins at risk" description={<SkeletonText chars={18} />} />
+      <CardHeader title={t.atRisk} description={<SkeletonText chars={18} />} />
       <div className="flex flex-1 flex-col px-6 pb-6">
         <ul aria-hidden="true" className="flex flex-1 flex-col">
           {[0, 1].map((i) => (
@@ -275,14 +285,15 @@ export function RiskCardSkeleton() {
           ))}
         </ul>
         <Link href="/admin/risk" className={buttonClasses("secondary", "sm", "mt-4 self-start")}>
-          View risk events
+          {t.viewRisks}
         </Link>
       </div>
     </Card>
   );
 }
 
-export async function Posture({ governance }: { governance: boolean }) {
+export async function Posture({ governance, locale }: { governance: boolean; locale: Locale }) {
+  const t = monitoringMessages[locale].overview;
   const [overview, pending, reviews] = await Promise.all([
     apiGet<Overview>("/overview"),
     governance ? apiGet<AccessRequest[]>("/access-requests?status=pending") : [],
@@ -291,18 +302,18 @@ export async function Posture({ governance }: { governance: boolean }) {
   const { weakAdmins, expiringCredentials: expiring } = overview;
   const overdue = reviews.filter((review) => review.status === "overdue");
   const posture: { value: number; label: string; href: string; icon: LucideIcon }[] = [
-    { value: weakAdmins.length, label: "Admins without phishing-resistant authentication", href: "/admin/users?view=weak-admins", icon: ShieldAlert },
-    { value: expiring.length, label: "Application secrets expiring within 30 days", href: "/admin/applications?view=expiring", icon: FileKey },
+    { value: weakAdmins.length, label: t.weakAdminsStat, href: "/admin/users?view=weak-admins", icon: ShieldAlert },
+    { value: expiring.length, label: t.expiringStat, href: "/admin/applications?view=expiring", icon: FileKey },
     ...(governance
       ? [
-          { value: pending.length, label: "Pending access requests", href: "/admin/requests", icon: Inbox },
-          { value: overdue.length, label: overdue.length === 1 ? "Overdue access review" : "Overdue access reviews", href: "/admin/access-reviews", icon: ClipboardCheck },
+          { value: pending.length, label: t.pendingStat, href: "/admin/requests", icon: Inbox },
+          { value: overdue.length, label: t.overdueStat(overdue.length), href: "/admin/access-reviews", icon: ClipboardCheck },
         ]
       : []),
   ];
   return (
     <Card className="overflow-hidden">
-      <h2 className="sr-only">Security posture</h2>
+      <h2 className="sr-only">{t.posture}</h2>
       <ul className={cn("grid grid-cols-2 gap-px bg-border", governance && "xl:grid-cols-4")}>
         {posture.map((item) => {
           const Icon = item.icon;
@@ -345,7 +356,8 @@ export function PostureSkeleton() {
   );
 }
 
-export async function Attention({ governance }: { governance: boolean }) {
+export async function Attention({ governance, locale }: { governance: boolean; locale: Locale }) {
+  const t = monitoringMessages[locale].overview;
   const [overview, users, reviews, risks, signUps] = await Promise.all([
     apiGet<Overview>("/overview"),
     apiGet<User[]>("/users"),
@@ -362,9 +374,9 @@ export async function Attention({ governance }: { governance: boolean }) {
     ...openRisks.map((event) => ({
       id: event.id,
       tone: event.level === "high" ? ("danger" as const) : ("warning" as const),
-      title: `${event.level === "high" ? "High" : "Medium"}-risk sign-in for ${event.userId ? (userNames[event.userId] ?? "an unknown user") : "an unknown user"}`,
-      detail: `${event.detail} · ${formatRelative(event.time)}`,
-      action: event.signInId ? "View sign-in" : "Review risk",
+      title: t.riskSignIn(event.level === "high", event.userId ? userNames[event.userId] : undefined),
+      detail: `${event.detail} · ${formatRelative(event.time, locale)}`,
+      action: event.signInId ? t.viewSignIn : t.reviewRisk,
       href: event.signInId ? `/admin/sign-ins?event=${event.signInId}` : "/admin/risk",
     })),
     ...(weakAdmins.length
@@ -372,9 +384,9 @@ export async function Attention({ governance }: { governance: boolean }) {
           {
             id: "weak-admins",
             tone: "warning" as const,
-            title: `${pluralize(weakAdmins.length, "administrator")} can still sign in without a passkey or security key`,
-            detail: `${names(weakAdmins.map((u) => u.name))}.`,
-            action: "Review admins",
+            title: t.weakAdmins(weakAdmins.length),
+            detail: `${names(weakAdmins.map((u) => u.name), t.more)}.`,
+            action: t.reviewAdmins,
             href: "/admin/users?view=weak-admins",
           },
         ]
@@ -382,17 +394,17 @@ export async function Attention({ governance }: { governance: boolean }) {
     ...expiring.map((credential) => ({
       id: credential.credentialId,
       tone: credential.daysLeft <= 14 ? ("danger" as const) : ("warning" as const),
-      title: `${credential.appName} client secret expires in ${pluralize(credential.daysLeft, "day")}`,
-      detail: `“${credential.label}” ${credential.lastUsedAt ? `was last used ${formatRelative(credential.lastUsedAt).toLowerCase()}` : "has never been used"}. Rotate it before ${credential.appName} sign-in stops working.`,
-      action: "Rotate secret",
+      title: t.expiring(credential.appName, credential.daysLeft),
+      detail: t.expiringDetail(credential.label, credential.lastUsedAt ? formatRelative(credential.lastUsedAt, locale).toLowerCase() : null, credential.appName),
+      action: t.rotateSecret,
       href: `/admin/applications/${credential.appId}?tab=credentials`,
     })),
     ...overdue.map((review) => ({
       id: review.id,
       tone: "warning" as const,
-      title: `${review.name} is overdue`,
-      detail: `${review.decided} of ${review.total} decisions made. Reviewers: ${names(review.reviewers.map((r) => r.name))}.`,
-      action: "Open review",
+      title: t.overdue(review.name),
+      detail: t.overdueDetail(review.decided, review.total, names(review.reviewers.map((r) => r.name), t.more)),
+      action: t.openReview,
       href: `/admin/access-reviews/${review.id}`,
     })),
     ...(signUps.length
@@ -400,9 +412,9 @@ export async function Attention({ governance }: { governance: boolean }) {
           {
             id: "sign-ups",
             tone: "warning" as const,
-            title: `${pluralize(signUps.length, "sign-up")} waiting for approval`,
-            detail: `${names(signUps.map((s) => s.name))}. They confirmed their email address and can sign in once approved.`,
-            action: "Review sign-ups",
+            title: t.signUps(signUps.length),
+            detail: t.signUpsDetail(signUps.length, names(signUps.map((s) => s.name), t.more)),
+            action: t.reviewSignUps,
             href: "/admin/users",
           },
         ]
@@ -412,9 +424,9 @@ export async function Attention({ governance }: { governance: boolean }) {
           {
             id: "invited",
             tone: "warning" as const,
-            title: `${pluralize(invited.length, "invited user")} ${invited.length === 1 ? "hasn't" : "haven't"} enrolled yet`,
-            detail: `${names(invited.map((u) => u.name))}. They can't sign in until they open their setup link.`,
-            action: "Review invitations",
+            title: t.invited(invited.length),
+            detail: t.invitedDetail(invited.length, names(invited.map((u) => u.name), t.more)),
+            action: t.reviewInvitations,
             href: "/admin/users?view=invited",
           },
         ]
@@ -423,12 +435,12 @@ export async function Attention({ governance }: { governance: boolean }) {
 
   return (
     <Card>
-      <CardHeader title="Needs attention" description={attention.length ? `${pluralize(attention.length, "item")}, most urgent first.` : undefined} />
+      <CardHeader title={t.needsAttention} description={attention.length ? t.items(attention.length) : undefined} />
       {attention.length === 0 ? (
         <EmptyState
           icon={ShieldCheck}
-          title="Nothing needs attention"
-          description="Admin authentication, expiring secrets, risky sign-ins, access reviews and pending invitations all look fine."
+          title={t.nothing}
+          description={t.nothingHint}
         />
       ) : null}
       <ul>
@@ -441,7 +453,7 @@ export async function Attention({ governance }: { governance: boolean }) {
               )}
             >
               <TriangleAlert aria-hidden="true" size={16} strokeWidth={1.75} />
-              <span className="sr-only">{item.tone === "danger" ? "Urgent" : "Warning"}</span>
+              <span className="sr-only">{item.tone === "danger" ? t.urgent : t.warning}</span>
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <p className="text-body-sm font-semibold text-fg">{item.title}</p>
@@ -457,23 +469,24 @@ export async function Attention({ governance }: { governance: boolean }) {
   );
 }
 
-export function AttentionSkeleton() {
+export function AttentionSkeleton({ locale }: { locale: Locale }) {
   return (
     <Card>
-      <CardHeader title="Needs attention" description={<SkeletonText chars={30} />} />
+      <CardHeader title={monitoringMessages[locale].overview.needsAttention} description={<SkeletonText chars={30} />} />
       <ListSkeleton media className="border-t border-border" />
     </Card>
   );
 }
 
-function RecentSignInsHeader() {
+function RecentSignInsHeader({ locale }: { locale: Locale }) {
+  const t = monitoringMessages[locale].overview;
   return (
     <CardHeader
-      title="Recent sign-ins"
-      description="Across all applications, newest first."
+      title={t.recentSignIns}
+      description={t.recentSignInsHint}
       actions={
         <Link href="/admin/sign-ins" className={buttonClasses("quiet", "sm")}>
-          View all
+          {t.viewAll}
           <ArrowRight aria-hidden="true" size={16} strokeWidth={1.75} />
         </Link>
       }
@@ -481,27 +494,28 @@ function RecentSignInsHeader() {
   );
 }
 
-export async function RecentSignIns() {
+export async function RecentSignIns({ locale }: { locale: Locale }) {
+  const m = monitoringMessages[locale];
   const [overview, users, applications] = await Promise.all([apiGet<Overview>("/overview"), apiGet<User[]>("/users"), apiGet<Application[]>("/applications")]);
   const userNames = Object.fromEntries(users.map((u) => [u.id, u.name]));
   const appNames = Object.fromEntries(applications.map((a) => [a.id, a.name]));
   const recent = overview.recentSignIns;
   return (
     <Card>
-      <RecentSignInsHeader />
+      <RecentSignInsHeader locale={locale} />
       {recent.length === 0 ? (
-        <EmptyState icon={LogIn} title="No sign-ins yet" description="Sign-ins to Halo and every application appear here." />
+        <EmptyState icon={LogIn} title={m.overview.noSignIns} description={m.overview.noSignInsHint} />
       ) : (
         <div className="relative overflow-x-auto">
           <table className="w-full text-left text-body-sm">
-            <caption className="sr-only">Eight most recent sign-ins</caption>
+            <caption className="sr-only">{m.overview.recentCaption}</caption>
             <thead>
               <tr className="border-y border-border text-label text-fg-3">
-                <th scope="col" className="h-10 px-3 pl-6 font-semibold">User</th>
-                <th scope="col" className="h-10 px-3 font-semibold">Application</th>
-                <th scope="col" className="h-10 px-3 font-semibold">Result</th>
-                <th scope="col" className="hidden h-10 px-3 font-semibold md:table-cell">Location</th>
-                <th scope="col" className="h-10 px-3 pr-6 text-right font-semibold">Time</th>
+                <th scope="col" className="h-10 px-3 pl-6 font-semibold">{m.user}</th>
+                <th scope="col" className="h-10 px-3 font-semibold">{m.application}</th>
+                <th scope="col" className="h-10 px-3 font-semibold">{m.result}</th>
+                <th scope="col" className="hidden h-10 px-3 font-semibold md:table-cell">{m.location}</th>
+                <th scope="col" className="h-10 px-3 pr-6 text-right font-semibold">{m.time}</th>
               </tr>
             </thead>
             <tbody>
@@ -516,15 +530,15 @@ export async function RecentSignIns() {
                       <span className="font-medium text-fg">{event.email}</span>
                     )}
                   </td>
-                  <td className="px-3 text-fg-2">{signInApp(event, appNames)}</td>
+                  <td className="px-3 text-fg-2">{signInApp(event, appNames, m.unknownApplication)}</td>
                   <td className="px-3">
                     <span className="inline-flex items-center gap-2 text-fg-2">
                       <StatusDot tone={RESULT[event.result].tone} />
-                      {RESULT[event.result].label}
+                      {m.results[event.result]}
                     </span>
                   </td>
                   <td className="hidden px-3 text-fg-3 md:table-cell">{event.location}</td>
-                  <td className="tnum px-3 pr-6 text-right whitespace-nowrap text-fg-3">{formatRelative(event.time)}</td>
+                  <td className="tnum px-3 pr-6 text-right whitespace-nowrap text-fg-3">{formatRelative(event.time, locale)}</td>
                 </tr>
               ))}
             </tbody>
@@ -535,10 +549,10 @@ export async function RecentSignIns() {
   );
 }
 
-export function RecentSignInsSkeleton() {
+export function RecentSignInsSkeleton({ locale }: { locale: Locale }) {
   return (
     <Card>
-      <RecentSignInsHeader />
+      <RecentSignInsHeader locale={locale} />
       <ul aria-hidden="true" className="border-t border-border">
         {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
           <li key={i} className="flex h-12 items-center gap-6 border-t border-border px-6 first:border-t-0">
@@ -553,25 +567,26 @@ export function RecentSignInsSkeleton() {
   );
 }
 
-function WaitingHeader({ description }: { description: ReactNode }) {
+function WaitingHeader({ description, locale }: { description: ReactNode; locale: Locale }) {
+  const t = monitoringMessages[locale].overview;
   return (
     <CardHeader
-      title="Waiting on you"
+      title={t.waiting}
       description={description}
       actions={
         <Link href="/admin/requests" className={buttonClasses("quiet", "sm")}>
-          All requests
+          {t.allRequests}
         </Link>
       }
     />
   );
 }
 
-export async function WaitingOnYou() {
+export async function WaitingOnYou({ locale }: { locale: Locale }) {
   const pending = await apiGet<AccessRequest[]>("/access-requests?status=pending");
   return (
     <Card>
-      <WaitingHeader description={pending.length ? pluralize(pending.length, "pending access request") : undefined} />
+      <WaitingHeader locale={locale} description={pending.length ? monitoringMessages[locale].overview.pendingRequests(pending.length) : undefined} />
       <CardBody>
         <PendingRequests requests={pending.slice(0, 3)} linkPeople />
       </CardBody>
@@ -579,10 +594,10 @@ export async function WaitingOnYou() {
   );
 }
 
-export function WaitingOnYouSkeleton() {
+export function WaitingOnYouSkeleton({ locale }: { locale: Locale }) {
   return (
     <Card>
-      <WaitingHeader description={<SkeletonText chars={26} />} />
+      <WaitingHeader locale={locale} description={<SkeletonText chars={26} />} />
       <ListSkeleton media rows={2} className="pb-2" />
     </Card>
   );
@@ -593,40 +608,42 @@ export async function Insights() {
   return <ReportInsights policies={policies} />;
 }
 
-export function InsightsSkeleton() {
+export function InsightsSkeleton({ locale }: { locale: Locale }) {
+  const t = monitoringMessages[locale].overview;
   return (
     <Card>
-      <CardHeader title="Report-only insights" description="What report-only policies would have done in the last 24 hours. None of these sign-ins were changed." />
+      <CardHeader title={t.insights} description={t.insightsHint} />
       <ListSkeleton rows={2} className="border-t border-border" />
     </Card>
   );
 }
 
-export async function ApplicationHealth() {
+export async function ApplicationHealth({ locale }: { locale: Locale }) {
+  const t = monitoringMessages[locale].overview;
   const overview = await apiGet<Overview>("/overview");
   return (
     <Card>
-      <CardHeader title="Applications" description={`${overview.counts.activeApplications} active`} />
+      <CardHeader title={t.applications} description={t.active(overview.counts.activeApplications)} />
       <CardBody className="flex flex-col gap-3">
         {overview.failureRates.map((app) => (
           <Link key={app.appId} href={`/admin/applications/${app.appId}`} className="-mx-2 flex items-center justify-between gap-3 rounded-md px-2 py-2 transition-colors duration-fast hover:bg-hover">
             <span className="flex min-w-0 flex-col">
               <span className="truncate text-body-sm font-medium text-fg">{app.appName}</span>
-              <span className="text-caption text-fg-3">Sign-in failure rate, 7 days</span>
+              <span className="text-caption text-fg-3">{t.failureRate}</span>
             </span>
             <Badge tone="warning">{app.failureRate7d}%</Badge>
           </Link>
         ))}
-        {overview.failureRates.length === 0 ? <p className="text-body-sm text-fg-3">No application failed 1% or more of its sign-ins in the last 7 days.</p> : null}
+        {overview.failureRates.length === 0 ? <p className="text-body-sm text-fg-3">{t.noFailures}</p> : null}
       </CardBody>
     </Card>
   );
 }
 
-export function ApplicationHealthSkeleton() {
+export function ApplicationHealthSkeleton({ locale }: { locale: Locale }) {
   return (
     <Card>
-      <CardHeader title="Applications" description={<SkeletonText chars={8} />} />
+      <CardHeader title={monitoringMessages[locale].overview.applications} description={<SkeletonText chars={8} />} />
       <CardBody>
         <p className="text-body-sm">
           <SkeletonText chars={70} />

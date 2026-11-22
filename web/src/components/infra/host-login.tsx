@@ -13,7 +13,8 @@ import { Field, Input, Select } from "@/components/ui/input";
 import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
-import { pluralize } from "@/lib/format";
+import { useMessages } from "@/lib/i18n/client";
+import { infrastructureMessages } from "@/lib/i18n/console/infrastructure";
 import type { HostGroup, HostRule, PosixSettings } from "@/lib/infra-types";
 import type { Group } from "@/lib/types";
 
@@ -27,6 +28,7 @@ function left(next: number, max: number) {
 export function PosixSettingsCard({ settings }: { settings: PosixSettings }) {
   const { pending, run, errorFor, toast } = useMutation();
   const [draft, setDraft] = useState({ ...settings });
+  const t = useMessages(infrastructureMessages);
   const changed = (["uidMin", "uidMax", "gidMin", "gidMax", "loginShell"] as const).some((key) => draft[key] !== settings[key]);
   const number = (key: "uidMin" | "uidMax" | "gidMin" | "gidMax", label: string) => (
     <Field label={label}>
@@ -39,8 +41,8 @@ export function PosixSettingsCard({ settings }: { settings: PosixSettings }) {
   return (
     <Card>
       <CardHeader
-        title="Linux accounts"
-        description="Every person and group gets a user or group number from these ranges. Numbers never change and never come back after a deletion. Changing a range applies to people and groups created from now on."
+        title={t.hostLogin.linux}
+        description={t.hostLogin.linuxHint}
       />
       <CardBody>
         <form
@@ -49,27 +51,26 @@ export function PosixSettingsCard({ settings }: { settings: PosixSettings }) {
             event.preventDefault();
             const body = { uidMin: draft.uidMin, uidMax: draft.uidMax, gidMin: draft.gidMin, gidMax: draft.gidMax, loginShell: draft.loginShell.trim() };
             void run("posix", () => api<PosixSettings>("/ssh/posix", { method: "PUT", body }), () =>
-              toast({ title: "Linux account settings saved", description: "Applies to people and groups created from now on. Recorded in the audit log." }),
+              toast({ title: t.hostLogin.posixSaved, description: t.hostLogin.posixSavedHint }),
               "inline",
             );
           }}
         >
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
-            {number("uidMin", "First user number")}
-            {number("uidMax", "Last user number")}
-            {number("gidMin", "First group number")}
-            {number("gidMax", "Last group number")}
+            {number("uidMin", t.hostLogin.uidMin)}
+            {number("uidMax", t.hostLogin.uidMax)}
+            {number("gidMin", t.hostLogin.gidMin)}
+            {number("gidMax", t.hostLogin.gidMax)}
           </div>
           <p className="text-body-sm text-fg-3">
-            {pluralize(left(settings.nextUid, settings.uidMax), "user number", "user numbers")} and {pluralize(left(settings.nextGid, settings.gidMax), "group number", "group numbers")} left.
-            Both ranges start at 65536 or above, clear of local accounts and nobody, and must not overlap.
+            {t.hostLogin.left(left(settings.nextUid, settings.uidMax), left(settings.nextGid, settings.gidMax))}
           </p>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-            <Field label="Default login shell" hint="New people get this shell. Change it per person on their Access tab." className="sm:w-64">
+            <Field label={t.hostLogin.shell} hint={t.hostLogin.shellHint} className="sm:w-64">
               {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={draft.loginShell} onChange={(event) => setDraft({ ...draft, loginShell: event.target.value })} />}
             </Field>
             <Button type="submit" variant="secondary" loading={pending === "posix"} disabled={!changed} className="sm:mt-6">
-              Save settings
+              {t.hostLogin.saveSettings}
             </Button>
             <ActionError message={errorFor("posix")} className="sm:mt-8" />
           </div>
@@ -79,9 +80,9 @@ export function PosixSettingsCard({ settings }: { settings: PosixSettings }) {
   );
 }
 
-function describeSudo(rule: HostRule) {
-  if (rule.sudo.length === 0) return <span className="text-fg-3">No sudo</span>;
-  if (rule.sudo[0] === "ALL") return <Badge tone="ember">Full sudo</Badge>;
+function describeSudo(rule: HostRule, t: (typeof infrastructureMessages)["en"]) {
+  if (rule.sudo.length === 0) return <span className="text-fg-3">{t.hostLogin.noSudo}</span>;
+  if (rule.sudo[0] === "ALL") return <Badge tone="ember">{t.hostLogin.fullSudo}</Badge>;
   return (
     <span className="flex flex-wrap gap-1">
       {rule.sudo.map((command) => (
@@ -95,33 +96,34 @@ export function HostGroupsSection({ hostGroups, groups }: { hostGroups: HostGrou
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [editing, setEditing] = useState<HostGroup | "new" | null>(null);
   const [deleting, setDeleting] = useState<HostGroup | null>(null);
-  const groupName = (id: string) => groups.find((g) => g.id === id)?.name ?? "Deleted group";
+  const t = useMessages(infrastructureMessages);
+  const groupName = (id: string) => groups.find((g) => g.id === id)?.name ?? t.deletedGroup;
 
   function remove() {
     const hostGroup = deleting;
     if (!hostGroup) return;
     void run("delete", () => api(`/ssh/host-groups/${hostGroup.id}`, { method: "DELETE" }), () => {
       setDeleting(null);
-      toast({ title: `${hostGroup.name} deleted`, description: "Its hosts let nobody in through halo-hostd from their next refresh. Recorded in the audit log." });
+      toast({ title: t.deleted(hostGroup.name), description: t.hostLogin.deletedHint });
     }, "inline");
   }
 
   return (
     <div className="flex flex-col gap-6">
       <SectionTitle
-        title="Host groups"
-        description="halo-hostd lets the members of a host group's rules log in to its hosts with their Halo certificate, as their own Linux account, and installs their sudo rules. A host in no host group lets nobody in."
+        title={t.hostLogin.hostGroups}
+        description={t.hostLogin.hostGroupsHint}
         action={
           <Button size="sm" variant="primary" onClick={() => setEditing("new")}>
             <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-            Add host group
+            {t.hostLogin.addHostGroup}
           </Button>
         }
       />
       {hostGroups.length ? (
         <SimpleTable
-          caption="Host groups"
-          head={["Host group", "Who may log in", "Hosts", "Actions"]}
+          caption={t.hostLogin.hostGroups}
+          head={t.hostLogin.head}
           rows={hostGroups.map((hostGroup) => [
             <span key="name" className="flex flex-col">
               <span className="font-medium whitespace-nowrap text-fg">{hostGroup.name}</span>
@@ -132,23 +134,23 @@ export function HostGroupsSection({ hostGroups, groups }: { hostGroups: HostGrou
                 {hostGroup.rules.map((rule) => (
                   <li key={rule.groupId} className="flex flex-wrap items-center gap-2">
                     <span className="whitespace-nowrap text-fg">{groupName(rule.groupId)}</span>
-                    {describeSudo(rule)}
+                    {describeSudo(rule, t)}
                   </li>
                 ))}
               </ul>
             ) : (
               <span key="rules" className="text-fg-3">
-                Nobody
+                {t.hostLogin.nobody}
               </span>
             ),
             <span key="hosts" className="tnum whitespace-nowrap">
-              {pluralize(hostGroup.hostCount, "host", "hosts")}
+              {t.hostLogin.hosts(hostGroup.hostCount)}
             </span>,
             <span key="actions" className="flex gap-1">
-              <Button size="icon-sm" variant="quiet" aria-label={`Edit ${hostGroup.name}`} onClick={() => setEditing(hostGroup)}>
+              <Button size="icon-sm" variant="quiet" aria-label={t.edit(hostGroup.name)} onClick={() => setEditing(hostGroup)}>
                 <Pencil aria-hidden="true" size={16} strokeWidth={1.75} />
               </Button>
-              <Button size="icon-sm" variant="quiet" aria-label={`Delete ${hostGroup.name}`} onClick={() => setDeleting(hostGroup)}>
+              <Button size="icon-sm" variant="quiet" aria-label={t.delete(hostGroup.name)} onClick={() => setDeleting(hostGroup)}>
                 <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
               </Button>
             </span>,
@@ -158,8 +160,8 @@ export function HostGroupsSection({ hostGroups, groups }: { hostGroups: HostGrou
         <Card>
           <EmptyState
             icon={ServerCog}
-            title="No host groups yet"
-            description="Create one, such as Production, with the groups that may log in to its hosts, then move your hosts into it."
+            title={t.hostLogin.noHostGroups}
+            description={t.hostLogin.noHostGroupsHint}
           />
         </Card>
       )}
@@ -172,15 +174,15 @@ export function HostGroupsSection({ hostGroups, groups }: { hostGroups: HostGrou
           clearError();
         }}
         error={errorFor("delete")}
-        title={`Delete ${deleting?.name ?? "this host group"}?`}
-        description={`${deleting ? pluralize(deleting.hostCount, "host leaves", "hosts leave") : "Its hosts leave"} the group and let nobody in through halo-hostd from their next refresh. Certificates already issued stay valid, but no host names their principal any more.`}
+        title={t.hostLogin.deleteTitle(deleting?.name ?? null)}
+        description={t.hostLogin.deleteHint(deleting ? deleting.hostCount : null)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleting(null)}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "delete"} onClick={remove}>
-              Delete host group
+              {t.hostLogin.deleteConfirm}
             </Button>
           </>
         }
@@ -201,15 +203,16 @@ function HostGroupDialog({ hostGroup, groups, onClose }: { hostGroup: HostGroup 
   const [description, setDescription] = useState(hostGroup?.description ?? "");
   const [rules, setRules] = useState<RuleDraft[]>(hostGroup?.rules.map(toDraft) ?? []);
   const [errors, setErrors] = useState<{ name?: string; rules?: string }>({});
+  const t = useMessages(infrastructureMessages);
   const update = (index: number, change: Partial<RuleDraft>) => setRules(rules.map((rule, i) => (i === index ? { ...rule, ...change } : rule)));
 
   function save() {
     const next = {
-      name: name.trim() ? undefined : "Name the host group, such as Production.",
+      name: name.trim() ? undefined : t.hostLogin.nameError,
       rules: rules.some((rule) => !rule.groupId)
-        ? "Choose a group for every rule, or remove the empty one."
+        ? t.hostLogin.ruleGroupError
         : rules.some((rule) => rule.mode === "commands" && !rule.commands.trim())
-          ? "List the commands, or choose full sudo or no sudo."
+          ? t.hostLogin.commandsError
           : undefined,
     };
     setErrors(next);
@@ -226,7 +229,7 @@ function HostGroupDialog({ hostGroup, groups, onClose }: { hostGroup: HostGroup 
       "save",
       () => (hostGroup ? api<HostGroup>(`/ssh/host-groups/${hostGroup.id}`, { method: "PUT", body }) : api<HostGroup>("/ssh/host-groups", { body })),
       (saved) => {
-        toast({ title: `${saved.name} saved`, description: "Hosts in it pick up the rules at their next refresh. Recorded in the audit log." });
+        toast({ title: t.saved(saved.name), description: t.hostLogin.savedHint });
         onClose();
       },
       "inline",
@@ -240,16 +243,16 @@ function HostGroupDialog({ hostGroup, groups, onClose }: { hostGroup: HostGroup 
         if (!open) onClose();
       }}
       error={errorFor("save")}
-      title={hostGroup ? `Edit ${hostGroup.name}` : "Add host group"}
-      description="Members of these groups may log in to the group's hosts. Sudo runs as root without a password prompt, because Linux accounts from Halo have no password."
+      title={hostGroup ? t.edit(hostGroup.name) : t.hostLogin.addHostGroup}
+      description={t.hostLogin.dialogHint}
       width="wide"
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {t.cancel}
           </Button>
           <Button variant="primary" loading={pending === "save"} onClick={save}>
-            {hostGroup ? "Save host group" : "Add host group"}
+            {hostGroup ? t.hostLogin.saveHostGroup : t.hostLogin.addHostGroup}
           </Button>
         </>
       }
@@ -262,25 +265,25 @@ function HostGroupDialog({ hostGroup, groups, onClose }: { hostGroup: HostGroup 
         }}
       >
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-          <Field label="Name" error={errors.name}>
-            {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder="Production" />}
+          <Field label={t.name} error={errors.name}>
+            {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder={t.hostLogin.namePlaceholder} />}
           </Field>
-          <Field label="Description">
-            {(props) => <Input {...props} autoComplete="off" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Customer-facing servers" />}
+          <Field label={t.description}>
+            {(props) => <Input {...props} autoComplete="off" value={description} onChange={(event) => setDescription(event.target.value)} placeholder={t.hostLogin.descriptionPlaceholder} />}
           </Field>
         </div>
         <fieldset className="flex flex-col gap-4">
-          <legend className="mb-2 text-body-sm font-medium text-fg">Who may log in</legend>
-          {rules.length === 0 ? <p className="text-body-sm text-fg-3">Nobody yet. Add a rule for each group that may log in.</p> : null}
+          <legend className="mb-2 text-body-sm font-medium text-fg">{t.hostLogin.whoMayLogIn}</legend>
+          {rules.length === 0 ? <p className="text-body-sm text-fg-3">{t.hostLogin.noRules}</p> : null}
           {rules.map((rule, index) => (
             <div key={index} className="flex flex-col gap-3 rounded-md border border-border p-4">
               <div className="flex items-start gap-3">
                 <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Field label="Group">
+                  <Field label={t.group}>
                     {(props) => (
                       <Select {...props} value={rule.groupId} onChange={(event) => update(index, { groupId: event.target.value })}>
                         <option value="" disabled>
-                          Choose a group
+                          {t.chooseGroup}
                         </option>
                         {groups
                           .filter((g) => g.id === rule.groupId || !rules.some((r) => r.groupId === g.id))
@@ -292,22 +295,22 @@ function HostGroupDialog({ hostGroup, groups, onClose }: { hostGroup: HostGroup 
                       </Select>
                     )}
                   </Field>
-                  <Field label="Sudo">
+                  <Field label={t.hostLogin.sudo}>
                     {(props) => (
                       <Select {...props} value={rule.mode} onChange={(event) => update(index, { mode: event.target.value as SudoMode })}>
-                        <option value="none">No sudo</option>
-                        <option value="commands">Some commands</option>
-                        <option value="all">Full sudo</option>
+                        <option value="none">{t.hostLogin.noSudo}</option>
+                        <option value="commands">{t.hostLogin.someCommands}</option>
+                        <option value="all">{t.hostLogin.fullSudo}</option>
                       </Select>
                     )}
                   </Field>
                 </div>
-                <Button size="icon-sm" variant="quiet" className="mt-7" aria-label="Remove this rule" onClick={() => setRules(rules.filter((_, i) => i !== index))}>
+                <Button size="icon-sm" variant="quiet" className="mt-7" aria-label={t.hostLogin.removeRule} onClick={() => setRules(rules.filter((_, i) => i !== index))}>
                   <X aria-hidden="true" size={16} strokeWidth={1.75} />
                 </Button>
               </div>
               {rule.mode === "commands" ? (
-                <Field label="Commands" hint="Absolute paths with plain arguments, separated by commas, such as /usr/bin/systemctl restart nginx, /usr/bin/journalctl. No wildcards or quotes.">
+                <Field label={t.hostLogin.commands} hint={t.hostLogin.commandsHint}>
                   {(props) => (
                     <Input {...props} mono autoComplete="off" spellCheck={false} value={rule.commands} onChange={(event) => update(index, { commands: event.target.value })} placeholder="/usr/bin/journalctl" />
                   )}
@@ -319,7 +322,7 @@ function HostGroupDialog({ hostGroup, groups, onClose }: { hostGroup: HostGroup 
           <div>
             <Button size="sm" variant="secondary" onClick={() => setRules([...rules, { groupId: "", mode: "none", commands: "" }])} disabled={rules.length >= groups.length}>
               <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-              Add rule
+              {t.hostLogin.addRule}
             </Button>
           </div>
         </fieldset>

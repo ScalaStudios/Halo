@@ -3,8 +3,11 @@
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
+import { useMessages } from "@/lib/i18n/client";
+import { uiMessages } from "@/lib/i18n/ui";
 
-export function CopyButton({ value, label = "Copy", className }: { value: string; label?: string; className?: string }) {
+export function CopyButton({ value, label, className }: { value: string; label?: string; className?: string }) {
+  const messages = useMessages(uiMessages);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -26,7 +29,7 @@ export function CopyButton({ value, label = "Copy", className }: { value: string
     <button
       type="button"
       onClick={copy}
-      aria-label={copied ? "Copied" : label}
+      aria-label={copied ? messages.copied : (label ?? messages.copy)}
       className={cn(
         "inline-flex h-8 shrink-0 items-center gap-2 rounded-md px-2 text-body-sm font-medium text-fg-3",
         "transition-colors duration-fast ease-brand hover:bg-hover hover:text-fg",
@@ -35,7 +38,7 @@ export function CopyButton({ value, label = "Copy", className }: { value: string
       )}
     >
       {copied ? <Check aria-hidden="true" size={16} strokeWidth={1.75} /> : <Copy aria-hidden="true" size={16} strokeWidth={1.75} />}
-      <span aria-live="polite">{copied ? "Copied" : label}</span>
+      <span aria-live="polite">{copied ? messages.copied : (label ?? messages.copy)}</span>
     </button>
   );
 }

@@ -8,25 +8,30 @@ import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { apiGet } from "@/lib/api/server";
 import { formatDateTime } from "@/lib/format";
+import { accountMessages } from "@/lib/i18n/account";
+import { requestLocale } from "@/lib/i18n/server";
 import type { Terms, TermsAcceptance } from "@/lib/policy-types";
 
-export const metadata: Metadata = { title: "Terms of use" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: accountMessages(await requestLocale()).terms.title };
+}
 
 export default async function TermsPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
   const { next } = await searchParams;
-  const { terms, accepted } = await apiGet<{ terms: (Terms & { acceptedAt: string | null })[]; accepted: TermsAcceptance[] }>("/me/terms");
+  const [{ terms, accepted }, locale] = await Promise.all([apiGet<{ terms: (Terms & { acceptedAt: string | null })[]; accepted: TermsAcceptance[] }>("/me/terms"), requestLocale()]);
+  const t = accountMessages(locale).terms;
   const pending = terms.filter((t) => !t.acceptedAt);
 
   return (
     <div className="flex flex-col gap-12">
       <PageHeader
         size="large"
-        title="Terms of use"
-        description="Terms your organization asks you to accept before you use its applications. When a new version is published, Halo asks you again at your next sign-in."
+        title={t.title}
+        description={t.description}
       />
       {pending.length ? (
         <section className="flex flex-col gap-6">
-          <SectionTitle title="To accept" description="Read each document, then accept. Halo keeps a record of the version you accept and when." />
+          <SectionTitle title={t.toAccept} description={t.toAcceptHint} />
           <TermsToAccept terms={pending} next={next} />
         </section>
       ) : (
@@ -34,10 +39,10 @@ export default async function TermsPage({ searchParams }: { searchParams: Promis
       )}
       {accepted.length ? (
         <section className="flex flex-col gap-6">
-          <SectionTitle title="Accepted" description="Every version you accepted. Your administrators can include this record in the organization export." />
+          <SectionTitle title={t.accepted} description={t.acceptedHint} />
           <SimpleTable
-            caption="Accepted terms of use"
-            head={["Terms", "Version", "Accepted"]}
+            caption={t.caption}
+            head={[t.terms, t.version, t.accepted]}
             rows={accepted.map((a) => [
               <span key="name" className="font-medium text-fg">
                 {a.name}
@@ -46,7 +51,7 @@ export default async function TermsPage({ searchParams }: { searchParams: Promis
                 {a.version}
               </span>,
               <time key="time" dateTime={a.acceptedAt} className="whitespace-nowrap">
-                {formatDateTime(a.acceptedAt)}
+                {formatDateTime(a.acceptedAt, locale)}
               </time>,
             ])}
           />
@@ -54,7 +59,7 @@ export default async function TermsPage({ searchParams }: { searchParams: Promis
       ) : null}
       {!pending.length && !accepted.length ? (
         <Card>
-          <EmptyState icon={FileCheck} title="No terms to accept" description="Your organization doesn't ask you to accept any terms of use." />
+          <EmptyState icon={FileCheck} title={t.empty} description={t.emptyHint} />
         </Card>
       ) : null}
     </div>

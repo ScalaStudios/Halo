@@ -13,7 +13,8 @@ import { Field, Input, Select } from "@/components/ui/input";
 import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
-import { formatDuration, pluralize } from "@/lib/format";
+import { useMessages } from "@/lib/i18n/client";
+import { infrastructureMessages } from "@/lib/i18n/console/infrastructure";
 import type { PrincipalMapping, SshAuthority } from "@/lib/infra-types";
 import type { Group } from "@/lib/types";
 
@@ -22,6 +23,7 @@ const HOST_LIFETIMES = [604800, 2592000, 7776000, 31536000];
 
 export function LifetimeSetting({ lifetime, host = false }: { lifetime: number; host?: boolean }) {
   const { pending, run, errorFor, toast } = useMutation();
+  const t = useMessages(infrastructureMessages);
   const [value, setValue] = useState(lifetime);
   const choices = host ? HOST_LIFETIMES : LIFETIMES;
   const options = choices.includes(lifetime) ? choices : [...choices, lifetime].sort((a, b) => a - b);
@@ -32,29 +34,29 @@ export function LifetimeSetting({ lifetime, host = false }: { lifetime: number; 
       onSubmit={(event) => {
         event.preventDefault();
         void run("lifetime", () => api<SshAuthority>(host ? "/ssh/host-authority" : "/ssh/authority", { method: "PUT", body: { certificateLifetime: value } }), () =>
-          toast({ title: `${host ? "Host certificates" : "Certificates"} now last ${formatDuration(value)}`, description: "Applies to certificates issued from now on. Recorded in the audit log." }),
+          toast({ title: t.ssh.lifetimeSaved(host, t.duration(value)), description: t.ssh.lifetimeSavedHint }),
           "inline",
         );
       }}
     >
       <Field
-        label={host ? "Host certificate lifetime" : "Certificate lifetime"}
-        hint={host ? "Hosts renew with halo ssh-host renew, so renew more often than this." : "People request a new certificate with halo ssh-cert when theirs expires."}
+        label={host ? t.ssh.hostLifetime : t.ssh.lifetime}
+        hint={host ? t.ssh.hostLifetimeHint : t.ssh.lifetimeHint}
         className="sm:w-64"
       >
         {(props) => (
           <Select {...props} value={value} onChange={(event) => setValue(Number(event.target.value))}>
             {options.map((seconds) => (
               <option key={seconds} value={seconds}>
-                {formatDuration(seconds)}
-                {seconds === (host ? 2592000 : 28800) ? " (default)" : ""}
+                {t.duration(seconds)}
+                {seconds === (host ? 2592000 : 28800) ? t.ssh.defaultSuffix : ""}
               </option>
             ))}
           </Select>
         )}
       </Field>
       <Button type="submit" variant="secondary" loading={pending === "lifetime"} disabled={value === lifetime} className="sm:mt-6">
-        Save lifetime
+        {t.ssh.saveLifetime}
       </Button>
       <ActionError message={errorFor("lifetime")} className="sm:mt-8" />
     </form>
@@ -65,33 +67,34 @@ export function MappingsSection({ mappings, groups }: { mappings: PrincipalMappi
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [editing, setEditing] = useState<PrincipalMapping | "new" | null>(null);
   const [deleting, setDeleting] = useState<PrincipalMapping | null>(null);
-  const groupName = (id: string) => groups.find((g) => g.id === id)?.name ?? "Deleted group";
+  const t = useMessages(infrastructureMessages);
+  const groupName = (id: string) => groups.find((g) => g.id === id)?.name ?? t.deletedGroup;
 
   function remove() {
     const mapping = deleting;
     if (!mapping) return;
     void run("delete", () => api(`/ssh/principal-mappings/${mapping.id}`, { method: "DELETE" }), () => {
       setDeleting(null);
-      toast({ title: `${groupName(mapping.groupId)} unmapped`, description: "Its members get no certificate for these accounts from now on. Recorded in the audit log." });
+      toast({ title: t.ssh.unmapped(groupName(mapping.groupId)), description: t.ssh.unmappedHint });
     }, "inline");
   }
 
   return (
     <div className="flex flex-col gap-6">
       <SectionTitle
-        title="Principal mappings"
-        description="Members of a group may log in as these unix accounts. A certificate lists every principal from every group the person belongs to."
+        title={t.ssh.mappings}
+        description={t.ssh.mappingsHint}
         action={
           <Button size="sm" variant="primary" onClick={() => setEditing("new")}>
             <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-            Add mapping
+            {t.ssh.addMapping}
           </Button>
         }
       />
       {mappings.length ? (
         <SimpleTable
-          caption="Principal mappings"
-          head={["Group", "Principals", "Members", "Actions"]}
+          caption={t.ssh.mappings}
+          head={t.ssh.head}
           rows={mappings.map((mapping) => {
             const group = groups.find((g) => g.id === mapping.groupId);
             return [
@@ -104,13 +107,13 @@ export function MappingsSection({ mappings, groups }: { mappings: PrincipalMappi
                 ))}
               </span>,
               <span key="members" className="tnum whitespace-nowrap">
-                {group ? pluralize(group.memberCount, "person", "people") : "—"}
+                {group ? t.ssh.people(group.memberCount) : "—"}
               </span>,
               <span key="actions" className="flex gap-1">
-                <Button size="icon-sm" variant="quiet" aria-label={`Edit the mapping for ${groupName(mapping.groupId)}`} onClick={() => setEditing(mapping)}>
+                <Button size="icon-sm" variant="quiet" aria-label={t.ssh.editMapping(groupName(mapping.groupId))} onClick={() => setEditing(mapping)}>
                   <Pencil aria-hidden="true" size={16} strokeWidth={1.75} />
                 </Button>
-                <Button size="icon-sm" variant="quiet" aria-label={`Delete the mapping for ${groupName(mapping.groupId)}`} onClick={() => setDeleting(mapping)}>
+                <Button size="icon-sm" variant="quiet" aria-label={t.ssh.deleteMapping(groupName(mapping.groupId))} onClick={() => setDeleting(mapping)}>
                   <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
                 </Button>
               </span>,
@@ -121,8 +124,8 @@ export function MappingsSection({ mappings, groups }: { mappings: PrincipalMappi
         <Card>
           <EmptyState
             icon={UsersRound}
-            title="No principal mappings yet"
-            description="Map a group to the unix accounts its members use, for example Infrastructure to ops. Without a mapping nobody can get a certificate."
+            title={t.ssh.noMappings}
+            description={t.ssh.noMappingsHint}
           />
         </Card>
       )}
@@ -142,15 +145,15 @@ export function MappingsSection({ mappings, groups }: { mappings: PrincipalMappi
           clearError();
         }}
         error={errorFor("delete")}
-        title={`Delete the mapping for ${deleting ? groupName(deleting.groupId) : "this group"}?`}
-        description="Certificates already issued stay valid until they expire, because sshd cannot check revocation."
+        title={t.ssh.deleteTitle(deleting ? groupName(deleting.groupId) : null)}
+        description={t.ssh.deleteHint}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleting(null)}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "delete"} onClick={remove}>
-              Delete mapping
+              {t.ssh.deleteConfirm}
             </Button>
           </>
         }
@@ -164,6 +167,7 @@ function MappingDialog({ mapping, groups, onClose }: { mapping: PrincipalMapping
   const [groupId, setGroupId] = useState(mapping?.groupId ?? "");
   const [principals, setPrincipals] = useState(mapping?.principals.join(", ") ?? "");
   const [errors, setErrors] = useState<{ group?: string; principals?: string }>({});
+  const t = useMessages(infrastructureMessages);
 
   function save() {
     const list = principals
@@ -171,8 +175,8 @@ function MappingDialog({ mapping, groups, onClose }: { mapping: PrincipalMapping
       .map((value) => value.trim())
       .filter(Boolean);
     const next = {
-      group: groupId ? undefined : "Choose the group whose members get these principals.",
-      principals: list.length ? undefined : "Add at least one unix account name, such as ops.",
+      group: groupId ? undefined : t.ssh.groupError,
+      principals: list.length ? undefined : t.ssh.principalsError,
     };
     setErrors(next);
     if (next.group || next.principals) return;
@@ -184,8 +188,8 @@ function MappingDialog({ mapping, groups, onClose }: { mapping: PrincipalMapping
           ? api<PrincipalMapping>(`/ssh/principal-mappings/${mapping.id}`, { method: "PUT", body })
           : api<PrincipalMapping>("/ssh/principal-mappings", { body }),
       (saved) => {
-        const name = groups.find((g) => g.id === saved.groupId)?.name ?? "The group";
-        toast({ title: `${name} mapped to ${saved.principals.join(", ")}`, description: "Applies to the next certificate each member requests." });
+        const name = groups.find((g) => g.id === saved.groupId)?.name ?? t.ssh.theGroup;
+        toast({ title: t.ssh.mapped(name, saved.principals.join(", ")), description: t.ssh.mappedHint });
         onClose();
       },
       "inline",
@@ -199,15 +203,15 @@ function MappingDialog({ mapping, groups, onClose }: { mapping: PrincipalMapping
         if (!open) onClose();
       }}
       error={errorFor("save")}
-      title={mapping ? "Edit principal mapping" : "Add principal mapping"}
-      description="Principals are the account names on your servers that a certificate lets someone log in as."
+      title={mapping ? t.ssh.editTitle : t.ssh.addTitle}
+      description={t.ssh.dialogHint}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {t.cancel}
           </Button>
           <Button variant="primary" loading={pending === "save"} onClick={save}>
-            {mapping ? "Save mapping" : "Add mapping"}
+            {mapping ? t.ssh.saveMapping : t.ssh.addMapping}
           </Button>
         </>
       }
@@ -219,11 +223,11 @@ function MappingDialog({ mapping, groups, onClose }: { mapping: PrincipalMapping
           save();
         }}
       >
-        <Field label="Group" error={errors.group}>
+        <Field label={t.group} error={errors.group}>
           {(props) => (
             <Select {...props} value={groupId} onChange={(event) => setGroupId(event.target.value)}>
               <option value="" disabled>
-                Choose a group
+                {t.chooseGroup}
               </option>
               {groups.map((g) => (
                 <option key={g.id} value={g.id}>
@@ -233,7 +237,7 @@ function MappingDialog({ mapping, groups, onClose }: { mapping: PrincipalMapping
             </Select>
           )}
         </Field>
-        <Field label="Principals" error={errors.principals} hint="Unix account names separated by commas or spaces, such as ops, deploy.">
+        <Field label={t.ssh.principals} error={errors.principals} hint={t.ssh.principalsHint}>
           {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} value={principals} onChange={(event) => setPrincipals(event.target.value)} placeholder="ops" />}
         </Field>
         <button type="submit" hidden />

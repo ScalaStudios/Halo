@@ -1,4 +1,6 @@
 import { NAME_ID_FORMATS, type SamlSettings } from "@/lib/saml-types";
+import { applicationsMessages } from "@/lib/i18n/console/applications";
+import type { Locale } from "@/lib/i18n/locale";
 import type { Application } from "@/lib/types";
 
 export type SetupGuide = { title: string; description: string; file: string; code: string };
@@ -17,7 +19,8 @@ export function endpoints(issuer: string) {
   };
 }
 
-export function proxyGuides(app: Pick<Application, "id" | "claims" | "redirectUris">, issuer: string): SetupGuide[] {
+export function proxyGuides(app: Pick<Application, "id" | "claims" | "redirectUris">, issuer: string, locale: Locale): SetupGuide[] {
+  const t = applicationsMessages[locale].guides;
   const verify = `${issuer}/forward-auth/${app.id}/verify`;
   const origins = app.redirectUris.map((uri) => new URL(uri).origin);
   const hosts = app.redirectUris.map((uri) => new URL(uri).host);
@@ -26,13 +29,13 @@ export function proxyGuides(app: Pick<Application, "id" | "claims" | "redirectUr
   return [
     {
       title: "Traefik",
-      description: `Add the middleware to the routers of ${hosts.join(", ")}. Traefik sends X-Forwarded-Host and X-Forwarded-Uri itself.`,
+      description: t.traefik(hosts.join(", ")),
       file: "dynamic.yml",
       code: ["http:", "  middlewares:", "    halo:", "      forwardAuth:", `        address: ${verify}`, "        authResponseHeaders:", ...headers.map((h) => `          - ${h}`)].join("\n"),
     },
     {
       title: "nginx",
-      description: "Needs the auth_request module. nginx gets a 401 with the sign-in address and turns it into a redirect.",
+      description: t.nginx,
       file: "nginx.conf",
       code: [
         "server {",
@@ -63,7 +66,7 @@ export function proxyGuides(app: Pick<Application, "id" | "claims" | "redirectUr
     },
     {
       title: "Caddy",
-      description: "Caddy sends X-Forwarded-Host and X-Forwarded-Uri itself, and removes these headers from requests it doesn't let through.",
+      description: t.caddy,
       file: "Caddyfile",
       code: [
         `${origins.join(", ")} {`,
@@ -86,13 +89,14 @@ const pairs = (rows: [string, string][]) => {
 
 type GuideApp = Pick<Application, "name" | "clientId" | "redirectUris"> & { setupGuide: string; saml?: SamlSettings };
 
-export function setupGuide(app: GuideApp, issuer: string): SetupGuide {
+export function setupGuide(app: GuideApp, issuer: string, locale: Locale): SetupGuide {
+  const t = applicationsMessages[locale].guides;
   const urls = endpoints(issuer);
   switch (app.setupGuide) {
     case "grafana":
       return {
-        title: "Set up Grafana",
-        description: "Add this block to grafana.ini, save the client secret to /etc/grafana/halo-client-secret, then restart Grafana.",
+        title: t.setUp("Grafana"),
+        description: t.grafana,
         file: "grafana.ini",
         code: [
           "[auth.generic_oauth]",
@@ -112,8 +116,8 @@ export function setupGuide(app: GuideApp, issuer: string): SetupGuide {
       };
     case "forgejo":
       return {
-        title: "Set up Forgejo",
-        description: "Run this on the Forgejo host as the user that runs Forgejo. Keep the name halo: it is part of the redirect URI.",
+        title: t.setUp("Forgejo"),
+        description: t.forgejo,
         file: "Shell",
         code: [
           "forgejo admin auth add-oauth \\",
@@ -130,17 +134,16 @@ export function setupGuide(app: GuideApp, issuer: string): SetupGuide {
     case "aether": {
       const [, address = "https://mail.example.com", slug = "halo"] = app.redirectUris[0]?.match(/^(.+)\/api\/v1\/auth\/oidc\/([^/]+)\/callback$/) ?? [];
       return {
-        title: "Set up Aether",
-        description:
-          "In Aether, open Administration → Identity providers → Connect Halo and enter these values. Group mappings match Halo group names and give their members the owner, admin or member role in an organization. Optional: to suspend Aether accounts as soon as Halo suspends them, add an endpoint under Webhooks in Halo for the webhook URL with the user, scim and session events, and paste its signing secret into Webhook signing secret in Aether. To create accounts before people sign in, turn on SCIM for the provider in Aether, then set up this application under Provisioning in Halo with the SCIM base URL and Aether's bearer token.",
+        title: t.setUp("Aether"),
+        description: t.aether,
         file: "Aether",
         code: pairs([
           ["Issuer URL", urls.issuer],
           ["Slug", slug],
           ["Client ID", app.clientId],
-          ["Client secret", "shown once when you created this application"],
-          ["Administrator group", "a Halo group whose members become platform administrators"],
-          ["Group mappings", "Halo group name → organization → owner, admin or member"],
+          ["Client secret", t.aetherSecret],
+          ["Administrator group", t.aetherAdmins],
+          ["Group mappings", t.aetherMappings],
           ["Webhook URL", `${address}/api/v1/hooks/identity-providers/${slug}`],
           ["Webhook events", "user.*  scim.*  session.*"],
           ["SCIM base URL", `${address}/api/v1/scim/${slug}`],
@@ -149,8 +152,8 @@ export function setupGuide(app: GuideApp, issuer: string): SetupGuide {
     }
     case "kubernetes":
       return {
-        title: "Set up kubectl",
-        description: "Add this user to each engineer's kubeconfig. It needs the kubelogin plugin (kubectl oidc-login) and no client secret.",
+        title: t.setUp("kubectl"),
+        description: t.kubernetes,
         file: "~/.kube/config",
         code: [
           "users:",
@@ -171,8 +174,8 @@ export function setupGuide(app: GuideApp, issuer: string): SetupGuide {
       };
     case "generic-saml":
       return {
-        title: "SAML values",
-        description: `Most applications import the metadata URL. Use the rest if ${app.name} asks for each value separately.`,
+        title: t.samlTitle,
+        description: t.saml(app.name),
         file: "SAML 2.0",
         code: pairs([
           ["Metadata URL", urls.samlMetadata],
@@ -187,9 +190,8 @@ export function setupGuide(app: GuideApp, issuer: string): SetupGuide {
       };
     case "aws-iam-identity-center":
       return {
-        title: "Set up AWS IAM Identity Center",
-        description:
-          "In IAM Identity Center, open Settings, change the identity source to an external identity provider and upload the metadata file from the metadata URL, or enter these values. Copy the ACS URL and issuer URL AWS shows into this application's Authentication tab.",
+        title: t.setUp("AWS IAM Identity Center"),
+        description: t.aws,
         file: "IAM Identity Center",
         code: pairs([
           ["IdP SAML metadata", urls.samlMetadata],
@@ -200,9 +202,8 @@ export function setupGuide(app: GuideApp, issuer: string): SetupGuide {
       };
     case "slack":
       return {
-        title: "Set up Slack",
-        description:
-          "In Slack, open the workspace settings and configure SAML authentication with these values. For the certificate, download it from the certificate URL and paste the whole file, including the BEGIN and END lines.",
+        title: t.setUp("Slack"),
+        description: t.slack,
         file: "Slack",
         code: pairs([
           ["SAML 2.0 Endpoint (HTTP)", urls.samlSso],
@@ -212,8 +213,8 @@ export function setupGuide(app: GuideApp, issuer: string): SetupGuide {
       };
     default:
       return {
-        title: "Endpoints",
-        description: `Most applications only need the discovery endpoint. Use the rest if ${app.name} asks for each endpoint separately.`,
+        title: t.endpointsTitle,
+        description: t.endpoints(app.name),
         file: "OpenID Connect",
         code: pairs([
           ["Discovery", urls.discovery],

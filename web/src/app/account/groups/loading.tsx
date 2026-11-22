@@ -1,18 +1,17 @@
 import { SectionTitle } from "@/components/ui/section-title";
 import { ListSkeleton, PageSkeleton } from "@/components/ui/skeleton";
+import { accountMessages } from "@/lib/i18n/account";
+import { requestLocale } from "@/lib/i18n/server";
 
-const sections = [
-  { title: "Your groups", description: "Assigned groups are managed by their owners. Dynamic groups follow your profile, such as your department." },
-  { title: "Groups you can join", description: "Open groups add you straight away. For the others, an owner approves your request." },
-];
-
-export default function Loading() {
+export default async function Loading() {
+  const copy = accountMessages(await requestLocale());
+  const t = copy.groups;
+  const sections = [
+    { title: t.yours, description: t.yoursHint },
+    { title: t.joinable, description: t.joinableHint },
+  ];
   return (
-    <PageSkeleton
-      large
-      title="Groups"
-      description="Groups decide which applications you see. Join the groups open to you, and manage the members of groups you own."
-    >
+    <PageSkeleton large title={copy.nav.groups} description={t.description}>
       {sections.map((section) => (
         <section key={section.title} className="flex flex-col gap-4">
           <SectionTitle title={section.title} description={section.description} />

@@ -12,8 +12,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { HoldToConfirm } from "@/components/ui/hold-to-confirm";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
 import { ApiError, api } from "@/lib/api/client";
-import { pluralize } from "@/lib/format";
-import { JOIN_POLICY, STATUS, STRENGTH } from "@/lib/labels";
+import { useLocale, useMessages } from "@/lib/i18n/client";
+import { directoryMessages } from "@/lib/i18n/console/directory";
 import type { Group, JoinPolicy, User } from "@/lib/types";
 import { userColumns } from "./users-table";
 
@@ -31,6 +31,7 @@ export function EditGroupButton({ group }: { group: Group }) {
   const [open, setOpen] = useState(false);
   const formId = useId();
   const { pending, run, toast } = useMutation();
+  const t = useMessages(directoryMessages);
 
   function save(body: GroupBody, showRuleError: (message: string) => void) {
     void run(
@@ -38,7 +39,7 @@ export function EditGroupButton({ group }: { group: Group }) {
       () => api<Group>(`/groups/${group.id}`, { method: "PATCH", body }),
       (saved) => {
         setOpen(false);
-        toast({ title: `${saved.name} saved`, description: "Recorded in the audit log." });
+        toast({ title: t.group.saved(saved.name), description: t.recorded });
       },
       inlineRuleError(showRuleError),
     );
@@ -48,24 +49,20 @@ export function EditGroupButton({ group }: { group: Group }) {
     <>
       <Button size="sm" variant="secondary" onClick={() => setOpen(true)} className="self-start">
         <Pencil aria-hidden="true" size={16} strokeWidth={1.75} />
-        Edit group
+        {t.group.edit}
       </Button>
       <Dialog
         open={open}
         onOpenChange={setOpen}
-        title="Edit group"
-        description={
-          group.kind === "dynamic"
-            ? "Members follow the rule. Preview it before saving to see who it includes."
-            : "Members are added by hand. To follow a rule instead, create a rule-based group."
-        }
+        title={t.group.edit}
+        description={group.kind === "dynamic" ? t.group.editDynamic : t.group.editAssigned}
         footer={
           <>
             <Button variant="secondary" onClick={() => setOpen(false)}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button type="submit" form={formId} variant="primary" loading={pending === "save"}>
-              Save group
+              {t.group.save}
             </Button>
           </>
         }
@@ -84,6 +81,7 @@ function GroupForm({ id, group, onSave }: { id: string; group: Group; onSave: (b
   const [errors, setErrors] = useState<{ name?: string; rule?: string }>({});
   const [preview, setPreview] = useState<User[] | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const t = useMessages(directoryMessages);
   const dynamic = group.kind === "dynamic";
   const everyone = rule.trim() === "true";
 
@@ -94,7 +92,7 @@ function GroupForm({ id, group, onSave }: { id: string; group: Group; onSave: (b
       setErrors({ ...errors, rule: undefined });
     } catch (error) {
       setPreview(null);
-      setErrors({ ...errors, rule: error instanceof ApiError ? error.message : "Halo could not reach the server. Try again." });
+      setErrors({ ...errors, rule: error instanceof ApiError ? error.message : t.unreachable });
     } finally {
       setPreviewing(false);
     }
@@ -103,8 +101,8 @@ function GroupForm({ id, group, onSave }: { id: string; group: Group; onSave: (b
   function submit(event: FormEvent) {
     event.preventDefault();
     const next = {
-      name: name.trim() ? undefined : "Enter a group name.",
-      rule: dynamic && !rule.trim() ? "Enter a rule. Rule-based groups need one." : undefined,
+      name: name.trim() ? undefined : t.validation.groupName,
+      rule: dynamic && !rule.trim() ? t.group.ruleRequired : undefined,
     };
     setErrors(next);
     if (next.name || next.rule) return;
@@ -116,22 +114,22 @@ function GroupForm({ id, group, onSave }: { id: string; group: Group; onSave: (b
 
   return (
     <form id={id} className="flex flex-col gap-6" onSubmit={submit} noValidate>
-      <Field label="Name" error={errors.name}>
+      <Field label={t.fields.name} error={errors.name}>
         {(props) => <Input {...props} autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} />}
       </Field>
-      <Field label="Description" hint="Optional. Helps other administrators pick the right group.">
+      <Field label={t.fields.description} hint={t.descriptionHint}>
         {(props) => <Input {...props} value={description} onChange={(event) => setDescription(event.target.value)} />}
       </Field>
       {dynamic ? null : (
         <Field
-          label="Who can join"
-          hint={group.owners.length ? "People join or ask from the Groups page of their account." : "Add an owner to let people ask to join. Owners approve requests."}
+          label={t.group.whoCanJoin}
+          hint={group.owners.length ? t.group.joinWithOwners : t.group.joinWithoutOwners}
         >
           {(props) => (
             <Select {...props} value={joinPolicy} onChange={(event) => setJoinPolicy(event.target.value as JoinPolicy)}>
-              {(Object.keys(JOIN_POLICY) as JoinPolicy[]).map((policy) => (
+              {(Object.keys(t.joinPolicy) as JoinPolicy[]).map((policy) => (
                 <option key={policy} value={policy} disabled={policy === "request" && group.owners.length === 0}>
-                  {JOIN_POLICY[policy].label} — {JOIN_POLICY[policy].description}
+                  {t.joinPolicy[policy].label} — {t.joinPolicy[policy].description}
                 </option>
               ))}
             </Select>
@@ -151,17 +149,17 @@ function GroupForm({ id, group, onSave }: { id: string; group: Group; onSave: (b
               }}
             />
             <span className="flex flex-col">
-              <span className="text-body-sm text-fg">All users</span>
-              <span className="text-caption text-fg-3">Everyone in the directory is a member.</span>
+              <span className="text-body-sm text-fg">{t.group.allUsers}</span>
+              <span className="text-caption text-fg-3">{t.group.allUsersHint}</span>
             </span>
           </label>
           {everyone ? null : (
             <Field
-              label="Rule"
+              label={t.fields.rule}
               error={errors.rule}
               hint={
                 <>
-                  Combine attributes with and, or and not, for example{" "}
+                  {t.ruleHint}{" "}
                   <code className="text-code-sm text-fg-2">user.email endsWith &quot;@example.com&quot; and user.status == &quot;active&quot;</code>
                 </>
               }
@@ -183,16 +181,20 @@ function GroupForm({ id, group, onSave }: { id: string; group: Group; onSave: (b
           )}
           <div className="flex flex-wrap items-center gap-3">
             <Button size="sm" variant="secondary" loading={previewing} disabled={!rule.trim()} onClick={previewRule}>
-              Preview matches
+              {t.group.preview}
             </Button>
             {preview ? (
               <p className="animate-enter text-body-sm text-fg-2" aria-live="polite">
                 {preview.length === 0
-                  ? "Nobody matches this rule yet."
-                  : `${pluralize(preview.length, "person", "people")} ${preview.length === 1 ? "matches" : "match"}: ${preview
-                      .slice(0, 5)
-                      .map((u) => u.name)
-                      .join(", ")}${preview.length > 5 ? ` and ${preview.length - 5} more` : ""}.`}
+                  ? t.group.nobodyMatches
+                  : t.group.matches(
+                      preview.length,
+                      preview
+                        .slice(0, 5)
+                        .map((u) => u.name)
+                        .join(", "),
+                      preview.length - 5,
+                    )}
               </p>
             ) : null}
           </div>
@@ -206,6 +208,7 @@ export function AddMembers({ group, people }: { group: Pick<Group, "id" | "name"
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const { pending, run, errorFor, clearError, toast } = useMutation();
+  const t = useMessages(directoryMessages);
 
   function close() {
     setOpen(false);
@@ -220,7 +223,7 @@ export function AddMembers({ group, people }: { group: Pick<Group, "id" | "name"
       () => Promise.all(selected.map((userId) => api(`/groups/${group.id}/members`, { body: { userId } }))),
       () => {
         close();
-        toast({ title: `Added ${pluralize(count, "person", "people")}`, description: `They get ${group.name}'s applications at their next sign-in.` });
+        toast({ title: t.group.added(count), description: t.group.addedHint(group.name) });
       },
       "inline",
     );
@@ -230,26 +233,26 @@ export function AddMembers({ group, people }: { group: Pick<Group, "id" | "name"
     <>
       <Button size="sm" variant="secondary" onClick={() => setOpen(true)} disabled={people.length === 0}>
         <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-        Add members
+        {t.group.addMembers}
       </Button>
       <Dialog
         open={open}
         onOpenChange={(next) => (next ? setOpen(true) : close())}
         error={errorFor("add")}
-        title={`Add members to ${group.name}`}
-        description="Members get the group's applications at their next sign-in. Recorded in the audit log."
+        title={t.group.addTitle(group.name)}
+        description={t.group.addDescription}
         footer={
           <>
             <Button variant="secondary" onClick={close}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="primary" disabled={selected.length === 0} loading={pending === "add"} onClick={add}>
-              {selected.length ? `Add ${pluralize(selected.length, "person", "people")}` : "Add members"}
+              {selected.length ? t.group.addPeople(selected.length) : t.group.addMembers}
             </Button>
           </>
         }
       >
-        <Field label="People">{(props) => <PeoplePicker {...props} people={people} value={selected} onChange={setSelected} />}</Field>
+        <Field label={t.group.people}>{(props) => <PeoplePicker {...props} people={people} value={selected} onChange={setSelected} />}</Field>
       </Dialog>
     </>
   );
@@ -259,6 +262,7 @@ export function EditOwners({ group, people }: { group: Group; people: Person[] }
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const { pending, run, errorFor, clearError, toast } = useMutation();
+  const t = useMessages(directoryMessages);
 
   function show() {
     setSelected(group.owners.map((o) => o.id));
@@ -272,7 +276,7 @@ export function EditOwners({ group, people }: { group: Group; people: Person[] }
       () => api<Group>(`/groups/${group.id}/owners`, { method: "PUT", body: { userIds: selected } }),
       (saved) => {
         setOpen(false);
-        toast({ title: `${saved.name} owners saved`, description: "Recorded in the audit log." });
+        toast({ title: t.group.ownersSaved(saved.name), description: t.recorded });
       },
       "inline",
     );
@@ -282,26 +286,26 @@ export function EditOwners({ group, people }: { group: Group; people: Person[] }
     <>
       <Button size="sm" variant="secondary" onClick={show}>
         <Pencil aria-hidden="true" size={16} strokeWidth={1.75} />
-        Edit owners
+        {t.group.editOwners}
       </Button>
       <Dialog
         open={open}
         onOpenChange={setOpen}
         error={errorFor("owners")}
-        title={`Owners of ${group.name}`}
-        description="Owners add and remove members and approve requests to join from their account. They don't get an administrator role."
+        title={t.group.ownersTitle(group.name)}
+        description={t.group.ownersDialogDescription}
         footer={
           <>
             <Button variant="secondary" onClick={() => setOpen(false)}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="primary" loading={pending === "owners"} onClick={save}>
-              Save owners
+              {t.group.saveOwners}
             </Button>
           </>
         }
       >
-        <Field label="Owners">{(props) => <PeoplePicker {...props} people={people} value={selected} onChange={setSelected} />}</Field>
+        <Field label={t.group.owners}>{(props) => <PeoplePicker {...props} people={people} value={selected} onChange={setSelected} />}</Field>
       </Dialog>
     </>
   );
@@ -309,13 +313,14 @@ export function EditOwners({ group, people }: { group: Group; people: Person[] }
 
 export function DeleteGroup({ group, appCount }: { group: Group; appCount: number }) {
   const { run, toast, router } = useMutation();
+  const t = useMessages(directoryMessages);
 
   function remove() {
     return run(
       "delete",
       () => api(`/groups/${group.id}`, { method: "DELETE" }),
       () => {
-        toast({ title: `${group.name} deleted`, description: "Recorded in the audit log." });
+        toast({ title: t.group.deleted(group.name), description: t.recorded });
         router.push("/admin/groups");
       },
     );
@@ -323,17 +328,17 @@ export function DeleteGroup({ group, appCount }: { group: Group; appCount: numbe
 
   return (
     <Card>
-      <CardHeader title="Danger zone" />
+      <CardHeader title={t.dangerZone} />
       <div className="flex flex-col gap-4 border-t border-border px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-1">
-          <p className="text-body-sm font-semibold text-fg">Delete group</p>
+          <p className="text-body-sm font-semibold text-fg">{t.group.deleteGroup}</p>
           <p className="text-body-sm text-fg-3">
-            {appCount > 0 ? `Unassign it from ${pluralize(appCount, "application")} first. ` : null}
-            Halo keeps the group while an application, access package or policy uses it. Deleting removes memberships, not people.
+            {appCount > 0 ? t.group.unassignFirst(appCount) : null}
+            {t.group.deleteDescription}
           </p>
         </div>
-        <HoldToConfirm size="sm" doneLabel="Deleted" className="self-start sm:self-center" onConfirm={remove}>
-          Hold to delete
+        <HoldToConfirm size="sm" doneLabel={t.group.deletedLabel} className="self-start sm:self-center" onConfirm={remove}>
+          {t.group.holdToDelete}
         </HoldToConfirm>
       </div>
     </Card>
@@ -342,6 +347,8 @@ export function DeleteGroup({ group, appCount }: { group: Group; appCount: numbe
 
 export function GroupMembersTable({ group, members }: { group: Group; members: User[] }) {
   const { run, toast, router } = useMutation();
+  const locale = useLocale();
+  const t = directoryMessages[locale];
   const departments = [...new Set(members.map((u) => u.department).filter(Boolean))].sort();
 
   function remove(rows: User[]) {
@@ -350,8 +357,8 @@ export function GroupMembersTable({ group, members }: { group: Group; members: U
       () => Promise.all(rows.map((u) => api(`/groups/${group.id}/members/${u.id}`, { method: "DELETE" }))),
       () =>
         toast({
-          title: `Removed from ${group.name}`,
-          description: `${rows.length === 1 ? rows[0]?.name : pluralize(rows.length, "person", "people")} ${rows.length === 1 ? "loses" : "lose"} the group's applications at next sign-in.`,
+          title: t.addToGroup.removed(group.name),
+          description: t.group.removedHint(rows.length, rows[0]?.name),
         }),
     );
   }
@@ -359,24 +366,24 @@ export function GroupMembersTable({ group, members }: { group: Group; members: U
   return (
     <DataTable
       data={members}
-      columns={userColumns.filter((c) => ["name", "status", "strength", "department", "lastSignIn"].includes(c.id ?? ""))}
+      columns={userColumns(locale).filter((c) => ["name", "status", "strength", "department", "lastSignIn"].includes(c.id ?? ""))}
       getRowId={(u) => u.id}
-      label={group.kind === "dynamic" ? "Matching people" : "Members"}
-      noun={["person", "people"]}
+      label={group.kind === "dynamic" ? t.group.matchingPeople : t.fields.members}
+      noun={t.peopleNoun}
       storageKey="group-members"
       searchText={(u) => `${u.name} ${u.email} ${u.title} ${u.department} ${u.location}`}
-      searchPlaceholder="Search name, email or title"
+      searchPlaceholder={t.searchPeople}
       facets={[
-        { column: "status", label: "Status", options: Object.entries(STATUS).map(([value, s]) => ({ value, label: s.label })) },
-        { column: "strength", label: "Authentication", options: Object.entries(STRENGTH).map(([value, s]) => ({ value, label: s.label })) },
-        { column: "department", label: "Department", options: departments.map((d) => ({ value: d, label: d })) },
+        { column: "status", label: t.fields.status, options: Object.entries(t.status).map(([value, label]) => ({ value, label })) },
+        { column: "strength", label: t.fields.authentication, options: Object.entries(t.strength).map(([value, s]) => ({ value, label: s.label })) },
+        { column: "department", label: t.fields.department, options: departments.map((d) => ({ value: d, label: d })) },
       ]}
       onRowOpen={(u) => router.push(`/admin/users/${u.id}`)}
       rowActions={[
-        { label: "Open profile", icon: UserRound, onSelect: (u) => router.push(`/admin/users/${u.id}`) },
-        ...(group.kind === "dynamic" ? [] : [{ label: "Remove from group", icon: UserMinus, danger: true, separatorBefore: true, onSelect: (u: User) => remove([u]) }]),
+        { label: t.openProfile, icon: UserRound, onSelect: (u) => router.push(`/admin/users/${u.id}`) },
+        ...(group.kind === "dynamic" ? [] : [{ label: t.group.removeFromGroup, icon: UserMinus, danger: true, separatorBefore: true, onSelect: (u: User) => remove([u]) }]),
       ]}
-      bulkActions={group.kind === "dynamic" ? undefined : [{ label: "Remove from group", icon: UserMinus, danger: true, onSelect: remove }]}
+      bulkActions={group.kind === "dynamic" ? undefined : [{ label: t.group.removeFromGroup, icon: UserMinus, danger: true, onSelect: remove }]}
     />
   );
 }

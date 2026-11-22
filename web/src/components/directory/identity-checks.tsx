@@ -11,36 +11,30 @@ import { Field, Select, Textarea } from "@/components/ui/input";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
 import { formatDateTime } from "@/lib/format";
+import { useLocale, useMessages } from "@/lib/i18n/client";
+import { directoryMessages } from "@/lib/i18n/console/directory";
 import type { IdentityProof } from "@/lib/types";
 
-export const DOCUMENTS: Record<Exclude<IdentityProof["document"], "">, string> = {
-  passport: "Passport",
-  "national-id": "National identity card",
-  "driving-licence": "Driving licence",
-  "residence-permit": "Residence permit",
-  other: "Another official document",
-};
+type Document = Exclude<IdentityProof["document"], "">;
 
-export const PROOF_STATUS: Record<IdentityProof["status"], { label: string; tone: Tone }> = {
-  verified: { label: "Verified", tone: "success" },
-  pending: { label: "Waiting for the provider", tone: "warning" },
-  failed: { label: "Not verified", tone: "danger" },
-};
+const PROOF_TONE: Record<IdentityProof["status"], Tone> = { verified: "success", pending: "warning", failed: "danger" };
 
 export function IdentityChecks({ proofs, providerName, empty }: { proofs: IdentityProof[]; providerName: string; empty: string }) {
-  if (proofs.length === 0) return <EmptyState icon={IdCard} title="No identity checks" description={empty} />;
+  const locale = useLocale();
+  const t = directoryMessages[locale];
+  if (proofs.length === 0) return <EmptyState icon={IdCard} title={t.identity.emptyTitle} description={empty} />;
   return (
     <SimpleTable
-      caption="Identity checks"
-      head={["Result", "Method", "Details", "Date"]}
+      caption={t.user.identityChecks}
+      head={[t.identity.result, t.identity.method, t.identity.details, t.identity.date]}
       rows={proofs.map((p) => [
-        <Badge key="s" tone={PROOF_STATUS[p.status].tone}>
-          {PROOF_STATUS[p.status].label}
+        <Badge key="s" tone={PROOF_TONE[p.status]}>
+          {t.identity.proofStatus[p.status]}
         </Badge>,
-        p.method === "in-person" ? `In person by ${p.checkedBy?.name ?? "a deleted administrator"}` : p.provider === "stripe" ? "Stripe Identity" : providerName || "Verification provider",
+        p.method === "in-person" ? t.identity.inPerson(p.checkedBy?.name) : p.provider === "stripe" ? "Stripe Identity" : providerName || t.identity.provider,
         p.method === "in-person" ? (
           <span key="d" className="flex flex-col">
-            <span className="text-fg">{p.document ? DOCUMENTS[p.document] : "—"}</span>
+            <span className="text-fg">{p.document ? t.identity.documents[p.document] : "—"}</span>
             <span className="text-caption text-fg-3">{p.note}</span>
           </span>
         ) : (
@@ -48,7 +42,7 @@ export function IdentityChecks({ proofs, providerName, empty }: { proofs: Identi
             {p.reference}
           </span>
         ),
-        formatDateTime(p.completedAt ?? p.createdAt),
+        formatDateTime(p.completedAt ?? p.createdAt, locale),
       ])}
     />
   );
@@ -57,16 +51,17 @@ export function IdentityChecks({ proofs, providerName, empty }: { proofs: Identi
 export function CheckIdentityButton({ name, endpoint }: { name: string; endpoint: string }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const formId = useId();
+  const t = useMessages(directoryMessages);
   const [open, setOpen] = useState(false);
-  const [document, setDocument] = useState<keyof typeof DOCUMENTS>("passport");
+  const [document, setDocument] = useState<Document>("passport");
   const [note, setNote] = useState("");
   const [attempted, setAttempted] = useState(false);
   const noteError = !note.trim()
-    ? "Describe how you checked them, for example where you met and what you compared."
+    ? t.identity.noteRequired
     : /[0-9]{5,}/.test(note)
-      ? "Leave the document number out. Halo records which kind of document you checked, not its number."
+      ? t.identity.noteNumber
       : note.trim().length > 500
-        ? "Keep the note to 500 characters."
+        ? t.identity.noteLength
         : undefined;
 
   function close() {
@@ -85,21 +80,21 @@ export function CheckIdentityButton({ name, endpoint }: { name: string; endpoint
         }}
       >
         <IdCard aria-hidden="true" size={16} strokeWidth={1.75} />
-        Check identity
+        {t.identity.check}
       </Button>
       <Dialog
         open={open}
         onOpenChange={close}
         error={errorFor("check")}
-        title={`Check ${name}'s identity`}
-        description={`Confirm that you checked ${name} in person or on a video call against an official document with their photo. Halo records your name, the kind of document and your note, and writes it to the audit log.`}
+        title={t.identity.checkTitle(name)}
+        description={t.identity.checkDescription(name)}
         footer={
           <>
             <Button variant="secondary" onClick={close}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="primary" type="submit" form={formId} loading={pending === "check"}>
-              Confirm identity
+              {t.identity.confirm}
             </Button>
           </>
         }
@@ -117,25 +112,25 @@ export function CheckIdentityButton({ name, endpoint }: { name: string; endpoint
               () => api<IdentityProof>(endpoint, { body: { document, note: note.trim() } }),
               () => {
                 close();
-                toast({ title: `${name}'s identity confirmed`, description: "Recorded with your name in the audit log." });
+                toast({ title: t.identity.confirmed(name), description: t.identity.confirmedHint });
               },
               "inline",
             );
           }}
         >
-          <Field label="Document you checked">
+          <Field label={t.identity.document}>
             {(props) => (
-              <Select {...props} value={document} onChange={(event) => setDocument(event.target.value as keyof typeof DOCUMENTS)}>
-                {(Object.keys(DOCUMENTS) as (keyof typeof DOCUMENTS)[]).map((key) => (
+              <Select {...props} value={document} onChange={(event) => setDocument(event.target.value as Document)}>
+                {(Object.keys(t.identity.documents) as Document[]).map((key) => (
                   <option key={key} value={key}>
-                    {DOCUMENTS[key]}
+                    {t.identity.documents[key]}
                   </option>
                 ))}
               </Select>
             )}
           </Field>
-          <Field label="How you checked" hint="Where you met and what you compared. Leave out the document number." error={attempted ? noteError : undefined}>
-            {(props) => <Textarea {...props} rows={3} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Met at the Lisbon office and compared the photo" />}
+          <Field label={t.identity.note} hint={t.identity.noteHint} error={attempted ? noteError : undefined}>
+            {(props) => <Textarea {...props} rows={3} value={note} onChange={(event) => setNote(event.target.value)} placeholder={t.identity.notePlaceholder} />}
           </Field>
         </form>
       </Dialog>

@@ -6,20 +6,27 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { TabNav } from "@/components/ui/tab-nav";
 import { apiGet } from "@/lib/api/server";
-import { pluralize } from "@/lib/format";
+import { directoryMessages } from "@/lib/i18n/console/directory";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { requestLocale } from "@/lib/i18n/server";
 import type { ComplianceSource, Device } from "@/lib/policy-types";
 import type { Organization, User } from "@/lib/types";
 
-export const metadata = { title: "Devices" };
+export async function generateMetadata() {
+  return { title: frameMessages[await requestLocale()].nav.items.devices.label };
+}
 
 export default async function DevicesPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const { tab = "devices" } = await searchParams;
-  const [devices, users, sources, org] = await Promise.all([
+  const [devices, users, sources, org, locale] = await Promise.all([
     apiGet<Device[]>("/devices"),
     apiGet<User[]>("/users"),
     apiGet<ComplianceSource[]>("/compliance-sources"),
     apiGet<Organization>("/organization"),
+    requestLocale(),
   ]);
+  const t = directoryMessages[locale];
+  const title = frameMessages[locale].nav.items.devices.label;
   const trusted = devices.filter((d) => d.trust === "trusted").length;
   const blocked = devices.filter((d) => d.trust === "blocked").length;
   const compliant = devices.filter((d) => d.compliance?.state === "compliant").length;
@@ -27,14 +34,14 @@ export default async function DevicesPage({ searchParams }: { searchParams: Prom
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        title="Devices"
-        description={`${pluralize(devices.length, "device")} used by ${pluralize(people, "person", "people")}, ${trusted} trusted, ${blocked} blocked and ${compliant} compliant. Blocking a device refuses new sign-ins from it and signs out its open sessions.`}
+        title={title}
+        description={t.devices.description(devices.length, people, trusted, blocked, compliant)}
       />
       <TabNav
-        label="Device sections"
+        label={t.devices.sections}
         tabs={[
-          { id: "devices", label: "Devices", count: devices.length },
-          { id: "sources", label: "Compliance sources", count: sources.length },
+          { id: "devices", label: title, count: devices.length },
+          { id: "sources", label: t.devices.complianceSources, count: sources.length },
         ]}
         active={tab}
         hrefFor={(id) => (id === "devices" ? "/admin/devices" : `/admin/devices?tab=${id}`)}
@@ -46,7 +53,7 @@ export default async function DevicesPage({ searchParams }: { searchParams: Prom
           <DevicesTable devices={devices} sources={sources} owners={Object.fromEntries(users.map((u) => [u.id, { name: u.name, email: u.email }]))} />
         ) : (
           <Card>
-            <EmptyState icon={Laptop} title="No devices yet" description="Halo registers a device the first time someone signs in from it. Trust or block it here afterwards." />
+            <EmptyState icon={Laptop} title={t.devices.emptyTitle} description={t.devices.emptyDescription} />
           </Card>
         )}
       </div>

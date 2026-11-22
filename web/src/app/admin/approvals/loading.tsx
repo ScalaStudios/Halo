@@ -1,19 +1,21 @@
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { SectionTitle } from "@/components/ui/section-title";
 import { FieldSkeleton, ListSkeleton, PageSkeleton, Skeleton, SkeletonText, TableSkeleton } from "@/components/ui/skeleton";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { governanceMessages } from "@/lib/i18n/console/governance";
+import { requestLocale } from "@/lib/i18n/server";
 
-export default function Loading() {
+export default async function Loading() {
+  const locale = await requestLocale();
+  const t = governanceMessages[locale];
   return (
-    <PageSkeleton title="Approvals" description={140}>
+    <PageSkeleton title={frameMessages[locale].nav.items.approvals.label} description={140}>
       <Card>
-        <CardHeader title="Pending" description={<SkeletonText chars={12} />} />
+        <CardHeader title={t.pending} description={<SkeletonText chars={12} />} />
         <ListSkeleton media className="pb-2" />
       </Card>
       <Card>
-        <CardHeader
-          title="Changes that need approval"
-          description="Each one waits for a second global administrator, who approves or rejects it here within 72 hours. The person who asked can't approve their own change."
-        />
+        <CardHeader title={t.pages.approvalSettings} description={t.pages.approvalSettingsHint} />
         <CardBody className="flex max-w-xl flex-col gap-6">
           <div aria-hidden="true" className="flex flex-col gap-4">
             {[38, 34, 28, 30].map((chars) => (
@@ -30,11 +32,11 @@ export default function Loading() {
               </div>
             ))}
           </div>
-          <FieldSkeleton label="Emergency access accounts" hint={140} />
+          <FieldSkeleton label={t.pages.emergencyAccounts} hint={140} />
         </CardBody>
       </Card>
       <section className="flex flex-col gap-4">
-        <SectionTitle title="Decided" description="Approved, rejected, expired and unapplied changes, newest first." />
+        <SectionTitle title={t.decided} description={t.pages.approvalsDecided} />
         <TableSkeleton columns={4} facets={1} rows={4} />
       </section>
     </PageSkeleton>

@@ -3,13 +3,18 @@ import { RolesBoard } from "@/components/settings/roles-board";
 import { ReadOnlyNote } from "@/components/settings/shared";
 import { PageHeader } from "@/components/ui/page-header";
 import { apiGet } from "@/lib/api/server";
-import { pluralize } from "@/lib/format";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { policyMessages } from "@/lib/i18n/console/policy";
+import { requestLocale } from "@/lib/i18n/server";
 import type { Group, User } from "@/lib/types";
 
-export const metadata = { title: "Roles" };
+export async function generateMetadata() {
+  return { title: frameMessages[await requestLocale()].nav.items.roles.label };
+}
 
 export default async function RolesPage() {
-  const [users, groups, me] = await Promise.all([apiGet<User[]>("/users"), apiGet<Group[]>("/groups"), apiGet<User>("/me")]);
+  const [users, groups, me, locale] = await Promise.all([apiGet<User[]>("/users"), apiGet<Group[]>("/groups"), apiGet<User>("/me"), requestLocale()]);
+  const t = policyMessages[locale].roles;
   const people = users.map(({ id, name, email, roles, status, eligibleRoles, activations, roleScopes, eligibleScopes }) => ({
     id,
     name,
@@ -26,10 +31,10 @@ export default async function RolesPage() {
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        title="Roles"
-        description={`${pluralize(admins, "person holds", "people hold")} an administrator role. Every role can read every administration page; the lists below are what each one may change. Eligible people activate a role for up to 8 hours when they need it. A user or helpdesk administrator limited to groups reaches only those groups' members.`}
+        title={frameMessages[locale].nav.items.roles.label}
+        description={t.summary(admins)}
       />
-      {canEdit ? null : <ReadOnlyNote>Only a global administrator can assign or remove roles.</ReadOnlyNote>}
+      {canEdit ? null : <ReadOnlyNote>{t.readOnly}</ReadOnlyNote>}
       <RolesBoard people={people} groups={groups} meId={me.id} canEdit={canEdit} />
     </div>
   );

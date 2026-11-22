@@ -8,6 +8,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
 import { AttributeFields, draftsOf, parseDrafts } from "@/components/directory/attribute-fields";
 import { api } from "@/lib/api/client";
+import { useLocale, useMessages } from "@/lib/i18n/client";
+import { directoryMessages } from "@/lib/i18n/console/directory";
 import type { Attribute, User } from "@/lib/types";
 
 export type ProfileAccess = "all" | "org";
@@ -30,6 +32,7 @@ export function OrgFields({
   managerLocked?: boolean;
 }) {
   const id = useId();
+  const t = useMessages(directoryMessages);
   const people = directory.filter((u) => u.id !== self && u.status !== "deprovisioned");
   const manager = directory.find((u) => u.id === value.managerId);
   const field = (key: "title" | "department" | "location") => (props: { id: string }) => (
@@ -38,17 +41,17 @@ export function OrgFields({
 
   return (
     <>
-      <Field label="Title">{field("title")}</Field>
+      <Field label={t.fields.title}>{field("title")}</Field>
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-        <Field label="Department" hint="Rule-based groups match this exactly.">
+        <Field label={t.fields.department} hint={t.profile.departmentHint}>
           {field("department")}
         </Field>
-        <Field label="Location">{field("location")}</Field>
+        <Field label={t.fields.location}>{field("location")}</Field>
       </div>
-      <Field label="Manager" hint={managerLocked ? undefined : "Optional. Search for the person they report to."}>
+      <Field label={t.fields.manager} hint={managerLocked ? undefined : t.profile.managerHint}>
         {(props) =>
           managerLocked ? (
-            <Input {...props} disabled value={manager?.name ?? "None"} />
+            <Input {...props} disabled value={manager?.name ?? t.none} />
           ) : (
             <PeoplePicker {...props} people={people} value={value.managerId ? [value.managerId] : []} onChange={(ids) => onChange({ ...value, managerId: ids.at(-1) ?? "" })} />
           )
@@ -68,6 +71,7 @@ export function OrgFields({
 export function EditProfileDialog({ user, directory, access, attributes, open, onOpenChange }: ProfileEdit & { open: boolean; onOpenChange: (open: boolean) => void }) {
   const formId = useId();
   const { pending, run, errorFor, clearError, toast } = useMutation();
+  const t = useMessages(directoryMessages);
 
   function save(body: Record<string, unknown>) {
     void run(
@@ -75,7 +79,7 @@ export function EditProfileDialog({ user, directory, access, attributes, open, o
       () => api(`/users/${user.id}`, { method: "PATCH", body }),
       () => {
         onOpenChange(false);
-        toast({ title: "Profile saved", description: `${user.name}'s profile is updated. Recorded in the audit log.` });
+        toast({ title: t.profile.saved, description: t.profile.savedHint(user.name) });
       },
       "inline",
     );
@@ -89,19 +93,15 @@ export function EditProfileDialog({ user, directory, access, attributes, open, o
         onOpenChange(next);
       }}
       error={errorFor("profile")}
-      title="Edit profile"
-      description={
-        access === "org"
-          ? "Helpdesk administrators can change title, department and location. Ask a user administrator to change the name, email or manager."
-          : "Rule-based group membership follows title, department and location, so changes here can add or remove access."
-      }
+      title={t.actions.editProfile}
+      description={access === "org" ? t.profile.helpdeskDescription : t.profile.description}
       footer={
         <>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t.cancel}
           </Button>
           <Button type="submit" form={formId} variant="primary" loading={pending === "profile"}>
-            Save profile
+            {t.profile.save}
           </Button>
         </>
       }
@@ -119,14 +119,16 @@ function ProfileForm({ id, user, directory, access, attributes, onSave }: Profil
   const [drafts, setDrafts] = useState(() => draftsOf(attributes, user.attributes));
   const [attributeErrors, setAttributeErrors] = useState<Record<string, string>>({});
   const locked = access === "org";
+  const locale = useLocale();
+  const t = directoryMessages[locale];
 
   function submit(event: FormEvent) {
     event.preventDefault();
     const next = {
-      name: name.trim() ? undefined : "Enter their name so other administrators can recognise them.",
-      email: EMAIL.test(email.trim()) ? undefined : "Enter a full email address, like sam@example.com.",
+      name: name.trim() ? undefined : t.validation.name,
+      email: EMAIL.test(email.trim()) ? undefined : t.validation.email,
     };
-    const parsed = parseDrafts(attributes, drafts);
+    const parsed = parseDrafts(attributes, drafts, locale);
     setErrors(next);
     setAttributeErrors(parsed.errors);
     if (next.name || next.email || Object.keys(parsed.errors).length > 0) return;
@@ -137,10 +139,10 @@ function ProfileForm({ id, user, directory, access, attributes, onSave }: Profil
 
   return (
     <form id={id} className="flex flex-col gap-6" onSubmit={submit} noValidate>
-      <Field label="Name" error={errors.name}>
+      <Field label={t.fields.name} error={errors.name}>
         {(props) => <Input {...props} autoComplete="off" disabled={locked} value={name} onChange={(event) => setName(event.target.value)} />}
       </Field>
-      <Field label="Email" error={errors.email}>
+      <Field label={t.fields.email} error={errors.email}>
         {(props) => <Input {...props} type="email" autoComplete="off" disabled={locked} value={email} onChange={(event) => setEmail(event.target.value)} />}
       </Field>
       <OrgFields value={org} onChange={setOrg} directory={directory} self={user.id} managerLocked={locked} />
@@ -151,10 +153,11 @@ function ProfileForm({ id, user, directory, access, attributes, onSave }: Profil
 
 export function EditProfileButton(props: ProfileEdit) {
   const [open, setOpen] = useState(false);
+  const t = useMessages(directoryMessages);
   return (
     <>
       <Button size="sm" variant="quiet" onClick={() => setOpen(true)}>
-        Edit
+        {t.edit}
       </Button>
       <EditProfileDialog {...props} open={open} onOpenChange={setOpen} />
     </>

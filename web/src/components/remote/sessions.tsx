@@ -10,23 +10,30 @@ import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
-import { formatDateTime, formatDuration, pluralize } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
+import { useLocale } from "@/lib/i18n/client";
+import { infrastructureMessages } from "@/lib/i18n/console/infrastructure";
+import { remoteMessages } from "@/lib/i18n/console/infrastructure/remote";
+import type { Locale } from "@/lib/i18n/locale";
 import type { RemoteSession } from "@/lib/infra-types";
 
-function elapsed(from: string, to: string) {
+function elapsed(from: string, to: string, locale: Locale) {
   const seconds = Math.max(0, Math.round((new Date(to).getTime() - new Date(from).getTime()) / 1000));
-  return seconds < 60 ? pluralize(seconds, "second") : formatDuration(Math.round(seconds / 60) * 60);
+  return seconds < 60 ? remoteMessages[locale].sessions.seconds(seconds) : infrastructureMessages[locale].duration(Math.round(seconds / 60) * 60);
 }
 
-function size(bytes: number) {
+function size(bytes: number, locale: Locale) {
   if (bytes < 1024) return `${bytes} B`;
   const [value, unit] = bytes < 1024 * 1024 ? [bytes / 1024, "KB"] : [bytes / 1024 / 1024, "MB"];
-  return `${value.toLocaleString("en-US", { maximumFractionDigits: 1 })} ${unit}`;
+  return `${value.toLocaleString(locale, { maximumFractionDigits: 1 })} ${unit}`;
 }
 
 export function RemoteSessions({ sessions, showApplication = true, canEnd, canDownload, empty }: { sessions: RemoteSession[]; showApplication?: boolean; canEnd: boolean; canDownload: boolean; empty: string }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [ending, setEnding] = useState<RemoteSession | null>(null);
+  const locale = useLocale();
+  const t = remoteMessages[locale].sessions;
+  const common = infrastructureMessages[locale];
 
   function end() {
     const session = ending;
@@ -36,7 +43,7 @@ export function RemoteSessions({ sessions, showApplication = true, canEnd, canDo
       () => api(`/remote-sessions/${session.id}/terminate`, { method: "POST" }),
       () => {
         setEnding(null);
-        toast({ title: "Session ended", description: `${session.email} was disconnected from ${session.address}. Recorded in the audit log.` });
+        toast({ title: t.ended, description: t.endedHint(session.email, session.address) });
       },
       "inline",
     );
@@ -45,7 +52,7 @@ export function RemoteSessions({ sessions, showApplication = true, canEnd, canDo
   if (!sessions.length) {
     return (
       <Card>
-        <EmptyState icon={SquareTerminal} title="No remote sessions yet" description={empty} />
+        <EmptyState icon={SquareTerminal} title={t.empty} description={empty} />
       </Card>
     );
   }
@@ -53,8 +60,8 @@ export function RemoteSessions({ sessions, showApplication = true, canEnd, canDo
   return (
     <>
       <SimpleTable
-        caption="Remote sessions"
-        head={["Person", showApplication ? "Application" : "Host", "Started", "Status", "Transferred", "Actions"]}
+        caption={t.caption}
+        head={[t.person, showApplication ? t.application : t.host, t.started, t.status, t.transferred, common.actions]}
         rows={sessions.map((s) => [
           <span key="person" className="flex flex-col">
             <span className="text-fg">{s.email}</span>
@@ -67,34 +74,34 @@ export function RemoteSessions({ sessions, showApplication = true, canEnd, canDo
             </span>
           </span>,
           <span key="started" className="whitespace-nowrap">
-            {formatDateTime(s.startedAt ?? s.createdAt)}
+            {formatDateTime(s.startedAt ?? s.createdAt, locale)}
           </span>,
           <span key="status" className="flex max-w-80 flex-col items-start gap-1">
             {s.status === "active" ? (
               <Badge tone="success" dot>
-                Live
+                {t.live}
               </Badge>
             ) : s.status === "pending" ? (
               <Badge tone="warning" dot>
-                Connecting
+                {t.connecting}
               </Badge>
             ) : (
-              <Badge dot>{s.startedAt && s.endedAt ? `Ended after ${elapsed(s.startedAt, s.endedAt)}` : "Ended"}</Badge>
+              <Badge dot>{s.startedAt && s.endedAt ? t.endedAfter(elapsed(s.startedAt, s.endedAt, locale)) : t.endedBadge}</Badge>
             )}
-            {s.endReason ? <span className="text-caption text-fg-3">{s.endReason}</span> : null}
+            {s.endReason ? <span lang="en" className="text-caption text-fg-3">{s.endReason}</span> : null}
           </span>,
           <span key="bytes" className="tnum flex flex-col whitespace-nowrap">
-            <span>{size(s.bytesOut)} out</span>
-            <span className="text-caption text-fg-3">{size(s.bytesIn)} typed</span>
+            <span>{t.out(size(s.bytesOut, locale))}</span>
+            <span className="text-caption text-fg-3">{t.typed(size(s.bytesIn, locale))}</span>
           </span>,
           <span key="actions" className="flex gap-1">
             {canDownload && s.recorded ? (
-              <a href={`/api/v1/remote-sessions/${s.id}/recording`} download aria-label={`Download the recording of ${s.email}'s session`} className={buttonClasses("quiet", "icon-sm")}>
+              <a href={`/api/v1/remote-sessions/${s.id}/recording`} download aria-label={t.download(s.email)} className={buttonClasses("quiet", "icon-sm")}>
                 <Download aria-hidden="true" size={16} strokeWidth={1.75} />
               </a>
             ) : null}
             {canEnd && s.status !== "ended" ? (
-              <Button size="icon-sm" variant="quiet" aria-label={`End ${s.email}'s session`} onClick={() => setEnding(s)}>
+              <Button size="icon-sm" variant="quiet" aria-label={t.end(s.email)} onClick={() => setEnding(s)}>
                 <SquareX aria-hidden="true" size={16} strokeWidth={1.75} />
               </Button>
             ) : null}
@@ -109,15 +116,15 @@ export function RemoteSessions({ sessions, showApplication = true, canEnd, canDo
           clearError();
         }}
         error={errorFor("end")}
-        title={`End ${ending ? `${ending.email}'s` : "this"} session?`}
-        description={`Halo closes the remote session to ${ending?.address ?? "the host"} and tells the browser it was ended from the console. They can start a new one if they still have access.`}
+        title={t.endTitle(ending?.email ?? null)}
+        description={t.endHint(ending?.address ?? null)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setEnding(null)}>
-              Cancel
+              {common.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "end"} onClick={end}>
-              End session
+              {t.endConfirm}
             </Button>
           </>
         }

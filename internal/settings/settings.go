@@ -49,6 +49,7 @@ var fields = []struct {
 }{
 	{"organizationName", "organization name", true},
 	{"contactEmail", "contact email", true},
+	{"locale", "default language", true},
 	{"signInMessage", "sign-in message", true},
 	{"theme", "colours", true},
 	{"customCss", "custom CSS", true},
@@ -113,6 +114,7 @@ type Org struct {
 	CustomCSS       string      `json:"customCss"`
 	ConsoleBranding bool        `json:"consoleBranding"`
 	FeaturesOff     []string    `json:"featuresOff"`
+	Locale          string      `json:"locale"`
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
@@ -167,7 +169,7 @@ func (h *handler) organization(ctx context.Context) (Org, error) {
 	if err != nil {
 		return Org{}, err
 	}
-	org := Org{Name: s.OrganizationName, Issuer: h.cfg.Issuer(), ContactEmail: s.ContactEmail, SignInMessage: s.SignInMessage, Theme: s.Theme, ConsoleBranding: s.ConsoleBranding, FeaturesOff: s.FeaturesOff}
+	org := Org{Name: s.OrganizationName, Issuer: h.cfg.Issuer(), ContactEmail: s.ContactEmail, SignInMessage: s.SignInMessage, Theme: s.Theme, ConsoleBranding: s.ConsoleBranding, FeaturesOff: s.FeaturesOff, Locale: s.Locale}
 	if org.Name == "" {
 		org.Name = h.cfg.Organization
 	}
@@ -566,6 +568,8 @@ func validate(s store.Settings) error {
 		return httpx.Invalid("The organization name is longer than 100 characters. Shorten it and save again.")
 	case s.ContactEmail != "" && !plainAddress(s.ContactEmail):
 		return httpx.Invalid("Enter the contact email as a plain address, such as it@example.com.")
+	case !slices.Contains(store.Locales, s.Locale):
+		return httpx.Invalid(`Set the default language to "en" or "es".`)
 	case utf8.RuneCountInString(s.SignInMessage) > 500:
 		return httpx.Invalid("The sign-in message is longer than 500 characters. Shorten it and save again.")
 	case slices.ContainsFunc(colours(&s.Theme), func(c *string) bool { return *c != "" && !hexColour.MatchString(*c) }):

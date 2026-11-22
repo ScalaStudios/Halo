@@ -1,7 +1,11 @@
+"use client";
+
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { useMessages } from "@/lib/i18n/client";
+import { uiMessages } from "@/lib/i18n/ui";
 import { NavigationProgress } from "./navigation-progress";
 import { PageHeader } from "./page-header";
 
@@ -41,6 +45,7 @@ export function PageSkeleton({
   className?: string;
   children?: ReactNode;
 }) {
+  const copy = useMessages(uiMessages);
   const header = heading ?? (
     <PageHeader
       size={large ? "large" : "default"}
@@ -48,7 +53,7 @@ export function PageSkeleton({
         title ?? (
           <>
             <SkeletonText chars={22} />
-            <span className="sr-only">Loading</span>
+            <span className="sr-only">{copy.loading}</span>
           </>
         )
       }
@@ -84,6 +89,7 @@ export function DetailHeaderSkeleton({
   actions?: number;
   className?: string;
 }) {
+  const copy = useMessages(uiMessages);
   return (
     <div className={cn("flex flex-col gap-6", className)}>
       <div className="flex min-w-0 items-center gap-4">
@@ -91,7 +97,7 @@ export function DetailHeaderSkeleton({
         <div className="flex min-w-0 flex-col gap-1">
           <p className="text-h2">
             <SkeletonText chars={18} />
-            <span className="sr-only">Loading</span>
+            <span className="sr-only">{copy.loading}</span>
           </p>
           <p className="text-body">
             <SkeletonText chars={30} />

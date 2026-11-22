@@ -10,8 +10,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox, Input } from "@/components/ui/input";
 import { useListbox } from "@/components/ui/listbox";
 import { api } from "@/lib/api/client";
-import { pluralize } from "@/lib/format";
-import { GROUP_KIND } from "@/lib/labels";
+import { useMessages } from "@/lib/i18n/client";
+import { directoryMessages } from "@/lib/i18n/console/directory";
 import type { Group } from "@/lib/types";
 
 type Target = { name: string; userId?: string; appId?: string; assigned?: string[]; bookmark?: boolean };
@@ -23,6 +23,8 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
   const [picked, setPicked] = useState<string[]>([]);
   const list = useRef<HTMLDivElement>(null);
   const { pending, run, errorFor, clearError, toast } = useMutation();
+  const m = useMessages(directoryMessages);
+  const t = m.addToGroup;
   const words = query.toLowerCase().split(" ");
   const matches = groups.filter((g) => words.every((word) => `${g.name} ${g.description}`.toLowerCase().includes(word))).sort((a, b) => a.name.localeCompare(b.name));
   const locked = (group: Group) => assigned.includes(group.id) || (!target.appId && group.kind === "dynamic");
@@ -52,7 +54,7 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
 
   function add() {
     const one = picked.length === 1 ? groups.find((g) => g.id === picked[0]) : undefined;
-    const label = one ? one.name : pluralize(picked.length, "group");
+    const label = one ? one.name : t.groups(picked.length);
     void run(
       "add",
       () =>
@@ -65,8 +67,8 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
         close();
         toast(
           target.appId
-            ? { title: `${label} assigned`, description: `Members of ${label} can now ${target.bookmark ? "open" : "sign in to"} ${target.name}.` }
-            : { title: `Added to ${label}`, description: `${target.name} gets the ${one ? "group's" : "groups'"} applications at next sign-in.` },
+            ? { title: t.assigned(label), description: t.assignedHint(label, target.name, target.bookmark) }
+            : { title: t.added(label), description: t.addedHint(target.name, Boolean(one)) },
         );
       },
       "inline",
@@ -78,25 +80,21 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
       trigger={
         <Button size="sm" variant="secondary">
           <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-          {target.appId ? "Assign group" : "Add to group"}
+          {target.appId ? t.assignGroup : t.addToGroup}
         </Button>
       }
       open={open}
       onOpenChange={(next) => (next ? setOpen(true) : close())}
       error={errorFor("add")}
-      title={target.appId ? `Assign groups to ${target.name}` : `Add ${target.name} to groups`}
-      description={
-        target.appId
-          ? `Members of the groups you pick can ${target.bookmark ? "open" : "sign in to"} ${target.name}. Recorded in the audit log.`
-          : "Rule-based groups follow people's profiles, so they can't be picked."
-      }
+      title={target.appId ? t.assignTitle(target.name) : t.addTitle(target.name)}
+      description={target.appId ? t.assignDescription(target.name, target.bookmark) : t.addDescription}
       footer={
         <>
           <Button variant="secondary" onClick={close}>
-            Cancel
+            {m.cancel}
           </Button>
           <Button variant="primary" disabled={picked.length === 0} loading={pending === "add"} onClick={add}>
-            {target.appId ? "Assign" : "Add to"} {picked.length ? pluralize(picked.length, "group") : "groups"}
+            {t.submit(Boolean(target.appId), picked.length)}
           </Button>
         </>
       }
@@ -106,7 +104,7 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
           <Input
             autoFocus
             role="combobox"
-            aria-label="Search groups"
+            aria-label={t.search}
             aria-expanded={matches.length > 0}
             aria-controls={listbox.listId}
             aria-autocomplete="list"
@@ -117,7 +115,7 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
               listbox.reset();
               list.current?.scrollTo({ top: 0 });
             }}
-            placeholder="Search by name or description"
+            placeholder={t.searchPlaceholder}
             leading={<Search aria-hidden="true" size={16} strokeWidth={1.75} />}
           />
           <div ref={list} className="h-80 max-h-[35dvh] overflow-y-auto rounded-md border border-border">
@@ -125,7 +123,7 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
               <div
                 id={listbox.listId}
                 role="listbox"
-                aria-label="Groups"
+                aria-label={m.fields.groups}
                 aria-multiselectable
                 aria-activedescendant={listbox.activeId}
                 tabIndex={-1}
@@ -151,10 +149,10 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="flex items-baseline gap-3">
                           <span className="truncate text-body-sm text-fg group-aria-disabled:opacity-45">{group.name}</span>
-                          {member ? <span className="ml-auto shrink-0 text-caption text-fg-3">{target.appId ? "Already assigned" : "Already a member"}</span> : null}
+                          {member ? <span className="ml-auto shrink-0 text-caption text-fg-3">{target.appId ? t.alreadyAssigned : t.alreadyMember}</span> : null}
                         </span>
                         <span className="truncate text-caption text-fg-3 group-aria-disabled:opacity-45">
-                          {[GROUP_KIND[group.kind], pluralize(group.memberCount, "member"), group.description].filter(Boolean).join(" · ")}
+                          {[m.groupKind[group.kind], t.members(group.memberCount), group.description].filter(Boolean).join(" · ")}
                         </span>
                       </span>
                     </div>
@@ -162,21 +160,21 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
                 })}
               </div>
             ) : (
-              <p className="px-2 py-8 text-center text-body-sm text-fg-3">No groups match “{query.trim()}”.</p>
+              <p className="px-2 py-8 text-center text-body-sm text-fg-3">{t.noMatch(query.trim())}</p>
             )}
           </div>
         </div>
       ) : (
         <EmptyState
           icon={UsersRound}
-          title="No groups yet"
+          title={t.emptyTitle}
           description={
             <>
-              Create one on the{" "}
+              {t.emptyBefore}{" "}
               <Link href="/admin/groups" className="text-link underline underline-offset-3 hover:text-ember">
-                Groups page
+                {t.emptyLink}
               </Link>{" "}
-              first.
+              {t.emptyAfter}
             </>
           }
         />
@@ -187,6 +185,8 @@ export function AddToGroup({ groups, assigned = [], ...target }: Target & { grou
 
 export function RemoveFromGroup({ group, ...target }: Target & { group: GroupRef }) {
   const { pending, run, toast } = useMutation();
+  const m = useMessages(directoryMessages);
+  const t = m.addToGroup;
 
   function remove() {
     void run(
@@ -198,15 +198,15 @@ export function RemoveFromGroup({ group, ...target }: Target & { group: GroupRef
       () =>
         toast(
           target.appId
-            ? { title: `${group.name} unassigned`, description: `Members of ${group.name} can no longer ${target.bookmark ? "open" : "sign in to"} ${target.name} through it.` }
-            : { title: `Removed from ${group.name}`, description: `${target.name} loses the group's applications at next sign-in.` },
+            ? { title: t.unassigned(group.name), description: t.unassignedHint(group.name, target.name, target.bookmark) }
+            : { title: t.removed(group.name), description: t.removedHint(target.name) },
         ),
     );
   }
 
   return (
     <Button size="sm" variant="quiet" loading={pending === "remove"} onClick={remove}>
-      Remove
+      {m.remove}
     </Button>
   );
 }

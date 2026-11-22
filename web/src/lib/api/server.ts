@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { toApiError } from "./error";
 
-const API = process.env.HALO_API_URL ?? "http://localhost:8080";
+export const API = process.env.HALO_API_URL ?? "http://localhost:8080";
 
 export async function apiGet<T>(path: string, forbidden?: T): Promise<T> {
   const session = (await cookies()).get("halo_session")?.value;

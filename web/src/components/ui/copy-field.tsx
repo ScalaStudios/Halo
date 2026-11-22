@@ -3,6 +3,8 @@
 import { Eye, EyeOff } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { useMessages } from "@/lib/i18n/client";
+import { uiMessages } from "@/lib/i18n/ui";
 import { CopyButton } from "./copy-button";
 
 export function CopyField({
@@ -18,6 +20,7 @@ export function CopyField({
   hint?: ReactNode;
   className?: string;
 }) {
+  const copy = useMessages(uiMessages);
   const [revealed, setRevealed] = useState(false);
   const hidden = secret && !revealed;
 
@@ -32,13 +35,13 @@ export function CopyField({
           <button
             type="button"
             onClick={() => setRevealed((current) => !current)}
-            aria-label={revealed ? `Hide ${label.toLowerCase()}` : `Reveal ${label.toLowerCase()}`}
+            aria-label={revealed ? copy.hide(label) : copy.reveal(label)}
             className="grid size-8 shrink-0 place-items-center rounded-md text-fg-3 transition-colors duration-fast hover:bg-hover hover:text-fg"
           >
             {revealed ? <EyeOff aria-hidden="true" size={16} strokeWidth={1.75} /> : <Eye aria-hidden="true" size={16} strokeWidth={1.75} />}
           </button>
         ) : null}
-        <CopyButton value={value} label={`Copy ${label.toLowerCase()}`} className="[&>span]:sr-only" />
+        <CopyButton value={value} label={copy.copyValue(label)} className="[&>span]:sr-only" />
       </div>
       {hint ? <p className="text-caption text-fg-3">{hint}</p> : null}
     </div>

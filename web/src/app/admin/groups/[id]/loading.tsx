@@ -1,13 +1,17 @@
 import { DescriptionList } from "@/components/ui/description-list";
 import { SectionTitle } from "@/components/ui/section-title";
 import { DetailHeaderSkeleton, PageSkeleton, SkeletonText, TableSkeleton } from "@/components/ui/skeleton";
+import { directoryMessages } from "@/lib/i18n/console/directory";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { requestLocale } from "@/lib/i18n/server";
 
-const facts = ["Membership", "Who can join", "Members", "Applications", "Source", "Created"];
-
-export default function Loading() {
+export default async function Loading() {
+  const locale = await requestLocale();
+  const t = directoryMessages[locale];
+  const facts = [t.fields.membership, t.group.whoCanJoin, t.fields.members, t.fields.applications, t.fields.source, t.fields.created];
   return (
     <PageSkeleton
-      back={{ href: "/admin/groups", label: "Groups" }}
+      back={{ href: "/admin/groups", label: frameMessages[locale].nav.items.groups.label }}
       heading={
         <>
           <DetailHeaderSkeleton media="icon" />

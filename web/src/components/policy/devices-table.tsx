@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Ban, Link2, RotateCcw, ShieldCheck, UserRound } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { StatusDot } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,147 +13,148 @@ import { Field, Input, Select } from "@/components/ui/input";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { Spinner } from "@/components/ui/spinner";
 import { ApiError, api } from "@/lib/api/client";
-import { formatDateTime, pluralize } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
+import { useLocale, useMessages } from "@/lib/i18n/client";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { policyMessages } from "@/lib/i18n/console/policy";
+import type { Locale } from "@/lib/i18n/locale";
 import type { ComplianceRecord, ComplianceSource, ComplianceState, Device, DeviceTrust } from "@/lib/policy-types";
-import { COMPLIANCE, TRUST } from "./shared";
+import { COMPLIANCE, TRUST, type PolicyCopy } from "./shared";
 
 type Row = Device & { owner: string; email: string };
 
-const UNLINKED = { label: "Not linked", tone: "neutral" } as const;
-
-const columns: ColumnDef<Row, any>[] = [
-  {
-    id: "device",
-    accessorFn: (d) => d.name,
-    header: "Device",
-    meta: { label: "Device", hideable: false },
-    cell: ({ row }) => (
-      <span className="flex min-w-48 flex-col">
-        <span className="font-medium whitespace-nowrap text-fg">{row.original.name}</span>
-        <span className="text-caption whitespace-nowrap text-fg-3">
-          {row.original.browser} · {row.original.os}
-        </span>
-      </span>
-    ),
-  },
-  {
-    id: "owner",
-    accessorFn: (d) => d.owner,
-    header: "Owner",
-    meta: { label: "Owner" },
-    cell: ({ row }) => (
-      <span className="flex flex-col">
-        <Link href={`/admin/users/${row.original.userId}`} className="w-fit whitespace-nowrap text-fg underline-offset-3 hover:underline">
-          {row.original.owner}
-        </Link>
-        <span className="text-caption whitespace-nowrap text-fg-3">{row.original.email}</span>
-      </span>
-    ),
-  },
-  {
-    id: "trust",
-    accessorFn: (d) => d.trust,
-    header: "Trust",
-    filterFn: facetFilter,
-    meta: { label: "Trust" },
-    cell: ({ row }) => (
-      <span className="inline-flex items-center gap-2 whitespace-nowrap">
-        <StatusDot tone={TRUST[row.original.trust].tone} />
-        {TRUST[row.original.trust].label}
-      </span>
-    ),
-  },
-  {
-    id: "compliance",
-    accessorFn: (d) => d.compliance?.state ?? "unlinked",
-    header: "Compliance",
-    filterFn: facetFilter,
-    meta: { label: "Compliance" },
-    cell: ({ row }) => {
-      const c = row.original.compliance;
-      if (!c) return <span className="whitespace-nowrap text-fg-3">{UNLINKED.label}</span>;
-      return (
-        <span className="flex flex-col">
-          <span className="inline-flex items-center gap-2 whitespace-nowrap">
-            <StatusDot tone={COMPLIANCE[c.state].tone} />
-            {COMPLIANCE[c.state].label}
-          </span>
+function deviceColumns(copy: PolicyCopy, locale: Locale): ColumnDef<Row, any>[] {
+  const t = copy.devices;
+  return [
+    {
+      id: "device",
+      accessorFn: (d) => d.name,
+      header: t.device,
+      meta: { label: t.device, hideable: false },
+      cell: ({ row }) => (
+        <span className="flex min-w-48 flex-col">
+          <span className="font-medium whitespace-nowrap text-fg">{row.original.name}</span>
           <span className="text-caption whitespace-nowrap text-fg-3">
-            {c.source} · {c.stale ? "stale, " : ""}
-            <RelativeTime iso={c.reportedAt} lowercase />
+            {row.original.browser} · {row.original.os}
           </span>
         </span>
-      );
+      ),
     },
-  },
-  {
-    id: "lastSeen",
-    accessorFn: (d) => new Date(d.lastSeenAt).getTime(),
-    header: "Last seen",
-    meta: { label: "Last seen", align: "right" },
-    cell: ({ row }) => (
-      <span className="tnum whitespace-nowrap text-fg-3" title={formatDateTime(row.original.lastSeenAt)}>
-        <RelativeTime iso={row.original.lastSeenAt} />
-      </span>
-    ),
-  },
-  {
-    id: "ip",
-    accessorFn: (d) => d.lastIp,
-    header: "Last IP address",
-    meta: { label: "Last IP address" },
-    cell: ({ row }) => <span className="font-mono text-code-sm whitespace-nowrap text-fg-3">{row.original.lastIp || "—"}</span>,
-  },
-  {
-    id: "signIns",
-    accessorFn: (d) => d.signIns,
-    header: "Sign-ins",
-    meta: { label: "Sign-ins", align: "right" },
-    cell: ({ row }) => <span className="tnum">{row.original.signIns}</span>,
-  },
-  {
-    id: "firstSeen",
-    accessorFn: (d) => new Date(d.firstSeenAt).getTime(),
-    header: "First seen",
-    meta: { label: "First seen", align: "right" },
-    cell: ({ row }) => (
-      <span className="tnum whitespace-nowrap text-fg-3" title={formatDateTime(row.original.firstSeenAt)}>
-        <RelativeTime iso={row.original.firstSeenAt} />
-      </span>
-    ),
-  },
-];
-
-const views: SavedView[] = [
-  { id: "all", label: "All devices", filters: [] },
-  { id: "unknown", label: "Unknown", filters: [{ id: "trust", value: ["unknown"] }] },
-  { id: "trusted", label: "Trusted", filters: [{ id: "trust", value: ["trusted"] }] },
-  { id: "blocked", label: "Blocked", filters: [{ id: "trust", value: ["blocked"] }] },
-  { id: "not-compliant", label: "Not compliant", filters: [{ id: "compliance", value: ["non-compliant", "unknown", "unlinked"] }] },
-];
-
-const RESULT: Record<DeviceTrust, { title: string; description: string }> = {
-  trusted: { title: "trusted", description: "Policies that need a trusted device now let it sign in." },
-  blocked: { title: "blocked", description: "New sign-ins from it are refused, and its open sessions and their application tokens were signed out." },
-  unknown: { title: "reset to unknown", description: "Halo treats it like any device it hasn't been told about." },
-};
+    {
+      id: "owner",
+      accessorFn: (d) => d.owner,
+      header: t.owner,
+      meta: { label: t.owner },
+      cell: ({ row }) => (
+        <span className="flex flex-col">
+          <Link href={`/admin/users/${row.original.userId}`} className="w-fit whitespace-nowrap text-fg underline-offset-3 hover:underline">
+            {row.original.owner}
+          </Link>
+          <span className="text-caption whitespace-nowrap text-fg-3">{row.original.email}</span>
+        </span>
+      ),
+    },
+    {
+      id: "trust",
+      accessorFn: (d) => d.trust,
+      header: t.trust,
+      filterFn: facetFilter,
+      meta: { label: t.trust },
+      cell: ({ row }) => (
+        <span className="inline-flex items-center gap-2 whitespace-nowrap">
+          <StatusDot tone={TRUST[row.original.trust].tone} />
+          {copy.labels.trust[row.original.trust]}
+        </span>
+      ),
+    },
+    {
+      id: "compliance",
+      accessorFn: (d) => d.compliance?.state ?? "unlinked",
+      header: t.compliance,
+      filterFn: facetFilter,
+      meta: { label: t.compliance },
+      cell: ({ row }) => {
+        const c = row.original.compliance;
+        if (!c) return <span className="whitespace-nowrap text-fg-3">{t.unlinked}</span>;
+        return (
+          <span className="flex flex-col">
+            <span className="inline-flex items-center gap-2 whitespace-nowrap">
+              <StatusDot tone={COMPLIANCE[c.state].tone} />
+              {copy.labels.compliance[c.state]}
+            </span>
+            <span className="text-caption whitespace-nowrap text-fg-3">
+              {c.source} · {c.stale ? t.stale : ""}
+              <RelativeTime iso={c.reportedAt} lowercase />
+            </span>
+          </span>
+        );
+      },
+    },
+    {
+      id: "lastSeen",
+      accessorFn: (d) => new Date(d.lastSeenAt).getTime(),
+      header: t.lastSeen,
+      meta: { label: t.lastSeen, align: "right" },
+      cell: ({ row }) => (
+        <span className="tnum whitespace-nowrap text-fg-3" title={formatDateTime(row.original.lastSeenAt, locale)}>
+          <RelativeTime iso={row.original.lastSeenAt} />
+        </span>
+      ),
+    },
+    {
+      id: "ip",
+      accessorFn: (d) => d.lastIp,
+      header: t.lastIp,
+      meta: { label: t.lastIp },
+      cell: ({ row }) => <span className="font-mono text-code-sm whitespace-nowrap text-fg-3">{row.original.lastIp || "—"}</span>,
+    },
+    {
+      id: "signIns",
+      accessorFn: (d) => d.signIns,
+      header: t.signIns,
+      meta: { label: t.signIns, align: "right" },
+      cell: ({ row }) => <span className="tnum">{row.original.signIns}</span>,
+    },
+    {
+      id: "firstSeen",
+      accessorFn: (d) => new Date(d.firstSeenAt).getTime(),
+      header: t.firstSeen,
+      meta: { label: t.firstSeen, align: "right" },
+      cell: ({ row }) => (
+        <span className="tnum whitespace-nowrap text-fg-3" title={formatDateTime(row.original.firstSeenAt, locale)}>
+          <RelativeTime iso={row.original.firstSeenAt} />
+        </span>
+      ),
+    },
+  ];
+}
 
 export function DevicesTable({ devices, owners, sources }: { devices: Device[]; owners: Record<string, { name: string; email: string }>; sources: ComplianceSource[] }) {
+  const locale = useLocale();
+  const copy = policyMessages[locale];
+  const t = copy.devices;
   const { run, toast, router } = useMutation();
   const [linking, setLinking] = useState<Row | null>(null);
-  const rows = devices.map((d) => ({ ...d, owner: owners[d.userId]?.name ?? "Unknown user", email: owners[d.userId]?.email ?? "" }));
+  const rows = devices.map((d) => ({ ...d, owner: owners[d.userId]?.name ?? copy.unknownUser, email: owners[d.userId]?.email ?? "" }));
+  const views: SavedView[] = [
+    { id: "all", label: t.views.all, filters: [] },
+    { id: "unknown", label: t.views.unknown, filters: [{ id: "trust", value: ["unknown"] }] },
+    { id: "trusted", label: t.views.trusted, filters: [{ id: "trust", value: ["trusted"] }] },
+    { id: "blocked", label: t.views.blocked, filters: [{ id: "trust", value: ["blocked"] }] },
+    { id: "not-compliant", label: t.views.notCompliant, filters: [{ id: "compliance", value: ["non-compliant", "unknown", "unlinked"] }] },
+  ];
 
   function setTrust(selected: Row[], trust: DeviceTrust) {
     const targets = selected.filter((d) => d.trust !== trust);
-    const label = selected.length === 1 ? selected[0]!.name : pluralize(selected.length, "device");
+    const label = selected.length === 1 ? selected[0]!.name : t.count(selected.length);
     if (targets.length === 0) {
-      toast({ title: `${label} ${selected.length === 1 ? "is" : "are"} already ${TRUST[trust].label.toLowerCase()}`, description: "Nothing changed." });
+      toast({ title: t.already(label, selected.length !== 1, trust), description: t.nothingChanged });
       return;
     }
     return run(
       "trust",
       () => Promise.all(targets.map((d) => api(`/devices/${d.id}`, { method: "PUT", body: { trust } }))),
-      () => toast({ title: `${targets.length === 1 ? targets[0]!.name : pluralize(targets.length, "device")} ${RESULT[trust].title}`, description: RESULT[trust].description }),
+      () => toast({ title: t.result[trust].title(targets.length === 1 ? targets[0]!.name : t.count(targets.length), targets.length !== 1), description: t.result[trust].description }),
     );
   }
 
@@ -161,33 +162,33 @@ export function DevicesTable({ devices, owners, sources }: { devices: Device[]; 
     <>
       <DataTable
         data={rows}
-        columns={columns}
+        columns={deviceColumns(copy, locale)}
         getRowId={(d) => d.id}
-        label="Devices"
-        noun={["device", "devices"]}
+        label={t.label}
+        noun={t.noun}
         storageKey="devices"
         searchText={(d) => `${d.name} ${d.browser} ${d.os} ${d.owner} ${d.email} ${d.lastIp}`}
-        searchPlaceholder="Search device, owner or IP"
+        searchPlaceholder={t.search}
         views={views}
         initialVisibility={{ firstSeen: false }}
         facets={[
-          { column: "trust", label: "Trust", options: (Object.keys(TRUST) as DeviceTrust[]).map((value) => ({ value, label: TRUST[value].label })) },
+          { column: "trust", label: t.trust, options: (Object.keys(TRUST) as DeviceTrust[]).map((value) => ({ value, label: copy.labels.trust[value] })) },
           {
             column: "compliance",
-            label: "Compliance",
-            options: [...(Object.keys(COMPLIANCE) as ComplianceState[]).map((value) => ({ value, label: COMPLIANCE[value].label })), { value: "unlinked", label: UNLINKED.label }],
+            label: t.compliance,
+            options: [...(Object.keys(COMPLIANCE) as ComplianceState[]).map((value) => ({ value, label: copy.labels.compliance[value] })), { value: "unlinked", label: t.unlinked }],
           },
         ]}
         rowActions={[
-          { label: "Mark as trusted", icon: ShieldCheck, onSelect: (d) => setTrust([d], "trusted") },
-          { label: "Reset to unknown", icon: RotateCcw, onSelect: (d) => setTrust([d], "unknown") },
-          { label: "Link compliance record", icon: Link2, onSelect: (d) => setLinking(d) },
-          { label: "Open owner", icon: UserRound, onSelect: (d) => router.push(`/admin/users/${d.userId}`) },
-          { label: "Block device", icon: Ban, danger: true, separatorBefore: true, onSelect: (d) => setTrust([d], "blocked") },
+          { label: t.markTrusted, icon: ShieldCheck, onSelect: (d) => setTrust([d], "trusted") },
+          { label: t.resetUnknown, icon: RotateCcw, onSelect: (d) => setTrust([d], "unknown") },
+          { label: t.linkRecord, icon: Link2, onSelect: (d) => setLinking(d) },
+          { label: t.openOwner, icon: UserRound, onSelect: (d) => router.push(`/admin/users/${d.userId}`) },
+          { label: t.block, icon: Ban, danger: true, separatorBefore: true, onSelect: (d) => setTrust([d], "blocked") },
         ]}
         bulkActions={[
-          { label: "Mark as trusted", icon: ShieldCheck, onSelect: (selected) => setTrust(selected, "trusted") },
-          { label: "Block", icon: Ban, danger: true, onSelect: (selected) => setTrust(selected, "blocked") },
+          { label: t.markTrusted, icon: ShieldCheck, onSelect: (selected) => setTrust(selected, "trusted") },
+          { label: t.blockBulk, icon: Ban, danger: true, onSelect: (selected) => setTrust(selected, "blocked") },
         ]}
       />
       {linking ? <LinkDialog key={linking.id} device={linking} sources={sources} onClose={() => setLinking(null)} /> : null}
@@ -196,13 +197,16 @@ export function DevicesTable({ devices, owners, sources }: { devices: Device[]; 
 }
 
 function LinkDialog({ device, sources, onClose }: { device: Row; sources: ComplianceSource[]; onClose: () => void }) {
+  const copy = useMessages(policyMessages);
+  const t = copy.devices;
+  const unreachable = useMessages(frameMessages).mutation.unreachable;
   const { pending, run, errorFor, toast } = useMutation();
   const [sourceId, setSourceId] = useState(device.compliance?.sourceId ?? sources[0]?.id ?? "");
   const [query, setQuery] = useState(device.compliance?.externalId ?? device.email);
   const [selected, setSelected] = useState(device.compliance?.externalId ?? "");
   const [records, setRecords] = useState<ComplianceRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [problem, setProblem] = useState<string>();
+  const [problem, setProblem] = useState<ReactNode>();
   const latest = useRef(0);
   const source = sources.find((s) => s.id === sourceId);
 
@@ -212,11 +216,11 @@ function LinkDialog({ device, sources, onClose }: { device: Row; sources: Compli
     setLoading(true);
     const timer = setTimeout(async () => {
       let found: ComplianceRecord[] = [];
-      let failure: string | undefined;
+      let failure: ReactNode;
       try {
         found = await api<ComplianceRecord[]>(`/compliance-sources/${sourceId}/devices?q=${encodeURIComponent(query.trim())}`);
       } catch (error) {
-        failure = error instanceof ApiError ? error.message : "Halo could not reach the server. Try again.";
+        failure = error instanceof ApiError ? <span lang="en">{error.message}</span> : unreachable;
       }
       if (request !== latest.current) return;
       setRecords(found);
@@ -224,7 +228,7 @@ function LinkDialog({ device, sources, onClose }: { device: Row; sources: Compli
       setLoading(false);
     }, 250);
     return () => clearTimeout(timer);
-  }, [sourceId, query]);
+  }, [sourceId, query, unreachable]);
 
   function save(link: boolean) {
     const body = link ? { sourceId, externalId: selected } : { sourceId: null };
@@ -234,8 +238,8 @@ function LinkDialog({ device, sources, onClose }: { device: Row; sources: Compli
       (saved) => {
         toast(
           saved.compliance
-            ? { title: `${device.name} linked`, description: `${saved.compliance.source} reports it ${COMPLIANCE[saved.compliance.state].label.toLowerCase()}. Policies use this state from its next sign-in.` }
-            : { title: `${device.name} unlinked`, description: "Its compliance is unknown until you link it again." },
+            ? { title: t.linked(device.name), description: t.linkedDescription(saved.compliance.source, saved.compliance.state) }
+            : { title: t.unlinkedTitle(device.name), description: t.unlinkedDescription },
         );
         onClose();
       },
@@ -251,29 +255,29 @@ function LinkDialog({ device, sources, onClose }: { device: Row; sources: Compli
       }}
       error={errorFor("link") ?? errorFor("unlink")}
       width="wide"
-      title={`Link ${device.name}`}
-      description={`Choose the record ${source?.name ?? "a compliance source"} keeps for ${device.owner}'s device. Halo then uses the compliance state it reports.`}
+      title={t.linkTitle(device.name)}
+      description={t.linkDescription(source?.name, device.owner)}
       footer={
         <>
           {device.compliance ? (
             <Button variant="secondary" className="mr-auto" loading={pending === "unlink"} onClick={() => save(false)}>
-              Unlink
+              {t.unlink}
             </Button>
           ) : null}
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {copy.cancel}
           </Button>
           <Button variant="primary" disabled={!selected || !sourceId} loading={pending === "link"} onClick={() => save(true)}>
-            Link device
+            {t.link}
           </Button>
         </>
       }
     >
       {sources.length === 0 ? (
         <p className="text-body-sm text-fg-3">
-          There are no compliance sources yet.{" "}
+          {t.noSources}{" "}
           <Link href="/admin/devices?tab=sources" className="text-link underline underline-offset-3 hover:text-ember">
-            Add one on the Compliance sources tab
+            {t.addSource}
           </Link>
           .
         </p>
@@ -286,7 +290,7 @@ function LinkDialog({ device, sources, onClose }: { device: Row; sources: Compli
           }}
         >
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <Field label="Source">
+            <Field label={t.source}>
               {(props) => (
                 <Select
                   {...props}
@@ -304,13 +308,13 @@ function LinkDialog({ device, sources, onClose }: { device: Row; sources: Compli
                 </Select>
               )}
             </Field>
-            <Field label="Search">
-              {(props) => <Input {...props} type="search" autoComplete="off" spellCheck={false} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, owner or ID" />}
+            <Field label={t.searchLabel}>
+              {(props) => <Input {...props} type="search" autoComplete="off" spellCheck={false} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.searchPlaceholder} />}
             </Field>
           </div>
           <fieldset className="flex flex-col gap-2" aria-busy={loading}>
             <legend className="mb-2 flex items-center gap-2 text-label text-fg">
-              Device record
+              {t.record}
               {loading ? <Spinner /> : null}
             </legend>
             {problem ? (
@@ -319,7 +323,7 @@ function LinkDialog({ device, sources, onClose }: { device: Row; sources: Compli
               </p>
             ) : records.length === 0 && !loading ? (
               <p className="rounded-md border border-border bg-sunken p-4 text-body-sm text-fg-3">
-                {query.trim() ? `No device from ${source?.name ?? "this source"} matches “${query.trim()}”.` : `${source?.name ?? "This source"} hasn't reported any devices yet.`}
+                {query.trim() ? t.noMatch(source?.name, query.trim()) : t.noRecords(source?.name)}
               </p>
             ) : (
               <div className={`flex max-h-72 flex-col gap-2 overflow-y-auto transition-opacity duration-fast ${loading ? "opacity-60" : ""}`}>
@@ -334,11 +338,11 @@ function LinkDialog({ device, sources, onClose }: { device: Row; sources: Compli
                         <span className="text-body-sm font-semibold text-fg">{r.name || r.id}</span>
                         <span className="inline-flex items-center gap-2 text-caption text-fg-3">
                           <StatusDot tone={COMPLIANCE[r.state].tone} />
-                          {COMPLIANCE[r.state].label}
+                          {copy.labels.compliance[r.state]}
                         </span>
                       </span>
                       <span className="text-caption break-all text-fg-3">
-                        {[r.owner, r.osVersion, r.encrypted === null ? "" : r.encrypted ? "Disk encrypted" : "Disk not encrypted", r.patchLevel && `Patched ${r.patchLevel}`, `ID ${r.id}`].filter(Boolean).join(" · ")}
+                        {[r.owner, r.osVersion, r.encrypted === null ? "" : r.encrypted ? t.encrypted : t.notEncrypted, r.patchLevel && t.patched(r.patchLevel), t.id(r.id)].filter(Boolean).join(" · ")}
                       </span>
                     </span>
                   </label>

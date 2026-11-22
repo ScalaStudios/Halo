@@ -7,40 +7,47 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionTitle } from "@/components/ui/section-title";
 import { apiGet } from "@/lib/api/server";
-import { pluralize } from "@/lib/format";
-import { JOIN_POLICY } from "@/lib/labels";
+import { accountMessages } from "@/lib/i18n/account";
+import { directoryMessages } from "@/lib/i18n/console/directory";
+import { requestLocale } from "@/lib/i18n/server";
 import type { Group, JoinableGroup, OwnedGroup } from "@/lib/types";
 
-export const metadata: Metadata = { title: "Groups" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: accountMessages(await requestLocale()).nav.groups };
+}
 
 export default async function GroupsPage() {
-  const [groups, owned, joinable] = await Promise.all([
+  const [groups, owned, joinable, locale] = await Promise.all([
     apiGet<Group[]>("/me/groups"),
     apiGet<OwnedGroup[]>("/me/owned-groups"),
     apiGet<JoinableGroup[]>("/me/joinable-groups"),
+    requestLocale(),
   ]);
+  const copy = accountMessages(locale);
+  const t = copy.groups;
+  const policies = directoryMessages[locale].joinPolicy;
 
   return (
     <div className="flex flex-col gap-12">
-      <PageHeader size="large" title="Groups" description="Groups decide which applications you see. Join the groups open to you, and manage the members of groups you own." />
+      <PageHeader size="large" title={copy.nav.groups} description={t.description} />
 
       {owned.length ? (
         <section className="flex flex-col gap-4">
-          <SectionTitle title="Groups you own" description="You add and remove members and approve requests to join. Changes are recorded in the audit log." />
+          <SectionTitle title={t.owned} description={t.ownedHint} />
           <ul className={list}>
             {owned.map((group) => (
               <li key={group.id} className={row}>
                 <div className="flex min-w-0 flex-col gap-1">
                   <p className="flex flex-wrap items-center gap-2 text-body-sm font-semibold text-fg">
                     {group.name}
-                    {group.requestCount ? <Badge tone="warning">{pluralize(group.requestCount, "request")}</Badge> : null}
+                    {group.requestCount ? <Badge tone="warning">{t.requestCount(group.requestCount)}</Badge> : null}
                   </p>
                   <p className="tnum text-body-sm text-fg-3">
-                    {pluralize(group.memberCount, "member")} · {JOIN_POLICY[group.joinPolicy].label}
+                    {t.memberCount(group.memberCount)} · {policies[group.joinPolicy].label}
                   </p>
                 </div>
                 <Link href={`/account/groups/${group.id}`} className="shrink-0 text-body-sm text-link underline underline-offset-3 hover:text-ember-hover">
-                  Manage members
+                  {t.manage}
                 </Link>
               </li>
             ))}
@@ -49,7 +56,7 @@ export default async function GroupsPage() {
       ) : null}
 
       <section className="flex flex-col gap-4">
-        <SectionTitle title="Your groups" description="Assigned groups are managed by their owners. Dynamic groups follow your profile, such as your department." />
+        <SectionTitle title={t.yours} description={t.yoursHint} />
         {groups.length ? (
           <ul className={list}>
             {groups.map((group) => (
@@ -57,19 +64,19 @@ export default async function GroupsPage() {
                 <div className="flex min-w-0 flex-col gap-1">
                   <p className="text-body-sm font-semibold text-fg">{group.name}</p>
                   {group.description ? <p className="text-body-sm text-fg-3">{group.description}</p> : null}
-                  {group.owners.length ? <p className="text-body-sm text-fg-3">Owners: {joinNames(group.owners)}</p> : null}
+                  {group.owners.length ? <p className="text-body-sm text-fg-3">{t.owners(joinNames(group.owners, locale))}</p> : null}
                 </div>
-                <span className="shrink-0 text-caption text-fg-3">{group.kind === "dynamic" ? "Dynamic" : "Assigned"}</span>
+                <span className="shrink-0 text-caption text-fg-3">{group.kind === "dynamic" ? t.dynamic : t.assigned}</span>
               </li>
             ))}
           </ul>
         ) : (
-          <p className={empty}>You aren&apos;t in any groups yet.</p>
+          <p className={empty}>{t.none}</p>
         )}
       </section>
 
       <section className="flex flex-col gap-4">
-        <SectionTitle title="Groups you can join" description="Open groups add you straight away. For the others, an owner approves your request." />
+        <SectionTitle title={t.joinable} description={t.joinableHint} />
         {joinable.length ? (
           <ul className={list}>
             {joinable.map((group) => (
@@ -78,12 +85,12 @@ export default async function GroupsPage() {
                   <p className="text-body-sm font-semibold text-fg">{group.name}</p>
                   {group.description ? <p className="text-body-sm text-fg-3">{group.description}</p> : null}
                   <p className="text-body-sm text-fg-3">
-                    {group.joinPolicy === "open" ? "Anyone can join" : `Owners approve: ${joinNames(group.owners)}`}
+                    {group.joinPolicy === "open" ? t.anyone : t.ownersApprove(joinNames(group.owners, locale))}
                   </p>
                 </div>
                 {group.requested ? (
                   <Badge tone="warning" className="shrink-0 self-start">
-                    Requested
+                    {t.requested}
                   </Badge>
                 ) : (
                   <JoinGroup group={group} />
@@ -92,7 +99,7 @@ export default async function GroupsPage() {
             ))}
           </ul>
         ) : (
-          <p className={empty}>No groups are open to join right now. To get into another group, ask its owner or a Halo administrator.</p>
+          <p className={empty}>{t.noneJoinable}</p>
         )}
       </section>
     </div>

@@ -20,14 +20,14 @@ export function now(): Date {
   return new Date();
 }
 
-export function formatAttribute(attribute: Attribute, value: AttributeValue | undefined, locale: Locale = "en") {
+export function formatAttribute(attribute: Attribute, value: AttributeValue | undefined, locale: Locale) {
   if (value === undefined) return "—";
   if (attribute.type === "boolean") return value ? (locale === "es" ? "Sí" : "Yes") : "No";
   if (attribute.type === "date") return formatDate(String(value), locale);
   return Array.isArray(value) ? value.join(", ") : String(value);
 }
 
-export function formatDate(iso: string, locale: Locale = "en"): string {
+export function formatDate(iso: string, locale: Locale): string {
   const date = new Date(iso);
   if (locale === "es" && Number.isFinite(date.getTime())) {
     return date.toLocaleDateString(locale, { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
@@ -42,11 +42,11 @@ export function formatTime(iso: string): string {
   return `${hours}:${minutes} UTC`;
 }
 
-export function formatDateTime(iso: string, locale: Locale = "en"): string {
+export function formatDateTime(iso: string, locale: Locale): string {
   return `${formatDate(iso, locale)}, ${formatTime(iso)}`;
 }
 
-export function formatRelative(iso: string, locale: Locale = "en"): string {
+export function formatRelative(iso: string, locale: Locale): string {
   const seconds = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
   const future = seconds < 0;
   const abs = Math.abs(seconds);

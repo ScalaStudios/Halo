@@ -3,6 +3,8 @@
 import { Toast as T } from "radix-ui";
 import { CircleAlert, CircleCheck, X } from "lucide-react";
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { useMessages } from "@/lib/i18n/client";
+import { uiMessages } from "@/lib/i18n/ui";
 
 type ToastInput = { title: string; description?: string; tone?: "success" | "danger" };
 type ToastItem = ToastInput & { id: number };
@@ -14,6 +16,7 @@ export function useToast() {
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const copy = useMessages(uiMessages);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const push = useCallback((toast: ToastInput) => {
     setToasts((current) => [...current, { ...toast, id: Date.now() + Math.random() }]);
@@ -43,7 +46,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 <T.Title className="text-body-sm font-semibold text-fg">{toast.title}</T.Title>
                 {toast.description ? <T.Description className="text-body-sm text-fg-3">{toast.description}</T.Description> : null}
               </div>
-              <T.Close aria-label="Dismiss" className="grid size-6 place-items-center rounded-sm text-fg-3 hover:bg-hover hover:text-fg">
+              <T.Close aria-label={copy.dismiss} className="grid size-6 place-items-center rounded-sm text-fg-3 hover:bg-hover hover:text-fg">
                 <X aria-hidden="true" size={16} strokeWidth={1.75} />
               </T.Close>
             </T.Root>

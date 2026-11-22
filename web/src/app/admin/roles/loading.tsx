@@ -1,19 +1,24 @@
 import { Check } from "lucide-react";
-import { ROLES } from "@/components/provisioning/shared";
-import { CAPABILITIES, ROLE_ORDER } from "@/components/settings/roles";
+import { ROLE_ORDER } from "@/components/settings/roles";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { PageSkeleton, Skeleton } from "@/components/ui/skeleton";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { policyMessages } from "@/lib/i18n/console/policy";
+import { settingsMessages } from "@/lib/i18n/console/settings";
+import { requestLocale } from "@/lib/i18n/server";
 
-export default function Loading() {
+export default async function Loading() {
+  const locale = await requestLocale();
+  const t = settingsMessages[locale].roles;
   return (
-    <PageSkeleton title="Roles" description={214}>
+    <PageSkeleton title={frameMessages[locale].nav.items.roles.label} description={214}>
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         {ROLE_ORDER.map((role) => (
           <Card key={role} className="flex flex-col">
-            <CardHeader title={ROLES[role].label} description={ROLES[role].description} actions={<Skeleton className="h-6 w-20 rounded-full" />} />
+            <CardHeader title={t.names[role]} description={t.descriptions[role]} actions={<Skeleton className="h-6 w-20 rounded-full" />} />
             <CardBody className="flex flex-1 flex-col gap-6">
               <ul className="flex flex-col gap-2">
-                {CAPABILITIES[role].map((item) => (
+                {t.capabilities[role].map((item) => (
                   <li key={item} className="flex items-start gap-2 text-body-sm text-fg-2">
                     <Check aria-hidden="true" size={16} strokeWidth={1.75} className="mt-0.5 shrink-0 text-fg-3" />
                     {item}
@@ -21,7 +26,7 @@ export default function Loading() {
                 ))}
               </ul>
               <div className="mt-auto flex flex-col gap-3">
-                <h3 className="text-label text-fg-3">Members</h3>
+                <h3 className="text-label text-fg-3">{policyMessages[locale].roles.members}</h3>
                 <div className="h-14 rounded-md border border-border bg-sunken" />
               </div>
             </CardBody>

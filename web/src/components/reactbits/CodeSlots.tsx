@@ -11,6 +11,8 @@ import {
   type MotionValue
 } from 'motion/react';
 import { Check } from 'lucide-react';
+import { useMessages } from '@/lib/i18n/client';
+import { monitoringMessages } from '@/lib/i18n/console/monitoring';
 
 const EASE_OUT: [number, number, number, number] = [0.23, 1, 0.32, 1];
 const WASH_IN = 0.3;
@@ -107,6 +109,7 @@ const CodeSlots: React.FC<CodeSlotsProps> = ({
 }) => {
   const uid = useId();
   const reduce = useReducedMotion();
+  const copy = useMessages(monitoringMessages).controls;
   const inputRef = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const [slots, setSlots] = useState(() => toSlots(value ?? defaultValue, length));
@@ -488,7 +491,7 @@ const CodeSlots: React.FC<CodeSlotsProps> = ({
         </motion.span>
       </div>
       <span id={`${uid}-count`} className="sr-only" aria-live="polite">
-        {status === 'success' ? 'Code accepted' : `${view.filter(Boolean).length} of ${length} digits entered`}
+        {status === 'success' ? copy.codeAccepted : copy.digitsEntered(view.filter(Boolean).length, length)}
       </span>
     </div>
   );

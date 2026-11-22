@@ -13,26 +13,18 @@ import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
-import { formatDuration } from "@/lib/format";
+import { useLocale, useMessages } from "@/lib/i18n/client";
+import { applicationsMessages } from "@/lib/i18n/console/applications";
+import type { Locale } from "@/lib/i18n/locale";
 import type { ApiResource } from "@/lib/infra-types";
 import { SIGNING_ALGORITHMS, type Application, type SigningAlgorithm, type User } from "@/lib/types";
 import { clientAddressError, originError, uriError } from "./new-application-flow";
 
-const SCOPES: Record<string, string> = {
-  openid: "Signs the person in and issues an ID token.",
-  profile: "Name and preferred username.",
-  email: "Email address and whether it is verified.",
-  groups: "Names of every group the person belongs to.",
-  "billing:read": "Read invoices and usage records.",
-  "billing:write": "Create, update and void invoices.",
-  "usage:report": "Submit metered usage for billing.",
-};
-
 const UNITS = [
-  ["seconds", 1, "Seconds"],
-  ["minutes", 60, "Minutes"],
-  ["hours", 3600, "Hours"],
-  ["days", 86400, "Days"],
+  ["seconds", 1],
+  ["minutes", 60],
+  ["hours", 3600],
+  ["days", 86400],
 ] as const;
 
 type Unit = (typeof UNITS)[number][0];
@@ -48,11 +40,12 @@ export function toSeconds({ amount, unit }: Duration): number {
   return Number(amount) * (UNITS.find(([u]) => u === unit)?.[1] ?? 1);
 }
 
-export const wholeNumber = (d: Duration) => (/^\d+$/.test(d.amount.trim()) ? undefined : "Enter a whole number.");
+export const wholeNumber = (d: Duration, locale: Locale) => (/^\d+$/.test(d.amount.trim()) ? undefined : applicationsMessages[locale].edit.wholeNumber);
 
 export function EditDetailsDialog({ app, directory, open, onOpenChange }: { app: Details; directory: User[]; open: boolean; onOpenChange: (open: boolean) => void }) {
   const formId = useId();
   const { pending, run, errorFor, clearError, toast } = useMutation();
+  const t = useMessages(applicationsMessages);
 
   function save(body: { name: string; description: string; homepage: string; owner: string }) {
     void run(
@@ -60,7 +53,7 @@ export function EditDetailsDialog({ app, directory, open, onOpenChange }: { app:
       () => api(`/applications/${app.id}`, { method: "PATCH", body }),
       () => {
         onOpenChange(false);
-        toast({ title: `${body.name} saved`, description: "Recorded in the audit log." });
+        toast({ title: t.common.savedToast(body.name), description: t.common.audit });
       },
       "inline",
     );
@@ -74,15 +67,15 @@ export function EditDetailsDialog({ app, directory, open, onOpenChange }: { app:
         onOpenChange(next);
       }}
       error={errorFor("details")}
-      title="Edit details"
-      description="People see the name on the Halo sign-in screen and in their app launcher."
+      title={t.edit.title}
+      description={t.edit.description}
       footer={
         <>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t.common.cancel}
           </Button>
           <Button type="submit" form={formId} variant="primary" loading={pending === "details"}>
-            Save details
+            {t.edit.saveDetails}
           </Button>
         </>
       }
@@ -108,17 +101,18 @@ function DetailsForm({
   const [homepage, setHomepage] = useState(app.homepage);
   const [owner, setOwner] = useState(app.owner ?? "");
   const [errors, setErrors] = useState<{ name?: string; homepage?: string }>({});
+  const t = useMessages(applicationsMessages);
 
   function submit(event: FormEvent) {
     event.preventDefault();
     const next = {
-      name: name.trim() ? undefined : "Enter a name. People see it on the Halo sign-in screen.",
+      name: name.trim() ? undefined : t.setup.validation.nameSignIn,
       homepage:
         !homepage.trim() && app.bookmark
-          ? "Enter the address the bookmark opens, like https://status.example.com."
+          ? t.setup.validation.bookmarkEmpty
           : !homepage.trim() || /^https?:\/\/[^/\s]+/.test(homepage.trim())
             ? undefined
-            : "Enter a full address, like https://grafana.example.com.",
+            : t.edit.fullAddress,
     };
     setErrors(next);
     if (next.name || next.homepage) return;
@@ -127,22 +121,22 @@ function DetailsForm({
 
   return (
     <form id={id} className="flex flex-col gap-6" onSubmit={submit} noValidate>
-      <Field label="Name" error={errors.name}>
+      <Field label={t.common.name} error={errors.name}>
         {(props) => <Input {...props} autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} />}
       </Field>
-      <Field label="Description" hint="Optional. Shown next to the name in the console.">
+      <Field label={t.common.description} hint={t.edit.descriptionHint}>
         {(props) => <Textarea {...props} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} />}
       </Field>
       {app.remote ? null : (
         <Field
-          label={app.bookmark ? "URL" : "Homepage"}
+          label={app.bookmark ? t.common.url : t.edit.homepage}
           error={errors.homepage}
-          hint={app.bookmark ? "The address the bookmark opens from the account portal." : "Optional. Where the app launcher opens the application."}
+          hint={app.bookmark ? t.edit.bookmarkUrlHint : t.edit.homepageHint}
         >
           {(props) => <Input {...props} type="url" mono value={homepage} onChange={(event) => setHomepage(event.target.value)} placeholder="https://grafana.example.com" />}
         </Field>
       )}
-      <Field label="Owner" hint="The person responsible for this application. Optional.">
+      <Field label={t.common.owner} hint={t.edit.ownerHint}>
         {(props) => (
           <PeoplePicker
             {...props}
@@ -173,20 +167,20 @@ export function AuthenticationForm({ app, resources, children }: { app: Applicat
   const sourcesId = useId();
   const [errors, setErrors] = useState<{ access?: string; id?: string; refresh?: string; redirects?: string; redirect?: (string | undefined)[]; postLogout?: (string | undefined)[] }>({});
   const { pending, run, errorFor, toast } = useMutation();
+  const locale = useLocale();
+  const t = applicationsMessages[locale];
+  const e = t.edit;
   const refreshOff = refresh.amount.trim() === "0";
 
   function submit(event: FormEvent) {
     event.preventDefault();
     const clean = (uris: string[]) => uris.map((uri) => uri.trim()).filter(Boolean);
-    const check = (uris: string[]) => uris.map((uri) => (uri.trim() ? uriError(uri) : undefined));
+    const check = (uris: string[]) => uris.map((uri) => (uri.trim() ? uriError(uri, locale) : undefined));
     const next = {
-      access: wholeNumber(access),
-      id: service ? undefined : wholeNumber(idToken),
-      refresh: service ? undefined : wholeNumber(refresh),
-      redirects:
-        !service && app.protocol === "oidc" && clean(redirects).length === 0
-          ? "Add at least one redirect URI. Halo only sends people back to addresses registered here."
-          : undefined,
+      access: wholeNumber(access, locale),
+      id: service ? undefined : wholeNumber(idToken, locale),
+      refresh: service ? undefined : wholeNumber(refresh, locale),
+      redirects: !service && app.protocol === "oidc" && clean(redirects).length === 0 ? e.redirectsRequired : undefined,
       redirect: service ? [] : check(redirects),
       postLogout: service ? [] : check(postLogout),
     };
@@ -202,7 +196,7 @@ export function AuthenticationForm({ app, resources, children }: { app: Applicat
           method: "PATCH",
           body: service ? { tokenPolicy } : { tokenPolicy, redirectUris: clean(redirects), postLogoutUris: clean(postLogout) },
         }),
-      () => toast({ title: "Authentication settings saved", description: `${app.name} gets them on its next token request. Recorded in the audit log.` }),
+      () => toast({ title: e.authenticationSaved, description: e.nextToken(app.name) }),
       "inline",
     );
   }
@@ -211,27 +205,27 @@ export function AuthenticationForm({ app, resources, children }: { app: Applicat
     <form onSubmit={submit} noValidate className="grid grid-cols-1 gap-6 xl:grid-cols-2">
       {children}
       <Card>
-        <CardHeader title="Token lifetimes" description="Shorter access tokens make revocation take effect sooner." />
+        <CardHeader title={e.lifetimes} description={e.lifetimesHint} />
         <CardBody className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-          <DurationField label="Access token" hint="1 minute to 24 hours." value={access} onChange={setAccess} error={errors.access} />
+          <DurationField label={e.accessToken} hint={e.dayRange} value={access} onChange={setAccess} error={errors.access} />
           {service ? null : (
             <>
-              <DurationField label="ID token" hint="1 minute to 24 hours." value={idToken} onChange={setIdToken} error={errors.id} />
-              <DurationField label="Refresh token" hint="Up to 90 days. Set 0 to stop issuing them." value={refresh} onChange={setRefresh} error={errors.refresh} />
+              <DurationField label={e.idToken} hint={e.dayRange} value={idToken} onChange={setIdToken} error={errors.id} />
+              <DurationField label={e.refreshToken} hint={e.refreshHint} value={refresh} onChange={setRefresh} error={errors.refresh} />
               <Field
-                label="Refresh token rotation"
-                hint={app.fapi2Profile ? "The FAPI 2.0 profile keeps the same sender-bound refresh token until it expires." : refreshOff ? "Not used while refresh tokens are off." : rotation ? "Each refresh revokes the previous token." : "The same refresh token works until it expires."}
+                label={e.rotation}
+                hint={app.fapi2Profile ? e.rotationFapi : refreshOff ? e.rotationUnused : rotation ? e.rotationOn : e.rotationOff}
               >
                 {(props) => (
                   <Select {...props} disabled={refreshOff || app.fapi2Profile} value={rotation ? "on" : "off"} onChange={(event) => setRotation(event.target.value === "on")}>
-                    <option value="on">On</option>
-                    <option value="off">Off</option>
+                    <option value="on">{t.common.on}</option>
+                    <option value="off">{t.common.off}</option>
                   </Select>
                 )}
               </Field>
               <Field
-                label="ID token signing"
-                hint={idTokenAlg === "RS256" ? "Every OpenID Connect library accepts RS256." : `Check that ${app.name} accepts ${idTokenAlg} first. ID tokens it already has keep verifying.`}
+                label={e.idTokenSigning}
+                hint={idTokenAlg === "RS256" ? e.rs256 : e.otherAlg(app.name, idTokenAlg)}
               >
                 {(props) => (
                   <Select {...props} value={idTokenAlg} onChange={(event) => setIdTokenAlg(event.target.value as SigningAlgorithm)}>
@@ -247,20 +241,20 @@ export function AuthenticationForm({ app, resources, children }: { app: Applicat
           )}
           {publicClient ? null : (
             <Field
-              label="Token exchange"
-              hint={exchange ? "Accepts a person's access token for an API checked below and issues one for an API it has scopes on." : "Can't call other APIs on a person's behalf."}
+              label={t.detail.tokenExchange}
+              hint={exchange ? e.exchangeOn : e.exchangeOff}
             >
               {(props) => (
                 <Select {...props} value={exchange ? "on" : "off"} onChange={(event) => setExchange(event.target.value === "on")}>
-                  <option value="on">On</option>
-                  <option value="off">Off</option>
+                  <option value="on">{t.common.on}</option>
+                  <option value="off">{t.common.off}</option>
                 </Select>
               )}
             </Field>
           )}
           {publicClient || !exchange ? null : (
             <fieldset className="flex min-w-0 flex-col gap-3 sm:col-span-2" aria-describedby={`${sourcesId}-hint`}>
-              <legend className="mb-3 text-label text-fg">Accept tokens issued for</legend>
+              <legend className="mb-3 text-label text-fg">{e.acceptFrom}</legend>
               {resources.map((resource) => (
                 <label key={resource.id} className="flex cursor-pointer items-start gap-3">
                   <Checkbox
@@ -277,15 +271,15 @@ export function AuthenticationForm({ app, resources, children }: { app: Applicat
               <p id={`${sourcesId}-hint`} className="text-caption text-fg-3">
                 {resources.length === 0 ? (
                   <>
-                    No APIs yet, so no token can be exchanged.{" "}
+                    {e.noApis}{" "}
                     <Link href="/admin/api-resources" className="text-link underline underline-offset-3 hover:text-ember">
-                      Add an API
+                      {e.addApi}
                     </Link>
                   </>
                 ) : exchangeFrom.length === 0 ? (
-                  "Accepts no tokens until you check at least one API."
+                  e.acceptNone
                 ) : (
-                  "A token addressed to any other API or application is refused."
+                  e.acceptOthers
                 )}
               </p>
             </fieldset>
@@ -293,25 +287,25 @@ export function AuthenticationForm({ app, resources, children }: { app: Applicat
         </CardBody>
       </Card>
       <Card className="xl:col-span-2">
-        <CardHeader title="Redirects" description={service ? "Service applications don't use a browser flow." : "Halo only redirects to these exact URIs."} />
+        <CardHeader title={e.redirects} description={service ? e.redirectsService : e.redirectsHint} />
         {service ? null : (
           <CardBody className="grid grid-cols-1 gap-8 md:grid-cols-2">
             <UriList
-              legend="Redirect URIs"
+              legend={e.redirectUris}
               values={redirects}
               onChange={setRedirects}
               errors={errors.redirect}
               error={errors.redirects}
               placeholder={app.type === "native" ? "http://localhost:8000" : "https://app.example.com/callback"}
-              empty="No redirect URIs."
+              empty={e.noRedirects}
             />
             <UriList
-              legend="Post-logout redirect URIs"
+              legend={e.postLogout}
               values={postLogout}
               onChange={setPostLogout}
               errors={errors.postLogout}
               placeholder="https://app.example.com/"
-              empty="None. Halo shows its own signed-out page."
+              empty={e.noPostLogout}
             />
           </CardBody>
         )}
@@ -319,7 +313,7 @@ export function AuthenticationForm({ app, resources, children }: { app: Applicat
       <div className="flex flex-wrap items-center justify-end gap-4 xl:col-span-2">
         <ActionError message={errorFor("authentication")} />
         <Button type="submit" variant="primary" loading={pending === "authentication"}>
-          Save changes
+          {e.saveChanges}
         </Button>
       </div>
     </form>
@@ -330,16 +324,18 @@ export function SignInFrequencyForm({ app }: { app: Pick<Application, "id" | "na
   const [age, setAge] = useState(split(app.maxAuthAge));
   const [error, setError] = useState<string>();
   const { pending, run, errorFor, toast } = useMutation();
+  const locale = useLocale();
+  const e = applicationsMessages[locale].edit;
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    const invalid = wholeNumber(age);
+    const invalid = wholeNumber(age, locale);
     setError(invalid);
     if (invalid) return;
     void run(
       "frequency",
       () => api(`/applications/${app.id}`, { method: "PATCH", body: { maxAuthAge: toSeconds(age) } }),
-      () => toast({ title: "Sign-in frequency saved", description: `${app.name} uses it from the next sign-in. Recorded in the audit log.` }),
+      () => toast({ title: e.frequencySaved, description: e.nextSignIn(app.name) }),
       "inline",
     );
   }
@@ -347,27 +343,27 @@ export function SignInFrequencyForm({ app }: { app: Pick<Application, "id" | "na
   return (
     <Card>
       <CardHeader
-        title="Sign-in frequency"
+        title={e.frequency}
         description={
           app.protocol === "saml"
-            ? `People who signed in to Halo longer ago than this sign in again before ${app.name} gets an assertion. Other applications keep single sign-on.`
+            ? e.frequencySaml(app.name)
             : app.protocol === "forward-auth"
-              ? `People who signed in to Halo longer ago than this sign in again before the proxy lets them into ${app.name}. Other applications keep single sign-on.`
+              ? e.frequencyForward(app.name)
             : app.protocol === "radius"
-              ? `Halo sends this to ${app.name} as Session-Timeout with every accepted sign-in, so the connection ends after this long and people sign in again.`
+              ? e.frequencyRadius(app.name)
             : app.protocol === "remote"
-              ? `People who signed in to Halo longer ago than this sign in again before they open a session to ${app.name}. Sessions already open run until their time limit.`
-            : `People who signed in to Halo longer ago than this sign in again before ${app.name} gets a token, and its refresh tokens stop working. Other applications keep single sign-on.`
+              ? e.frequencyRemote(app.name)
+            : e.frequencyDefault(app.name)
         }
       />
       <form onSubmit={submit} noValidate>
         <CardBody className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          <DurationField label="Sign in again after" hint="1 minute to 90 days. Set 0 to follow the organization's session lifetime." value={age} onChange={setAge} error={error} />
+          <DurationField label={e.signInAgain} hint={e.signInAgainHint} value={age} onChange={setAge} error={error} />
         </CardBody>
         <div className="flex flex-wrap items-center justify-end gap-4 border-t border-border px-6 py-4">
           <ActionError message={errorFor("frequency")} />
           <Button type="submit" variant="primary" loading={pending === "frequency"}>
-            Save sign-in frequency
+            {e.saveFrequency}
           </Button>
         </div>
       </form>
@@ -378,27 +374,28 @@ export function SignInFrequencyForm({ app }: { app: Pick<Application, "id" | "na
 export function WindowsSignInForm({ app }: { app: Pick<Application, "id" | "name" | "kerberosSignIn"> }) {
   const [allowed, setAllowed] = useState(app.kerberosSignIn);
   const { pending, run, errorFor, toast } = useMutation();
+  const e = useMessages(applicationsMessages).edit;
 
   function submit(event: FormEvent) {
     event.preventDefault();
     void run(
       "windows",
       () => api(`/applications/${app.id}`, { method: "PATCH", body: { kerberosSignIn: allowed } }),
-      () => toast({ title: "Windows sign-in saved", description: `${app.name} uses it from the next sign-in. Recorded in the audit log.` }),
+      () => toast({ title: e.windowsSaved, description: e.nextSignIn(app.name) }),
       "inline",
     );
   }
 
   return (
     <Card>
-      <CardHeader title="Windows sign-in" description={`Whether people on computers joined to your domain can reach ${app.name} with the Kerberos ticket their browser sends, when Windows sign-in is turned on under Methods.`} />
+      <CardHeader title={e.windows} description={e.windowsHint(app.name)} />
       <form onSubmit={submit} noValidate>
         <CardBody className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          <Field label="Windows sign-in" hint={allowed ? "Allowed, as for the rest of the organization." : `Blocked for ${app.name}, including single sign-on from a session that started with Windows sign-in. People sign in another way.`}>
+          <Field label={e.windows} hint={allowed ? e.windowsAllowed : e.windowsBlocked(app.name)}>
             {(props) => (
               <Select {...props} value={allowed ? "allowed" : "blocked"} onChange={(event) => setAllowed(event.target.value === "allowed")}>
-                <option value="allowed">Allowed</option>
-                <option value="blocked">Not allowed</option>
+                <option value="allowed">{e.allowed}</option>
+                <option value="blocked">{e.notAllowed}</option>
               </Select>
             )}
           </Field>
@@ -406,7 +403,7 @@ export function WindowsSignInForm({ app }: { app: Pick<Application, "id" | "name
         <div className="flex flex-wrap items-center justify-end gap-4 border-t border-border px-6 py-4">
           <ActionError message={errorFor("windows")} />
           <Button type="submit" variant="primary" loading={pending === "windows"}>
-            Save Windows sign-in
+            {e.saveWindows}
           </Button>
         </div>
       </form>
@@ -419,10 +416,12 @@ export function BackchannelLogoutForm({ app }: { app: Pick<Application, "id" | "
   const [sessionRequired, setSessionRequired] = useState(app.backchannelLogoutSessionRequired);
   const [error, setError] = useState<string>();
   const { pending, run, errorFor, toast } = useMutation();
+  const t = useMessages(applicationsMessages);
+  const e = t.edit;
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    const next = uri.trim() && !/^https:\/\/\S+$/.test(uri.trim()) ? "Enter the https:// URL of the back-channel logout endpoint, or leave it empty." : undefined;
+    const next = uri.trim() && !/^https:\/\/\S+$/.test(uri.trim()) ? e.logoutInvalid : undefined;
     setError(next);
     if (next) return;
     void run(
@@ -430,8 +429,8 @@ export function BackchannelLogoutForm({ app }: { app: Pick<Application, "id" | "
       () => api(`/applications/${app.id}`, { method: "PATCH", body: { backchannelLogoutUri: uri.trim(), backchannelLogoutSessionRequired: sessionRequired } }),
       () =>
         toast({
-          title: "Back-channel logout saved",
-          description: uri.trim() ? `${app.name} hears about every Halo session that ends. Recorded in the audit log.` : `Halo no longer tells ${app.name} when sessions end. Recorded in the audit log.`,
+          title: e.logoutSaved,
+          description: uri.trim() ? e.logoutOn(app.name) : e.logoutOff(app.name),
         }),
       "inline",
     );
@@ -440,12 +439,12 @@ export function BackchannelLogoutForm({ app }: { app: Pick<Application, "id" | "
   return (
     <Card>
       <CardHeader
-        title="Back-channel logout"
-        description={`When a Halo session that signed in to ${app.name} ends, Halo posts a signed logout token to this endpoint so ${app.name} ends its own session too. Failed requests are retried after 30 seconds, then 1, 2, 4, 8, 16 and 32 minutes.`}
+        title={e.logout}
+        description={e.logoutHint(app.name)}
       />
       <form onSubmit={submit} noValidate>
         <CardBody className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          <Field label="Back-channel logout URI" error={error} hint="Leave empty to turn it off. Private and local addresses are refused.">
+          <Field label={e.logoutUri} error={error} hint={e.logoutUriHint}>
             {(props) => (
               <Input
                 {...props}
@@ -459,11 +458,11 @@ export function BackchannelLogoutForm({ app }: { app: Pick<Application, "id" | "
               />
             )}
           </Field>
-          <Field label="Session ID (sid)" hint="Halo sends sid and sub in every logout token. This records whether the application needs sid.">
+          <Field label={e.sid} hint={e.sidHint}>
             {(props) => (
               <Select {...props} value={sessionRequired ? "required" : "optional"} onChange={(event) => setSessionRequired(event.target.value === "required")}>
-                <option value="required">Required</option>
-                <option value="optional">Not required</option>
+                <option value="required">{t.common.required}</option>
+                <option value="optional">{t.common.notRequired}</option>
               </Select>
             )}
           </Field>
@@ -471,7 +470,7 @@ export function BackchannelLogoutForm({ app }: { app: Pick<Application, "id" | "
         <div className="flex flex-wrap items-center justify-end gap-4 border-t border-border px-6 py-4">
           <ActionError message={errorFor("logout")} />
           <Button type="submit" variant="primary" loading={pending === "logout"}>
-            Save back-channel logout
+            {e.saveLogout}
           </Button>
         </div>
       </form>
@@ -487,13 +486,15 @@ export function SenderConstraintForm({ app }: { app: Pick<Application, "id" | "n
   const [pkce, setPkce] = useState(app.requirePkce);
   const [dpop, setDpop] = useState(app.requireDpop);
   const { pending, run, errorFor, toast } = useMutation();
+  const t = useMessages(applicationsMessages);
+  const e = t.edit;
 
   function submit(event: FormEvent) {
     event.preventDefault();
     void run(
       "constraint",
       () => api(`/applications/${app.id}`, { method: "PATCH", body: service ? { requireDpop: dpop } : { requirePar: par, requirePkce: pkce, requireDpop: dpop } }),
-      () => toast({ title: "Request and token protection saved", description: `${app.name} must meet it from its next request. Recorded in the audit log.` }),
+      () => toast({ title: e.protectionSaved, description: e.protectionNext(app.name) }),
       "inline",
     );
   }
@@ -501,40 +502,36 @@ export function SenderConstraintForm({ app }: { app: Pick<Application, "id" | "n
   return (
     <Card>
       <CardHeader
-        title="Request and token protection"
-        description={
-          service
-            ? `Require ${app.name} to bind its access tokens to a key it holds, so a copied token is useless without that key.`
-            : `Require ${app.name} to push its authorization requests, use PKCE and bind its tokens to a key it holds, as the FAPI 2.0 security profile asks. A copied token is useless without the key.`
-        }
+        title={e.protection}
+        description={service ? e.protectionService(app.name) : e.protectionDefault(app.name)}
       />
       <form onSubmit={submit} noValidate>
         <CardBody className="grid grid-cols-1 gap-6 md:grid-cols-3">
           {service ? null : (
-            <Field label="Pushed authorization requests" hint={par ? "Requests must be posted to /oauth2/par first and referenced with request_uri." : "Accepts authorization requests in the URL as well as pushed ones."}>
+            <Field label={e.par} hint={par ? e.parOn : e.parOff}>
               {(props) => (
                 <Select {...props} value={par ? "required" : "optional"} onChange={(event) => setPar(event.target.value === "required")}>
-                  <option value="required">Required</option>
-                  <option value="optional">Not required</option>
+                  <option value="required">{t.common.required}</option>
+                  <option value="optional">{t.common.notRequired}</option>
                 </Select>
               )}
             </Field>
           )}
           {service ? null : (
-            <Field label="PKCE" hint={publicClient ? "Always required for applications without a client secret." : pkce ? "Every authorization request must send an S256 code_challenge." : "Used when the application sends a code_challenge."}>
+            <Field label="PKCE" hint={publicClient ? e.pkcePublic : pkce ? e.pkceOn : e.pkceOff}>
               {(props) => (
                 <Select {...props} disabled={publicClient} value={publicClient || pkce ? "required" : "optional"} onChange={(event) => setPkce(event.target.value === "required")}>
-                  <option value="required">Required</option>
-                  <option value="optional">Not required</option>
+                  <option value="required">{t.common.required}</option>
+                  <option value="optional">{t.common.notRequired}</option>
                 </Select>
               )}
             </Field>
           )}
-          <Field label="DPoP-bound tokens" hint={dpop ? "Every token request must carry a DPoP proof. Refresh tokens issued without one stop working; access tokens last until they expire." : "Tokens are bound to a key only when the token request carries a DPoP proof."}>
+          <Field label={e.dpop} hint={dpop ? e.dpopOn : e.dpopOff}>
             {(props) => (
               <Select {...props} value={dpop ? "required" : "optional"} onChange={(event) => setDpop(event.target.value === "required")}>
-                <option value="required">Required</option>
-                <option value="optional">Not required</option>
+                <option value="required">{t.common.required}</option>
+                <option value="optional">{t.common.notRequired}</option>
               </Select>
             )}
           </Field>
@@ -542,7 +539,7 @@ export function SenderConstraintForm({ app }: { app: Pick<Application, "id" | "n
         <div className="flex flex-wrap items-center justify-end gap-4 border-t border-border px-6 py-4">
           <ActionError message={errorFor("constraint")} />
           <Button type="submit" variant="primary" loading={pending === "constraint"}>
-            Save protection
+            {e.saveProtection}
           </Button>
         </div>
       </form>
@@ -556,12 +553,14 @@ export function ProtectedAddressesForm({ app }: { app: Pick<Application, "id" | 
   const [errors, setErrors] = useState<(string | undefined)[]>([]);
   const [error, setError] = useState<string>();
   const { pending, run, errorFor, toast } = useMutation();
+  const locale = useLocale();
+  const e = applicationsMessages[locale].edit;
 
   function submit(event: FormEvent) {
     event.preventDefault();
     const clean = addresses.map((a) => a.trim()).filter(Boolean);
-    const next = addresses.map((a) => (a.trim() ? (radius ? clientAddressError(a) : originError(a)) : undefined));
-    const empty = clean.length === 0 ? `Add at least one ${radius ? "client" : "protected"} address.` : undefined;
+    const next = addresses.map((a) => (a.trim() ? (radius ? clientAddressError(a, locale) : originError(a, locale)) : undefined));
+    const empty = clean.length === 0 ? e.addressRequired(radius) : undefined;
     setErrors(next);
     setError(empty);
     if (empty || next.some(Boolean)) return;
@@ -571,8 +570,8 @@ export function ProtectedAddressesForm({ app }: { app: Pick<Application, "id" | 
       () =>
         toast(
           radius
-            ? { title: "Client addresses saved", description: `Halo answers ${app.name} from these addresses within 10 seconds. Recorded in the audit log.` }
-            : { title: "Protected addresses saved", description: `Update the proxy configuration of ${app.name} if you added a host. Recorded in the audit log.` },
+            ? { title: e.clientAddressesSaved, description: e.clientAddressesNext(app.name) }
+            : { title: e.protectedSaved, description: e.protectedNext(app.name) },
         ),
       "inline",
     );
@@ -581,30 +580,26 @@ export function ProtectedAddressesForm({ app }: { app: Pick<Application, "id" | 
   return (
     <Card>
       <CardHeader
-        title={radius ? "Client addresses" : "Protected addresses"}
-        description={
-          radius
-            ? `Halo answers RADIUS requests for ${app.name} only from these IP addresses and CIDR ranges, and ignores every other sender.`
-            : `Halo answers checks for ${app.name} only from these hosts, and only sends people back to them after sign-in.`
-        }
+        title={radius ? e.clientAddresses : e.protectedAddresses}
+        description={radius ? e.clientAddressesHint(app.name) : e.protectedHint(app.name)}
       />
       <form onSubmit={submit} noValidate>
         <CardBody>
           <UriList
-            legend="Addresses"
+            legend={e.addresses}
             values={addresses}
             onChange={setAddresses}
             errors={errors}
             error={error}
             placeholder={radius ? "10.0.0.0/24" : "https://files.example.com"}
-            empty={radius ? "No client addresses." : "No protected addresses."}
-            add="Add address"
+            empty={radius ? e.noClientAddresses : e.noProtectedAddresses}
+            add={e.addAddress}
           />
         </CardBody>
         <div className="flex flex-wrap items-center justify-end gap-4 border-t border-border px-6 py-4">
           <ActionError message={errorFor("addresses")} />
           <Button type="submit" variant="primary" loading={pending === "addresses"}>
-            Save addresses
+            {e.saveAddresses}
           </Button>
         </div>
       </form>
@@ -613,16 +608,17 @@ export function ProtectedAddressesForm({ app }: { app: Pick<Application, "id" | 
 }
 
 export function DurationField({ label, hint, value, onChange, error }: { label: string; hint: string; value: Duration; onChange: (value: Duration) => void; error?: string }) {
+  const e = useMessages(applicationsMessages).edit;
   return (
     <Field label={label} hint={hint} error={error}>
       {(props) => (
         <div className="flex gap-2">
           <Input {...props} type="number" min={0} inputMode="numeric" className="tnum" value={value.amount} onChange={(event) => onChange({ ...value, amount: event.target.value })} />
           <div className="w-32 shrink-0">
-            <Select aria-label={`${label} unit`} value={value.unit} onChange={(event) => onChange({ ...value, unit: event.target.value as Unit })}>
-              {UNITS.map(([unit, , text]) => (
+            <Select aria-label={e.unit(label)} value={value.unit} onChange={(event) => onChange({ ...value, unit: event.target.value as Unit })}>
+              {UNITS.map(([unit]) => (
                 <option key={unit} value={unit}>
-                  {text}
+                  {e.units[unit]}
                 </option>
               ))}
             </Select>
@@ -641,7 +637,7 @@ function UriList({
   error,
   placeholder,
   empty,
-  add = "Add URI",
+  add,
 }: {
   legend: string;
   values: string[];
@@ -653,6 +649,7 @@ function UriList({
   add?: string;
 }) {
   const id = useId();
+  const e = useMessages(applicationsMessages).edit;
   return (
     <fieldset className="flex min-w-0 flex-col gap-2" aria-describedby={error ? `${id}-error` : undefined}>
       <legend className="mb-2 text-label text-fg">{legend}</legend>
@@ -669,7 +666,7 @@ function UriList({
               placeholder={placeholder}
               onChange={(event) => onChange(values.map((v, i) => (i === index ? event.target.value : v)))}
             />
-            <Button size="icon" variant="quiet" aria-label={`Remove ${value || `entry ${index + 1}`}`} onClick={() => onChange(values.filter((_, i) => i !== index))}>
+            <Button size="icon" variant="quiet" aria-label={e.removeEntry(value, index + 1)} onClick={() => onChange(values.filter((_, i) => i !== index))}>
               <X aria-hidden="true" size={16} strokeWidth={1.75} />
             </Button>
           </div>
@@ -687,7 +684,7 @@ function UriList({
       ) : null}
       <Button size="sm" variant="quiet" className="self-start" onClick={() => onChange([...values, ""])}>
         <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-        {add}
+        {add ?? e.addUri}
       </Button>
     </fieldset>
   );
@@ -699,16 +696,18 @@ export function ScopesForm({ app }: { app: Application }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string>();
   const { pending, run, errorFor, toast } = useMutation();
+  const t = useMessages(applicationsMessages);
+  const e = t.edit;
   const required = (scope: string) => scope === "openid" && app.protocol === "oidc";
 
   function add() {
     const scope = draft.trim();
     if (!scope || /[\s"\\]/.test(scope)) {
-      setError("Scopes are single words without spaces or quotes, such as billing:read.");
+      setError(e.scopeFormat);
       return;
     }
     if (scopes.includes(scope)) {
-      setError(`${scope} is already in the list.`);
+      setError(e.scopeDuplicate(scope));
       return;
     }
     setScopes([...scopes, scope]);
@@ -720,7 +719,7 @@ export function ScopesForm({ app }: { app: Application }) {
     void run(
       "scopes",
       () => api(`/applications/${app.id}`, { method: "PATCH", body: { scopes, requiresConsent: consent } }),
-      () => toast({ title: "Permissions saved", description: `Takes effect from ${app.name}'s next sign-in. Recorded in the audit log.` }),
+      () => toast({ title: e.permissionsSaved, description: e.permissionsNext(app.name) }),
       "inline",
     );
   }
@@ -728,40 +727,40 @@ export function ScopesForm({ app }: { app: Application }) {
   return (
     <div className="flex flex-col gap-6">
       <SimpleTable
-        caption="Scopes"
-        head={["Scope", "Grants access to", "Actions"]}
+        caption={t.detail.scopes}
+        head={[e.scope, e.grantsAccess, t.common.actions]}
         rows={scopes.map((scope) => [
           <Tag key="s">{scope}</Tag>,
           scope === "offline_access"
-            ? `Refresh tokens valid for ${formatDuration(app.tokenPolicy.refreshTokenTtl)}, so people stay signed in without opening a browser again.`
-            : (SCOPES[scope] ?? "Custom scope defined for this application."),
+            ? e.offlineAccess(t.duration(app.tokenPolicy.refreshTokenTtl))
+            : (e.scopes[scope] ?? e.customScope),
           required(scope) ? (
             <span key="r" className="text-caption text-fg-3">
-              Required
+              {t.common.required}
             </span>
           ) : (
             <Button key="r" size="sm" variant="quiet" onClick={() => setScopes(scopes.filter((s) => s !== scope))}>
-              Remove
+              {t.common.remove}
             </Button>
           ),
         ])}
       />
       {app.type === "service" ? null : (
         <Field
-          label="Consent screen"
-          hint={consent ? "People see these scopes and allow them before their first sign-in, and again when the application asks for more." : "People sign in without being asked. Suits applications your organization runs."}
+          label={e.consent}
+          hint={consent ? e.consentOn : e.consentOff}
           className="w-full sm:max-w-md"
         >
           {(props) => (
             <Select {...props} value={consent ? "on" : "off"} onChange={(event) => setConsent(event.target.value === "on")}>
-              <option value="on">Ask each person</option>
-              <option value="off">Don&apos;t ask</option>
+              <option value="on">{e.askEach}</option>
+              <option value="off">{e.dontAsk}</option>
             </Select>
           )}
         </Field>
       )}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <Field label="Add a scope" error={error} className="w-full sm:max-w-md">
+        <Field label={e.addScope} error={error} className="w-full sm:max-w-md">
           {(props) => (
             <div className="flex gap-2">
               <Input
@@ -780,7 +779,7 @@ export function ScopesForm({ app }: { app: Application }) {
                 }}
               />
               <Button variant="secondary" onClick={add}>
-                Add
+                {t.common.add}
               </Button>
             </div>
           )}
@@ -788,7 +787,7 @@ export function ScopesForm({ app }: { app: Application }) {
         <div className="flex flex-col items-start gap-2 sm:items-end">
           <ActionError message={errorFor("scopes")} />
           <Button variant="primary" loading={pending === "scopes"} onClick={save}>
-            Save permissions
+            {e.savePermissions}
           </Button>
         </div>
       </div>

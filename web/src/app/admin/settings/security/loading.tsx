@@ -1,9 +1,14 @@
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { ListSkeleton, PageSkeleton, Skeleton, SkeletonText } from "@/components/ui/skeleton";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { settingsMessages } from "@/lib/i18n/console/settings";
+import { requestLocale } from "@/lib/i18n/server";
 
-export default function Loading() {
+export default async function Loading() {
+  const locale = await requestLocale();
+  const t = settingsMessages[locale].signingKeys;
   return (
-    <PageSkeleton title="Security defaults" description={150} className="max-w-4xl">
+    <PageSkeleton title={frameMessages[locale].nav.items.security.label} description={150} className="max-w-4xl">
       {[1, 2, 1, 3, 2].map((fields, i) => (
         <Card key={i}>
           <CardHeader title={<SkeletonText chars={12} />} description={<SkeletonText chars={80} />} />
@@ -23,7 +28,7 @@ export default function Loading() {
         </Card>
       ))}
       <Card>
-        <CardHeader title="Signing keys" description="The keys Halo signs OpenID Connect tokens and SAML responses with. Every rotation is recorded in the audit log." />
+        <CardHeader title={t.title} description={t.description} />
         <ListSkeleton rows={2} className="border-t border-border" />
       </Card>
     </PageSkeleton>

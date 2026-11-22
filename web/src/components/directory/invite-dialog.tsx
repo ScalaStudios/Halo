@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { SecretWarning } from "@/components/applications/shared";
 import { useMutation } from "@/components/console/use-mutation";
-import { ROLES } from "@/components/provisioning/shared";
+import { rolesFor } from "@/components/provisioning/shared";
 import { ROLE_ORDER } from "@/components/settings/roles";
 import { Button } from "@/components/ui/button";
 import { CopyField } from "@/components/ui/copy-field";
@@ -11,6 +11,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input, Select } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
 import { formatDateTime } from "@/lib/format";
+import { useLocale } from "@/lib/i18n/client";
+import { directoryMessages } from "@/lib/i18n/console/directory";
 import type { SetupLink } from "@/lib/mail-types";
 import type { RoleKey } from "@/lib/provisioning-types";
 import type { Group, User } from "@/lib/types";
@@ -43,6 +45,9 @@ export function InviteDialog({
   const [errors, setErrors] = useState<{ email?: string; name?: string; sponsor?: string; ends?: string }>({});
   const [invitation, setInvitation] = useState<SetupLink | null>(null);
   const { pending, run, errorFor, clearError } = useMutation();
+  const locale = useLocale();
+  const t = directoryMessages[locale];
+  const roleLabels = rolesFor(locale);
 
   function reset() {
     setEmail("");
@@ -63,9 +68,9 @@ export function InviteDialog({
 
   function submit() {
     const next = {
-      email: EMAIL.test(email.trim()) ? undefined : "Enter a full email address, like sam@example.com.",
-      name: name.trim() ? undefined : "Enter their name so other administrators can recognise them.",
-      ...(guest ? checkGuest(guest, true) : {}),
+      email: EMAIL.test(email.trim()) ? undefined : t.validation.email,
+      name: name.trim() ? undefined : t.validation.name,
+      ...(guest ? checkGuest(guest, true, locale) : {}),
     };
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
@@ -78,24 +83,20 @@ export function InviteDialog({
       open={open}
       onOpenChange={(next) => (next ? onOpenChange(true) : close())}
       error={errorFor("invite")}
-      title={invitation ? "Invitation created" : "Invite user"}
-      description={
-        invitation
-          ? `${invitation.emailed ? `We emailed a setup link to ${email.trim()}` : `Send this setup link to ${name.trim()}`}. It expires ${formatDateTime(invitation.expiresAt)}.`
-          : "Halo creates a setup link they use to enroll a passkey. No password is ever created. Guests can use any email address."
-      }
+      title={invitation ? t.invite.created : t.users.inviteUser}
+      description={invitation ? t.invite.linkDescription(invitation.emailed, email.trim(), name.trim(), formatDateTime(invitation.expiresAt, locale)) : t.invite.description}
       footer={
         invitation ? (
           <Button variant="primary" onClick={close}>
-            Done
+            {t.done}
           </Button>
         ) : (
           <>
             <Button variant="secondary" onClick={close}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="primary" loading={pending === "invite"} onClick={submit}>
-              Create invitation
+              {t.invite.create}
             </Button>
           </>
         )
@@ -103,11 +104,8 @@ export function InviteDialog({
     >
       {invitation ? (
         <div className="flex animate-enter flex-col gap-4">
-          <CopyField label="Setup link" value={invitation.enrollUrl} />
-          <SecretWarning>
-            {invitation.emailed ? "You can also copy the link and send it yourself." : "Halo didn't email this link, so send it yourself."} Anyone with it can enroll a passkey on
-            this account.
-          </SecretWarning>
+          <CopyField label={t.setupLink} value={invitation.enrollUrl} />
+          <SecretWarning>{t.invite.linkWarning(invitation.emailed)}</SecretWarning>
         </div>
       ) : (
         <form
@@ -117,15 +115,15 @@ export function InviteDialog({
             submit();
           }}
         >
-          <Field label="Email" error={errors.email}>
+          <Field label={t.fields.email} error={errors.email}>
             {(props) => (
               <Input {...props} type="email" autoComplete="off" autoFocus value={email} onChange={(event) => setEmail(event.target.value)} placeholder="sam@example.com" />
             )}
           </Field>
-          <Field label="Name" error={errors.name}>
+          <Field label={t.fields.name} error={errors.name}>
             {(props) => <Input {...props} autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} />}
           </Field>
-          <Field label="Account type" hint={guest ? "Guests have a sponsor and an end date, never hold an admin role, and only join the groups chosen for them." : "Members are people at your organization."}>
+          <Field label={t.invite.accountType} hint={guest ? t.invite.guestHint : t.invite.memberHint}>
             {(props) => (
               <Select
                 {...props}
@@ -135,31 +133,31 @@ export function InviteDialog({
                   setRole("");
                 }}
               >
-                <option value="member">Member</option>
-                <option value="guest">Guest</option>
+                <option value="member">{t.member}</option>
+                <option value="guest">{t.guest}</option>
               </Select>
             )}
           </Field>
           {guest ? <GuestFields value={guest} onChange={setGuest} directory={directory} errors={errors} /> : null}
           <OrgFields value={org} onChange={setOrg} directory={directory} />
           {canGrantRoles && !guest ? (
-            <Field label="Admin role" hint={role ? ROLES[role].description : "Optional. Without one, they can only manage their own account."}>
+            <Field label={t.fields.adminRole} hint={role ? roleLabels[role].description : t.invite.roleHint}>
               {(props) => (
                 <Select {...props} value={role} onChange={(event) => setRole(event.target.value as RoleKey | "")}>
-                  <option value="">No admin role</option>
+                  <option value="">{t.users.noAdminRole}</option>
                   {ROLE_ORDER.map((key) => (
                     <option key={key} value={key}>
-                      {ROLES[key].label}
+                      {roleLabels[key].label}
                     </option>
                   ))}
                 </Select>
               )}
             </Field>
           ) : null}
-          {role ? <PasskeyWarning role={ROLES[role].label} /> : null}
+          {role ? <PasskeyWarning role={roleLabels[role].label} /> : null}
           {groups.length ? (
             <fieldset className="flex flex-col gap-3">
-              <legend className="mb-3 text-label text-fg">Groups</legend>
+              <legend className="mb-3 text-label text-fg">{t.fields.groups}</legend>
               {groups.map((group) => (
                 <label key={group.id} className="flex cursor-pointer items-start gap-3">
                   <Checkbox

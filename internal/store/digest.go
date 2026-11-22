@@ -55,13 +55,13 @@ func (s *Store) WeeklyDigest(ctx context.Context, now time.Time) (Digest, error)
 	if d.Roles, err = pgx.CollectRows(rows, pgx.RowToStructByPos[RoleCount]); err != nil {
 		return d, err
 	}
-	rows, err = s.db.Query(ctx, `select distinct u.email, u.name from users u join user_roles r on r.user_id = u.id where r.role in ('global_admin', 'security_admin') and u.status = 'active' and u.kind = 'person' order by u.email`)
+	rows, err = s.db.Query(ctx, `select distinct u.email, u.name, u.locale from users u join user_roles r on r.user_id = u.id where r.role in ('global_admin', 'security_admin') and u.status = 'active' and u.kind = 'person' order by u.email`)
 	if err != nil {
 		return d, err
 	}
 	d.Recipients, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (User, error) {
 		var u User
-		return u, row.Scan(&u.Email, &u.Name)
+		return u, row.Scan(&u.Email, &u.Name, &u.Locale)
 	})
 	return d, err
 }

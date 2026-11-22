@@ -14,7 +14,10 @@ import { Field, Input } from "@/components/ui/input";
 import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { api } from "@/lib/api/client";
-import { formatDateTime, pluralize } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
+import { useLocale } from "@/lib/i18n/client";
+import { infrastructureMessages } from "@/lib/i18n/console/infrastructure";
+import { remoteMessages } from "@/lib/i18n/console/infrastructure/remote";
 import type { Outpost } from "@/lib/infra-types";
 
 type Enrollment = { outpost: Outpost; token: string };
@@ -27,6 +30,9 @@ export function OutpostsSection({ outposts, issuer, canEdit }: { outposts: Outpo
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [enrolling, setEnrolling] = useState<Outpost | "new" | null>(null);
   const [deleting, setDeleting] = useState<Outpost | null>(null);
+  const locale = useLocale();
+  const common = infrastructureMessages[locale];
+  const t = remoteMessages[locale].outposts;
 
   function remove() {
     const outpost = deleting;
@@ -36,7 +42,7 @@ export function OutpostsSection({ outposts, issuer, canEdit }: { outposts: Outpo
       () => api(`/outposts/${outpost.id}`, { method: "DELETE" }),
       () => {
         setDeleting(null);
-        toast({ title: `${outpost.name} deleted`, description: "Its key stopped working and it was disconnected. Recorded in the audit log." });
+        toast({ title: common.deleted(outpost.name), description: t.deletedHint });
       },
       "inline",
     );
@@ -45,21 +51,21 @@ export function OutpostsSection({ outposts, issuer, canEdit }: { outposts: Outpo
   return (
     <div className="flex flex-col gap-6">
       <SectionTitle
-        title="Outposts"
-        description="Agents inside your networks that connect out to Halo and reach hosts for it. Each remote access application names the outpost that reaches its host."
+        title={t.title}
+        description={t.hint}
         action={
           canEdit ? (
             <Button size="sm" variant="primary" onClick={() => setEnrolling("new")}>
               <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-              Register outpost
+              {t.register}
             </Button>
           ) : undefined
         }
       />
       {outposts.length ? (
         <SimpleTable
-          caption="Outposts"
-          head={["Name", "Status", "Applications", "Last seen", "Actions"]}
+          caption={t.title}
+          head={t.head}
           rows={outposts.map((o) => [
             <span key="name" className="font-medium text-fg">
               {o.name}
@@ -67,23 +73,23 @@ export function OutpostsSection({ outposts, issuer, canEdit }: { outposts: Outpo
             <span key="status" className="flex flex-col items-start gap-1 whitespace-nowrap">
               {o.connected ? (
                 <Badge tone="success" dot>
-                  Connected
+                  {t.connected}
                 </Badge>
               ) : o.enrolledAt ? (
                 <Badge tone="warning" dot>
-                  Not connected
+                  {t.notConnected}
                 </Badge>
               ) : (
-                <Badge dot>Waiting for enrollment</Badge>
+                <Badge dot>{common.enrollment.waiting}</Badge>
               )}
-              {!o.enrolledAt && o.enrollmentExpiresAt ? <span className="text-caption text-fg-3">Token works until {formatDateTime(o.enrollmentExpiresAt)}</span> : null}
+              {!o.enrolledAt && o.enrollmentExpiresAt ? <span className="text-caption text-fg-3">{common.enrollment.tokenUntil(formatDateTime(o.enrollmentExpiresAt, locale))}</span> : null}
             </span>,
             <span key="targets" className="tnum">
-              {pluralize(o.targets, "application")}
+              {t.applications(o.targets)}
             </span>,
             o.lastSeenAt ? (
               <span key="seen" className="flex flex-col whitespace-nowrap">
-                <span>{formatDateTime(o.lastSeenAt)}</span>
+                <span>{formatDateTime(o.lastSeenAt, locale)}</span>
                 <span className="font-mono text-code-sm text-fg-3">
                   {o.lastIp}
                   {o.version ? ` · ${o.version}` : null}
@@ -91,15 +97,15 @@ export function OutpostsSection({ outposts, issuer, canEdit }: { outposts: Outpo
               </span>
             ) : (
               <span key="seen" className="text-fg-3">
-                Never
+                {t.never}
               </span>
             ),
             canEdit ? (
               <span key="actions" className="flex gap-1">
-                <Button size="icon-sm" variant="quiet" aria-label={`New enrollment token for ${o.name}`} onClick={() => setEnrolling(o)}>
+                <Button size="icon-sm" variant="quiet" aria-label={common.enrollment.newToken(o.name)} onClick={() => setEnrolling(o)}>
                   <KeyRound aria-hidden="true" size={16} strokeWidth={1.75} />
                 </Button>
-                <Button size="icon-sm" variant="quiet" aria-label={`Delete ${o.name}`} onClick={() => setDeleting(o)}>
+                <Button size="icon-sm" variant="quiet" aria-label={common.delete(o.name)} onClick={() => setDeleting(o)}>
                   <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
                 </Button>
               </span>
@@ -112,8 +118,8 @@ export function OutpostsSection({ outposts, issuer, canEdit }: { outposts: Outpo
         <Card>
           <EmptyState
             icon={RadioTower}
-            title="No outposts yet"
-            description="Register an outpost, then run halo-outpost on a machine that can reach your hosts. It only connects out to Halo, so it needs no inbound firewall rule."
+            title={t.empty}
+            description={t.emptyHint}
           />
         </Card>
       )}
@@ -126,15 +132,15 @@ export function OutpostsSection({ outposts, issuer, canEdit }: { outposts: Outpo
           clearError();
         }}
         error={errorFor("delete")}
-        title={`Delete ${deleting?.name ?? "this outpost"}?`}
-        description="Its key stops working at once, which disconnects it and ends its live sessions. Move or delete the applications that use it first."
+        title={t.deleteTitle(deleting?.name ?? null)}
+        description={t.deleteHint}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleting(null)}>
-              Cancel
+              {common.cancel}
             </Button>
             <Button variant="destructive" loading={pending === "delete"} onClick={remove}>
-              Delete outpost
+              {t.deleteConfirm}
             </Button>
           </>
         }
@@ -148,10 +154,13 @@ function EnrollmentDialog({ outpost, issuer, onClose }: { outpost: Outpost | nul
   const [name, setName] = useState("");
   const [error, setError] = useState<string>();
   const [issued, setIssued] = useState<Enrollment | null>(null);
+  const locale = useLocale();
+  const common = infrastructureMessages[locale];
+  const t = remoteMessages[locale].outposts;
 
   function submit() {
     if (!outpost && !name.trim()) {
-      setError("Name the outpost after the network it reaches, like Office LAN.");
+      setError(t.nameError);
       return;
     }
     setError(undefined);
@@ -170,26 +179,26 @@ function EnrollmentDialog({ outpost, issuer, onClose }: { outpost: Outpost | nul
         if (!open) onClose();
       }}
       error={errorFor("enroll")}
-      title={issued ? `Enroll ${issued.outpost.name}` : outpost ? `New enrollment token for ${outpost.name}` : "Register outpost"}
+      title={issued ? common.enrollment.enroll(issued.outpost.name) : outpost ? common.enrollment.newToken(outpost.name) : t.register}
       description={
         issued
-          ? "Run this on a machine inside the network. halo-outpost enrolls once, saves its key in halo-outpost.key and then connects with the key."
+          ? t.enrollHint
           : outpost
-            ? "Enrolling with the new token gives the outpost a new key. The current key stops working then, so delete halo-outpost.key on the machine before you run it."
-            : "An outpost reaches the hosts of one network for Halo. Register one per network."
+            ? t.tokenHint
+            : t.registerHint
       }
       footer={
         issued ? (
           <Button variant="primary" onClick={onClose}>
-            Done
+            {common.done}
           </Button>
         ) : (
           <>
             <Button variant="secondary" onClick={onClose}>
-              Cancel
+              {common.cancel}
             </Button>
             <Button variant="primary" loading={pending === "enroll"} onClick={submit}>
-              {outpost ? "Create token" : "Register outpost"}
+              {outpost ? common.enrollment.createToken : t.register}
             </Button>
           </>
         )
@@ -197,9 +206,9 @@ function EnrollmentDialog({ outpost, issuer, onClose }: { outpost: Outpost | nul
     >
       {issued ? (
         <div className="flex animate-enter flex-col gap-4">
-          <CopyField label="Enrollment command" value={enrollCommand(issuer, issued.token)} secret />
+          <CopyField label={common.enrollment.command} value={enrollCommand(issuer, issued.token)} secret />
           <SecretWarning>
-            This is the only time Halo shows this token. It works once, until {issued.outpost.enrollmentExpiresAt ? formatDateTime(issued.outpost.enrollmentExpiresAt) : "it expires"}.
+            {common.enrollment.onlyOnce(issued.outpost.enrollmentExpiresAt ? formatDateTime(issued.outpost.enrollmentExpiresAt, locale) : null)}
           </SecretWarning>
         </div>
       ) : outpost ? null : (
@@ -210,8 +219,8 @@ function EnrollmentDialog({ outpost, issuer, onClose }: { outpost: Outpost | nul
             submit();
           }}
         >
-          <Field label="Name" error={error}>
-            {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder="Office LAN" />}
+          <Field label={common.name} error={error}>
+            {(props) => <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder={t.namePlaceholder} />}
           </Field>
           <button type="submit" hidden />
         </form>

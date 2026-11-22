@@ -1,7 +1,7 @@
 import type { Tone } from "@/components/ui/badge";
 import { DescriptionList } from "@/components/ui/description-list";
 import { cn } from "@/lib/cn";
-import { daysUntil, formatDate, formatDateTime, pluralize } from "@/lib/format";
+import { daysUntil, formatDate, formatDateTime } from "@/lib/format";
 import type {
   AccessRequest,
   AccessReview,
@@ -13,99 +13,93 @@ import type {
   ReviewOutcome,
   ReviewStatus,
 } from "@/lib/governance-types";
+import { governanceMessages } from "@/lib/i18n/console/governance";
+import type { Locale } from "@/lib/i18n/locale";
 
 export type Person = { id: string; name: string; email: string };
 
 export const DURATIONS = [1, 2, 7, 14, 30, 90, 180, 365];
 
-export const REQUEST_STATUS: Record<RequestStatus, { label: string; tone: Tone }> = {
-  pending: { label: "Pending", tone: "warning" },
-  approved: { label: "Approved", tone: "success" },
-  denied: { label: "Denied", tone: "danger" },
-  cancelled: { label: "Cancelled", tone: "neutral" },
-  expired: { label: "Expired", tone: "neutral" },
+export const REQUEST_STATUS: Record<RequestStatus, { tone: Tone }> = {
+  pending: { tone: "warning" },
+  approved: { tone: "success" },
+  denied: { tone: "danger" },
+  cancelled: { tone: "neutral" },
+  expired: { tone: "neutral" },
 };
 
-export const REVIEW_STATUS: Record<ReviewStatus, { label: string; tone: Tone }> = {
-  overdue: { label: "Overdue", tone: "danger" },
-  "in-progress": { label: "In progress", tone: "info" },
-  completed: { label: "Completed", tone: "success" },
+export const REVIEW_STATUS: Record<ReviewStatus, { tone: Tone }> = {
+  overdue: { tone: "danger" },
+  "in-progress": { tone: "info" },
+  completed: { tone: "success" },
 };
 
-export const OUTCOME: Record<ReviewOutcome, { label: string; tone: Tone }> = {
-  kept: { label: "Kept", tone: "success" },
-  removed: { label: "Removed", tone: "danger" },
-  "not-removed": { label: "Marked for removal", tone: "warning" },
-  "no-decision": { label: "No decision, kept", tone: "neutral" },
+export const OUTCOME: Record<ReviewOutcome, Tone> = {
+  kept: "success",
+  removed: "danger",
+  "not-removed": "warning",
+  "no-decision": "neutral",
 };
 
-export const TRIGGER: Record<LifecycleTrigger, { label: string; description: string }> = {
-  joiner: { label: "Joiner", description: "When someone is created in Halo" },
-  mover: { label: "Mover", description: "When someone's department, title or location changes" },
-  leaver: { label: "Leaver", description: "When someone is suspended or deprovisioned" },
-  date: { label: "Date", description: "On, before or after a date attribute, such as a contract end date" },
-  inactivity: { label: "Inactivity", description: "When someone hasn't signed in for a number of days" },
-};
+export const TRIGGERS = Object.keys(governanceMessages.en.triggers) as LifecycleTrigger[];
 
-export const ACTION: Record<LifecycleActionType, string> = {
-  "add-to-group": "Add to group",
-  "remove-from-group": "Remove from group",
-  "revoke-sessions": "Revoke sessions",
-  suspend: "Suspend account",
-};
+export const ACTIONS = Object.keys(governanceMessages.en.actions) as LifecycleActionType[];
 
-export function joinNames(refs: { name: string }[]): string {
+export function joinNames(refs: { name: string }[], locale: Locale): string {
   const names = refs.map((ref) => ref.name);
-  return names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} ${governanceMessages[locale].and} ${names[names.length - 1]}`;
 }
 
-export function approversLabel(refs: NamedRef[]): string {
-  return refs.length ? joinNames(refs) : "a global administrator";
+export function approversLabel(refs: NamedRef[], locale: Locale): string {
+  return refs.length ? joinNames(refs, locale) : governanceMessages[locale].globalAdmin;
 }
 
-export function durationLabel(days: number | null): string {
-  return days === null ? "Until revoked" : pluralize(days, "day");
+export function durationLabel(days: number | null, locale: Locale): string {
+  const t = governanceMessages[locale];
+  return days === null ? t.untilRevoked : t.days(days);
 }
 
-export function requestDurationLabel(request: AccessRequest): string {
-  return request.extends && request.durationDays !== null ? pluralize(request.durationDays, "more day") : durationLabel(request.durationDays);
+export function requestDurationLabel(request: AccessRequest, locale: Locale): string {
+  return request.extends && request.durationDays !== null ? governanceMessages[locale].moreDays(request.durationDays) : durationLabel(request.durationDays, locale);
 }
 
-export function stagesLabel(stages: AccessStage[], whose = "the requester's"): string {
+export function stagesLabel(stages: AccessStage[], locale: Locale, manager = governanceMessages[locale].requesterManager): string {
+  const t = governanceMessages[locale];
   return stages
     .map((stage) =>
       stage.approver === "manager"
-        ? `${whose} manager`
+        ? manager
         : stage.approver === "group-owners"
-          ? `the owners of ${stage.group?.name ?? "a removed group"}`
-          : approversLabel(stage.approvers),
+          ? t.ownersOf(stage.group?.name ?? t.removedGroup)
+          : approversLabel(stage.approvers, locale),
     )
-    .join(", then ");
+    .join(t.then);
 }
 
-export function grantLabel(request: AccessRequest, withTime = true): string {
+export function grantLabel(request: AccessRequest, locale: Locale, withTime = true): string {
+  const t = governanceMessages[locale];
   if (request.status !== "approved") return "—";
-  if (request.endedAt) return `${{ revoked: "Revoked", extended: "Extended", expired: "Expired" }[request.endReason ?? "expired"]} ${formatDate(request.endedAt)}`;
-  if (!request.expiresAt) return "Until revoked";
-  return `Until ${withTime ? formatDateTime(request.expiresAt) : formatDate(request.expiresAt)}`;
+  if (request.endedAt) return t.ended[request.endReason ?? "expired"](formatDate(request.endedAt, locale));
+  if (!request.expiresAt) return t.untilRevoked;
+  return t.until(withTime ? formatDateTime(request.expiresAt, locale) : formatDate(request.expiresAt, locale));
 }
 
-export function dueLabel(review: AccessReview): string {
-  if (review.status === "completed") return review.completedAt ? `Completed ${formatDate(review.completedAt)}` : "Completed";
+export function dueLabel(review: AccessReview, locale: Locale): string {
+  const t = governanceMessages[locale];
+  if (review.status === "completed") return review.completedAt ? t.completedOn(formatDate(review.completedAt, locale)) : t.reviewStatus.completed;
   const days = daysUntil(review.dueAt);
-  if (review.status === "overdue") return `${pluralize(Math.max(1, -days), "day")} overdue`;
-  return days <= 0 ? "Due today" : `Due in ${pluralize(days, "day")}`;
+  if (review.status === "overdue") return t.overdueBy(Math.max(1, -days));
+  return days <= 0 ? t.dueToday : t.dueIn(days);
 }
 
-export function ReviewProgress({ review, className }: { review: AccessReview; className?: string }) {
+export function ReviewProgress({ review, className, locale }: { review: AccessReview; className?: string; locale: Locale }) {
+  const t = governanceMessages[locale];
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      <span className="tnum text-body-sm text-fg-2">
-        {review.decided} of {review.total} decided
-      </span>
+      <span className="tnum text-body-sm text-fg-2">{t.decidedOf(review.decided, review.total)}</span>
       <div
         role="progressbar"
-        aria-label={`${review.name} progress`}
+        aria-label={t.progress(review.name)}
         aria-valuemin={0}
         aria-valuemax={review.total}
         aria-valuenow={review.decided}
@@ -120,16 +114,17 @@ export function ReviewProgress({ review, className }: { review: AccessReview; cl
   );
 }
 
-export function ReviewFacts({ review }: { review: AccessReview }) {
+export function ReviewFacts({ review, locale }: { review: AccessReview; locale: Locale }) {
+  const t = governanceMessages[locale];
   return (
     <DescriptionList
       columns={2}
       items={[
-        { label: "Group", value: review.group.name },
-        { label: "Reviewers", value: joinNames(review.reviewers) },
-        { label: "Due", value: `${formatDate(review.dueAt)} · ${dueLabel(review)}` },
-        { label: "Automatic removal", value: review.autoApply ? "On: removals apply when the review is completed" : "Off: decisions are recorded only" },
-        { label: "Started", value: `${formatDate(review.createdAt)}${review.createdBy ? ` by ${review.createdBy.name}` : ""}` },
+        { label: t.group, value: review.group.name },
+        { label: t.facts.reviewers, value: joinNames(review.reviewers, locale) },
+        { label: t.facts.due, value: `${formatDate(review.dueAt, locale)} · ${dueLabel(review, locale)}` },
+        { label: t.facts.autoRemoval, value: review.autoApply ? t.autoRemovalOn : t.autoRemovalOff },
+        { label: t.facts.started, value: t.startedBy(formatDate(review.createdAt, locale), review.createdBy?.name) },
       ]}
     />
   );

@@ -1,14 +1,18 @@
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { DescriptionList } from "@/components/ui/description-list";
 import { DetailHeaderSkeleton, ListSkeleton, PageSkeleton, SkeletonText, TabsSkeleton } from "@/components/ui/skeleton";
+import { directoryMessages } from "@/lib/i18n/console/directory";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { requestLocale } from "@/lib/i18n/server";
 
-const facts = ["Status", "Authentication strength", "Admin role", "Last sign-in", "Source", "Member since"];
-const profile = ["Email", "Title", "Department", "Location", "Manager", "User ID"];
-
-export default function Loading() {
+export default async function Loading() {
+  const locale = await requestLocale();
+  const t = directoryMessages[locale];
+  const facts = [t.fields.status, t.user.authenticationStrength, t.fields.adminRole, t.fields.lastSignIn, t.fields.source, t.user.memberSince];
+  const profile = [t.fields.email, t.fields.title, t.fields.department, t.fields.location, t.fields.manager, t.fields.userId];
   return (
     <PageSkeleton
-      back={{ href: "/admin/users", label: "Users" }}
+      back={{ href: "/admin/users", label: frameMessages[locale].nav.items.users.label }}
       heading={
         <>
           <DetailHeaderSkeleton media="avatar" actions={3} />
@@ -19,16 +23,16 @@ export default function Loading() {
         </>
       }
     >
-      <TabsSkeleton labels={["Overview", "Authentication", "Access", "Applications", "Groups", "Devices", "Sessions", "Activity"]} />
+      <TabsSkeleton labels={Object.values(t.user.tabs)} />
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <Card className="xl:col-span-7">
-          <CardHeader title="Profile" />
+          <CardHeader title={t.user.profile} />
           <CardBody>
             <DescriptionList columns={2} items={profile.map((label) => ({ label, value: <SkeletonText chars={18} /> }))} />
           </CardBody>
         </Card>
         <Card className="xl:col-span-5">
-          <CardHeader title="Authentication" />
+          <CardHeader title={t.fields.authentication} />
           <CardBody className="flex flex-col gap-4">
             <p className="text-body-sm">
               <SkeletonText chars={70} />
@@ -39,7 +43,7 @@ export default function Loading() {
           </CardBody>
         </Card>
         <Card className="xl:col-span-12">
-          <CardHeader title="Recent sign-ins" />
+          <CardHeader title={t.user.recentSignIns} />
           <ListSkeleton className="border-t border-border" />
         </Card>
       </div>
