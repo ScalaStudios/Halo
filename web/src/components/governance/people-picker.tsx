@@ -4,6 +4,8 @@ import { Search, X } from "lucide-react";
 import { useState } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
+import { useMessages } from "@/lib/i18n/client";
+import { governanceMessages } from "@/lib/i18n/console/governance";
 import type { Person } from "./shared";
 
 export function PeoplePicker({
@@ -20,6 +22,7 @@ export function PeoplePicker({
   "aria-describedby"?: string;
   "aria-invalid"?: boolean;
 }) {
+  const t = useMessages(governanceMessages).picker;
   const [query, setQuery] = useState("");
   const selected = value.flatMap((personId) => people.filter((p) => p.id === personId));
   const needle = query.trim().toLowerCase();
@@ -41,7 +44,7 @@ export function PeoplePicker({
               <button
                 type="button"
                 onClick={() => onChange(value.filter((v) => v !== person.id))}
-                aria-label={`Remove ${person.name}`}
+                aria-label={t.remove(person.name)}
                 className="grid size-6 place-items-center rounded-sm text-fg-3 hover:bg-hover hover:text-fg"
               >
                 <X aria-hidden="true" size={16} strokeWidth={1.75} />
@@ -62,12 +65,12 @@ export function PeoplePicker({
             if (matches[0]) add(matches[0]);
           }
         }}
-        placeholder="Search by name or email"
+        placeholder={t.placeholder}
         leading={<Search size={16} strokeWidth={1.75} />}
       />
       {needle ? (
         matches.length ? (
-          <ul className="flex flex-col rounded-md border border-border p-1" aria-label="Matching people">
+          <ul className="flex flex-col rounded-md border border-border p-1" aria-label={t.matches}>
             {matches.map((person) => (
               <li key={person.id}>
                 <button
@@ -83,7 +86,7 @@ export function PeoplePicker({
             ))}
           </ul>
         ) : (
-          <p className="text-caption text-fg-3">No one in the directory matches “{query.trim()}”.</p>
+          <p className="text-caption text-fg-3">{t.noMatch(query.trim())}</p>
         )
       ) : null}
     </div>

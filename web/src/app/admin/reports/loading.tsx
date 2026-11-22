@@ -1,10 +1,15 @@
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { PageSkeleton, Skeleton, SkeletonText, TableSkeleton, TabsSkeleton } from "@/components/ui/skeleton";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { governanceMessages } from "@/lib/i18n/console/governance";
+import { requestLocale } from "@/lib/i18n/server";
 
-export default function Loading() {
+export default async function Loading() {
+  const locale = await requestLocale();
+  const t = governanceMessages[locale].reports;
   return (
-    <PageSkeleton title="Reports" description="Who signs in, with which methods and to which applications. Each report downloads as CSV and is available in the API.">
-      <TabsSkeleton labels={["Sign-in methods", "Method usage", "Inactive people", "Application usage"]} />
+    <PageSkeleton title={frameMessages[locale].nav.items.reports.label} description={t.description}>
+      <TabsSkeleton labels={Object.values(t.tabs)} />
       <Card>
         <CardHeader title={<SkeletonText chars={18} />} description={<SkeletonText chars={56} />} />
         <CardBody>

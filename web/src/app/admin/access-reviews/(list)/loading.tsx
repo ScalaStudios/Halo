@@ -1,9 +1,11 @@
 import { Card } from "@/components/ui/card";
 import { PageSkeleton, Skeleton, SkeletonText } from "@/components/ui/skeleton";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { requestLocale } from "@/lib/i18n/server";
 
-export default function Loading() {
+export default async function Loading() {
   return (
-    <PageSkeleton title="Access reviews" description={87} actions={<Skeleton className="h-10 w-36 rounded-md" />}>
+    <PageSkeleton title={frameMessages[await requestLocale()].nav.items.accessReviews.label} description={87} actions={<Skeleton className="h-10 w-36 rounded-md" />}>
       <Card>
         <ul aria-hidden="true">
           {[0, 1].map((i) => (

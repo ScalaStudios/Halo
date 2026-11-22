@@ -2,7 +2,7 @@
 
 import type { ColumnDef } from "@tanstack/react-table";
 import { Archive, Package, Pencil, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { StatusDot } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api/client";
 import type { AccessPackage, AccessQuestion, StageApprover } from "@/lib/governance-types";
+import { useLocale } from "@/lib/i18n/client";
+import { governanceMessages } from "@/lib/i18n/console/governance";
+import type { Locale } from "@/lib/i18n/locale";
 import type { Group } from "@/lib/types";
 import { PeoplePicker } from "./people-picker";
 import { DURATIONS, durationLabel, joinNames, stagesLabel, type Person } from "./shared";
@@ -24,17 +27,17 @@ type QuestionDraft = { key: number; id: string; text: string; kind: AccessQuesti
 
 let draftKey = 0;
 
-function approvalLabel(p: AccessPackage): string {
-  const label = stagesLabel(p.stages);
+function approvalLabel(p: AccessPackage, locale: Locale): string {
+  const label = stagesLabel(p.stages, locale);
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-const columns: ColumnDef<AccessPackage, any>[] = [
+const packageColumns = (t: typeof governanceMessages.en, locale: Locale): ColumnDef<AccessPackage, any>[] => [
   {
     id: "name",
     accessorFn: (p) => p.name,
-    header: "Package",
-    meta: { label: "Package", hideable: false },
+    header: t.package,
+    meta: { label: t.package, hideable: false },
     cell: ({ row }) => (
       <span className="flex max-w-80 min-w-56 flex-col py-2">
         <span className="font-medium text-fg">{row.original.name}</span>
@@ -44,58 +47,52 @@ const columns: ColumnDef<AccessPackage, any>[] = [
   },
   {
     id: "groups",
-    accessorFn: (p) => joinNames(p.groups),
-    header: "Grants",
-    meta: { label: "Grants" },
+    accessorFn: (p) => joinNames(p.groups, locale),
+    header: t.packages.grants,
+    meta: { label: t.packages.grants },
     cell: ({ getValue }) => <span className="whitespace-nowrap">{getValue<string>()}</span>,
   },
   {
     id: "approvers",
-    accessorFn: approvalLabel,
-    header: "Approval",
-    meta: { label: "Approval" },
+    accessorFn: (p) => approvalLabel(p, locale),
+    header: t.packages.approval,
+    meta: { label: t.packages.approval },
     cell: ({ getValue }) => <span className="block max-w-72 min-w-40">{getValue<string>()}</span>,
   },
   {
     id: "duration",
     accessorFn: (p) => p.maxDays ?? Number.MAX_SAFE_INTEGER,
-    header: "Maximum",
-    meta: { label: "Maximum duration", align: "right" },
-    cell: ({ row }) => <span className="tnum whitespace-nowrap">{durationLabel(row.original.maxDays)}</span>,
+    header: t.packages.maximum,
+    meta: { label: t.packages.maximumDuration, align: "right" },
+    cell: ({ row }) => <span className="tnum whitespace-nowrap">{durationLabel(row.original.maxDays, locale)}</span>,
   },
   {
     id: "pending",
     accessorFn: (p) => p.pendingRequests,
-    header: "Pending",
-    meta: { label: "Pending requests", align: "right" },
+    header: t.pending,
+    meta: { label: t.packages.pendingRequests, align: "right" },
     cell: ({ getValue }) => <span className="tnum">{getValue<number>()}</span>,
   },
   {
     id: "active",
     accessorFn: (p) => p.activeGrants,
-    header: "Active",
-    meta: { label: "Active grants", align: "right" },
+    header: t.packages.active,
+    meta: { label: t.packages.activeGrants, align: "right" },
     cell: ({ getValue }) => <span className="tnum">{getValue<number>()}</span>,
   },
   {
     id: "status",
     accessorFn: (p) => (p.archived ? "archived" : "requestable"),
-    header: "Status",
+    header: t.status,
     filterFn: facetFilter,
-    meta: { label: "Status" },
+    meta: { label: t.status },
     cell: ({ row }) => (
       <span className="inline-flex items-center gap-2 whitespace-nowrap">
         <StatusDot tone={row.original.archived ? "neutral" : "success"} />
-        {row.original.archived ? "Archived" : "Requestable"}
+        {row.original.archived ? t.packages.archived : t.packages.requestable}
       </span>
     ),
   },
-];
-
-const views: SavedView[] = [
-  { id: "requestable", label: "Requestable", filters: [{ id: "status", value: ["requestable"] }] },
-  { id: "archived", label: "Archived", filters: [{ id: "status", value: ["archived"] }] },
-  { id: "all", label: "All packages", filters: [] },
 ];
 
 function bodyFor(p: AccessPackage) {
@@ -114,6 +111,15 @@ export function PackagesTable({ packages, groups, people }: { packages: AccessPa
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [editing, setEditing] = useState<AccessPackage | "new" | null>(null);
   const [deleting, setDeleting] = useState<AccessPackage | null>(null);
+  const locale = useLocale();
+  const t = governanceMessages[locale];
+  const copy = t.packages;
+  const columns = useMemo(() => packageColumns(t, locale), [t, locale]);
+  const views: SavedView[] = [
+    { id: "requestable", label: copy.requestable, filters: [{ id: "status", value: ["requestable"] }] },
+    { id: "archived", label: copy.archived, filters: [{ id: "status", value: ["archived"] }] },
+    { id: "all", label: copy.all, filters: [] },
+  ];
 
   function setArchived(p: AccessPackage, archived: boolean) {
     void run(
@@ -122,8 +128,8 @@ export function PackagesTable({ packages, groups, people }: { packages: AccessPa
       () =>
         toast(
           archived
-            ? { title: `${p.name} archived`, description: "People can no longer request it. Access already granted lasts until it expires." }
-            : { title: `${p.name} restored`, description: "People can request it again from their account." },
+            ? { title: copy.archivedToast(p.name), description: copy.archivedHint }
+            : { title: copy.restored(p.name), description: copy.restoredHint },
         ),
     );
   }
@@ -131,7 +137,7 @@ export function PackagesTable({ packages, groups, people }: { packages: AccessPa
   const create = (
     <Button size="sm" variant="primary" onClick={() => setEditing("new")}>
       <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-      Create package
+      {copy.create}
     </Button>
   );
 
@@ -141,8 +147,8 @@ export function PackagesTable({ packages, groups, people }: { packages: AccessPa
         <Card>
           <EmptyState
             icon={Package}
-            title="No access packages yet"
-            description="Create a package so people can request time-bound membership of groups, decided by approvers you choose."
+            title={copy.emptyTitle}
+            description={copy.emptyDescription}
             action={create}
           />
         </Card>
@@ -151,26 +157,26 @@ export function PackagesTable({ packages, groups, people }: { packages: AccessPa
           data={packages}
           columns={columns}
           getRowId={(p) => p.id}
-          label="Access packages"
-          noun={["package", "packages"]}
+          label={copy.label}
+          noun={copy.noun}
           storageKey="access-packages"
-          searchText={(p) => `${p.name} ${p.description} ${joinNames(p.groups)} ${approvalLabel(p)}`}
-          searchPlaceholder="Search packages, groups or approvers"
+          searchText={(p) => `${p.name} ${p.description} ${joinNames(p.groups, locale)} ${approvalLabel(p, locale)}`}
+          searchPlaceholder={copy.search}
           views={views}
           facets={[
             {
               column: "status",
-              label: "Status",
+              label: t.status,
               options: [
-                { value: "requestable", label: "Requestable" },
-                { value: "archived", label: "Archived" },
+                { value: "requestable", label: copy.requestable },
+                { value: "archived", label: copy.archived },
               ],
             },
           ]}
           onRowOpen={setEditing}
           rowActions={[
-            { label: "Edit package", icon: Pencil, onSelect: setEditing },
-            { label: "Delete package", icon: Trash2, danger: true, separatorBefore: true, onSelect: setDeleting },
+            { label: copy.edit, icon: Pencil, onSelect: setEditing },
+            { label: copy.delete, icon: Trash2, danger: true, separatorBefore: true, onSelect: setDeleting },
           ]}
           toolbarEnd={create}
         />
@@ -184,12 +190,12 @@ export function PackagesTable({ packages, groups, people }: { packages: AccessPa
           clearError();
         }}
         error={errorFor("delete")}
-        title={`Delete ${deleting?.name ?? ""}?`}
-        description="Only packages nobody has requested can be deleted. To stop new requests and keep the history, archive the package instead."
+        title={t.deleteTitle(deleting?.name ?? "")}
+        description={copy.deleteDescription}
         footer={
           <>
             <Button variant="secondary" onClick={() => setDeleting(null)}>
-              Cancel
+              {t.cancel}
             </Button>
             {deleting?.archived === false ? (
               <Button
@@ -201,7 +207,7 @@ export function PackagesTable({ packages, groups, people }: { packages: AccessPa
                 }}
               >
                 <Archive aria-hidden="true" size={16} strokeWidth={1.75} />
-                Archive instead
+                {copy.archiveInstead}
               </Button>
             ) : null}
             <Button
@@ -213,14 +219,14 @@ export function PackagesTable({ packages, groups, people }: { packages: AccessPa
                   "delete",
                   () => api(`/access-packages/${deleting.id}`, { method: "DELETE" }),
                   () => {
-                    toast({ title: `${deleting.name} deleted`, description: "Recorded in the audit log." });
+                    toast({ title: t.deleted(deleting.name), description: t.recorded });
                     setDeleting(null);
                   },
                   "inline",
                 )
               }
             >
-              Delete package
+              {copy.delete}
             </Button>
           </>
         }
@@ -252,6 +258,9 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
   const [archived, setArchived] = useState(pkg?.archived ?? false);
   const [errors, setErrors] = useState<{ name?: string; groups?: string }>({});
   const { pending, run, errorFor, toast } = useMutation();
+  const locale = useLocale();
+  const t = governanceMessages[locale];
+  const copy = t.packages;
   const durations = [...new Set([...DURATIONS, ...(pkg?.maxDays ? [pkg.maxDays] : [])])].sort((a, b) => a - b);
 
   function updateStage(key: number, change: Partial<StageDraft>) {
@@ -263,7 +272,7 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
   }
 
   function submit() {
-    const next = { name: name.trim() ? undefined : "Enter a package name.", groups: groupIds.length ? undefined : "Choose at least one group to grant." };
+    const next = { name: name.trim() ? undefined : copy.nameRequired, groups: groupIds.length ? undefined : copy.groupsRequired };
     setErrors(next);
     if (next.name || next.groups) return;
     const body = {
@@ -296,8 +305,8 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
         onClose();
         toast(
           pkg
-            ? { title: `${saved.name} saved`, description: "Pending requests follow the new stages and deadlines. Access already granted keeps its end date." }
-            : { title: `${saved.name} created`, description: "People can request it from the Access page in their account." },
+            ? { title: t.saved(saved.name), description: copy.savedHint }
+            : { title: t.created(saved.name), description: copy.createdHint },
         );
       },
       "inline",
@@ -310,15 +319,15 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
       onOpenChange={(open) => (open ? undefined : onClose())}
       error={errorFor("save")}
       width="wide"
-      title={pkg ? `Edit ${pkg.name}` : "Create access package"}
-      description="A package bundles groups people can request. Approved access is removed automatically when it expires."
+      title={pkg ? t.editTitle(pkg.name) : copy.createTitle}
+      description={copy.dialogDescription}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {t.cancel}
           </Button>
           <Button variant="primary" loading={pending === "save"} onClick={submit}>
-            {pkg ? "Save package" : "Create package"}
+            {pkg ? copy.save : copy.create}
           </Button>
         </>
       }
@@ -330,16 +339,16 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
           submit();
         }}
       >
-        <Field label="Name" error={errors.name}>
+        <Field label={t.name} error={errors.name}>
           {(props) => (
-            <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder="Production access" />
+            <Input {...props} autoFocus autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} placeholder={copy.namePlaceholder} />
           )}
         </Field>
-        <Field label="Description" hint="Shown to people choosing what to request.">
+        <Field label={copy.description} hint={copy.descriptionHint}>
           {(props) => <Textarea {...props} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} />}
         </Field>
         <fieldset className="flex flex-col gap-3">
-          <legend className="mb-3 text-label text-fg">Groups</legend>
+          <legend className="mb-3 text-label text-fg">{copy.groups}</legend>
           <div className="flex max-h-56 flex-col gap-3 overflow-y-auto rounded-md border border-border p-4">
             {groups.map((group) => (
               <label key={group.id} className="flex cursor-pointer items-start gap-3">
@@ -358,42 +367,40 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
           {errors.groups ? (
             <p className="text-caption text-danger">{errors.groups}</p>
           ) : (
-            <p className="text-caption text-fg-3">
-              Only assigned groups are listed. Rule-based groups follow people&apos;s profiles, so they can&apos;t be granted.
-            </p>
+            <p className="text-caption text-fg-3">{copy.groupsHint}</p>
           )}
         </fieldset>
         <fieldset className="flex flex-col gap-3">
-          <legend className="mb-3 text-label text-fg">Approval</legend>
+          <legend className="mb-3 text-label text-fg">{copy.approval}</legend>
           <ol className="flex flex-col gap-3">
             {stages.map((stage, index) => (
               <li key={stage.key} className="flex flex-col gap-4 rounded-md border border-border p-4">
                 <div className="flex min-h-8 items-center justify-between gap-3">
-                  <span className="text-body-sm font-semibold text-fg">Stage {index + 1}</span>
+                  <span className="text-body-sm font-semibold text-fg">{copy.stage(index + 1)}</span>
                   {stages.length > 1 ? (
-                    <Button size="sm" variant="quiet" aria-label={`Remove stage ${index + 1}`} onClick={() => setStages((current) => current.filter((s) => s.key !== stage.key))}>
+                    <Button size="sm" variant="quiet" aria-label={copy.removeStage(index + 1)} onClick={() => setStages((current) => current.filter((s) => s.key !== stage.key))}>
                       <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
-                      Remove
+                      {t.remove}
                     </Button>
                   ) : null}
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <Field label="Decided by">
+                  <Field label={copy.decidedBy}>
                     {(props) => (
                       <Select {...props} value={stage.approver} onChange={(event) => updateStage(stage.key, { approver: event.target.value as StageApprover })}>
-                        <option value="people">Specific people</option>
-                        <option value="manager">The requester&apos;s manager</option>
-                        <option value="group-owners">Owners of a group</option>
+                        <option value="people">{copy.specificPeople}</option>
+                        <option value="manager">{copy.requesterManager}</option>
+                        <option value="group-owners">{copy.groupOwners}</option>
                       </Select>
                     )}
                   </Field>
-                  <Field label="Deadline" hint="Then the fallback approvers get it. Without a decision after that, the request expires.">
+                  <Field label={copy.deadline} hint={copy.deadlineHint}>
                     {(props) => (
                       <Select {...props} value={stage.timeout} onChange={(event) => updateStage(stage.key, { timeout: event.target.value })}>
-                        <option value="none">No deadline</option>
+                        <option value="none">{copy.noDeadline}</option>
                         {DEADLINES.map((days) => (
                           <option key={days} value={String(days)}>
-                            {durationLabel(days)}
+                            {durationLabel(days, locale)}
                           </option>
                         ))}
                       </Select>
@@ -401,15 +408,15 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
                   </Field>
                 </div>
                 {stage.approver === "people" ? (
-                  <Field label="Approvers" hint="Any one of them decides this stage. Nobody decides a request they made or that is for them.">
+                  <Field label={copy.approvers} hint={copy.approversHint}>
                     {(props) => <PeoplePicker {...props} people={people} value={stage.approverIds} onChange={(approverIds) => updateStage(stage.key, { approverIds })} />}
                   </Field>
                 ) : null}
                 {stage.approver === "group-owners" ? (
-                  <Field label="Group" hint="Its owners decide this stage.">
+                  <Field label={t.group} hint={copy.groupHint}>
                     {(props) => (
                       <Select {...props} value={stage.groupId} onChange={(event) => updateStage(stage.key, { groupId: event.target.value })}>
-                        <option value="">Choose a group</option>
+                        <option value="">{t.chooseGroup}</option>
                         {groups.map((group) => (
                           <option key={group.id} value={group.id}>
                             {group.name}
@@ -420,8 +427,8 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
                   </Field>
                 ) : null}
                 <Field
-                  label="Fallback approvers"
-                  hint="Decide when nobody above can, such as a requester without a manager, and when the deadline passes. Without them, global administrators decide."
+                  label={copy.fallback}
+                  hint={copy.fallbackHint}
                 >
                   {(props) => <PeoplePicker {...props} people={people} value={stage.fallbackIds} onChange={(fallbackIds) => updateStage(stage.key, { fallbackIds })} />}
                 </Field>
@@ -436,45 +443,45 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
               onClick={() => setStages((current) => [...current, { key: ++draftKey, approver: "people", approverIds: [], groupId: "", fallbackIds: [], timeout: "none" }])}
             >
               <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-              Add stage
+              {copy.addStage}
             </Button>
           ) : null}
-          <p className="text-caption text-fg-3">Requests go through the stages in order. A denial at any stage ends the request. Global administrators can decide any stage.</p>
+          <p className="text-caption text-fg-3">{copy.stagesHint}</p>
         </fieldset>
         <fieldset className="flex flex-col gap-3">
-          <legend className="mb-3 text-label text-fg">Questions</legend>
+          <legend className="mb-3 text-label text-fg">{copy.questions}</legend>
           {questions.length ? (
             <ol className="flex flex-col gap-3">
               {questions.map((q, index) => (
                 <li key={q.key} className="flex flex-col gap-4 rounded-md border border-border p-4">
                   <div className="flex min-h-8 items-center justify-between gap-3">
-                    <span className="text-body-sm font-semibold text-fg">Question {index + 1}</span>
-                    <Button size="sm" variant="quiet" aria-label={`Remove question ${index + 1}`} onClick={() => setQuestions((current) => current.filter((c) => c.key !== q.key))}>
+                    <span className="text-body-sm font-semibold text-fg">{copy.questionNumber(index + 1)}</span>
+                    <Button size="sm" variant="quiet" aria-label={copy.removeQuestion(index + 1)} onClick={() => setQuestions((current) => current.filter((c) => c.key !== q.key))}>
                       <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
-                      Remove
+                      {t.remove}
                     </Button>
                   </div>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_12rem]">
-                    <Field label="Question">
-                      {(props) => <Input {...props} autoComplete="off" value={q.text} onChange={(event) => updateQuestion(q.key, { text: event.target.value })} placeholder="Ticket number" />}
+                    <Field label={copy.question}>
+                      {(props) => <Input {...props} autoComplete="off" value={q.text} onChange={(event) => updateQuestion(q.key, { text: event.target.value })} placeholder={copy.questionPlaceholder} />}
                     </Field>
-                    <Field label="Answer">
+                    <Field label={copy.answer}>
                       {(props) => (
                         <Select {...props} value={q.kind} onChange={(event) => updateQuestion(q.key, { kind: event.target.value as AccessQuestion["kind"] })}>
-                          <option value="text">Free text</option>
-                          <option value="choice">Choice from a list</option>
+                          <option value="text">{copy.freeText}</option>
+                          <option value="choice">{copy.choice}</option>
                         </Select>
                       )}
                     </Field>
                   </div>
                   {q.kind === "choice" ? (
-                    <Field label="Choices" hint="One per line, at least two.">
+                    <Field label={copy.choices} hint={copy.choicesHint}>
                       {(props) => <Textarea {...props} rows={3} value={q.choices} onChange={(event) => updateQuestion(q.key, { choices: event.target.value })} />}
                     </Field>
                   ) : null}
                   <label className="flex cursor-pointer items-start gap-3">
                     <Checkbox className="mt-0.5" checked={q.required} onChange={(event) => updateQuestion(q.key, { required: event.target.checked })} />
-                    <span className="text-body-sm text-fg">Required</span>
+                    <span className="text-body-sm text-fg">{copy.required}</span>
                   </label>
                 </li>
               ))}
@@ -488,16 +495,16 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
               onClick={() => setQuestions((current) => [...current, { key: ++draftKey, id: "", text: "", kind: "text", choices: "", required: true }])}
             >
               <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-              Add question
+              {copy.addQuestion}
             </Button>
           ) : null}
-          <p className="text-caption text-fg-3">Asked on the request form, such as a ticket number or a project. Approvers see the answers, and Halo keeps them with the request.</p>
+          <p className="text-caption text-fg-3">{copy.questionsHint}</p>
         </fieldset>
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-          <Field label="Owner" hint="Who answers questions about this package.">
+          <Field label={copy.owner} hint={copy.ownerHint}>
             {(props) => (
               <Select {...props} value={ownerId} onChange={(event) => setOwnerId(event.target.value)}>
-                <option value="">No owner</option>
+                <option value="">{copy.noOwner}</option>
                 {people.map((person) => (
                   <option key={person.id} value={person.id}>
                     {person.name}
@@ -506,15 +513,15 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
               </Select>
             )}
           </Field>
-          <Field label="Maximum duration" hint="Requesters choose up to this.">
+          <Field label={copy.maximumDuration} hint={copy.maximumHint}>
             {(props) => (
               <Select {...props} value={maxDays} onChange={(event) => setMaxDays(event.target.value)}>
                 {durations.map((days) => (
                   <option key={days} value={String(days)}>
-                    {durationLabel(days)}
+                    {durationLabel(days, locale)}
                   </option>
                 ))}
-                <option value="none">Until revoked</option>
+                <option value="none">{t.untilRevoked}</option>
               </Select>
             )}
           </Field>
@@ -522,16 +529,16 @@ function PackageDialog({ pkg, groups, people, onClose }: { pkg: AccessPackage | 
         <label className="flex cursor-pointer items-start gap-3">
           <Checkbox className="mt-0.5" checked={requireJustification} onChange={(event) => setRequireJustification(event.target.checked)} />
           <span className="flex flex-col">
-            <span className="text-body-sm text-fg">Require a justification</span>
-            <span className="text-caption text-fg-3">Requesters explain why they need access. Approvers read it before deciding.</span>
+            <span className="text-body-sm text-fg">{copy.requireJustification}</span>
+            <span className="text-caption text-fg-3">{copy.requireJustificationHint}</span>
           </span>
         </label>
         {pkg ? (
           <label className="flex cursor-pointer items-start gap-3">
             <Checkbox className="mt-0.5" checked={archived} onChange={(event) => setArchived(event.target.checked)} />
             <span className="flex flex-col">
-              <span className="text-body-sm text-fg">Archived</span>
-              <span className="text-caption text-fg-3">People can&apos;t request an archived package. Access already granted lasts until it expires.</span>
+              <span className="text-body-sm text-fg">{copy.archived}</span>
+              <span className="text-caption text-fg-3">{copy.archiveCheckboxHint}</span>
             </span>
           </label>
         ) : null}

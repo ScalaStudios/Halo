@@ -1,21 +1,25 @@
 import { PackagesTable } from "@/components/governance/packages-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { apiGet } from "@/lib/api/server";
-import { pluralize } from "@/lib/format";
 import type { AccessPackage } from "@/lib/governance-types";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { governanceMessages } from "@/lib/i18n/console/governance";
+import { requestLocale } from "@/lib/i18n/server";
 import type { Group, User } from "@/lib/types";
 
-export const metadata = { title: "Access packages" };
+export async function generateMetadata() {
+  return { title: frameMessages[await requestLocale()].nav.items.accessPackages.label };
+}
 
 export default async function AccessPackagesPage() {
-  const [packages, groups, users] = await Promise.all([apiGet<AccessPackage[]>("/access-packages"), apiGet<Group[]>("/groups"), apiGet<User[]>("/users")]);
+  const [packages, groups, users, locale] = await Promise.all([apiGet<AccessPackage[]>("/access-packages"), apiGet<Group[]>("/groups"), apiGet<User[]>("/users"), requestLocale()]);
   const requestable = packages.filter((p) => !p.archived).length;
   const pending = packages.reduce((sum, p) => sum + p.pendingRequests, 0);
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        title="Access packages"
-        description={`${pluralize(requestable, "package")} people can request, ${pluralize(pending, "request")} waiting for a decision. Approved access is removed automatically when it expires.`}
+        title={frameMessages[locale].nav.items.accessPackages.label}
+        description={governanceMessages[locale].pages.packagesDescription(requestable, pending)}
       />
       <PackagesTable
         packages={packages}

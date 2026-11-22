@@ -7,6 +7,9 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { apiGet } from "@/lib/api/server";
 import type { AccessReview } from "@/lib/governance-types";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { governanceMessages } from "@/lib/i18n/console/governance";
+import { requestLocale } from "@/lib/i18n/server";
 
 type Params = Promise<{ id: string }>;
 
@@ -17,7 +20,8 @@ export async function generateMetadata({ params }: { params: Params }) {
 
 export default async function AccessReviewPage({ params }: { params: Params }) {
   const { id } = await params;
-  const review = await apiGet<AccessReview>(`/access-reviews/${encodeURIComponent(id)}`);
+  const [review, locale] = await Promise.all([apiGet<AccessReview>(`/access-reviews/${encodeURIComponent(id)}`), requestLocale()]);
+  const t = governanceMessages[locale];
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-6">
@@ -26,16 +30,16 @@ export default async function AccessReviewPage({ params }: { params: Params }) {
           className="inline-flex w-fit items-center gap-2 rounded-sm text-body-sm text-fg-3 transition-colors duration-fast hover:text-fg"
         >
           <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.75} />
-          Access reviews
+          {frameMessages[locale].nav.items.accessReviews.label}
         </Link>
         <PageHeader
           title={review.name}
-          meta={<Badge tone={REVIEW_STATUS[review.status].tone}>{REVIEW_STATUS[review.status].label}</Badge>}
-          description={`Confirm or remove each member of ${review.group.name}.`}
+          meta={<Badge tone={REVIEW_STATUS[review.status].tone}>{t.reviewStatus[review.status]}</Badge>}
+          description={t.pages.reviewDescription(review.group.name)}
         />
       </div>
       <Card className="p-6">
-        <ReviewFacts review={review} />
+        <ReviewFacts review={review} locale={locale} />
       </Card>
       <ReviewWorkspace review={review} />
     </div>

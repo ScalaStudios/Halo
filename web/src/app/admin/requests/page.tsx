@@ -5,36 +5,42 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionTitle } from "@/components/ui/section-title";
 import { apiGet } from "@/lib/api/server";
-import { pluralize } from "@/lib/format";
 import type { AccessRequest } from "@/lib/governance-types";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { governanceMessages } from "@/lib/i18n/console/governance";
+import { requestLocale } from "@/lib/i18n/server";
 
-export const metadata = { title: "Requests" };
+export async function generateMetadata() {
+  return { title: frameMessages[await requestLocale()].nav.items.requests.label };
+}
 
 export default async function RequestsPage() {
-  const [pending, decided] = await Promise.all([
+  const [pending, decided, locale] = await Promise.all([
     apiGet<AccessRequest[]>("/access-requests?status=pending"),
     apiGet<AccessRequest[]>("/access-requests?status=approved,denied,cancelled,expired"),
+    requestLocale(),
   ]);
+  const t = governanceMessages[locale];
   const yours = pending.filter((r) => r.canDecide).length;
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        title="Requests"
-        description={`${pluralize(pending.length, "access request")} waiting for a decision, ${yours} of them yours to decide. Approved access is removed automatically when it expires.`}
+        title={frameMessages[locale].nav.items.requests.label}
+        description={t.pages.requestsDescription(pending.length, yours)}
       />
       <Card>
-        <CardHeader title="Pending" description={pending.length ? "Newest first." : undefined} />
+        <CardHeader title={t.pending} description={pending.length ? t.newestFirst : undefined} />
         <CardBody>
           <PendingRequests requests={pending} linkPeople />
         </CardBody>
       </Card>
       <section className="flex flex-col gap-4">
-        <SectionTitle title="Decided" description="Approvals, denials, cancellations and requests nobody decided in time, newest first. Revoke approved access here before it ends." />
+        <SectionTitle title={t.decided} description={t.pages.requestsDecided} />
         {decided.length ? (
           <DecidedRequests requests={decided} />
         ) : (
           <Card>
-            <EmptyState icon={CheckCheck} title="No decisions yet" description="Approved, denied, cancelled and expired requests appear here." />
+            <EmptyState icon={CheckCheck} title={t.noDecisions} description={t.pages.requestsEmpty} />
           </Card>
         )}
       </section>

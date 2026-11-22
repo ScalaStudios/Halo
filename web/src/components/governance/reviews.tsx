@@ -13,19 +13,22 @@ import { Dialog } from "@/components/ui/dialog";
 import { Checkbox, Field, Input, Select, Textarea } from "@/components/ui/input";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { api } from "@/lib/api/client";
-import { formatDate, isoDay, pluralize } from "@/lib/format";
+import { formatDate, isoDay } from "@/lib/format";
 import type { AccessReview, ReviewDecision, ReviewItem } from "@/lib/governance-types";
+import { useLocale, useMessages } from "@/lib/i18n/client";
+import { governanceMessages } from "@/lib/i18n/console/governance";
 import type { Group } from "@/lib/types";
 import { PeoplePicker } from "./people-picker";
 import { OUTCOME, ReviewProgress, type Person } from "./shared";
 
 export function StartReview({ groups, people }: { groups: Group[]; people: Person[] }) {
   const [open, setOpen] = useState(false);
+  const t = useMessages(governanceMessages);
   return (
     <>
       <Button variant="primary" onClick={() => setOpen(true)}>
         <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-        Start review
+        {t.reviews.start}
       </Button>
       {open ? <StartReviewDialog groups={groups} people={people} onClose={() => setOpen(false)} /> : null}
     </>
@@ -40,14 +43,16 @@ function StartReviewDialog({ groups, people, onClose }: { groups: Group[]; peopl
   const [autoApply, setAutoApply] = useState(true);
   const [errors, setErrors] = useState<{ name?: string; group?: string; reviewers?: string; due?: string }>({});
   const { pending, run, errorFor, toast, router } = useMutation();
+  const t = useMessages(governanceMessages);
+  const copy = t.reviews;
   const owners = (groups.find((g) => g.id === groupId)?.owners ?? []).map((o) => o.id).filter((id) => people.some((p) => p.id === id) && !reviewerIds.includes(id));
 
   function submit() {
     const next = {
-      name: name.trim() ? undefined : "Enter a review name.",
-      group: groupId ? undefined : "Choose a group with members.",
-      reviewers: reviewerIds.length ? undefined : "Choose at least one reviewer.",
-      due: due >= isoDay(1) ? undefined : "Choose a due date after today.",
+      name: name.trim() ? undefined : copy.nameRequired,
+      group: groupId ? undefined : copy.groupRequired,
+      reviewers: reviewerIds.length ? undefined : copy.reviewersRequired,
+      due: due >= isoDay(1) ? undefined : copy.dueRequired,
     };
     setErrors(next);
     if (next.name || next.group || next.reviewers || next.due) return;
@@ -59,7 +64,7 @@ function StartReviewDialog({ groups, people, onClose }: { groups: Group[]; peopl
         }),
       (review) => {
         onClose();
-        toast({ title: `${review.name} started`, description: `${pluralize(review.total, "member")} to review. Reviewers see it on their Access page.` });
+        toast({ title: copy.started(review.name), description: copy.startedHint(review.total) });
         router.push(`/admin/access-reviews/${review.id}`);
       },
       "inline",
@@ -71,15 +76,15 @@ function StartReviewDialog({ groups, people, onClose }: { groups: Group[]; peopl
       open
       onOpenChange={(open) => (open ? undefined : onClose())}
       error={errorFor("start")}
-      title="Start an access review"
-      description="Reviewers confirm or remove each current member of the group."
+      title={copy.startTitle}
+      description={copy.startDescription}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {t.cancel}
           </Button>
           <Button variant="primary" loading={pending === "start"} onClick={submit}>
-            Start review
+            {copy.start}
           </Button>
         </>
       }
@@ -91,7 +96,7 @@ function StartReviewDialog({ groups, people, onClose }: { groups: Group[]; peopl
           submit();
         }}
       >
-        <Field label="Name" error={errors.name}>
+        <Field label={t.name} error={errors.name}>
           {(props) => (
             <Input
               {...props}
@@ -99,46 +104,44 @@ function StartReviewDialog({ groups, people, onClose }: { groups: Group[]; peopl
               autoComplete="off"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="Production access · Q4 2026"
+              placeholder={copy.namePlaceholder}
             />
           )}
         </Field>
         <Field
-          label="Group"
+          label={t.group}
           error={errors.group}
-          hint="Assigned groups only. Rule-based groups can't be reviewed because their members come from a rule; change the rule instead."
+          hint={copy.groupHint}
         >
           {(props) => (
             <Select {...props} value={groupId} onChange={(event) => setGroupId(event.target.value)}>
               {groups.map((group) => (
                 <option key={group.id} value={group.id} disabled={group.memberCount === 0}>
-                  {group.name} · {pluralize(group.memberCount, "member")}
+                  {group.name} · {t.members(group.memberCount)}
                 </option>
               ))}
             </Select>
           )}
         </Field>
         <div className="flex flex-col gap-3">
-          <Field label="Reviewers" error={errors.reviewers} hint="Reviewers don't need an administrator role. They decide from their Access page.">
+          <Field label={t.facts.reviewers} error={errors.reviewers} hint={copy.reviewersHint}>
             {(props) => <PeoplePicker {...props} people={people} value={reviewerIds} onChange={setReviewerIds} />}
           </Field>
           {owners.length ? (
             <Button size="sm" variant="quiet" className="self-start" onClick={() => setReviewerIds([...new Set([...reviewerIds, ...owners])])}>
               <Plus aria-hidden="true" size={16} strokeWidth={1.75} />
-              Add the group&apos;s owners
+              {copy.addOwners}
             </Button>
           ) : null}
         </div>
-        <Field label="Due date" error={errors.due} hint="Reviews past their due date are marked overdue.">
+        <Field label={copy.dueDate} error={errors.due} hint={copy.dueHint}>
           {(props) => <Input {...props} type="date" min={isoDay(1)} value={due} onChange={(event) => setDue(event.target.value)} />}
         </Field>
         <label className="flex cursor-pointer items-start gap-3">
           <Checkbox className="mt-0.5" checked={autoApply} onChange={(event) => setAutoApply(event.target.checked)} />
           <span className="flex flex-col">
-            <span className="text-body-sm text-fg">Remove access automatically</span>
-            <span className="text-caption text-fg-3">
-              When the review is completed, Halo removes everyone a reviewer marked for removal. Leave this off to only record the decisions.
-            </span>
+            <span className="text-body-sm text-fg">{copy.autoApply}</span>
+            <span className="text-caption text-fg-3">{copy.autoApplyHint}</span>
           </span>
         </label>
         <button type="submit" hidden />
@@ -150,6 +153,8 @@ function StartReviewDialog({ groups, people, onClose }: { groups: Group[]; peopl
 function NoteDialog({ review, item, decision, onClose }: { review: AccessReview; item: ReviewItem; decision: ReviewDecision; onClose: () => void }) {
   const [note, setNote] = useState(item.note);
   const { pending, run, errorFor } = useMutation();
+  const t = useMessages(governanceMessages);
+  const copy = t.reviews;
   const remove = decision === "remove";
 
   function submit() {
@@ -161,26 +166,20 @@ function NoteDialog({ review, item, decision, onClose }: { review: AccessReview;
       open
       onOpenChange={(open) => (open ? undefined : onClose())}
       error={errorFor("note")}
-      title={remove ? `Remove ${item.user.name} from ${review.group.name}?` : `Keep ${item.user.name} in ${review.group.name}?`}
-      description={
-        remove
-          ? review.autoApply
-            ? `Halo removes them from ${review.group.name} when the review is completed.`
-            : "Automatic removal is off for this review, so the decision is recorded and the group owner removes them by hand."
-          : "They keep their membership. You can change the decision until the review is completed."
-      }
+      title={remove ? copy.removeTitle(item.user.name, review.group.name) : copy.keepTitle(item.user.name, review.group.name)}
+      description={remove ? (review.autoApply ? copy.removeAuto(review.group.name) : copy.removeManual) : copy.keepDescription}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {t.cancel}
           </Button>
           <Button variant={remove ? "destructive" : "primary"} loading={pending === "note"} onClick={submit}>
-            {remove ? "Mark for removal" : "Keep access"}
+            {remove ? copy.markForRemoval : copy.keepAccess}
           </Button>
         </>
       }
     >
-      <Field label="Note" hint="Optional. Explain the decision for the group owner and the audit trail.">
+      <Field label={t.note} hint={copy.noteHint}>
         {(props) => <Textarea {...props} autoFocus value={note} onChange={(event) => setNote(event.target.value)} />}
       </Field>
     </Dialog>
@@ -189,6 +188,7 @@ function NoteDialog({ review, item, decision, onClose }: { review: AccessReview;
 
 function DecisionControls({ review, item }: { review: AccessReview; item: ReviewItem }) {
   const { pending, run } = useMutation();
+  const t = useMessages(governanceMessages).reviews;
   const [noting, setNoting] = useState<ReviewDecision | null>(null);
   return (
     <span className="flex items-center justify-end gap-1">
@@ -207,7 +207,7 @@ function DecisionControls({ review, item }: { review: AccessReview; item: Review
         }
       >
         <Check aria-hidden="true" size={16} strokeWidth={1.75} />
-        Keep
+        {t.keep}
       </Button>
       <Button
         size="sm"
@@ -216,9 +216,9 @@ function DecisionControls({ review, item }: { review: AccessReview; item: Review
         onClick={() => setNoting("remove")}
       >
         <X aria-hidden="true" size={16} strokeWidth={1.75} />
-        Remove
+        {t.remove}
       </Button>
-      <Button size="icon-sm" variant="quiet" aria-label={`Add a note about ${item.user.name}`} onClick={() => setNoting(item.decision ?? "keep")}>
+      <Button size="icon-sm" variant="quiet" aria-label={t.noteAbout(item.user.name)} onClick={() => setNoting(item.decision ?? "keep")}>
         <MessageSquare aria-hidden="true" size={16} strokeWidth={1.75} />
       </Button>
       {noting ? <NoteDialog review={review} item={item} decision={noting} onClose={() => setNoting(null)} /> : null}
@@ -226,15 +226,17 @@ function DecisionControls({ review, item }: { review: AccessReview; item: Review
   );
 }
 
-const DECISION = { keep: { label: "Keep", tone: "success" }, remove: { label: "Remove", tone: "danger" } } as const;
-
-const views: SavedView[] = [
-  { id: "all", label: "Everyone", filters: [] },
-  { id: "undecided", label: "Needs a decision", filters: [{ id: "decision", value: ["none"] }] },
-  { id: "remove", label: "Marked for removal", filters: [{ id: "decision", value: ["remove"] }] },
-];
+const DECISION = { keep: "success", remove: "danger" } as const;
 
 export function ReviewWorkspace({ review }: { review: AccessReview }) {
+  const locale = useLocale();
+  const t = governanceMessages[locale];
+  const copy = t.reviews;
+  const views: SavedView[] = [
+    { id: "all", label: t.everyone, filters: [] },
+    { id: "undecided", label: copy.needsDecision, filters: [{ id: "decision", value: ["none"] }] },
+    { id: "remove", label: copy.markedForRemoval, filters: [{ id: "decision", value: ["remove"] }] },
+  ];
   const [completing, setCompleting] = useState(false);
   const completed = review.status === "completed";
   const undecided = review.total - review.decided;
@@ -244,15 +246,15 @@ export function ReviewWorkspace({ review }: { review: AccessReview }) {
       {
         id: "person",
         accessorFn: (i) => i.user.name,
-        header: "Member",
-        meta: { label: "Member", hideable: false },
+        header: copy.member,
+        meta: { label: copy.member, hideable: false },
         cell: ({ row }) => (
           <span className="flex min-w-56 items-center gap-3">
             <Avatar name={row.original.user.name} size="md" />
             <span className="flex min-w-0 flex-col">
               <span className="flex min-w-0 items-center gap-2">
                 <span className="truncate font-medium text-fg">{row.original.user.name}</span>
-                {row.original.guest ? <Badge tone="info">Guest</Badge> : null}
+                {row.original.guest ? <Badge tone="info">{copy.guest}</Badge> : null}
               </span>
               <span className="truncate text-caption text-fg-3">{row.original.title || row.original.user.email}</span>
             </span>
@@ -262,17 +264,17 @@ export function ReviewWorkspace({ review }: { review: AccessReview }) {
       {
         id: "decision",
         accessorFn: (i) => i.decision ?? "none",
-        header: "Decision",
+        header: t.decision,
         filterFn: facetFilter,
-        meta: { label: "Decision" },
+        meta: { label: t.decision },
         cell: ({ row }) => (
           <span className="flex max-w-80 flex-col gap-1 py-2">
             {row.original.decision ? (
-              <Badge tone={DECISION[row.original.decision].tone} className="self-start">
-                {DECISION[row.original.decision].label}
+              <Badge tone={DECISION[row.original.decision]} className="self-start">
+                {copy[row.original.decision]}
               </Badge>
             ) : (
-              <span className="text-fg-3">No decision</span>
+              <span className="text-fg-3">{copy.noDecision}</span>
             )}
             {row.original.note ? (
               <span className="truncate text-caption text-fg-3" title={row.original.note}>
@@ -285,8 +287,8 @@ export function ReviewWorkspace({ review }: { review: AccessReview }) {
       {
         id: "decidedBy",
         accessorFn: (i) => i.decidedBy?.name ?? "",
-        header: "Decided by",
-        meta: { label: "Decided by" },
+        header: copy.decidedBy,
+        meta: { label: copy.decidedBy },
         cell: ({ row }) =>
           row.original.decidedBy && row.original.decidedAt ? (
             <span className="flex flex-col whitespace-nowrap">
@@ -302,37 +304,35 @@ export function ReviewWorkspace({ review }: { review: AccessReview }) {
       list.push({
         id: "outcome",
         accessorFn: (i) => i.outcome ?? "",
-        header: "Result",
-        meta: { label: "Result" },
-        cell: ({ row }) => (row.original.outcome ? <Badge tone={OUTCOME[row.original.outcome].tone}>{OUTCOME[row.original.outcome].label}</Badge> : null),
+        header: t.result,
+        meta: { label: t.result },
+        cell: ({ row }) => (row.original.outcome ? <Badge tone={OUTCOME[row.original.outcome]}>{t.outcome[row.original.outcome]}</Badge> : null),
       });
     }
     if (review.canDecide) {
       list.push({
         id: "decide",
         enableSorting: false,
-        header: () => <span className="sr-only">Decide</span>,
-        meta: { label: "Decide", align: "right", hideable: false },
+        header: () => <span className="sr-only">{copy.decide}</span>,
+        meta: { label: copy.decide, align: "right", hideable: false },
         cell: ({ row }) => <DecisionControls review={review} item={row.original} />,
       });
     }
     return list;
-  }, [review, completed]);
+  }, [review, completed, t, copy]);
 
   return (
     <div className="flex flex-col gap-6">
       <Card className="flex flex-col gap-6 p-6 lg:flex-row lg:items-center lg:gap-8">
-        <ReviewProgress review={review} className="w-full lg:w-48" />
+        <ReviewProgress review={review} className="w-full lg:w-48" locale={locale} />
         <p className="flex-1 text-body-sm text-fg-2">
           {completed
-            ? `Completed by ${review.completedBy?.name ?? "a reviewer"}${review.completedAt ? ` on ${formatDate(review.completedAt)}` : ""}. Decisions can no longer change.`
-            : `${pluralize(review.removals, "person", "people")} marked for removal, ${pluralize(undecided, "person", "people")} without a decision. ${
-                review.autoApply ? "Removals apply when the review is completed." : "Automatic removal is off, so decisions are recorded only."
-              }`}
+            ? copy.completedBy(review.completedBy?.name, review.completedAt ? formatDate(review.completedAt, locale) : undefined)
+            : `${copy.summary(review.removals, undecided)}${review.autoApply ? copy.appliesOnComplete : copy.recordedOnly}`}
         </p>
         {review.canComplete ? (
           <Button variant="primary" onClick={() => setCompleting(true)}>
-            Complete review
+            {copy.complete}
           </Button>
         ) : null}
       </Card>
@@ -340,20 +340,20 @@ export function ReviewWorkspace({ review }: { review: AccessReview }) {
         data={review.items ?? []}
         columns={columns}
         getRowId={(i) => i.user.id}
-        label={`Members of ${review.group.name} under review`}
-        noun={["member", "members"]}
+        label={copy.membersUnderReview(review.group.name)}
+        noun={copy.noun}
         storageKey="access-review-items"
         searchText={(i) => `${i.user.name} ${i.user.email ?? ""} ${i.title} ${i.note}`}
-        searchPlaceholder="Search members or notes"
+        searchPlaceholder={copy.search}
         views={views}
         facets={[
           {
             column: "decision",
-            label: "Decision",
+            label: t.decision,
             options: [
-              { value: "keep", label: "Keep" },
-              { value: "remove", label: "Remove" },
-              { value: "none", label: "No decision" },
+              { value: "keep", label: copy.keep },
+              { value: "remove", label: copy.remove },
+              { value: "none", label: copy.noDecision },
             ],
           },
         ]}
@@ -365,21 +365,21 @@ export function ReviewWorkspace({ review }: { review: AccessReview }) {
 
 function CompleteDialog({ review, onClose }: { review: AccessReview; onClose: () => void }) {
   const { pending, run, errorFor, toast } = useMutation();
+  const t = useMessages(governanceMessages);
+  const copy = t.reviews;
   const undecided = review.total - review.decided;
-  const removals = review.autoApply
-    ? `Halo removes ${pluralize(review.removals, "person", "people")} marked for removal from ${review.group.name}.`
-    : `Automatic removal is off, so ${pluralize(review.removals, "removal")} ${review.removals === 1 ? "is" : "are"} recorded but not applied.`;
+  const removals = review.autoApply ? copy.removalsAuto(review.removals, review.group.name) : copy.removalsManual(review.removals);
   return (
     <Dialog
       open
       onOpenChange={(open) => (open ? undefined : onClose())}
       error={errorFor("complete")}
-      title={`Complete ${review.name}?`}
-      description={`${removals}${undecided ? ` ${pluralize(undecided, "person", "people")} without a decision keep their access.` : ""} Decisions can't change afterwards.`}
+      title={copy.completeTitle(review.name)}
+      description={copy.completeDescription(removals, undecided)}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {t.cancel}
           </Button>
           <Button
             variant="primary"
@@ -390,13 +390,13 @@ function CompleteDialog({ review, onClose }: { review: AccessReview; onClose: ()
                 () => api<AccessReview>(`/access-reviews/${review.id}/complete`, { method: "POST" }),
                 () => {
                   onClose();
-                  toast({ title: `${review.name} completed`, description: "Results are recorded in the audit log." });
+                  toast({ title: copy.completed(review.name), description: copy.completedHint });
                 },
                 "inline",
               )
             }
           >
-            Complete review
+            {copy.complete}
           </Button>
         </>
       }
