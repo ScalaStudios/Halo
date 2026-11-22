@@ -7,10 +7,10 @@ COPY api ./api
 COPY cmd ./cmd
 COPY internal ./internal
 COPY migrations ./migrations
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/halo ./cmd/halo
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/halo ./cmd/halo-outpost
 
 FROM gcr.io/distroless/static-debian13:nonroot
-COPY --from=build /out/halo /usr/local/bin/halo
+COPY --from=build /out/halo /out/halo-outpost /usr/local/bin/
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/halo"]
 CMD ["serve"]

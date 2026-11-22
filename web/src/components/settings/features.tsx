@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDownToLine, BookUser, ClipboardCheck, FileBadge, Monitor, Network, RefreshCw, Route, Server, ToggleRight, TriangleAlert, Waypoints, Webhook, type LucideIcon } from "lucide-react";
+import { ArrowDownToLine, BookUser, ClipboardCheck, FileBadge, Monitor, Network, RefreshCw, Route, Server, SquareTerminal, ToggleRight, TriangleAlert, Waypoints, Webhook, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { ActionError } from "@/components/ui/action-error";
@@ -25,6 +25,7 @@ const ICON: Partial<Record<FeatureId, LucideIcon>> = {
   radius: Network,
   ldap: BookUser,
   kerberos: Monitor,
+  "remote-access": SquareTerminal,
   "log-streaming": Waypoints,
 };
 

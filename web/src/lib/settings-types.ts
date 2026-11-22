@@ -59,7 +59,7 @@ export type Settings = {
   featuresOff: FeatureId[];
 };
 
-export type FeatureId = "saml" | "scim" | "provisioning" | "ssh" | "governance" | "webhooks" | "forward-auth" | "radius" | "ldap" | "kerberos" | "log-streaming";
+export type FeatureId = "saml" | "scim" | "provisioning" | "ssh" | "governance" | "webhooks" | "forward-auth" | "radius" | "ldap" | "kerberos" | "remote-access" | "log-streaming";
 
 export type Feature = { id: FeatureId; name: string; description: string; enabled: boolean; usage: string[] };
 

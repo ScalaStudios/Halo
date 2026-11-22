@@ -446,3 +446,19 @@ func TestImportRestoresApplicationsWithoutScopes(t *testing.T) {
 		t.Fatalf("restored applications: %v", rows(now, "applications"))
 	}
 }
+
+func TestImportReportsRemoteTargetsWithMissingCredentials(t *testing.T) {
+	e := importEnv(t)
+	admin := e.person("ada@example.com", "global_admin")
+	file := map[string]any{"applications": []any{
+		map[string]any{"id": "app_remote", "name": "Database host", "protocol": "remote", "appType": "web", "remote": map[string]any{"auth": "password"}},
+		map[string]any{"id": "app_bookmark", "name": "Status", "protocol": "bookmark", "appType": "web", "homepage": "https://status.example.com"},
+	}}
+	rep := e.importFile(admin, file, false, false, http.StatusOK)
+	if !rep.Applied || len(rep.Skipped) != 1 || !strings.HasPrefix(rep.Skipped[0], "Database host") {
+		t.Fatalf("import should apply and report the missing remote target: %+v", rep)
+	}
+	if imported := e.exportFile(admin); named(imported, "applications", "Status") == nil || named(imported, "applications", "Database host") != nil {
+		t.Fatal("the bookmark should be imported and the remote target should be skipped")
+	}
+}

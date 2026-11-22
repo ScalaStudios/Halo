@@ -16,7 +16,10 @@ export default async function ApplicationsPage() {
   return (
     <div className="flex flex-col gap-12">
       <PageHeader size="large" title="Applications" description="Everything you can open with your Halo account." />
-      <AppLauncher apps={apps.map((app) => ({ ...app, host: URL.canParse(app.homepage) ? new URL(app.homepage).host : "" }))} collections={collections} />
+      <AppLauncher
+        apps={apps.map((app) => ({ ...app, host: app.launchUrl.startsWith("/account/") ? "SSH session in your browser" : URL.canParse(app.homepage) ? new URL(app.homepage).host : "" }))}
+        collections={collections}
+      />
       <AppAccess consents={consents} />
     </div>
   );

@@ -113,6 +113,12 @@ func (s *Store) SessionByToken(ctx context.Context, token string) (Session, erro
 	return sess, nil
 }
 
+func (s *Store) SessionActive(ctx context.Context, sessionID string) (bool, error) {
+	var active bool
+	err := s.db.QueryRow(ctx, `select exists (select 1 from sessions where id = $1 and revoked_at is null and expires_at > now())`, sessionID).Scan(&active)
+	return active, err
+}
+
 func (s *Store) ListSessions(ctx context.Context, userID string) ([]Session, error) {
 	query := `select ` + sessionColumns + ` from sessions where revoked_at is null and expires_at > now()`
 	args := []any{}

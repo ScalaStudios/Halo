@@ -345,6 +345,18 @@ Halo has a RADIUS server for VPN gateways, firewalls and network devices that si
 - Shared secrets expire after a year, like client secrets. Rotate one on the **Credentials** tab before then; the old one keeps working for 24 hours.
 - Halo recognizes a RADIUS client by the source address of its packets, so nothing between the device and Halo may rewrite it. The Helm chart's `radius` option sets `externalTrafficPolicy: Local` on its LoadBalancer or NodePort Service for that reason.
 
+### SSH in the browser
+
+People open an SSH terminal to a host in a private network from their account portal, without a client or a VPN. Halo never connects to the network itself: `halo-outpost`, a small agent inside it, keeps one connection open to Halo and reaches the host when a session starts. Halo runs the SSH session, so the host's credentials never reach the outpost or the browser.
+
+1. On **Remote access** in the console, choose **Register outpost** and run the command it shows on a machine that reaches your hosts. The outpost requires an HTTPS URL. The `halo-server` image includes `halo-outpost`, or build it with `go build ./cmd/halo-outpost`.
+2. Choose **Add application**, then **Remote access**, and enter the host, its port, its host key from `ssh-keyscan` (or nothing, for hosts with a Halo host certificate) and how Halo signs in: a one-minute certificate from Halo's SSH CA for the person's principals, so nothing is stored, or a password or private key that Halo keeps encrypted.
+3. Assign groups. People in them see the host in their account portal and open the terminal there.
+
+Starting a session runs the checks of any other application sign-in: assignment, access policies with passkey requirements and network zones, sign-in frequency and authentication contexts, and it is in the sign-in log. Each session ends at the application's time limit, when an administrator ends it under **Remote access**, or within a minute of the person being suspended, unassigned or signed out. The session log keeps who connected where, when and how much they transferred, and, when recording is on, the terminal output as an asciicast file, for as long as the sign-in log. RDP and VNC are not available yet, and outposts and browsers must reach the same Halo instance, as [Running several instances](#running-several-instances) explains.
+
+Configuration imports report new password- or key-authenticated remote applications as skipped. Create those applications on the destination and configure their outpost and credential there.
+
 ### Applications that only speak LDAP
 
 Some applications and devices can only check people against an LDAP directory, such as Proxmox VE realms, NAS systems and printers. Halo serves its people and groups to them as a read-only directory on its own port, which is off until you turn it on. While the LDAP server is turned off under Settings, Features, the port closes every connection without answering.
@@ -448,6 +460,7 @@ Run two or more Halo servers behind a load balancer when sign-in must keep worki
 - **Health checks.** `/healthz` answers `ok` while the process runs and reaches the database. `/readyz` answers `ok` once migrations are applied, the background workers have started and the instance listens for settings changes, and `503` while it starts or stops. Point the load balancer's health check at `/readyz`.
 - **Upgrades.** Back up the database and `HALO_SECRET_KEY`, then restart the instances one at a time, and wait until `/readyz` answers `ok` on each before the next. On `SIGTERM` an instance reports `503` on `/readyz`, stops accepting connections, finishes the requests in progress for up to 10 seconds, and releases the jobs lock.
 - **RADIUS and LDAP.** Every instance can serve RADIUS and LDAP. RADIUS clients are recognized by their source address, so the load balancer must keep it.
+- **Remote access.** An outpost holds its connection to one instance, and a browser session works only on that instance. With several instances, a session that reaches another one fails to start with `ERR_OUTPOST_OFFLINE`, so run remote access with a single instance for now. Ending a session from the console, and deleting or enrolling an outpost again, still reach the instance that holds it, within a few seconds.
 
 With Kubernetes, set `server.replicaCount` in the [Helm chart](deploy/helm/halo/README.md).
 

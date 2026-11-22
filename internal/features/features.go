@@ -141,6 +141,15 @@ var All = []Feature{
 		},
 	},
 	{
+		ID: "remote-access", Name: "Remote access",
+		Description: "SSH sessions in the browser to hosts that an outpost reaches, under the same checks as an application sign-in. While it is off, outposts can't connect and nobody can start a session.",
+		Paths:       []string{"/api/v1/outposts", "/api/v1/outpost", "/api/v1/remote-sessions", "/api/v1/me/remote-sessions", "/api/v1/applications/{id}/remote"},
+		usage: func(ctx context.Context, st *store.Store) ([]string, error) {
+			apps, err := st.ListApplications(ctx)
+			return tally(apps, err, func(a store.Application) bool { return a.Protocol == "remote" }, "application opens remote sessions", "applications open remote sessions")
+		},
+	},
+	{
 		ID: "log-streaming", Name: "Log streaming",
 		Description: "Every sign-in and audit event sent to syslog or an OpenTelemetry collector.",
 		Paths:       []string{"/api/v1/log-export"},

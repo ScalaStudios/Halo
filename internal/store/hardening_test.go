@@ -66,6 +66,15 @@ func TestRotateSecretKey(t *testing.T) {
 	_, shared, err := st.AddSharedSecret(ctx, vpn.ID, "Initial", time.Hour)
 	must(err)
 	must(st.SaveKerberosSource(ctx, store.KerberosSource{ServicePrincipal: "HTTP/auth.example.com@CORP.EXAMPLE.COM", Realms: []store.KerberosRealm{}, ZoneIDs: []string{}, Keytab: []byte("keytab")}))
+	office, _, err := st.CreateOutpost(ctx, "Office")
+	must(err)
+	host, err := st.CreateApplication(ctx, store.NewApplication{Name: "Database host", Protocol: "remote", Type: "web"})
+	must(err)
+	hostPassword := "host-password"
+	must(st.SaveRemoteTarget(ctx, store.RemoteTarget{AppID: host.ID, OutpostID: office.ID, Protocol: "ssh", Host: "db1.internal", Port: 22, Username: "deploy", Auth: "password", SessionLimit: 3600}, &hostPassword))
+	session, err := st.CreateRemoteSession(ctx, store.RemoteSession{AppID: &host.ID, AppName: host.Name, UserID: &u.ID, Email: u.Email, SessionID: "ses_x", OutpostID: &office.ID, Protocol: "ssh", Address: "db1.internal:22", Username: "deploy", LimitSeconds: 3600})
+	must(err)
+	must(st.EndRemoteSession(ctx, session.ID, "The shell on the host exited.", 1, 2, []byte("recording")))
 
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
@@ -73,7 +82,7 @@ func TestRotateSecretKey(t *testing.T) {
 	must(err)
 	rotation, err := st.RotateSecretKey(ctx, next)
 	must(err)
-	if len(rotation.Resealed) != 25 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
+	if len(rotation.Resealed) != 27 || slices.ContainsFunc(rotation.Resealed, func(c store.ResealedColumn) bool { return c.Rows != 1 }) {
 		t.Fatalf("resealed: %+v", rotation.Resealed)
 	}
 	if !slices.Equal(rotation.RecoveryCodeUsers, []string{"ada@example.com"}) {
@@ -142,6 +151,12 @@ func TestRotateSecretKey(t *testing.T) {
 	}
 	if matched, err := rotated.LDAPSecretMatches(ctx, nas.ID, bindPassword); err != nil || !matched {
 		t.Fatalf("LDAP bind password: %v %v", matched, err)
+	}
+	if plain, err := rotated.RemoteCredential(ctx, host.ID); err != nil || plain != hostPassword {
+		t.Fatalf("remote host password: %q %v", plain, err)
+	}
+	if plain, err := rotated.RemoteRecording(ctx, session.ID); err != nil || string(plain) != "recording" {
+		t.Fatalf("remote session recording: %q %v", plain, err)
 	}
 	if _, err := st.RotateSecretKey(ctx, next); err == nil {
 		t.Fatal("rotating again with the old key must fail without changing anything")

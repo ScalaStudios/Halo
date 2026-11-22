@@ -170,8 +170,14 @@ func createApplication(row map[string]any) []call {
 	body := pick(row, "name", "description", "protocol", "homepage", "redirectUris", "postLogoutUris", "scopes", "groupIds", "setupGuide")
 	body["type"] = row["appType"]
 	protocol := str(row["protocol"])
-	if protocol == "bookmark" || protocol == "forward-auth" || protocol == "radius" || protocol == "ldap" {
+	if protocol == "bookmark" || protocol == "forward-auth" || protocol == "radius" || protocol == "ldap" || protocol == "remote" {
 		delete(body, "scopes")
+	}
+	if protocol == "remote" {
+		body["remote"] = row["remote"]
+		delete(body, "homepage")
+		delete(body, "redirectUris")
+		delete(body, "postLogoutUris")
 	}
 	if protocol == "saml" {
 		body["saml"] = map[string]any{"entityId": row["clientId"], "acsUrls": row["redirectUris"]}
@@ -182,7 +188,9 @@ func createApplication(row map[string]any) []call {
 	if protocol == "oidc" || protocol == "oauth" {
 		later = append(later, "accessTokenTtl", "refreshTokenTtl", "idTokenTtl", "refreshRotation", "tokenExchange", "tokenExchangeFrom")
 	}
-	if protocol != "bookmark" && protocol != "ldap" && row["appType"] != "service" {
+	if protocol == "remote" {
+		later = append(later, "maxAuthAge")
+	} else if protocol != "bookmark" && protocol != "ldap" && row["appType"] != "service" {
 		later = append(later, "maxAuthAge", "claimMappings")
 	}
 	if row["status"] == "disabled" {
@@ -503,6 +511,13 @@ func (imp *importer) apply(k kind, rows []map[string]any) error {
 			}
 			_, problem, err = imp.dispatch("", k.update(tid, row, item.Fields))
 		default:
+			if k.name == "applications" && str(row["protocol"]) == "remote" {
+				remote, _ := row["remote"].(map[string]any)
+				if auth := str(remote["auth"]); auth == "password" || auth == "key" {
+					imp.report.Skipped = append(imp.report.Skipped, item.Label+" (remote access application: configure its credential and outpost on the destination)")
+					continue
+				}
+			}
 			created, problem, err = imp.dispatch(fid, k.create(row))
 		}
 		if err := imp.add(item, problem, err); err != nil {

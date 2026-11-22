@@ -88,6 +88,13 @@ tags:
       **DPoP-bound tokens.** An application binds its tokens to a key it holds by sending a DPoP proof (RFC 9449) in the `DPoP` header of each token request: a JWT with `typ` `dpop+jwt`, the public key in `jwk`, signed with one of `dpop_signing_alg_values_supported` from discovery, with a new `jti`, `htm` and `htu` matching the request and an `iat` within a minute. Halo refuses a `jti` it has seen. The token response then says `token_type: DPoP`, JWT access tokens carry `cnf.jkt`, the key's SHA-256 thumbprint (RFC 7638), and introspection reports `token_type: DPoP` and `cnf`. A refresh token issued with a proof refreshes only with a proof from the same key, and one issued without a proof only without one. At `/oauth2/userinfo` the application sends `Authorization: DPoP <token>` with a proof that also has `ath`, the base64url SHA-256 hash of the token, and Halo refuses a bound token sent as a bearer token. An API that receives bound tokens checks the proof the same way and compares the thumbprint of its `jwk` with `cnf.jkt`.
   - name: SSH
     description: The SSH certificate authorities for people and hosts, principal mappings, issued certificates and registered hosts.
+  - name: Remote access
+    description: |
+      SSH sessions in the browser to hosts on private networks. A remote access application names a host, its port, the outpost that reaches it and how Halo signs in: a short-lived certificate from Halo's SSH CA for the person's principals, or a password or private key that Halo stores encrypted and never returns.
+
+      **Outposts.** `halo-outpost` runs inside the private network and only connects out to Halo. It enrolls once with a token from `POST /outposts`, receives a key, and holds a WebSocket open at `/outpost/connect`. When a session starts, Halo asks the outpost to open a TCP connection to the application's host and port, and the outpost carries the bytes over a second WebSocket at `/outpost/streams/{stream}`. Halo runs the SSH client itself, so neither the outpost nor the browser ever holds the host's credentials, and an outpost is only asked for the hosts of applications registered with it.
+
+      **Sessions.** `POST /me/remote-sessions` runs the checks of an application sign-in: the person is assigned, the application is active, the session is recent enough for its sign-in frequency, and access policies, including passkey requirements, network zones and authentication contexts, allow it. The result is in the sign-in log. The browser then opens `GET /me/remote-sessions/{id}/connect` as a WebSocket within a minute. Halo checks the host key against the one stored in the application or a Halo host certificate, ends the session at the application's time limit, and keeps the session log, with an asciicast recording of the output when recording is on, for as long as the sign-in log. RDP and VNC are not available yet.
   - name: Development
     description: Routes that exist only with HALO_DEV=1.
   - name: Shared signals
@@ -3830,7 +3837,7 @@ paths:
       tags: [Applications]
       operationId: createApplication
       summary: Register an application
-      description: 'Roles: application administrator. OpenID Connect and OAuth web applications and services get a client secret, returned once, unless configured for private_key_jwt. Organization client policies apply required protections and cap initial token lifetimes. SAML applications take their settings in `saml` and are always `web`. Forward-auth applications take their protected addresses in `redirectUris`, open the first one from the account portal unless `homepage` is set, have no secret and are always `web`. RADIUS clients take the IP addresses or CIDR ranges they send from in `redirectUris`, get a shared secret returned once in `clientSecret` and are always `web`. LDAP applications get a bind password in `clientSecret`, returned once, take no redirect URIs, scopes or SAML settings and are always `web`. Bookmarks only open their `homepage` from the account portal, have no sign-in protocol and are always `web`.'
+      description: 'Roles: application administrator. OpenID Connect and OAuth web applications and services get a client secret, returned once, unless configured for private_key_jwt. Organization client policies apply required protections and cap initial token lifetimes. SAML applications take their settings in `saml` and are always `web`. Forward-auth applications take their protected addresses in `redirectUris`, open the first one from the account portal unless `homepage` is set, have no secret and are always `web`. RADIUS clients take the IP addresses or CIDR ranges they send from in `redirectUris`, get a shared secret returned once in `clientSecret` and are always `web`. LDAP applications get a bind password in `clientSecret`, returned once, take no redirect URIs, scopes or SAML settings and are always `web`. Remote access applications take their host, outpost and sign-in in `remote`, take no homepage, redirect URIs, scopes or SAML settings and are always `web`. Bookmarks only open their `homepage` from the account portal, have no sign-in protocol and are always `web`.'
       requestBody:
         required: true
         content:
@@ -3841,7 +3848,7 @@ paths:
               properties:
                 name: {type: string, maxLength: 200}
                 description: {type: string, maxLength: 2000}
-                protocol: {type: string, enum: [oidc, oauth, saml, forward-auth, radius, ldap, bookmark]}
+                protocol: {type: string, enum: [oidc, oauth, saml, forward-auth, radius, ldap, remote, bookmark]}
                 type: {type: string, enum: [web, spa, native, service]}
                 homepage: {type: string, format: uri, description: 'Required for bookmarks: the http or https address the bookmark opens.'}
                 redirectUris:
@@ -3863,6 +3870,7 @@ paths:
                 fapi2Profile: {type: boolean, description: 'Requires private_key_jwt and applies the FAPI 2.0 client settings supported by Halo.'}
                 setupGuide: {type: string, enum: [grafana, forgejo, aether, generic-oidc, kubernetes, generic-saml, aws-iam-identity-center, slack]}
                 saml: {$ref: '#/components/schemas/SAMLInput'}
+                remote: {$ref: '#/components/schemas/RemoteSettings'}
       responses:
         '201':
           description: The application and, for web applications and services, the client secret, for RADIUS clients the shared secret, or for LDAP applications the bind password.
@@ -3886,7 +3894,7 @@ paths:
       tags: [Applications]
       operationId: getApplication
       summary: Get one application
-      description: 'Roles: any administrator. SAML applications include a `saml` object, RADIUS clients `radiusPort` and LDAP applications `ldap`.'
+      description: 'Roles: any administrator. SAML applications include a `saml` object, RADIUS clients `radiusPort`, LDAP applications `ldap` and remote access applications `remote`.'
       responses:
         '200': {$ref: '#/components/responses/ApplicationResponse'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
@@ -7885,6 +7893,273 @@ paths:
         '401': {$ref: '#/components/responses/Unauthenticated'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '422': {$ref: '#/components/responses/Invalid'}
+  /applications/{id}/remote:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    put:
+      tags: [Remote access]
+      operationId: setApplicationRemote
+      summary: Change where a remote access application connects
+      description: 'Roles: application administrator. Send only the fields to change. Switching `auth` to `password` or `key` needs `credential`. The stored credential is never returned; `hasCredential` says whether there is one. Changes apply to sessions that start afterwards. Recorded as `application.remote.update`, without the credential.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RemoteSettings'}
+      responses:
+        '200': {$ref: '#/components/responses/ApplicationResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /outposts:
+    get:
+      tags: [Remote access]
+      operationId: listOutposts
+      summary: List outposts
+      description: 'Roles: any administrator.'
+      responses:
+        '200':
+          description: The outposts by name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Outpost'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [Remote access]
+      operationId: createOutpost
+      summary: Register an outpost
+      description: 'Roles: security administrator. Returns an enrollment token that works once, for 24 hours, with `halo-outpost --token`. Recorded as `outpost.create`.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string, maxLength: 100, examples: [Office LAN]}
+      responses:
+        '201': {$ref: '#/components/responses/OutpostEnrollmentResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /outposts/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    delete:
+      tags: [Remote access]
+      operationId: deleteOutpost
+      summary: Delete an outpost
+      description: 'Roles: security administrator. Its key stops working at once, which disconnects it and ends its live sessions. Refused while remote access applications use it. Recorded as `outpost.delete`.'
+      responses:
+        '204': {description: Deleted.}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: '`ERR_OUTPOST_IN_USE`: remote access applications still use the outpost.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /outposts/{id}/enrollment-token:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Remote access]
+      operationId: createOutpostEnrollmentToken
+      summary: Create a new enrollment token for an outpost
+      description: 'Roles: security administrator. Replaces the outpost''s unused token. Enrolling with it gives the outpost a new key, and the old key stops working. Recorded as `outpost.token`.'
+      responses:
+        '200': {$ref: '#/components/responses/OutpostEnrollmentResponse'}
+        '401': {$ref: '#/components/responses/ReauthRequired'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /remote-sessions:
+    get:
+      tags: [Remote access]
+      operationId: listRemoteSessions
+      summary: List remote sessions
+      description: 'Roles: any administrator. The 200 most recent sessions, newest first. Entries older than the sign-in log retention are deleted with their recordings.'
+      parameters:
+        - {name: app, in: query, description: Only sessions of this application., schema: {type: string}}
+      responses:
+        '200':
+          description: The sessions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/RemoteSession'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /remote-sessions/{id}/terminate:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Remote access]
+      operationId: terminateRemoteSession
+      summary: End a remote session
+      description: 'Roles: security or application administrator. Closes the SSH session and the browser''s connection at once. Recorded as `remote.session.terminate`.'
+      responses:
+        '200':
+          description: The session.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteSession'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409':
+          description: '`ERR_SESSION_ENDED`: the session already ended.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /remote-sessions/{id}/recording:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [Remote access]
+      operationId: downloadRemoteSessionRecording
+      summary: Download the recording of a remote session
+      description: 'Roles: security administrator or auditor. The terminal output in asciicast v2, which asciinema plays. Halo records output, not keystrokes, and stops after 8 MiB. Recorded as `remote.session.recording.download`.'
+      responses:
+        '200':
+          description: The recording.
+          content:
+            application/x-asciicast:
+              schema: {type: string}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /me/remote-sessions:
+    post:
+      tags: [Remote access]
+      operationId: startRemoteSession
+      summary: Start a remote session
+      description: 'Needs the session cookie: API keys, access tokens and impersonations can''t start sessions. Runs the checks of an application sign-in and records the result in the sign-in log. Open the returned session with `GET /me/remote-sessions/{id}/connect` within a minute.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [applicationId]
+              properties:
+                applicationId: {type: string}
+      responses:
+        '201':
+          description: The session, waiting for the browser to connect.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RemoteSession'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401':
+          description: '`ERR_UNAUTHENTICATED`, or `ERR_SIGN_IN_AGAIN`: the Halo session is older than the application''s sign-in frequency. Sign in again, then start the session.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403':
+          description: '`ERR_NOT_ASSIGNED`, `ERR_APP_DISABLED`, `ERR_BLOCKED_BY_POLICY`, `ERR_STRONGER_AUTH_REQUIRED` for a passkey requirement or an authentication context, `ERR_TERMS_REQUIRED`, or `ERR_NO_PRINCIPALS` when the application signs in with a certificate and none of the person''s groups maps to SSH principals.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503':
+          description: '`ERR_OUTPOST_OFFLINE`: the outpost that reaches the host is not connected.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /me/remote-sessions/{id}/connect:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+      - {name: cols, in: query, description: Terminal width in columns., schema: {type: integer, default: 80, minimum: 1, maximum: 1000}}
+      - {name: rows, in: query, description: Terminal height in rows., schema: {type: integer, default: 24, minimum: 1, maximum: 1000}}
+    get:
+      tags: [Remote access]
+      operationId: connectRemoteSession
+      summary: Open a remote session as a WebSocket
+      description: |
+        A WebSocket upgrade from the page that started the session: the `Origin` must be Halo's own address, and the cookie must belong to the same Halo session. Each session connects once.
+
+        Binary frames carry the terminal: keystrokes from the browser, output from the host. Text frames carry JSON. The browser sends `{"type": "resize", "cols": 120, "rows": 40}` and `{"type": "ping"}` at least every 75 seconds. Halo sends `status` with a `message` while it connects, `connected` with `username`, `address`, `endsAt` and `recording`, `ping` every 25 seconds, and `end` with the `message` the session log keeps, before it closes.
+      responses:
+        '101': {description: Switching to the WebSocket protocol.}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403':
+          description: '`ERR_CROSS_SITE`: the `Origin` is not Halo''s address, or `ERR_IMPERSONATING`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /outpost/enroll:
+    post:
+      tags: [Remote access]
+      operationId: enrollOutpost
+      summary: Get an outpost key with an enrollment token
+      description: '`halo-outpost` calls this route on its first run. The key replaces any key the outpost had, which disconnects it. Recorded as `outpost.enroll` with no actor.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: {type: string, examples: [hle_…]}
+      responses:
+        '201':
+          description: The outpost and its key, shown once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [outpost, key]
+                properties:
+                  outpost: {$ref: '#/components/schemas/Outpost'}
+                  key: {type: string, examples: [hlo_…]}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401':
+          description: '`ERR_INVALID_TOKEN`: the token is unknown, used or expired.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /outpost/connect:
+    get:
+      tags: [Remote access]
+      operationId: connectOutpost
+      summary: Hold an outpost's control connection
+      description: 'A WebSocket upgrade with `Authorization: Bearer hlo_…`. Halo sends `{"type": "ping"}` every 25 seconds and `{"type": "dial", "stream": "…", "address": "host:port"}` when a session starts. The outpost answers pings with `{"type": "pong"}`, and a dial it can''t complete with `{"type": "failed", "stream": "…", "message": "…"}`. A newer connection with the same key replaces this one.'
+      security: []
+      responses:
+        '101': {description: Switching to the WebSocket protocol.}
+        '401':
+          description: '`ERR_INVALID_KEY`: the key is unknown, or the outpost was deleted or enrolled again.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /outpost/streams/{stream}:
+    parameters:
+      - {name: stream, in: path, required: true, schema: {type: string}}
+    get:
+      tags: [Remote access]
+      operationId: attachOutpostStream
+      summary: Carry one session's bytes
+      description: 'A WebSocket upgrade with the outpost''s key, after it connected to the address in a `dial` message. Binary frames carry the TCP stream both ways. Only the outpost that was asked can claim the stream, once, within 15 seconds.'
+      security: []
+      responses:
+        '101': {description: Switching to the WebSocket protocol.}
+        '401':
+          description: '`ERR_INVALID_KEY`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /dev/outbox:
     get:
       tags: [Development]
@@ -8379,6 +8654,16 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/Error'}
+    OutpostEnrollmentResponse:
+      description: The outpost and an enrollment token for `halo-outpost --token`, shown once.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [outpost, token]
+            properties:
+              outpost: {$ref: '#/components/schemas/Outpost'}
+              token: {type: string, examples: [hle_…]}
     ReauthRequired:
       description: '`ERR_UNAUTHENTICATED`: no valid session or key. `ERR_REAUTH_REQUIRED`: this sensitive change needs a recent strong sign-in; confirm it''s you through `/me/reauthenticate` and send the request again. A person without a passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE`.'
       content:
@@ -9255,7 +9540,7 @@ components:
         id: {type: string, examples: [app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
         name: {type: string}
         description: {type: string}
-        protocol: {type: string, enum: [oidc, oauth, saml, forward-auth, radius, ldap, bookmark]}
+        protocol: {type: string, enum: [oidc, oauth, saml, forward-auth, radius, ldap, remote, bookmark]}
         type: {type: string, enum: [web, spa, native, service]}
         status: {type: string, enum: [active, disabled]}
         clientId: {type: string, description: 'The client ID, such as `hl_…`, or the entity ID for SAML applications.'}
@@ -9322,6 +9607,7 @@ components:
             bindDn: {type: string, examples: ['cn=bind,ou=app_01J9Z8Q4M2N5P7R9T1V3X5Z7B9,dc=auth,dc=example,dc=com']}
             peopleDn: {type: string}
             groupsDn: {type: string}
+        remote: {$ref: '#/components/schemas/RemoteTarget'}
     SAMLAttributes:
       type: object
       description: The attribute name Halo sends each value under. An empty name stops sending it.
@@ -10434,7 +10720,7 @@ components:
         confirmFeatures: {type: boolean, writeOnly: true, description: Turn off the features in `featuresOff` even though they are in use.}
     FeatureId:
       type: string
-      enum: [saml, scim, provisioning, ssh, governance, webhooks, forward-auth, radius, ldap, kerberos, log-streaming]
+      enum: [saml, scim, provisioning, ssh, governance, webhooks, forward-auth, radius, ldap, kerberos, remote-access, log-streaming]
     Feature:
       type: object
       required: [id, name, description, enabled, usage]
@@ -10853,6 +11139,74 @@ components:
         createdAt: {type: string, format: date-time}
         certificateLifetime: {type: integer, description: Seconds. Defaults to 2592000 (30 days).}
         knownHosts: {type: string, description: 'The `@cert-authority` line for clients, empty until a domain is verified.'}
+    RemoteSettings:
+      type: object
+      description: Where a remote access application connects and how Halo signs in. On create, `outpostId` and `host` are required.
+      properties:
+        outpostId: {type: string, description: The outpost that reaches the host.}
+        protocol: {type: string, enum: [ssh], default: ssh}
+        host: {type: string, description: 'Host name or IP address as the outpost resolves it, without a port.', examples: [db1.internal]}
+        port: {type: integer, minimum: 1, maximum: 65535, default: 22}
+        username: {type: string, description: 'The account to sign in as. Required for `password` and `key`. With `certificate`, empty means the person''s first SSH principal.'}
+        auth: {type: string, enum: [certificate, password, key], default: certificate, description: '`certificate` signs a one-minute certificate from Halo''s SSH CA for the person''s principals, so nothing is stored. `password` and `key` use the stored credential.'}
+        credential: {type: string, writeOnly: true, description: 'The password, or an unencrypted OpenSSH or PEM private key. Stored encrypted, never returned. Leave it out to keep the stored one.'}
+        hostKey: {type: string, description: 'The host''s public key, in authorized_keys or known_hosts format. Empty to trust only a Halo host certificate for the host name.'}
+        sessionLimit: {type: integer, minimum: 60, maximum: 86400, default: 3600, description: Seconds after which Halo ends a session.}
+        record: {type: boolean, default: false, description: Keep an asciicast recording of the terminal output.}
+    RemoteTarget:
+      type: object
+      description: 'Remote access applications only.'
+      required: [outpostId, protocol, host, port, username, auth, hasCredential, hostKey, sessionLimit, record]
+      properties:
+        outpostId: {type: string}
+        protocol: {type: string, enum: [ssh]}
+        host: {type: string}
+        port: {type: integer}
+        username: {type: string}
+        auth: {type: string, enum: [certificate, password, key]}
+        hasCredential: {type: boolean, description: A password or private key is stored. Halo never returns it.}
+        hostKey: {type: string}
+        sessionLimit: {type: integer}
+        record: {type: boolean}
+    Outpost:
+      type: object
+      required: [id, name, enrolledAt, enrollmentExpiresAt, lastSeenAt, lastIp, version, createdAt, targets, connected]
+      properties:
+        id: {type: string, examples: [out_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        name: {type: string}
+        enrolledAt: {type: [string, 'null'], format: date-time}
+        enrollmentExpiresAt: {type: [string, 'null'], format: date-time, description: When the unused enrollment token stops working.}
+        lastSeenAt: {type: [string, 'null'], format: date-time, description: When the outpost last connected or disconnected.}
+        lastIp: {type: string}
+        version: {type: string, description: The platform halo-outpost reported.}
+        createdAt: {type: string, format: date-time}
+        targets: {type: integer, description: Remote access applications that use the outpost.}
+        connected: {type: boolean}
+    RemoteSession:
+      type: object
+      required: [id, createdAt, applicationId, applicationName, userId, email, outpostId, protocol, address, username, ip, limitSeconds, record, status, startedAt, endedAt, endReason, bytesIn, bytesOut, recorded, terminatedBy]
+      properties:
+        id: {type: string, examples: [rs_01J9Z8Q4M2N5P7R9T1V3X5Z7B9]}
+        createdAt: {type: string, format: date-time}
+        applicationId: {type: [string, 'null']}
+        applicationName: {type: string}
+        userId: {type: [string, 'null']}
+        email: {type: string}
+        outpostId: {type: [string, 'null']}
+        protocol: {type: string, enum: [ssh]}
+        address: {type: string, examples: ['db1.internal:22']}
+        username: {type: string}
+        ip: {type: string}
+        limitSeconds: {type: integer}
+        record: {type: boolean}
+        status: {type: string, enum: [pending, active, ended]}
+        startedAt: {type: [string, 'null'], format: date-time}
+        endedAt: {type: [string, 'null'], format: date-time}
+        endReason: {type: string, examples: [The shell on the host exited.]}
+        bytesIn: {type: integer, description: Bytes the person typed.}
+        bytesOut: {type: integer, description: Bytes of terminal output.}
+        recorded: {type: boolean}
+        terminatedBy: {type: [string, 'null'], description: Id of the administrator who ended the session.}
     SSHHost:
       type: object
       required: [id, hostnames, publicKey, fingerprint, keyType, serial, validBefore, enrollmentExpiresAt, revokedAt, createdAt]

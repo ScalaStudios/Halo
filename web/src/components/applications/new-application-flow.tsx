@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bookmark, BookUser, Check, FileKey, KeyRound, Network, ServerCog, ShieldCheck, type LucideIcon } from "lucide-react";
+import { Bookmark, BookUser, Check, FileKey, KeyRound, Network, ServerCog, ShieldCheck, SquareTerminal, type LucideIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@/components/console/use-mutation";
 import { ActionError } from "@/components/ui/action-error";
@@ -9,14 +9,16 @@ import { Button, buttonClasses } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { CopyField } from "@/components/ui/copy-field";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
+import { remoteBody, remoteDraft, remoteErrors, RemoteFields, type RemoteErrors } from "@/components/remote/settings";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
+import type { Outpost } from "@/lib/infra-types";
 import { NAME_ID_FORMATS, type NameIdFormat, type SamlApplication } from "@/lib/saml-types";
 import { endpoints, setupGuide } from "@/lib/setup-guides";
 import { SamlConnectionFields } from "./saml";
 import { LdapConnectionFields, RadiusServerFields, SecretWarning, SetupGuideCard, TYPE_ICON } from "./shared";
 
-type Protocol = "oidc" | "saml" | "oauth" | "forward-auth" | "radius" | "ldap" | "bookmark";
+type Protocol = "oidc" | "saml" | "oauth" | "forward-auth" | "radius" | "ldap" | "remote" | "bookmark";
 type Source = "values" | "metadata";
 type Platform = "web" | "spa" | "native";
 type Template = { value: string; label: string; uri: string; entityId?: string; guide: string; platform?: Platform; hint?: string; more?: string[]; scopes?: string[] };
@@ -43,6 +45,12 @@ const PROTOCOLS: Option<Protocol>[] = [
     label: "LDAP",
     description: "A read-only directory for applications and devices that only speak LDAP, like Proxmox VE, NAS and printers.",
     icon: BookUser,
+  },
+  {
+    value: "remote",
+    label: "Remote access",
+    description: "An SSH session in the browser to a host that an outpost reaches, with a time limit and an optional recording. Nobody sees the host's credentials.",
+    icon: SquareTerminal,
   },
   { value: "bookmark", label: "Bookmark", description: "A link in the account portal, like an intranet page, status page or helpdesk. Nobody signs in through Halo.", icon: Bookmark },
 ];
@@ -128,7 +136,7 @@ export function clientAddressError(value: string): string | undefined {
   return /^[0-9a-f.:]+(\/\d{1,3})?$/i.test(raw) ? undefined : "Enter an IP address or CIDR range, like 10.0.0.5 or 10.0.0.0/24. Halo recognizes RADIUS clients by the address they send from.";
 }
 
-export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; featuresOff: string[] }) {
+export function NewApplicationFlow({ issuer, featuresOff, outposts }: { issuer: string; featuresOff: string[]; outposts: Outpost[] }) {
   const [step, setStep] = useState(0);
   const [protocol, setProtocol] = useState<Protocol>("oidc");
   const [platform, setPlatform] = useState<Platform>("web");
@@ -144,6 +152,8 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
   const [errors, setErrors] = useState<{ name?: string; uri?: string; address?: string; slug?: string; entityId?: string; metadata?: string }>({});
   const [created, setCreated] = useState<{ application: SamlApplication; clientSecret: string | null } | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [remote, setRemote] = useState(() => remoteDraft(outposts));
+  const [remoteProblems, setRemoteProblems] = useState<RemoteErrors>({});
   const { pending, run, errorFor, router, toast } = useMutation();
 
   const steps = protocol === "oidc" ? ["Protocol", "Platform", "Details"] : protocol === "saml" ? ["Protocol", "Service provider", "Details"] : ["Protocol", "Details"];
@@ -198,6 +208,10 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
     }
     if (protocol === "ldap") {
       submitLdap();
+      return;
+    }
+    if (protocol === "remote") {
+      submitRemote();
       return;
     }
     const next = {
@@ -285,6 +299,23 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
       "create",
       () => api<{ application: SamlApplication; clientSecret: string | null }>("/applications", { body: { name: name.trim(), protocol } }),
       setCreated,
+      "inline",
+    );
+  }
+
+  function submitRemote() {
+    const next = { name: name.trim() ? undefined : "Enter a name. People see it in their account portal." };
+    const problems = remoteErrors(remote, false);
+    setErrors(next);
+    setRemoteProblems(problems);
+    if (next.name || Object.values(problems).some(Boolean)) return;
+    void run(
+      "create",
+      () => api<{ application: SamlApplication }>("/applications", { body: { name: name.trim(), protocol, remote: remoteBody(remote) } }),
+      ({ application }) => {
+        toast({ title: `${application.name} created`, description: "Assign groups so people can connect to it from their account portal." });
+        router.push(`/admin/applications/${application.id}?tab=users`);
+      },
       "inline",
     );
   }
@@ -411,7 +442,13 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
       <form onSubmit={submit} noValidate>
         <div key={current} className="flex animate-enter flex-col gap-8 p-6">
           {current === "Protocol" ? (
-            <Choices legend="Choose a protocol" name="protocol" options={PROTOCOLS.filter((p) => !featuresOff.includes(p.value))} value={protocol} onChange={pickProtocol} />
+            <Choices
+              legend="Choose a protocol"
+              name="protocol"
+              options={PROTOCOLS.filter((p) => !featuresOff.includes(p.value === "remote" ? "remote-access" : p.value))}
+              value={protocol}
+              onChange={pickProtocol}
+            />
           ) : null}
           {current === "Platform" ? (
             <>
@@ -521,6 +558,15 @@ export function NewApplicationFlow({ issuer, featuresOff }: { issuer: string; fe
               <Field label="Name" error={errors.name} hint="Halo creates its bind DN and password next. Assign groups after you create it.">
                 {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Proxmox VE" />}
               </Field>
+            </div>
+          ) : null}
+          {current === "Details" && protocol === "remote" ? (
+            <div className="flex flex-col gap-6">
+              <h2 className="text-h4 text-fg">Remote access details</h2>
+              <Field label="Name" error={errors.name} hint="People see it in their account portal and open the terminal from there.">
+                {(props) => <Input {...props} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Database host" />}
+              </Field>
+              <RemoteFields draft={remote} onChange={setRemote} errors={remoteProblems} outposts={outposts} />
             </div>
           ) : null}
           {current === "Details" && protocol === "bookmark" ? (

@@ -16,6 +16,7 @@ import (
 	"halo/internal/httpx"
 	"halo/internal/ldapserver"
 	"halo/internal/oidc"
+	"halo/internal/remote"
 	"halo/internal/saml"
 	"halo/internal/store"
 	"halo/internal/webhooks"
@@ -142,6 +143,16 @@ func (h *handlers) view(ctx context.Context, app store.Application) (any, error)
 			store.Application
 			LDAP ldapserver.Connection `json:"ldap"`
 		}{app, ldapserver.Describe(h.cfg, app.ID)}, nil
+	}
+	if app.Protocol == "remote" {
+		target, err := h.st.RemoteTarget(ctx, app.ID)
+		if err != nil {
+			return nil, err
+		}
+		return struct {
+			store.Application
+			Remote store.RemoteTarget `json:"remote"`
+		}{app, target}, nil
 	}
 	if app.Protocol != "saml" {
 		return app, nil
@@ -295,17 +306,18 @@ func (h *handlers) setApplicationSAML(w http.ResponseWriter, r *http.Request, ac
 func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, actor store.User) error {
 	var in struct {
 		clientAuthChange
-		Name           string     `json:"name"`
-		Description    string     `json:"description"`
-		Protocol       string     `json:"protocol"`
-		Type           string     `json:"type"`
-		Homepage       string     `json:"homepage"`
-		RedirectURIs   []string   `json:"redirectUris"`
-		PostLogoutURIs []string   `json:"postLogoutUris"`
-		Scopes         []string   `json:"scopes"`
-		GroupIDs       []string   `json:"groupIds"`
-		SetupGuide     string     `json:"setupGuide"`
-		SAML           *samlInput `json:"saml"`
+		Name           string           `json:"name"`
+		Description    string           `json:"description"`
+		Protocol       string           `json:"protocol"`
+		Type           string           `json:"type"`
+		Homepage       string           `json:"homepage"`
+		RedirectURIs   []string         `json:"redirectUris"`
+		PostLogoutURIs []string         `json:"postLogoutUris"`
+		Scopes         []string         `json:"scopes"`
+		GroupIDs       []string         `json:"groupIds"`
+		SetupGuide     string           `json:"setupGuide"`
+		SAML           *samlInput       `json:"saml"`
+		Remote         *remote.Settings `json:"remote"`
 	}
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
@@ -319,10 +331,16 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 	}
 	switch in.Protocol {
 	case "oidc", "oauth":
-	case "saml", "bookmark", "forward-auth", "radius", "ldap":
+	case "saml", "bookmark", "forward-auth", "radius", "ldap", "remote":
 		in.Type = "web"
 	default:
-		return httpx.Invalid(`Choose a protocol: "oidc" for OpenID Connect sign-in, "oauth" for API access, "saml" for SAML 2.0 sign-in, "forward-auth" for applications behind a reverse proxy, "radius" for VPNs and network devices, "ldap" for applications that only speak LDAP or "bookmark" for a link in the account portal.`)
+		return httpx.Invalid(`Choose a protocol: "oidc" for OpenID Connect sign-in, "oauth" for API access, "saml" for SAML 2.0 sign-in, "forward-auth" for applications behind a reverse proxy, "radius" for VPNs and network devices, "ldap" for applications that only speak LDAP, "remote" for SSH sessions in the browser or "bookmark" for a link in the account portal.`)
+	}
+	if (in.Protocol == "remote") != (in.Remote != nil) {
+		return httpx.Invalid(`Send remote settings only for a remote access application, for example {"protocol": "remote", "remote": {"outpostId": "out_…", "host": "db1.internal", "auth": "certificate"}}.`)
+	}
+	if in.Protocol == "remote" && (len(in.RedirectURIs) > 0 || len(in.PostLogoutURIs) > 0 || len(in.Scopes) > 0 || in.SAML != nil || in.Homepage != "") {
+		return httpx.Invalid("A remote access application opens a session in the account portal, so it takes no homepage, redirect URIs, scopes or SAML settings.")
 	}
 	if !slices.Contains([]string{"web", "spa", "native", "service"}, in.Type) {
 		return httpx.Invalid(`Choose an application type: "web", "spa", "native" or "service".`)
@@ -445,6 +463,14 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 				return err
 			}
 			secret = &value
+		} else if in.Protocol == "remote" {
+			target, _, err := in.Remote.Apply(r.Context(), tx, remote.NewTarget(created.ID))
+			if err != nil {
+				return err
+			}
+			if err := tx.SaveRemoteTarget(r.Context(), target, in.Remote.Credential); err != nil {
+				return err
+			}
 		} else if in.Protocol != "bookmark" && in.Protocol != "forward-auth" && (in.Type == "web" || in.Type == "service") && next.TokenEndpointAuthMethod != oidc.PrivateKeyJWT {
 			_, value, err := tx.AddClientSecret(r.Context(), created.ID, "Initial", secretLifetime)
 			if err != nil {
@@ -464,6 +490,9 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 		}
 		if in.Protocol == "ldap" {
 			summary = "Registered LDAP application"
+		}
+		if in.Protocol == "remote" {
+			summary = "Registered remote access to " + remoteAddress(*in.Remote)
 		}
 		if err := record(r, tx, actor, store.AuditEvent{Action: "application.create", Summary: summary, TargetType: "application", TargetID: created.ID, TargetLabel: created.Name}); err != nil {
 			return err
@@ -497,6 +526,9 @@ func (h *handlers) rotateSecret(w http.ResponseWriter, r *http.Request, actor st
 	}
 	if app.Protocol == "forward-auth" {
 		return httpx.Invalid(app.Name + " is checked by its reverse proxy, so it has no client secret.")
+	}
+	if app.Protocol == "remote" {
+		return httpx.Invalid(app.Name + " opens sessions to a host, so it has no client secret. Change the stored password or key in its remote access settings.")
 	}
 	if app.Protocol == "ldap" {
 		var value string
@@ -699,6 +731,52 @@ func (h *handlers) groupsChange(r *http.Request, actor store.User, app store.App
 	}, nil
 }
 
+func remoteAddress(in remote.Settings) string {
+	host, user, port := "", "", 22
+	if in.Host != nil {
+		host = strings.TrimSpace(*in.Host)
+	}
+	if in.Username != nil && *in.Username != "" {
+		user = strings.TrimSpace(*in.Username) + "@"
+	}
+	if in.Port != nil {
+		port = *in.Port
+	}
+	return "ssh://" + user + net.JoinHostPort(host, strconv.Itoa(port))
+}
+
+func (h *handlers) setApplicationRemote(w http.ResponseWriter, r *http.Request, actor store.User) error {
+	app, err := h.application(r)
+	if err != nil {
+		return err
+	}
+	if app.Protocol != "remote" {
+		return httpx.Invalid(app.Name + " is not a remote access application, so it has no remote access settings.")
+	}
+	var in remote.Settings
+	if err := httpx.Decode(r, &in); err != nil {
+		return err
+	}
+	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+		before, err := tx.RemoteTargetForUpdate(r.Context(), app.ID)
+		if err != nil {
+			return err
+		}
+		after, changed, err := in.Apply(r.Context(), tx, before)
+		if err != nil || len(changed) == 0 {
+			return err
+		}
+		if err := tx.SaveRemoteTarget(r.Context(), after, in.Credential); err != nil {
+			return err
+		}
+		return record(r, tx, actor, store.AuditEvent{Action: "application.remote.update", Summary: "Changed the remote access " + strings.Join(changed, ", "), TargetType: "application", TargetID: app.ID, TargetLabel: app.Name, Changes: store.Diff(before, after)})
+	})
+	if err != nil {
+		return err
+	}
+	return h.respondApplication(w, r, app.ID)
+}
+
 func (h *handlers) respondApplication(w http.ResponseWriter, r *http.Request, appID string) error {
 	app, err := h.st.GetApplication(r.Context(), appID)
 	if err != nil {
@@ -778,8 +856,11 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	if app.Protocol == "ldap" && (in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil || in.MaxAuthAge != nil || in.RequiresConsent != nil || in.ClaimMappings != nil || logout) {
 		return httpx.Invalid(app.Name + " reads people and groups over LDAP, so it has no redirect URIs, scopes, claims, token lifetimes, sign-in frequency or back-channel logout.")
 	}
-	if in.KerberosSignIn != nil && (app.Type == "service" || slices.Contains([]string{"bookmark", "radius", "ldap"}, app.Protocol)) {
+	if in.KerberosSignIn != nil && (app.Type == "service" || slices.Contains([]string{"bookmark", "radius", "ldap", "remote"}, app.Protocol)) {
 		return httpx.Invalid(app.Name + " doesn't send people to Halo's sign-in page, so Windows sign-in can't be turned on or off for it.")
+	}
+	if app.Protocol == "remote" && (in.Homepage != nil && *in.Homepage != "" || in.RedirectURIs != nil || in.PostLogoutURIs != nil || in.Scopes != nil || in.TokenPolicy != nil || in.RequiresConsent != nil || in.ClaimMappings != nil || logout) {
+		return httpx.Invalid(app.Name + " opens sessions to a host, so it has no homepage, redirect URIs, scopes, claims, token lifetimes or back-channel logout. Change where it connects in its remote access settings.")
 	}
 	if app.Type == "service" && in.ClaimMappings != nil {
 		return httpx.Invalid(app.Name + " is a service application. Nobody signs in to it, so it has no ID tokens or user claims to map.")
