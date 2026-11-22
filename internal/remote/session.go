@@ -94,10 +94,12 @@ func (h *handlers) terminal(w http.ResponseWriter, r *http.Request) error {
 		return httpx.ErrImpersonating
 	}
 	cols, rows := dimension(r.URL.Query().Get("cols"), 80), dimension(r.URL.Query().Get("rows"), 24)
+	width := desktopDimension(r.URL.Query().Get("width"), 1024)
+	height := desktopDimension(r.URL.Query().Get("height"), 768)
 	ip, remoteID := httpx.ClientIP(r), r.PathValue("id")
 	websocket.Server{Handshake: h.origin, Handler: func(ws *websocket.Conn) {
 		ws.MaxPayloadBytes = 1 << 20
-		h.run(ws, u, sess, remoteID, ip, cols, rows)
+		h.run(ws, u, sess, remoteID, ip, cols, rows, width, height)
 	}}.ServeHTTP(w, r)
 	return nil
 }
@@ -134,7 +136,7 @@ func (b *bridge) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (h *handlers) run(ws *websocket.Conn, u store.User, sess store.Session, remoteID, ip string, cols, rows int) {
+func (h *handlers) run(ws *websocket.Conn, u store.User, sess store.Session, remoteID, ip string, cols, rows, width, height int) {
 	ctx, end := context.WithCancelCause(context.Background())
 	defer end(nil)
 	defer closeSocket(ws)
@@ -151,7 +153,7 @@ func (h *handlers) run(ws *websocket.Conn, u store.User, sess store.Session, rem
 	if rs.Record {
 		b.recorder = newRecorder(cols, rows, rs.AppName+" · "+rs.Email)
 	}
-	cause := h.serve(ctx, end, rs, u, ip, b, cols, rows)
+	cause := h.serve(ctx, end, rs, u, ip, b, cols, rows, width, height)
 	message := cause.Error()
 	var recording []byte
 	if b.recorder != nil {
@@ -166,7 +168,7 @@ func (h *handlers) run(ws *websocket.Conn, u store.User, sess store.Session, rem
 	b.emit(event{Type: "end", Message: message})
 }
 
-func (h *handlers) serve(ctx context.Context, end context.CancelCauseFunc, rs store.RemoteSession, u store.User, ip string, b *bridge, cols, rows int) (err error) {
+func (h *handlers) serve(ctx context.Context, end context.CancelCauseFunc, rs store.RemoteSession, u store.User, ip string, b *bridge, cols, rows, width, height int) (err error) {
 	defer func() {
 		if cause := context.Cause(ctx); cause != nil {
 			err = cause
@@ -204,7 +206,10 @@ func (h *handlers) serve(ctx context.Context, end context.CancelCauseFunc, rs st
 	if err := b.emit(event{Type: "status", Message: "Reaching " + rs.Address + " through the outpost"}); err != nil {
 		return errClosed
 	}
-	link, err := h.hub.Dial(ctx, deref(rs.OutpostID), rs.Address)
+	if rs.Protocol != "ssh" {
+		return h.desktop(ctx, end, rs, target, credential, b, ends, width, height)
+	}
+	link, err := h.hub.Dial(ctx, deref(rs.OutpostID), rs.Address, "dial")
 	if err == nil {
 		defer link.Close()
 	}

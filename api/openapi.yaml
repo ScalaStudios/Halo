@@ -90,11 +90,11 @@ tags:
     description: The SSH certificate authorities for people and hosts, principal mappings, issued certificates and registered hosts.
   - name: Remote access
     description: |
-      SSH sessions in the browser to hosts on private networks. A remote access application names a host, its port, the outpost that reaches it and how Halo signs in: a short-lived certificate from Halo's SSH CA for the person's principals, or a password or private key that Halo stores encrypted and never returns.
+      Browser SSH, RDP and VNC sessions to hosts on private networks. A remote access application defines a host, port, protocol and outpost. SSH can use a short-lived Halo certificate, a password or a private key. RDP and VNC use a password. Halo encrypts all stored credentials and keeps them out of the browser.
 
-      **Outposts.** `halo-outpost` runs inside the private network and only connects out to Halo. It enrolls once with a token from `POST /outposts`, receives a key, and holds a WebSocket open at `/outpost/connect`. When a session starts, Halo asks the outpost to open a TCP connection to the application's host and port, and the outpost carries the bytes over a second WebSocket at `/outpost/streams/{stream}`. Halo runs the SSH client itself, so neither the outpost nor the browser ever holds the host's credentials, and an outpost is only asked for the hosts of applications registered with it.
+      **Outposts.** `halo-outpost` runs inside the private network. It enrolls once with a token from `POST /outposts`, receives a key, and holds a WebSocket open at `/outpost/connect`. For SSH the outpost relays TCP to the registered host over a second WebSocket at `/outpost/streams/{stream}`. For RDP and VNC the outpost relays to its configured loopback Guacamole proxy. Halo supplies the registered connection details and stored password to that proxy.
 
-      **Sessions.** `POST /me/remote-sessions` runs the checks of an application sign-in: the person is assigned, the application is active, the session is recent enough for its sign-in frequency, and access policies, including passkey requirements, network zones and authentication contexts, allow it. The result is in the sign-in log. The browser then opens `GET /me/remote-sessions/{id}/connect` as a WebSocket within a minute. Halo checks the host key against the one stored in the application or a Halo host certificate, ends the session at the application's time limit, and keeps the session log, with an asciicast recording of the output when recording is on, for as long as the sign-in log. RDP and VNC are not available yet.
+      **Sessions.** `POST /me/remote-sessions` checks assignment, application status, the sign-in frequency, and access policies, including passkey requirements, network zones and authentication contexts. The result appears in the sign-in log. The browser opens `GET /me/remote-sessions/{id}/connect` as a WebSocket within a minute. All protocols enforce the configured session limit and use the same session log. SSH checks the host key or Halo host certificate and supports optional asciicast recording.
   - name: Development
     description: Routes that exist only with HALO_DEV=1.
   - name: Shared signals
@@ -8006,7 +8006,7 @@ paths:
       tags: [Remote access]
       operationId: terminateRemoteSession
       summary: End a remote session
-      description: 'Roles: security or application administrator. Closes the SSH session and the browser''s connection at once. Recorded as `remote.session.terminate`.'
+      description: 'Roles: security or application administrator. Closes the remote session and the browser''s connection at once. Recorded as `remote.session.terminate`.'
       responses:
         '200':
           description: The session.
@@ -11144,28 +11144,30 @@ components:
       description: Where a remote access application connects and how Halo signs in. On create, `outpostId` and `host` are required.
       properties:
         outpostId: {type: string, description: The outpost that reaches the host.}
-        protocol: {type: string, enum: [ssh], default: ssh}
+        protocol: {type: string, enum: [ssh, rdp, vnc], default: ssh}
         host: {type: string, description: 'Host name or IP address as the outpost resolves it, without a port.', examples: [db1.internal]}
-        port: {type: integer, minimum: 1, maximum: 65535, default: 22}
-        username: {type: string, description: 'The account to sign in as. Required for `password` and `key`. With `certificate`, empty means the person''s first SSH principal.'}
+        port: {type: integer, minimum: 1, maximum: 65535, description: 'Defaults to 22 for SSH, 3389 for RDP, and 5900 for VNC.'}
+        username: {type: string, description: 'The account to sign in as. Optional for VNC. With SSH `certificate`, empty means the person''s first SSH principal.'}
         auth: {type: string, enum: [certificate, password, key], default: certificate, description: '`certificate` signs a one-minute certificate from Halo''s SSH CA for the person''s principals, so nothing is stored. `password` and `key` use the stored credential.'}
         credential: {type: string, writeOnly: true, description: 'The password, or an unencrypted OpenSSH or PEM private key. Stored encrypted, never returned. Leave it out to keep the stored one.'}
-        hostKey: {type: string, description: 'The host''s public key, in authorized_keys or known_hosts format. Empty to trust only a Halo host certificate for the host name.'}
+        hostKey: {type: string, description: 'SSH public key or RDP certificate SHA-256 fingerprint. For SSH, leave empty to use a Halo host certificate.'}
+        rdpSecurity: {type: string, enum: [nla, tls], default: nla, description: RDP security mode.}
         sessionLimit: {type: integer, minimum: 60, maximum: 86400, default: 3600, description: Seconds after which Halo ends a session.}
-        record: {type: boolean, default: false, description: Keep an asciicast recording of the terminal output.}
+        record: {type: boolean, default: false, description: Keep an asciicast recording of SSH terminal output.}
     RemoteTarget:
       type: object
       description: 'Remote access applications only.'
-      required: [outpostId, protocol, host, port, username, auth, hasCredential, hostKey, sessionLimit, record]
+      required: [outpostId, protocol, host, port, username, auth, hasCredential, hostKey, rdpSecurity, sessionLimit, record]
       properties:
         outpostId: {type: string}
-        protocol: {type: string, enum: [ssh]}
+        protocol: {type: string, enum: [ssh, rdp, vnc]}
         host: {type: string}
         port: {type: integer}
         username: {type: string}
         auth: {type: string, enum: [certificate, password, key]}
         hasCredential: {type: boolean, description: A password or private key is stored. Halo never returns it.}
         hostKey: {type: string}
+        rdpSecurity: {type: string, enum: [nla, tls]}
         sessionLimit: {type: integer}
         record: {type: boolean}
     Outpost:
@@ -11193,7 +11195,7 @@ components:
         userId: {type: [string, 'null']}
         email: {type: string}
         outpostId: {type: [string, 'null']}
-        protocol: {type: string, enum: [ssh]}
+        protocol: {type: string, enum: [ssh, rdp, vnc]}
         address: {type: string, examples: ['db1.internal:22']}
         username: {type: string}
         ip: {type: string}

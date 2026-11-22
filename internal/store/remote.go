@@ -1,6 +1,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 const (
 	outpostTokenLifetime   = 24 * time.Hour
 	RemoteConnectWindow    = time.Minute
-	remoteTargetColumns    = `app_id, outpost_id, protocol, host, port, username, auth, credential_sealed is not null, host_key, session_limit, record`
+	remoteTargetColumns    = `app_id, outpost_id, protocol, host, port, username, auth, credential_sealed is not null, host_key, session_limit, record, rdp_security`
 	outpostColumns         = `id, name, enrolled_at, enrollment_expires_at, last_seen_at, last_ip, version, created_at, (select count(*) from remote_targets t where t.outpost_id = outposts.id)`
 	remoteSessionColumns   = `id, time, app_id, app_name, user_id, email, session_id, outpost_id, protocol, address, username, ip, limit_seconds, record, status, started_at, ended_at, end_reason, bytes_in, bytes_out, recording_sealed is not null, terminated_by`
 	remoteSessionsByNewest = ` order by time desc limit $1`
@@ -43,6 +44,7 @@ type RemoteTarget struct {
 	HostKey       string `json:"hostKey"`
 	SessionLimit  int    `json:"sessionLimit"`
 	Record        bool   `json:"record"`
+	RDPSecurity   string `json:"rdpSecurity"`
 }
 
 type RemoteSession struct {
@@ -155,12 +157,12 @@ func (s *Store) SaveRemoteTarget(ctx context.Context, t RemoteTarget, credential
 	if credential != nil && *credential != "" && t.Auth != "certificate" {
 		sealed = s.Sealer.Seal([]byte(*credential))
 	}
-	_, err := s.db.Exec(ctx, `insert into remote_targets (app_id, outpost_id, protocol, host, port, username, auth, credential_sealed, host_key, session_limit, record)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	_, err := s.db.Exec(ctx, `insert into remote_targets (app_id, outpost_id, protocol, host, port, username, auth, credential_sealed, host_key, session_limit, record, rdp_security)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $13)
 		on conflict (app_id) do update set outpost_id = excluded.outpost_id, protocol = excluded.protocol, host = excluded.host, port = excluded.port, username = excluded.username,
 			auth = excluded.auth, credential_sealed = case when excluded.auth = 'certificate' then null when $12 then excluded.credential_sealed else remote_targets.credential_sealed end,
-			host_key = excluded.host_key, session_limit = excluded.session_limit, record = excluded.record`,
-		t.AppID, t.OutpostID, t.Protocol, t.Host, t.Port, t.Username, t.Auth, sealed, t.HostKey, t.SessionLimit, t.Record, credential != nil && *credential != "")
+			host_key = excluded.host_key, session_limit = excluded.session_limit, record = excluded.record, rdp_security = excluded.rdp_security`,
+		t.AppID, t.OutpostID, t.Protocol, t.Host, t.Port, t.Username, t.Auth, sealed, t.HostKey, t.SessionLimit, t.Record, credential != nil && *credential != "", cmp.Or(t.RDPSecurity, "nla"))
 	return err
 }
 

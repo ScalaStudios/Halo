@@ -29,6 +29,15 @@ xterm.js
   License:  MIT
   Use:      The terminal of remote access sessions in the account portal.
 
+Apache Guacamole
+  Copyright 2020 The Apache Software Foundation
+  This product includes software developed at The Apache Software Foundation
+  (https://www.apache.org/).
+  Package: @pelotech/guacamole-common-js, installed from npm, not vendored
+  Source:  https://guacamole.apache.org/
+  License: Apache License, Version 2.0
+  Use:     The RDP and VNC display in the account portal.
+
 Fonts (installed from npm, not vendored)
   Archivo, Inter and JetBrains Mono via @fontsource-variable packages,
   licensed under the SIL Open Font License 1.1.

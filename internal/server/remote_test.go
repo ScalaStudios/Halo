@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -107,7 +108,8 @@ func decodeInto(t *testing.T, rec *httptest.ResponseRecorder, dst any) {
 func (r *remoteEnv) runAgent(key string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r.t.Cleanup(cancel)
-	agent := &outpost.Agent{Server: r.srv.URL, Key: key, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	guacdPort, _ := strconv.Atoi(os.Getenv("HALO_TEST_GUACD_PORT"))
+	agent := &outpost.Agent{Server: r.srv.URL, Key: key, GuacdPort: guacdPort, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	go agent.Run(ctx)
 	r.waitConnected(true)
 }
@@ -868,5 +870,98 @@ func TestRemoteStreamIsClaimedOnlyByTheOutpostThatWasAsked(t *testing.T) {
 	s.until(func() bool { return strings.Contains(s.output.String(), "welcome ops") })
 	if code := claim(labKey); code != http.StatusNotFound {
 		t.Fatalf("a stream is claimed once: %d", code)
+	}
+}
+
+func TestRemoteDesktopsThroughOutpost(t *testing.T) {
+	if os.Getenv("HALO_TEST_GUACD_PORT") == "" {
+		t.Skip("set HALO_TEST_GUACD_PORT and the RDP and VNC fixture settings")
+	}
+	for _, protocol := range []string{"rdp", "vnc"} {
+		t.Run(protocol, func(t *testing.T) {
+			prefix := "HALO_TEST_" + strings.ToUpper(protocol) + "_"
+			port, err := strconv.Atoi(os.Getenv(prefix + "PORT"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := setupRemote(t, "")
+			secret := os.Getenv(prefix + "PASSWORD")
+			settings := map[string]any{
+				"protocol": protocol, "port": port, "auth": "password", "credential": secret,
+				"username": os.Getenv(prefix + "USERNAME"), "hostKey": os.Getenv(prefix + "FINGERPRINT"),
+			}
+			if protocol == "rdp" {
+				settings["rdpSecurity"] = "tls"
+			}
+			app := r.app(settings)
+			_, unassigned, _ := r.person("outside@example.com", "passkey", false)
+			request := map[string]string{"applicationId": app.ID}
+			r.expect(unassigned, "POST", "/api/v1/me/remote-sessions", request, http.StatusForbidden, "ERR_NOT_ASSIGNED")
+			_, totp := r.member("otp@example.com", "totp")
+			policy := map[string]any{"name": "Passkeys for desktops", "enabled": true, "mode": "enforce", "effect": "require-phishing-resistant", "conditions": store.PolicyConditions{AllUsers: true, AppIDs: []string{app.ID}}}
+			r.expect(r.admin, "POST", "/api/v1/policies", policy, http.StatusCreated, "")
+			r.expect(totp, "POST", "/api/v1/me/remote-sessions", request, http.StatusForbidden, "ERR_STRONGER_AUTH_REQUIRED")
+			_, token := r.member("ana@example.com", "passkey")
+			rs := r.start(token, app.ID)
+			ws, err := r.connect(token, rs.ID, remoteOrigin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			display := &screen{t: t, ws: ws}
+			display.until(func() bool { return display.saw("end") || strings.Contains(display.output.String(), "4.size,1.0") })
+			if display.saw("end") || !display.saw("connected") {
+				t.Fatalf("the desktop did not connect: %+v", display.events)
+			}
+			r.expect(r.admin, "POST", "/api/v1/remote-sessions/"+rs.ID+"/terminate", nil, http.StatusOK, "")
+			if msg := display.waitEnd(); !strings.Contains(msg, "ended the session from the Halo console") {
+				t.Fatalf("desktop did not terminate: %s", msg)
+			}
+			saved := r.sessions(app.ID)[0]
+			if saved.Protocol != protocol || saved.StartedAt == nil || saved.EndedAt == nil || saved.Status != "ended" {
+				t.Fatalf("session log was incomplete: %+v", saved)
+			}
+			if secret == "" || strings.Contains(display.raw.String(), secret) {
+				t.Fatal("desktop credential unexpectedly available in the browser")
+			}
+			target := app.Remote
+			target.AppID, target.SessionLimit = app.ID, 4
+			if err := r.st.SaveRemoteTarget(t.Context(), target, nil); err != nil {
+				t.Fatal(err)
+			}
+			ws, err = r.connect(token, r.start(token, app.ID).ID, remoteOrigin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			limited := &screen{t: t, ws: ws}
+			if msg := limited.waitEnd(); !limited.saw("connected") || !strings.Contains(msg, "reached its time limit") {
+				t.Fatalf("the live desktop did not end at its time limit: %s", msg)
+			}
+			if protocol == "rdp" {
+				r.expect(r.admin, "PUT", "/api/v1/applications/"+app.ID+"/remote", map[string]any{"hostKey": strings.Repeat("00", 32), "sessionLimit": 60}, http.StatusOK, "")
+				ws, err := r.connect(token, r.start(token, app.ID).ID, remoteOrigin)
+				if err != nil {
+					t.Fatal(err)
+				}
+				bad := &screen{t: t, ws: ws}
+				bad.waitEnd()
+				if bad.saw("connected") {
+					t.Fatal("unrecognized RDP certificate was accepted")
+				}
+			}
+			var zone struct {
+				ID string `json:"id"`
+			}
+			decodeInto(t, r.expect(r.admin, "POST", "/api/v1/network-zones", map[string]any{"name": "Desktop network", "kind": "trusted", "cidrs": []string{"10.20.0.0/16"}}, http.StatusCreated, ""), &zone)
+			block := map[string]any{"name": "Desktops only from the trusted network", "enabled": true, "mode": "enforce", "effect": "block", "conditions": store.PolicyConditions{AllUsers: true, AppIDs: []string{app.ID}, Network: "not-in", ZoneIDs: []string{zone.ID}}}
+			r.expect(r.admin, "POST", "/api/v1/policies", block, http.StatusCreated, "")
+			r.expect(token, "POST", "/api/v1/me/remote-sessions", request, http.StatusForbidden, "ERR_BLOCKED_BY_POLICY")
+			path := "/api/v1/applications/" + app.ID + "/remote"
+			r.expect(r.admin, "PUT", path, map[string]any{"rdpSecurity": "other", "sessionLimit": 60}, http.StatusUnprocessableEntity, "ERR_INVALID")
+			r.expect(r.admin, "PUT", path, map[string]any{"protocol": "ssh", "sessionLimit": 60}, http.StatusOK, "")
+			sshTarget, err := r.st.RemoteTarget(t.Context(), app.ID)
+			if err != nil || sshTarget.Protocol != "ssh" || sshTarget.Port != 22 || sshTarget.Auth != "certificate" || sshTarget.HasCredential || sshTarget.HostKey != "" {
+				t.Fatalf("switching to SSH should reset the desktop settings: %+v, %v", sshTarget, err)
+			}
+		})
 	}
 }

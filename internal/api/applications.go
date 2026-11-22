@@ -404,6 +404,7 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 	var app store.Application
 	var secret *string
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+		var connection store.RemoteTarget
 		policies, err := clientPolicies(r.Context(), tx, in.Protocol, in.Type, entityID)
 		if err != nil {
 			return err
@@ -471,6 +472,7 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 			if err := tx.SaveRemoteTarget(r.Context(), target, in.Remote.Credential); err != nil {
 				return err
 			}
+			connection = target
 		} else if in.Protocol != "bookmark" && in.Protocol != "forward-auth" && (in.Type == "web" || in.Type == "service") && next.TokenEndpointAuthMethod != oidc.PrivateKeyJWT {
 			_, value, err := tx.AddClientSecret(r.Context(), created.ID, "Initial", secretLifetime)
 			if err != nil {
@@ -492,7 +494,11 @@ func (h *handlers) createApplication(w http.ResponseWriter, r *http.Request, act
 			summary = "Registered LDAP application"
 		}
 		if in.Protocol == "remote" {
-			summary = "Registered remote access to " + remoteAddress(*in.Remote)
+			address := net.JoinHostPort(connection.Host, strconv.Itoa(connection.Port))
+			if connection.Username != "" {
+				address = connection.Username + "@" + address
+			}
+			summary = "Registered remote access to " + connection.Protocol + "://" + address
 		}
 		if err := record(r, tx, actor, store.AuditEvent{Action: "application.create", Summary: summary, TargetType: "application", TargetID: created.ID, TargetLabel: created.Name}); err != nil {
 			return err
@@ -729,20 +735,6 @@ func (h *handlers) groupsChange(r *http.Request, actor store.User, app store.App
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "application.groups.update", Summary: summary, TargetType: "application", TargetID: app.ID, TargetLabel: app.Name})
 	}, nil
-}
-
-func remoteAddress(in remote.Settings) string {
-	host, user, port := "", "", 22
-	if in.Host != nil {
-		host = strings.TrimSpace(*in.Host)
-	}
-	if in.Username != nil && *in.Username != "" {
-		user = strings.TrimSpace(*in.Username) + "@"
-	}
-	if in.Port != nil {
-		port = *in.Port
-	}
-	return "ssh://" + user + net.JoinHostPort(host, strconv.Itoa(port))
 }
 
 func (h *handlers) setApplicationRemote(w http.ResponseWriter, r *http.Request, actor store.User) error {

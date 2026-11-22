@@ -24,7 +24,7 @@ var ExportSections = []ExportSection{
 		a.access_token_ttl, a.refresh_token_ttl, a.id_token_ttl, a.refresh_rotation, a.token_exchange, a.max_auth_age, a.setup_guide, a.owner_id, a.claim_mappings, a.created_at, a.updated_at,
 		array(select g.group_id from app_groups g where g.app_id = a.id order by g.group_id) as group_ids,
 		array(select x.resource_id from app_exchange_sources x where x.app_id = a.id order by x.resource_id) as token_exchange_from,
-		(select json_build_object('outpostId', t.outpost_id, 'protocol', t.protocol, 'host', t.host, 'port', t.port, 'username', t.username, 'auth', t.auth, 'hostKey', t.host_key, 'sessionLimit', t.session_limit, 'record', t.record)
+		(select json_build_object('outpostId', t.outpost_id, 'protocol', t.protocol, 'host', t.host, 'port', t.port, 'username', t.username, 'auth', t.auth, 'hostKey', t.host_key, 'rdpSecurity', t.rdp_security, 'sessionLimit', t.session_limit, 'record', t.record)
 			from remote_targets t where t.app_id = a.id) as remote from applications a order by a.name`},
 	{"applicationRoles", "app_roles", `select r.id, r.app_id, r.key, r.name, r.description, r.created_at,
 		array(select g.group_id from app_role_groups g where g.role_id = r.id order by g.group_id) as group_ids,

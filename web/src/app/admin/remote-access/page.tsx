@@ -20,7 +20,7 @@ export default async function RemoteAccessPage() {
     <div className="flex flex-col gap-8">
       <PageHeader
         title="Remote access"
-        description={`SSH sessions in the browser to hosts in your networks, started from the account portal under the same checks as an application sign-in. ${pluralize(connected, "outpost is", "outposts are")} connected and ${pluralize(live, "session is", "sessions are")} live.`}
+        description={`SSH, RDP, and VNC sessions in the browser to hosts in your networks, started from the account portal under the same checks as an application sign-in. ${pluralize(connected, "outpost is", "outposts are")} connected and ${pluralize(live, "session is", "sessions are")} live.`}
       />
 
       <OutpostsSection outposts={outposts} issuer={org.issuer} canEdit={hasRole(me, "security_admin")} />

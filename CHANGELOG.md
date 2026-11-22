@@ -4,6 +4,14 @@ All notable changes to Halo are recorded in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Halo follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.0
+
+### Added
+
+- Browser RDP and VNC through the existing Halo outpost, with assigned application access, encrypted credentials, time limits, and session audit records.
+
+[Compare v0.4.0 with v0.5.0](https://github.com/ScalaStudios/Halo/compare/v0.4.0...v0.5.0)
+
 ## 0.3.0
 
 ### Added

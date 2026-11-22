@@ -110,7 +110,7 @@ export function RemoteSessions({ sessions, showApplication = true, canEnd, canDo
         }}
         error={errorFor("end")}
         title={`End ${ending ? `${ending.email}'s` : "this"} session?`}
-        description={`Halo closes the SSH session to ${ending?.address ?? "the host"} and tells the browser it was ended from the console. They can start a new one if they still have access.`}
+        description={`Halo closes the remote session to ${ending?.address ?? "the host"} and tells the browser it was ended from the console. They can start a new one if they still have access.`}
         footer={
           <>
             <Button variant="secondary" onClick={() => setEnding(null)}>

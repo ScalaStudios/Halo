@@ -65,9 +65,10 @@ func Enroll(ctx context.Context, server, token string) (string, error) {
 }
 
 type Agent struct {
-	Server string
-	Key    string
-	Log    *slog.Logger
+	Server    string
+	Key       string
+	GuacdPort int
+	Log       *slog.Logger
 }
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -144,7 +145,7 @@ func (a *Agent) serve(ctx context.Context) error {
 			if err := send(message{Type: "pong"}); err != nil {
 				return err
 			}
-		case "dial":
+		case "dial", "desktop":
 			go a.relay(ctx, send, m)
 		}
 	}
@@ -167,7 +168,15 @@ func closeSocket(conn *websocket.Conn) {
 }
 
 func (a *Agent) relay(ctx context.Context, send func(message) error, m message) {
-	target, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, "tcp", m.Address)
+	address := m.Address
+	if m.Type == "desktop" {
+		if a.GuacdPort <= 0 || a.GuacdPort > 65535 {
+			send(message{Type: "failed", Stream: m.Stream, Message: "the outpost does not have a local Guacamole proxy configured"})
+			return
+		}
+		address = fmt.Sprintf("127.0.0.1:%d", a.GuacdPort)
+	}
+	target, err := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, "tcp", address)
 	if err != nil {
 		a.Log.Warn("could not reach a host for Halo", "address", m.Address, "error", err)
 		send(message{Type: "failed", Stream: m.Stream, Message: err.Error()})
