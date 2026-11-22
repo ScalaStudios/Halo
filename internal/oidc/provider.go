@@ -25,6 +25,7 @@ import (
 	"golang.org/x/text/language"
 
 	"halo/internal/access"
+	"halo/internal/dpop"
 	"halo/internal/httpx"
 	"halo/internal/store"
 )
@@ -123,7 +124,7 @@ func New(d httpx.Deps) (http.Handler, error) {
 				PushedAuthorizationRequestEndpoint string                    `json:"pushed_authorization_request_endpoint"`
 				DPoPSigningAlgValuesSupported      []jose.SignatureAlgorithm `json:"dpop_signing_alg_values_supported"`
 				AuthorizationResponseIssSupported  bool                      `json:"authorization_response_iss_parameter_supported"`
-			}{c, d.Config.Issuer() + "/oauth2/par", dpopAlgorithms, true})
+			}{c, d.Config.Issuer() + "/oauth2/par", dpop.Algorithms(), true})
 			return body
 		})
 	})
