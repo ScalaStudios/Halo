@@ -11,6 +11,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api/client";
+import { useMessages } from "@/lib/i18n/client";
+import { settingsMessages } from "@/lib/i18n/console/settings";
 import type { Feature, FeatureId, SettingsResponse } from "@/lib/settings-types";
 import { ReadOnlyNote } from "./shared";
 
@@ -32,6 +34,7 @@ const ICON: Partial<Record<FeatureId, LucideIcon>> = {
 export function FeatureSettings({ features, canEdit }: { features: Feature[]; canEdit: boolean }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
   const [confirming, setConfirming] = useState<Feature | null>(null);
+  const { features: t, common } = useMessages(settingsMessages);
 
   function apply(feature: Feature, enabled: boolean, confirmed: boolean) {
     const featuresOff = features.filter((f) => (f.id === feature.id ? !enabled : !f.enabled)).map((f) => f.id);
@@ -41,8 +44,8 @@ export function FeatureSettings({ features, canEdit }: { features: Feature[]; ca
       () => {
         setConfirming(null);
         toast({
-          title: `${feature.name} turned ${enabled ? "on" : "off"}`,
-          description: enabled ? "Its pages, routes and background jobs are back, with the settings it had." : "Its routes answer 404 and its background jobs stopped. Its settings are kept.",
+          title: enabled ? t.turnedOn(feature.name) : t.turnedOff(feature.name),
+          description: enabled ? t.onHint : t.offHint,
         });
       },
       "inline",
@@ -72,7 +75,7 @@ export function FeatureSettings({ features, canEdit }: { features: Feature[]; ca
                       <span id={id} className="font-medium text-fg">
                         {f.name}
                       </span>
-                      {f.enabled ? null : <Badge tone="neutral">Off</Badge>}
+                      {f.enabled ? null : <Badge tone="neutral">{t.off}</Badge>}
                     </span>
                     <p className="text-body-sm text-fg-3">{f.description}</p>
                     {f.usage.length > 0 ? (
@@ -81,7 +84,7 @@ export function FeatureSettings({ features, canEdit }: { features: Feature[]; ca
                         <span className="tnum">{f.usage.join(", ")}.</span>
                       </p>
                     ) : (
-                      <p className="text-body-sm text-fg-2">Nothing uses it right now.</p>
+                      <p className="text-body-sm text-fg-2">{t.unused}</p>
                     )}
                     {confirming ? null : <ActionError message={errorFor(f.id)} />}
                   </div>
@@ -92,7 +95,7 @@ export function FeatureSettings({ features, canEdit }: { features: Feature[]; ca
                   ) : (
                     <Checkbox aria-labelledby={`${id} ${id}-state`} checked={f.enabled} disabled={!canEdit || pending !== null} onChange={(event) => change(f, event.target.checked)} />
                   )}
-                  <span id={`${id}-state`}>On</span>
+                  <span id={`${id}-state`}>{t.on}</span>
                 </label>
               </li>
             );
@@ -100,9 +103,9 @@ export function FeatureSettings({ features, canEdit }: { features: Feature[]; ca
         </ul>
       </Card>
       <p className="text-body-sm text-fg-3">
-        Changes apply right away on this server and within 30 seconds on other Halo servers. A feature&apos;s settings are kept while it is off, so turning it back on restores them.
+        {t.note}
       </p>
-      {canEdit ? null : <ReadOnlyNote>Only a global administrator can turn features on or off.</ReadOnlyNote>}
+      {canEdit ? null : <ReadOnlyNote>{t.readOnly}</ReadOnlyNote>}
       <Dialog
         open={confirming !== null}
         onOpenChange={(open) => {
@@ -111,15 +114,15 @@ export function FeatureSettings({ features, canEdit }: { features: Feature[]; ca
           clearError();
         }}
         error={confirming ? errorFor(confirming.id) : undefined}
-        title={confirming ? `Turn off ${confirming.name}?` : "Turn off this feature?"}
-        description={confirming ? `${confirming.usage.join(", ")}. All of this stops working until you turn it back on.` : undefined}
+        title={confirming ? t.confirmTitle(confirming.name) : t.confirmFallback}
+        description={confirming ? t.confirmDescription(confirming.usage.join(", ")) : undefined}
         footer={
           <>
             <Button variant="secondary" onClick={() => setConfirming(null)}>
-              Cancel
+              {common.cancel}
             </Button>
             <Button variant="destructive" loading={confirming !== null && pending === confirming.id} onClick={() => confirming && apply(confirming, false, true)}>
-              Turn off {confirming?.name}
+              {t.turnOff(confirming?.name ?? "")}
             </Button>
           </>
         }

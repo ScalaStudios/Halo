@@ -12,6 +12,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { ApiError, api } from "@/lib/api/client";
 import { cn } from "@/lib/cn";
+import { useLocale } from "@/lib/i18n/client";
+import { settingsMessages } from "@/lib/i18n/console/settings";
 import type { EmailTemplate } from "@/lib/settings-types";
 import { ReadOnlyNote } from "./shared";
 
@@ -20,6 +22,8 @@ type Preview = { subject: string; text: string };
 export function EmailTemplateEditor({ template, canEdit }: { template: EmailTemplate; canEdit: boolean }) {
   const { pending, run, errorFor, toast } = useMutation();
   const variablesId = useId();
+  const locale = useLocale();
+  const t = settingsMessages[locale].emailTemplates;
   const saved = template.custom ?? template.default;
   const [subject, setSubject] = useState(saved.subject);
   const [body, setBody] = useState(saved.body);
@@ -38,7 +42,7 @@ export function EmailTemplateEditor({ template, canEdit }: { template: EmailTemp
       try {
         result = await api<Preview>(`/email-templates/${template.kind}/preview`, { body: { subject, body } });
       } catch (error) {
-        failure = error instanceof ApiError ? error.message : "Halo could not reach the server to update the preview. Try again.";
+        failure = error instanceof ApiError ? error.message : t.previewFailed;
       }
       if (request !== latest.current) return;
       if (result) setPreview(result);
@@ -46,13 +50,13 @@ export function EmailTemplateEditor({ template, canEdit }: { template: EmailTemp
       setPreviewing(false);
     }, 300);
     return () => clearTimeout(timer);
-  }, [template.kind, subject, body]);
+  }, [template.kind, subject, body, t.previewFailed]);
 
   function save() {
     void run(
       "save",
       () => api<EmailTemplate>(`/email-templates/${template.kind}`, { method: "PUT", body: { subject, body } }),
-      () => toast({ title: "Email template saved", description: `New ${template.label.toLowerCase()} emails use it within 30 seconds.` }),
+      () => toast({ title: t.saved, description: t.savedHint(template.label) }),
       "inline",
     );
   }
@@ -64,7 +68,7 @@ export function EmailTemplateEditor({ template, canEdit }: { template: EmailTemp
       () => {
         setSubject(template.default.subject);
         setBody(template.default.body);
-        toast({ title: "Email template reset", description: `New ${template.label.toLowerCase()} emails use Halo's default within 30 seconds.` });
+        toast({ title: t.reset, description: t.resetHint(template.label) });
       },
       "inline",
     );
@@ -75,7 +79,7 @@ export function EmailTemplateEditor({ template, canEdit }: { template: EmailTemp
       <CardHeader
         title={template.label}
         description={template.description}
-        actions={template.custom ? <Badge tone="ember">Custom</Badge> : <Badge>Halo&apos;s default</Badge>}
+        actions={template.custom ? <Badge tone="ember">{t.custom}</Badge> : <Badge>{t.default}</Badge>}
       />
       <CardBody>
         <form
@@ -88,14 +92,14 @@ export function EmailTemplateEditor({ template, canEdit }: { template: EmailTemp
         >
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
             <div className="flex min-w-0 flex-col gap-6">
-              <Field label="Subject">
+              <Field label={t.subject}>
                 {(props) => (
                   <Input {...props} mono maxLength={200} spellCheck={false} autoComplete="off" disabled={!canEdit} value={subject} onChange={(event) => setSubject(event.target.value)} />
                 )}
               </Field>
               <Field
-                label="Body"
-                hint={`${body.length.toLocaleString("en")} of 10,000 characters. Plain text. Write {{.Variable}} to insert a value and {{if .Variable}}…{{else}}…{{end}} for text that depends on one.`}
+                label={t.body}
+                hint={t.bodyHint(body.length.toLocaleString(locale))}
               >
                 {(props) => (
                   <Textarea {...props} mono rows={14} maxLength={10000} spellCheck={false} disabled={!canEdit} value={body} onChange={(event) => setBody(event.target.value)} />
@@ -103,17 +107,17 @@ export function EmailTemplateEditor({ template, canEdit }: { template: EmailTemp
               </Field>
               <section aria-labelledby={variablesId} className="flex flex-col gap-3">
                 <h3 id={variablesId} className="text-label text-fg">
-                  Variables
+                  {t.variables}
                 </h3>
                 <dl className="flex flex-col gap-3">
                   {template.variables.map((variable) => (
                     <div key={variable.name} className="flex flex-col gap-1">
                       <dt className="flex flex-wrap items-center gap-2">
                         <Tag>{`{{.${variable.name}}}`}</Tag>
-                        {variable.name === template.required ? <Badge tone="info">Required</Badge> : null}
+                        {variable.name === template.required ? <Badge tone="info">{t.required}</Badge> : null}
                       </dt>
                       <dd className="text-body-sm text-fg-3">
-                        {variable.description} Example: {variable.example}
+                        {variable.description} {t.example} {variable.example}
                       </dd>
                     </div>
                   ))}
@@ -123,7 +127,7 @@ export function EmailTemplateEditor({ template, canEdit }: { template: EmailTemp
             <figure className="flex min-w-0 flex-col gap-2">
               <div aria-busy={previewing} className="flex flex-col gap-4 rounded-lg border border-border bg-sunken p-6">
                 <div className="flex items-center justify-between gap-4">
-                  <span className="text-label text-fg-3">Preview</span>
+                  <span className="text-label text-fg-3">{t.preview}</span>
                   {previewing ? <Spinner /> : null}
                 </div>
                 <div>
@@ -148,22 +152,22 @@ export function EmailTemplateEditor({ template, canEdit }: { template: EmailTemp
                   )}
                 </div>
               </div>
-              <figcaption className="text-caption text-fg-3">Shown with the example values and your organization name. Changes apply when you save.</figcaption>
+              <figcaption className="text-caption text-fg-3">{t.previewNote}</figcaption>
             </figure>
           </div>
           {canEdit ? (
             <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" variant="primary" loading={pending === "save"} disabled={!dirty || pending === "reset"}>
-                Save template
+                {t.save}
               </Button>
               <Button variant="quiet" loading={pending === "reset"} disabled={!template.custom || pending === "save"} onClick={reset}>
                 <RotateCcw aria-hidden="true" size={16} strokeWidth={1.75} />
-                Reset to Halo&apos;s default
+                {t.resetButton}
               </Button>
               <ActionError message={errorFor("save") ?? errorFor("reset")} className="basis-full" />
             </div>
           ) : (
-            <ReadOnlyNote>Only a global administrator can change email templates.</ReadOnlyNote>
+            <ReadOnlyNote>{t.readOnly}</ReadOnlyNote>
           )}
         </form>
       </CardBody>

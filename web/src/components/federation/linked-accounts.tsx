@@ -12,6 +12,8 @@ import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/api/client";
 import type { LinkedAccount } from "@/lib/federation-types";
 import { formatDate } from "@/lib/format";
+import { useLocale } from "@/lib/i18n/client";
+import { settingsMessages } from "@/lib/i18n/console/settings";
 import { METHOD } from "@/lib/labels";
 
 export function LinkedAccounts() {
@@ -21,6 +23,8 @@ export function LinkedAccounts() {
   const [pending, setPending] = useState<LinkedAccount | null>(null);
   const [removing, setRemoving] = useState(false);
   const Icon = METHOD.federated.icon;
+  const locale = useLocale();
+  const { linkedAccounts: t, common } = settingsMessages[locale];
 
   useEffect(() => {
     api<LinkedAccount[]>("/me/identities").then(setAccounts, () => setFailed(true));
@@ -32,10 +36,10 @@ export function LinkedAccounts() {
     try {
       await api(`/me/identities/${pending.id}`, { method: "DELETE" });
       setAccounts((current) => current?.filter((a) => a.id !== pending.id) ?? null);
-      toast({ title: `${pending.providerName} unlinked`, description: `${pending.email} can no longer sign you in to Halo.` });
+      toast({ title: t.unlinked(pending.providerName), description: t.unlinkedHint(pending.email) });
       setPending(null);
     } catch (error) {
-      toast({ title: "That didn't work", description: describeFailure(error), tone: "danger" });
+      toast({ title: common.failed, description: describeFailure(error), tone: "danger" });
     } finally {
       setRemoving(false);
     }
@@ -44,15 +48,15 @@ export function LinkedAccounts() {
   return (
     <section className="flex flex-col gap-4">
       <SectionTitle
-        title="Linked accounts"
-        description="Accounts at identity providers your organization set up, such as Google or GitHub. Halo links one the first time you sign in with it."
+        title={t.title}
+        description={t.description}
       />
       {failed ? (
         <p role="alert" className="rounded-lg border border-border px-6 py-4 text-body-sm text-fg-3">
-          Halo could not load your linked accounts. Reload the page to try again.
+          {t.loadFailed}
         </p>
       ) : accounts === null ? (
-        <div aria-busy="true" aria-label="Loading linked accounts" className="flex items-center gap-4 rounded-lg border border-border bg-surface p-4 sm:px-6">
+        <div aria-busy="true" aria-label={t.loading} className="flex items-center gap-4 rounded-lg border border-border bg-surface p-4 sm:px-6">
           <span className="grid size-10 shrink-0 place-items-center rounded-md border border-border bg-sunken text-fg-3">
             <Icon aria-hidden="true" size={20} strokeWidth={1.75} />
           </span>
@@ -63,7 +67,7 @@ export function LinkedAccounts() {
         </div>
       ) : accounts.length === 0 ? (
         <p className="rounded-lg border border-border px-6 py-4 text-body-sm text-fg-3">
-          No linked accounts. Sign in with an identity provider on the sign-in page to link one.
+          {t.empty}
         </p>
       ) : (
         <ul className="animate-enter overflow-hidden rounded-lg border border-border bg-surface">
@@ -74,14 +78,14 @@ export function LinkedAccounts() {
               </span>
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <p className="text-body-sm font-semibold text-fg">{account.providerName}</p>
-                <p className="truncate text-body-sm text-fg-3">{account.email || "No email shared"}</p>
+                <p className="truncate text-body-sm text-fg-3">{account.email || t.noEmail}</p>
                 <p className="text-caption text-fg-3">
-                  Linked {formatDate(account.createdAt)} · {account.lastUsedAt ? <>Last used <RelativeTime iso={account.lastUsedAt} lowercase /></> : "Never used"}
+                  {t.linked(formatDate(account.createdAt, locale))} · {account.lastUsedAt ? <>{t.lastUsed} <RelativeTime iso={account.lastUsedAt} lowercase /></> : t.neverUsed}
                 </p>
               </div>
-              <Button size="sm" variant="quiet" onClick={() => setPending(account)} className="self-start sm:self-center" aria-label={`Unlink ${account.providerName}`}>
+              <Button size="sm" variant="quiet" onClick={() => setPending(account)} className="self-start sm:self-center" aria-label={t.unlinkLabel(account.providerName)}>
                 <Unlink aria-hidden="true" size={16} strokeWidth={1.75} />
-                Unlink
+                {t.unlink}
               </Button>
             </li>
           ))}
@@ -92,15 +96,15 @@ export function LinkedAccounts() {
         onOpenChange={(open) => {
           if (!open) setPending(null);
         }}
-        title={`Unlink ${pending?.providerName ?? "account"}?`}
-        description={`${pending?.email || "This account"} stops signing you in to Halo. Signing in with ${pending?.providerName ?? "the provider"} again links it again. Halo refuses if it's your last way to sign in.`}
+        title={t.confirmTitle(pending?.providerName ?? t.accountFallback)}
+        description={t.confirmDescription(pending?.email || t.thisAccount, pending?.providerName ?? t.providerFallback)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setPending(null)}>
-              Cancel
+              {common.cancel}
             </Button>
             <Button variant="destructive" loading={removing} onClick={unlink}>
-              Unlink
+              {t.unlink}
             </Button>
           </>
         }

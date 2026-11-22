@@ -1,4 +1,5 @@
 import { ROLES } from "@/components/provisioning/shared";
+import { settingsMessages } from "@/lib/i18n/console/settings";
 import type { RoleKey } from "@/lib/provisioning-types";
 import type { Group, User } from "@/lib/types";
 
@@ -8,8 +9,8 @@ export function hasRole(user: Pick<User, "roles" | "roleScopes">, ...keys: RoleK
 
 export const SCOPED_ROLES: RoleKey[] = ["user_admin", "helpdesk_admin"];
 
-export function scopeNames(scope: string[], groups: Pick<Group, "id" | "name">[]) {
-  return scope.map((id) => groups.find((g) => g.id === id)?.name ?? "a deleted group").join(", ");
+export function scopeNames(scope: string[], groups: Pick<Group, "id" | "name">[], deleted = settingsMessages.en.roles.deletedGroup) {
+  return scope.map((id) => groups.find((g) => g.id === id)?.name ?? deleted).join(", ");
 }
 
 export function roleNames(user: Pick<User, "roles" | "roleScopes">, groups: Pick<Group, "id" | "name">[]) {
@@ -32,32 +33,4 @@ export function keysOf(person: Pick<User, "roles" | "activations">) {
   return person.roles.map((label) => KEY_BY_LABEL[label]).filter((key): key is RoleKey => Boolean(key) && !activated.includes(key));
 }
 
-export const CAPABILITIES: Record<RoleKey, string[]> = {
-  global_admin: [
-    "Everything the other five roles can do",
-    "Assign and remove administrator roles",
-    "Change the accounts of people who hold an administrator role",
-    "Change the organization profile, branding and verified domains",
-    "Export the directory, applications and policies as JSON",
-  ],
-  security_admin: [
-    "Create, reorder and delete access policies and networks",
-    "Turn sign-in methods on and off, set device trust, resolve risk events",
-    "Suspend people and end their sessions",
-    "Manage service accounts and API keys",
-    "Change security defaults, webhook endpoints and notification rules",
-  ],
-  user_admin: [
-    "Invite, suspend and restore people",
-    "End sessions, reset authentication and remove sign-in methods",
-    "Create groups and change their members",
-    "Manage access packages, access reviews and lifecycle rules, and revoke grants",
-  ],
-  helpdesk_admin: ["End someone's sessions", "Reset authentication and remove sign-in methods so people can enroll again"],
-  app_admin: [
-    "Register, disable and delete applications",
-    "Rotate and revoke client secrets, assign groups and configure SAML",
-    "Set up, test and run SCIM provisioning to applications",
-  ],
-  auditor: ["Read every administration page, the sign-in log and the audit log"],
-};
+export const CAPABILITIES: Record<RoleKey, string[]> = settingsMessages.en.roles.capabilities;

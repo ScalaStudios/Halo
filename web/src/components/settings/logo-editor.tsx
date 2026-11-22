@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { api } from "@/lib/api/client";
 import { toApiError } from "@/lib/api/error";
+import { useMessages } from "@/lib/i18n/client";
+import { settingsMessages } from "@/lib/i18n/console/settings";
 import type { OrganizationProfile } from "@/lib/settings-types";
 import { ReadOnlyNote } from "./shared";
 
@@ -18,41 +20,42 @@ const MAX_BYTES = 256 * 1024;
 export function LogoEditor({ org, canEdit }: { org: OrganizationProfile; canEdit: boolean }) {
   const { pending, run, errorFor, toast } = useMutation();
   const input = useRef<HTMLInputElement>(null);
+  const t = useMessages(settingsMessages).logo;
 
   function upload(file: File) {
     if (!TYPES.includes(file.type)) {
-      toast({ title: "That file can't be used", description: "Choose a PNG, JPEG or WebP image. SVG is not accepted.", tone: "danger" });
+      toast({ title: t.wrongType, description: t.chooseFile, tone: "danger" });
       return;
     }
     if (file.size > MAX_BYTES) {
-      toast({ title: "That image is too large", description: `It is ${Math.ceil(file.size / 1024)} KB. Export a version of 256 KB or less.`, tone: "danger" });
+      toast({ title: t.tooLarge, description: t.tooLargeHint(Math.ceil(file.size / 1024)), tone: "danger" });
       return;
     }
     void run(
       "upload",
       async () => {
         const res = await fetch("/api/v1/branding/logo", { method: "PUT", body: file, credentials: "same-origin" });
-        if (!res.ok) throw await toApiError(res, "Halo could not store the logo. Try again.");
+        if (!res.ok) throw await toApiError(res, t.storeFailed);
       },
-      () => toast({ title: "Logo uploaded", description: "The sign-in and setup pages show it from now on." }),
+      () => toast({ title: t.uploaded, description: t.uploadedHint }),
       "inline",
     );
   }
 
   return (
     <Card>
-      <CardHeader title="Logo" description="Shown with your organization name above the sign-in and setup forms. Halo's own mark stays in the footer." />
+      <CardHeader title={t.title} description={t.description} />
       <CardBody className="flex flex-col gap-6">
         <div className="grid h-40 place-items-center rounded-md border border-border bg-sunken px-6">
           {org.logoUrl ? (
             <span className="flex flex-col items-center gap-3">
-              <img src={org.logoUrl} alt={`${org.name} logo`} className="h-12 w-auto max-w-[240px] object-contain" />
+              <img src={org.logoUrl} alt={t.alt(org.name)} className="h-12 w-auto max-w-[240px] object-contain" />
               <span className="text-h4 text-fg">{org.name}</span>
             </span>
           ) : (
             <span className="flex flex-col items-center gap-3">
               <HaloLogo size="lg" />
-              <span className="text-caption text-fg-3">No logo yet. The sign-in page shows the Halo logo.</span>
+              <span className="text-caption text-fg-3">{t.empty}</span>
             </span>
           )}
         </div>
@@ -73,23 +76,23 @@ export function LogoEditor({ org, canEdit }: { org: OrganizationProfile; canEdit
             />
             <Button variant="primary" loading={pending === "upload"} onClick={() => input.current?.click()}>
               <ImageUp aria-hidden="true" size={16} strokeWidth={1.75} />
-              {org.logoUrl ? "Replace logo" : "Upload logo"}
+              {org.logoUrl ? t.replace : t.upload}
             </Button>
             {org.logoUrl ? (
               <Button
                 variant="secondary"
                 loading={pending === "remove"}
-                onClick={() => void run("remove", () => api("/branding/logo", { method: "DELETE" }), () => toast({ title: "Logo removed", description: "The sign-in page shows the Halo logo again." }), "inline")}
+                onClick={() => void run("remove", () => api("/branding/logo", { method: "DELETE" }), () => toast({ title: t.removed, description: t.removedHint }), "inline")}
               >
                 <Trash2 aria-hidden="true" size={16} strokeWidth={1.75} />
-                Remove logo
+                {t.remove}
               </Button>
             ) : null}
-            <span className="text-caption text-fg-3">PNG, JPEG or WebP, up to 256 KB. Shown 48 pixels tall.</span>
+            <span className="text-caption text-fg-3">{t.formats}</span>
             <ActionError message={errorFor("upload") ?? errorFor("remove")} className="basis-full" />
           </div>
         ) : (
-          <ReadOnlyNote>Only a global administrator can change the logo.</ReadOnlyNote>
+          <ReadOnlyNote>{t.readOnly}</ReadOnlyNote>
         )}
       </CardBody>
     </Card>
