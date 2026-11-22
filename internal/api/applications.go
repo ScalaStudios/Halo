@@ -758,7 +758,7 @@ func (h *handlers) setApplicationRemote(w http.ResponseWriter, r *http.Request, 
 		return err
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
-		before, err := tx.RemoteTarget(r.Context(), app.ID)
+		before, err := tx.RemoteTargetForUpdate(r.Context(), app.ID)
 		if err != nil {
 			return err
 		}

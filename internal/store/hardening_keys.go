@@ -217,26 +217,35 @@ func (s *Store) RotateSecretKey(ctx context.Context, next *secret.Sealer) (KeyRo
 }
 
 func (s *Store) reseal(ctx context.Context, table, key, column string, next *secret.Sealer) (int, error) {
-	rows, err := s.db.Query(ctx, `select `+key+`::text, `+column+` from `+table+` where `+column+` is not null`)
-	if err != nil {
-		return 0, err
-	}
 	type sealed struct {
 		Key   string
 		Value []byte
 	}
-	values, err := pgx.CollectRows(rows, pgx.RowToStructByPos[sealed])
-	if err != nil {
-		return 0, err
-	}
-	for _, v := range values {
-		plain, err := s.Sealer.Open(v.Value)
+	last, count := "", 0
+	for {
+		rows, err := s.db.Query(ctx, `select `+key+`::text, `+column+` from `+table+`
+			where `+column+` is not null and ($1 = '' or `+key+`::text > $1)
+			order by `+key+`::text limit 8`, last)
 		if err != nil {
-			return 0, fmt.Errorf("%s.%s for %s cannot be opened with HALO_SECRET_KEY, so nothing was changed. If you already rotated, HALO_SECRET_KEY must hold the new key", table, column, v.Key)
-		}
-		if _, err := s.db.Exec(ctx, `update `+table+` set `+column+` = $2 where `+key+`::text = $1`, v.Key, next.Seal(plain)); err != nil {
 			return 0, err
 		}
+		values, err := pgx.CollectRows(rows, pgx.RowToStructByPos[sealed])
+		if err != nil {
+			return 0, err
+		}
+		for _, v := range values {
+			plain, err := s.Sealer.Open(v.Value)
+			if err != nil {
+				return 0, fmt.Errorf("%s.%s for %s cannot be opened with HALO_SECRET_KEY, so nothing was changed. If you already rotated, HALO_SECRET_KEY must hold the new key", table, column, v.Key)
+			}
+			if _, err := s.db.Exec(ctx, `update `+table+` set `+column+` = $2 where `+key+`::text = $1`, v.Key, next.Seal(plain)); err != nil {
+				return 0, err
+			}
+			last = v.Key
+			count++
+		}
+		if len(values) < 8 {
+			return count, nil
+		}
 	}
-	return len(values), nil
 }

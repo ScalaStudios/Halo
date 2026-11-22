@@ -44,6 +44,7 @@ type link struct {
 	done      chan struct{}
 	outpostID string
 	key       string
+	writer    chan struct{}
 }
 
 type stream struct {
@@ -53,6 +54,7 @@ type stream struct {
 }
 
 func (s *stream) Close() error {
+	s.conn.SetDeadline(time.Now())
 	err := s.conn.Close()
 	s.once.Do(func() { close(s.done) })
 	return err
@@ -89,8 +91,16 @@ func (h *Hub) Connected(outpostID string) bool {
 }
 
 func (h *Hub) Drop(outpostID string, cause error) {
+	h.drop(outpostID, nil, cause)
+}
+
+func (h *Hub) drop(outpostID string, expected *link, cause error) {
 	h.mu.Lock()
 	l := h.outposts[outpostID]
+	if expected != nil && expected != l {
+		h.mu.Unlock()
+		return
+	}
 	delete(h.outposts, outpostID)
 	var ends []context.CancelCauseFunc
 	for _, s := range h.sessions {
@@ -100,7 +110,7 @@ func (h *Hub) Drop(outpostID string, cause error) {
 	}
 	h.mu.Unlock()
 	if l != nil {
-		l.conn.Close()
+		closeSocket(l.conn)
 	}
 	for _, end := range ends {
 		end(cause)
@@ -129,6 +139,8 @@ func (h *Hub) track(remoteID, outpostID string, end context.CancelCauseFunc) fun
 }
 
 func (h *Hub) Dial(ctx context.Context, outpostID, address string) (*stream, error) {
+	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
+	defer cancel()
 	token := secret.Token(32)
 	c := &claim{outpostID: outpostID, ready: make(chan *stream), failed: make(chan string, 1), gone: make(chan struct{})}
 	h.mu.Lock()
@@ -146,11 +158,10 @@ func (h *Hub) Dial(ctx context.Context, outpostID, address string) (*stream, err
 		h.mu.Unlock()
 		close(c.gone)
 	}()
-	if err := send(l.conn, Message{Type: "dial", Stream: token, Address: address}); err != nil {
+	if err := l.send(ctx, Message{Type: "dial", Stream: token, Address: address}); err != nil {
 		return nil, errOffline
 	}
-	timer := time.NewTimer(dialTimeout)
-	defer timer.Stop()
+
 	select {
 	case s := <-c.ready:
 		return s, nil
@@ -158,19 +169,47 @@ func (h *Hub) Dial(ctx context.Context, outpostID, address string) (*stream, err
 		return nil, errors.New(reason)
 	case <-l.done:
 		return nil, errOffline
-	case <-timer.C:
-		return nil, errors.New("the outpost did not answer within 15 seconds")
 	case <-ctx.Done():
 		return nil, context.Cause(ctx)
 	}
 }
 
-func send(conn *websocket.Conn, m Message) error {
+func (l *link) send(ctx context.Context, m Message) error {
+	select {
+	case l.writer <- struct{}{}:
+		defer func() { <-l.writer }()
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-l.done:
+		return errOffline
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	raw, err := json.Marshal(m)
 	if err != nil {
 		return err
 	}
-	return websocket.Message.Send(conn, string(raw))
+	deadline := time.Now().Add(5 * time.Second)
+	if limit, ok := ctx.Deadline(); ok && limit.Before(deadline) {
+		deadline = limit
+	}
+	if err := l.conn.SetWriteDeadline(deadline); err != nil {
+		return err
+	}
+	return websocket.Message.Send(l.conn, string(raw))
+}
+
+func sendFrame(conn *websocket.Conn, frame any) error {
+	if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		return err
+	}
+	return websocket.Message.Send(conn, frame)
+}
+
+func closeSocket(conn *websocket.Conn) {
+	conn.SetDeadline(time.Now())
+	conn.Close()
 }
 
 func bearer(r *http.Request) string {
@@ -220,7 +259,7 @@ func (h *Hub) enroll(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	h.Drop(o.ID, errReenrolled)
-	return httpx.JSON(w, http.StatusCreated, map[string]any{"outpost": o, "key": key})
+	return httpx.JSON(w, http.StatusCreated, map[string]any{"outpost": outpostView{o, false}, "key": key})
 }
 
 func (h *Hub) connect(w http.ResponseWriter, r *http.Request) error {
@@ -231,13 +270,13 @@ func (h *Hub) connect(w http.ResponseWriter, r *http.Request) error {
 	ip, version := httpx.ClientIP(r), agent(r)
 	websocket.Server{Handshake: acceptAgent, Handler: func(conn *websocket.Conn) {
 		ctx := context.WithoutCancel(r.Context())
-		l := &link{conn: conn, done: make(chan struct{}), outpostID: o.ID, key: bearer(r)}
+		l := &link{conn: conn, done: make(chan struct{}), outpostID: o.ID, key: bearer(r), writer: make(chan struct{}, 1)}
 		h.mu.Lock()
 		previous := h.outposts[o.ID]
 		h.outposts[o.ID] = l
 		h.mu.Unlock()
 		if previous != nil {
-			previous.conn.Close()
+			closeSocket(previous.conn)
 		}
 		if err := h.st.TouchOutpost(ctx, o.ID, ip, version); err != nil {
 			slog.ErrorContext(ctx, "outpost connect", "outpost", o.ID, "error", err)
@@ -267,18 +306,13 @@ func (h *Hub) ping(l *link) {
 		case <-l.done:
 			return
 		case <-ticker.C:
-			if send(l.conn, Message{Type: "ping"}) != nil {
-				l.conn.Close()
+			if l.send(context.Background(), Message{Type: "ping"}) != nil {
+				closeSocket(l.conn)
 				return
 			}
 			if o, err := h.st.OutpostByKey(context.Background(), l.key); errors.Is(err, store.ErrNotFound) || err == nil && o.ID != l.outpostID {
-				h.mu.Lock()
-				current := h.outposts[l.outpostID] == l
-				h.mu.Unlock()
-				if current {
-					h.Drop(l.outpostID, errStaleKey)
-				}
-				l.conn.Close()
+				h.drop(l.outpostID, l, errStaleKey)
+				closeSocket(l.conn)
 				return
 			}
 		}
@@ -290,7 +324,7 @@ func (h *Hub) listen(l *link) {
 		l.conn.SetReadDeadline(time.Now().Add(3 * heartbeat))
 		var raw string
 		if err := websocket.Message.Receive(l.conn, &raw); err != nil {
-			l.conn.Close()
+			closeSocket(l.conn)
 			return
 		}
 		var m Message
@@ -300,7 +334,7 @@ func (h *Hub) listen(l *link) {
 		h.mu.Lock()
 		c := h.claims[m.Stream]
 		h.mu.Unlock()
-		if c != nil {
+		if c != nil && c.outpostID == l.outpostID {
 			select {
 			case c.failed <- m.Message:
 			default:

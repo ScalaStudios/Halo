@@ -425,6 +425,35 @@ func TestRemoteSessionRefusesWhatAnApplicationSignInRefuses(t *testing.T) {
 	}
 }
 
+func TestRemotePendingSessionRechecksAssignmentAndTarget(t *testing.T) {
+	r := setupRemote(t, "")
+	app := r.app(map[string]any{"auth": "certificate"})
+	user, token := r.member("ana@example.com", "passkey")
+	expectRefusal := func(rs store.RemoteSession, contains string) {
+		t.Helper()
+		ws, err := r.connect(token, rs.ID, remoteOrigin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ws.Close()
+		screen := &screen{t: t, ws: ws}
+		if msg := screen.waitEnd(); !strings.Contains(msg, contains) || screen.saw("connected") {
+			t.Fatalf("expected refusal before connecting, got %q", msg)
+		}
+	}
+	rs := r.start(token, app.ID)
+	if err := r.st.RemoveGroupMember(t.Context(), r.group.ID, user.ID); err != nil {
+		t.Fatal(err)
+	}
+	expectRefusal(rs, "Your access to this host ended")
+	if err := r.st.AddGroupMember(t.Context(), r.group.ID, user.ID); err != nil {
+		t.Fatal(err)
+	}
+	rs = r.start(token, app.ID)
+	r.expect(r.admin, "PUT", "/api/v1/applications/"+app.ID+"/remote", map[string]any{"host": "other.internal"}, http.StatusOK, "")
+	expectRefusal(rs, "The connection settings changed")
+}
+
 func TestRemoteSessionEndsAtTimeLimitAndOnTermination(t *testing.T) {
 	r := setupRemote(t, "")
 	app := r.app(map[string]any{"auth": "certificate"})
@@ -493,7 +522,7 @@ func TestRemotePasswordNeverReachesTheBrowser(t *testing.T) {
 	if !app.Remote.HasCredential {
 		t.Fatalf("the application says it has a stored credential: %+v", app.Remote)
 	}
-	r.expect(r.admin, "PUT", "/api/v1/applications/"+app.ID+"/remote", map[string]any{"sessionLimit": 600}, http.StatusOK, "")
+	r.expect(r.admin, "PUT", "/api/v1/applications/"+app.ID+"/remote", map[string]any{"sessionLimit": 600, "credential": ""}, http.StatusOK, "")
 	r.expect(r.admin, "PUT", "/api/v1/applications/"+app.ID+"/remote", map[string]any{"auth": "key"}, http.StatusUnprocessableEntity, "ERR_INVALID")
 	_, token := r.member("ana@example.com", "passkey")
 	ws, err := r.connect(token, r.start(token, app.ID).ID, remoteOrigin)
@@ -536,6 +565,8 @@ func TestRemoteHostKeyMustBeTrusted(t *testing.T) {
 	_, other, _ := ed25519.GenerateKey(rand.Reader)
 	wrong, _ := ssh.NewSignerFromKey(other)
 	app := r.app(map[string]any{"auth": "certificate", "hostKey": string(ssh.MarshalAuthorizedKey(wrong.PublicKey()))})
+	revoked := "@revoked " + r.host.addr + " " + string(ssh.MarshalAuthorizedKey(r.host.public))
+	r.expect(r.admin, "PUT", "/api/v1/applications/"+app.ID+"/remote", map[string]any{"hostKey": revoked}, http.StatusUnprocessableEntity, "ERR_INVALID")
 	_, token := r.member("ana@example.com", "passkey")
 	ws, err := r.connect(token, r.start(token, app.ID).ID, remoteOrigin)
 	if err != nil {
@@ -761,9 +792,13 @@ func TestRemoteStreamIsClaimedOnlyByTheOutpostThatWasAsked(t *testing.T) {
 	_, token := r.member("ana@example.com", "passkey")
 	var rs store.RemoteSession
 	eventually(t, "the hand-made outpost connection must be registered", func() bool {
-		return r.call(token, "POST", "/api/v1/me/remote-sessions", map[string]string{"applicationId": app.ID}).Code == http.StatusCreated
+		response := r.call(token, "POST", "/api/v1/me/remote-sessions", map[string]string{"applicationId": app.ID})
+		if response.Code != http.StatusCreated {
+			return false
+		}
+		decodeInto(t, response, &rs)
+		return true
 	})
-	decodeInto(t, r.expect(token, "POST", "/api/v1/me/remote-sessions", map[string]string{"applicationId": app.ID}, http.StatusCreated, ""), &rs)
 	ws, err := r.connect(token, rs.ID, remoteOrigin)
 	if err != nil {
 		t.Fatal(err)

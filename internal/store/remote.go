@@ -134,7 +134,15 @@ func (s *Store) DeleteOutpost(ctx context.Context, outpostID string) (Outpost, e
 }
 
 func (s *Store) RemoteTarget(ctx context.Context, appID string) (RemoteTarget, error) {
-	rows, err := s.db.Query(ctx, `select `+remoteTargetColumns+` from remote_targets where app_id = $1`, appID)
+	return s.remoteTarget(ctx, appID, "")
+}
+
+func (s *Store) RemoteTargetForUpdate(ctx context.Context, appID string) (RemoteTarget, error) {
+	return s.remoteTarget(ctx, appID, " for update")
+}
+
+func (s *Store) remoteTarget(ctx context.Context, appID, lock string) (RemoteTarget, error) {
+	rows, err := s.db.Query(ctx, `select `+remoteTargetColumns+` from remote_targets where app_id = $1`+lock, appID)
 	if err != nil {
 		return RemoteTarget{}, err
 	}
@@ -152,7 +160,7 @@ func (s *Store) SaveRemoteTarget(ctx context.Context, t RemoteTarget, credential
 		on conflict (app_id) do update set outpost_id = excluded.outpost_id, protocol = excluded.protocol, host = excluded.host, port = excluded.port, username = excluded.username,
 			auth = excluded.auth, credential_sealed = case when excluded.auth = 'certificate' then null when $12 then excluded.credential_sealed else remote_targets.credential_sealed end,
 			host_key = excluded.host_key, session_limit = excluded.session_limit, record = excluded.record`,
-		t.AppID, t.OutpostID, t.Protocol, t.Host, t.Port, t.Username, t.Auth, sealed, t.HostKey, t.SessionLimit, t.Record, credential != nil)
+		t.AppID, t.OutpostID, t.Protocol, t.Host, t.Port, t.Username, t.Auth, sealed, t.HostKey, t.SessionLimit, t.Record, credential != nil && *credential != "")
 	return err
 }
 
@@ -191,10 +199,9 @@ func (s *Store) TouchRemoteSession(ctx context.Context, remoteID string) error {
 	return err
 }
 
-func (s *Store) RemoteSessionTerminator(ctx context.Context, remoteID string) (string, error) {
-	var name string
-	err := s.db.QueryRow(ctx, `select u.name from remote_sessions r join users u on u.id = r.terminated_by where r.id = $1`, remoteID).Scan(&name)
-	return name, notFound(err)
+func (s *Store) RemoteSessionState(ctx context.Context, remoteID string) (name, status string, err error) {
+	err = s.db.QueryRow(ctx, `select coalesce(u.name, ''), r.status from remote_sessions r left join users u on u.id = r.terminated_by where r.id = $1`, remoteID).Scan(&name, &status)
+	return name, status, notFound(err)
 }
 
 func (s *Store) CancelPendingRemoteSession(ctx context.Context, remoteID, reason string) (bool, error) {

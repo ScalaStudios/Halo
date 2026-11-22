@@ -62,70 +62,82 @@ export function RemoteTerminal({ app }: { app: { id: string; name: string; logoU
       return;
     }
     if (mine !== attempt.current) return;
-    if (!terminal.current) {
-      const [{ Terminal }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit"), document.fonts.load("14px 'JetBrains Mono Variable'")]);
-      if (mine !== attempt.current || !container.current) return;
-      const term = new Terminal({
-        cursorBlink: true,
-        fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', Menlo, Consolas, monospace",
-        fontSize: window.innerWidth < 640 ? 12 : 14,
-        scrollback: 5000,
-        theme: { background: token("--color-sunken"), foreground: token("--color-fg"), cursor: token("--color-ember"), cursorAccent: token("--color-sunken"), selectionBackground: token("--color-ghost-hover") },
-      });
-      const fit = new FitAddon();
-      term.loadAddon(fit);
-      term.open(container.current);
+    try {
+      if (!terminal.current) {
+        const [{ Terminal }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit"), document.fonts.load("14px 'JetBrains Mono Variable'")]);
+        if (mine !== attempt.current || !container.current) return;
+        const term = new Terminal({
+          cursorBlink: true,
+          fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', Menlo, Consolas, monospace",
+          fontSize: window.innerWidth < 640 ? 12 : 14,
+          scrollback: 5000,
+          theme: { background: token("--color-sunken"), foreground: token("--color-fg"), cursor: token("--color-ember"), cursorAccent: token("--color-sunken"), selectionBackground: token("--color-ghost-hover") },
+        });
+        const fit = new FitAddon();
+        terminal.current = { term, fit };
+        term.loadAddon(fit);
+        term.open(container.current);
+        fit.fit();
+      }
+      const { term, fit } = terminal.current;
+      term.reset();
       fit.fit();
-      terminal.current = { term, fit };
-    }
-    const { term, fit } = terminal.current;
-    term.reset();
-    fit.fit();
-    setPhase("connecting");
-    setMessage(`Opening a session to ${started.address} as ${started.username}.`);
-    const scheme = window.location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${scheme}://${window.location.host}/api/v1/me/remote-sessions/${started.id}/connect?cols=${term.cols}&rows=${term.rows}`);
-    ws.binaryType = "arraybuffer";
-    socket.current = ws;
-    const encoder = new TextEncoder();
-    let ended = false;
-    const send = (data: string | Uint8Array) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(data);
-    };
-    const typing = term.onData((data) => send(encoder.encode(data)));
-    const binary = term.onBinary((data) => send(Uint8Array.from(data, (c) => c.charCodeAt(0))));
-    const resizing = term.onResize(({ cols, rows }) => send(JSON.stringify({ type: "resize", cols, rows })));
-    const heartbeat = window.setInterval(() => send(JSON.stringify({ type: "ping" })), 25_000);
-    ws.onmessage = (event) => {
-      if (typeof event.data !== "string") {
-        term.write(new Uint8Array(event.data as ArrayBuffer));
-        return;
-      }
-      const e = JSON.parse(event.data) as ServerEvent;
-      if (e.type === "status") setMessage(e.message);
-      if (e.type === "connected") {
-        setPhase("connected");
-        setSession(e);
-        term.focus();
-      }
-      if (e.type === "end") {
-        ended = true;
-        setPhase("ended");
-        setMessage(e.message);
-      }
-    };
-    ws.onclose = () => {
-      typing.dispose();
-      binary.dispose();
-      resizing.dispose();
-      window.clearInterval(heartbeat);
-      if (socket.current !== ws) return;
+      setPhase("connecting");
+      setMessage(`Opening a session to ${started.address} as ${started.username}.`);
+      const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(`${scheme}://${window.location.host}/api/v1/me/remote-sessions/${started.id}/connect?cols=${term.cols}&rows=${term.rows}`);
+      ws.binaryType = "arraybuffer";
+      socket.current = ws;
+      const encoder = new TextEncoder();
+      let ended = false;
+      const send = (data: string | Uint8Array) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(data);
+      };
+      const typing = term.onData((data) => send(encoder.encode(data)));
+      const binary = term.onBinary((data) => send(Uint8Array.from(data, (c) => c.charCodeAt(0))));
+      const resize = ({ cols, rows }: { cols: number; rows: number }) => send(JSON.stringify({ type: "resize", cols, rows }));
+      const resizing = term.onResize(resize);
+      ws.onopen = () => resize(term);
+      const heartbeat = window.setInterval(() => send(JSON.stringify({ type: "ping" })), 25_000);
+      ws.onmessage = (event) => {
+        if (typeof event.data !== "string") {
+          term.write(new Uint8Array(event.data as ArrayBuffer));
+          return;
+        }
+        const e = JSON.parse(event.data) as ServerEvent;
+        if (e.type === "status") setMessage(e.message);
+        if (e.type === "connected") {
+          setPhase("connected");
+          setSession(e);
+          term.focus();
+        }
+        if (e.type === "end") {
+          ended = true;
+          setPhase("ended");
+          setMessage(e.message);
+        }
+      };
+      ws.onclose = () => {
+        typing.dispose();
+        binary.dispose();
+        resizing.dispose();
+        window.clearInterval(heartbeat);
+        if (socket.current !== ws) return;
+        socket.current = null;
+        if (!ended) {
+          setPhase("ended");
+          setMessage("The connection to Halo was lost. Connect again to start a new session.");
+        }
+      };
+    } catch {
+      if (mine !== attempt.current) return;
+      socket.current?.close();
       socket.current = null;
-      if (!ended) {
-        setPhase("ended");
-        setMessage("The connection to Halo was lost. Connect again to start a new session.");
-      }
-    };
+      terminal.current?.term.dispose();
+      terminal.current = null;
+      setPhase("ended");
+      setMessage("The terminal could not start. Connect again to retry.");
+    }
   }, [app.id]);
 
   useEffect(() => {

@@ -220,7 +220,7 @@ export function RemoteSettingsForm({ appId, appName, target, outposts }: { appId
       "remote",
       () => api(`/applications/${appId}/remote`, { method: "PUT", body: remoteBody(draft) }),
       () => {
-        setDraft((d) => ({ ...d, credential: "" }));
+        setDraft((d) => d.credential === draft.credential ? { ...d, credential: "" } : d);
         toast({ title: "Connection saved", description: `Sessions to ${appName} that start from now on use it. Recorded in the audit log.` });
       },
       "inline",

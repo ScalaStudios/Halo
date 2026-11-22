@@ -37,7 +37,10 @@ func Enroll(ctx context.Context, server, token string) (string, error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", userAgent)
-	res, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	res, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -101,7 +104,9 @@ func (a *Agent) dial(ctx context.Context, path string) (*websocket.Conn, error) 
 	config.Header.Set("Authorization", "Bearer "+a.Key)
 	config.Header.Set("User-Agent", userAgent)
 	config.Dialer = &net.Dialer{Timeout: 15 * time.Second}
-	conn, err := config.DialContext(ctx)
+	upgrade, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	conn, err := config.DialContext(upgrade)
 	if err != nil {
 		return nil, fmt.Errorf("halo refused the connection to %s; check the server address and that the outpost was not deleted or enrolled again: %w", path, err)
 	}
@@ -113,8 +118,8 @@ func (a *Agent) serve(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	defer closeSocket(conn)
+	stop := context.AfterFunc(ctx, func() { closeSocket(conn) })
 	defer stop()
 	a.Log.Info("connected to Halo", "server", a.Server)
 	for {
@@ -143,7 +148,13 @@ func send(conn *websocket.Conn, m message) error {
 	if err != nil {
 		return err
 	}
+	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	return websocket.Message.Send(conn, string(raw))
+}
+
+func closeSocket(conn *websocket.Conn) {
+	conn.SetDeadline(time.Now())
+	conn.Close()
 }
 
 func (a *Agent) relay(ctx context.Context, control *websocket.Conn, m message) {
@@ -160,7 +171,7 @@ func (a *Agent) relay(ctx context.Context, control *websocket.Conn, m message) {
 		return
 	}
 	stream.PayloadType = websocket.BinaryFrame
-	defer stream.Close()
+	defer closeSocket(stream)
 	a.Log.Info("relaying a session", "address", m.Address)
 	done := make(chan struct{}, 2)
 	go func() {

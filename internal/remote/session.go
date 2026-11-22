@@ -68,12 +68,12 @@ type event struct {
 	Recording bool       `json:"recording,omitempty"`
 }
 
-func emit(ws *websocket.Conn, e event) error {
+func (b *bridge) emit(e event) error {
 	raw, err := json.Marshal(e)
 	if err != nil {
 		return err
 	}
-	return websocket.Message.Send(ws, string(raw))
+	return b.send(string(raw))
 }
 
 func (h *handlers) origin(_ *websocket.Config, r *http.Request) error {
@@ -112,8 +112,15 @@ func dimension(raw string, fallback int) int {
 
 type bridge struct {
 	ws       *websocket.Conn
+	writeMu  sync.Mutex
 	in, out  atomic.Int64
 	recorder *recorder
+}
+
+func (b *bridge) send(frame any) error {
+	b.writeMu.Lock()
+	defer b.writeMu.Unlock()
+	return sendFrame(b.ws, frame)
 }
 
 func (b *bridge) Write(p []byte) (int, error) {
@@ -121,7 +128,7 @@ func (b *bridge) Write(p []byte) (int, error) {
 	if b.recorder != nil {
 		b.recorder.output(p)
 	}
-	if err := websocket.Message.Send(b.ws, p); err != nil {
+	if err := b.send(p); err != nil {
 		return 0, err
 	}
 	return len(p), nil
@@ -130,17 +137,17 @@ func (b *bridge) Write(p []byte) (int, error) {
 func (h *handlers) run(ws *websocket.Conn, u store.User, sess store.Session, remoteID, ip string, cols, rows int) {
 	ctx, end := context.WithCancelCause(context.Background())
 	defer end(nil)
-	defer ws.Close()
+	defer closeSocket(ws)
+	b := &bridge{ws: ws}
 	rs, err := h.st.ActivateRemoteSession(ctx, remoteID, u.ID, sess.ID)
 	if err != nil {
 		if !errors.Is(err, store.ErrNotFound) {
 			slog.ErrorContext(ctx, "remote session activation failed", "session", remoteID, "error", err)
 		}
-		emit(ws, event{Type: "end", Message: "This connection expired or was already used. Open the application again from your account portal."})
+		b.emit(event{Type: "end", Message: "This connection expired or was already used. Open the application again from your account portal."})
 		return
 	}
 	defer h.hub.track(rs.ID, deref(rs.OutpostID), end)()
-	b := &bridge{ws: ws}
 	if rs.Record {
 		b.recorder = newRecorder(cols, rows, rs.AppName+" · "+rs.Email)
 	}
@@ -150,13 +157,13 @@ func (h *handlers) run(ws *websocket.Conn, u store.User, sess store.Session, rem
 	if b.recorder != nil {
 		var full bool
 		if recording, full = b.recorder.close(); full {
-			message += " Recording stopped after 8 MiB of output."
+			message += " Recording reached its 8 MiB limit."
 		}
 	}
 	if err := h.st.EndRemoteSession(context.WithoutCancel(ctx), rs.ID, message, b.in.Load(), b.out.Load(), recording); err != nil {
 		slog.ErrorContext(ctx, "remote session end failed", "session", rs.ID, "error", err)
 	}
-	emit(ws, event{Type: "end", Message: message})
+	b.emit(event{Type: "end", Message: message})
 }
 
 func (h *handlers) serve(ctx context.Context, end context.CancelCauseFunc, rs store.RemoteSession, u store.User, ip string, b *bridge, cols, rows int) (err error) {
@@ -170,11 +177,33 @@ func (h *handlers) serve(ctx context.Context, end context.CancelCauseFunc, rs st
 		end(errors.New("The session reached its time limit of " + limitText(rs.LimitSeconds) + "."))
 	})
 	defer limit.Stop()
-	target, err := h.st.RemoteTarget(ctx, deref(rs.AppID))
+	if !h.allowed(ctx, rs) {
+		return errRevoked
+	}
+	var target store.RemoteTarget
+	var credential string
+	err = h.st.Tx(ctx, func(tx *store.Store) error {
+		var err error
+		target, err = tx.RemoteTargetForUpdate(ctx, deref(rs.AppID))
+		if err != nil {
+			return err
+		}
+		if target.Auth != "certificate" {
+			credential, err = tx.RemoteCredential(ctx, target.AppID)
+		}
+		return err
+	})
 	if err != nil {
 		return failed(rs, err)
 	}
-	emit(b.ws, event{Type: "status", Message: "Reaching " + rs.Address + " through the outpost"})
+	if net.JoinHostPort(target.Host, strconv.Itoa(target.Port)) != rs.Address || target.OutpostID != deref(rs.OutpostID) ||
+		target.Protocol != rs.Protocol || (target.Username != "" && target.Username != rs.Username) ||
+		(target.Auth != "certificate" && target.Username != rs.Username) {
+		return errors.New("The connection settings changed. Open the application again from your account portal.")
+	}
+	if err := b.emit(event{Type: "status", Message: "Reaching " + rs.Address + " through the outpost"}); err != nil {
+		return errClosed
+	}
 	link, err := h.hub.Dial(ctx, deref(rs.OutpostID), rs.Address)
 	if err == nil {
 		defer link.Close()
@@ -192,8 +221,10 @@ func (h *handlers) serve(ctx context.Context, end context.CancelCauseFunc, rs st
 		link.Close()
 	})
 	defer stop()
-	emit(b.ws, event{Type: "status", Message: "Signing in to " + rs.Address + " as " + rs.Username})
-	client, err := h.handshake(ctx, link, rs, target, u, ip)
+	if err := b.emit(event{Type: "status", Message: "Signing in to " + rs.Address + " as " + rs.Username}); err != nil {
+		return errClosed
+	}
+	client, err := h.handshake(ctx, link, rs, target, credential, u, ip)
 	if err != nil {
 		return err
 	}
@@ -211,7 +242,14 @@ func (h *handlers) serve(ctx context.Context, end context.CancelCauseFunc, rs st
 	if err != nil {
 		return failed(rs, err)
 	}
-	if err := emit(b.ws, event{Type: "connected", Username: rs.Username, Address: rs.Address, EndsAt: &ends, Recording: rs.Record}); err != nil {
+	if err := h.activeRemoteSession(ctx, rs.ID); err != nil {
+		return err
+	}
+	if !h.allowed(ctx, rs) {
+		return errRevoked
+	}
+	go h.watch(ctx, end, b, rs)
+	if err := b.emit(event{Type: "connected", Username: rs.Username, Address: rs.Address, EndsAt: &ends, Recording: rs.Record}); err != nil {
 		return errClosed
 	}
 	if err := session.Shell(); err != nil {
@@ -225,7 +263,6 @@ func (h *handlers) serve(ctx context.Context, end context.CancelCauseFunc, rs st
 		session.Wait()
 		end(errExited)
 	}()
-	go h.watch(ctx, end, b.ws, rs)
 	<-ctx.Done()
 	return context.Cause(ctx)
 }
@@ -235,7 +272,21 @@ func failed(rs store.RemoteSession, err error) error {
 	return errFailure
 }
 
-func (h *handlers) watch(ctx context.Context, end context.CancelCauseFunc, ws *websocket.Conn, rs store.RemoteSession) {
+func (h *handlers) activeRemoteSession(ctx context.Context, id string) error {
+	name, status, err := h.st.RemoteSessionState(ctx, id)
+	if err != nil {
+		return errRevoked
+	}
+	if name != "" {
+		return terminated(name)
+	}
+	if status != "active" {
+		return errRevoked
+	}
+	return nil
+}
+
+func (h *handlers) watch(ctx context.Context, end context.CancelCauseFunc, b *bridge, rs store.RemoteSession) {
 	ticker := time.NewTicker(terminationCheck)
 	defer ticker.Stop()
 	checked := time.Now()
@@ -245,15 +296,16 @@ func (h *handlers) watch(ctx context.Context, end context.CancelCauseFunc, ws *w
 			return
 		case <-ticker.C:
 		}
-		if name, err := h.st.RemoteSessionTerminator(ctx, rs.ID); err == nil {
-			end(terminated(name))
+		if err := h.activeRemoteSession(ctx, rs.ID); err != nil {
+			end(err)
 			return
 		}
 		if time.Since(checked) < heartbeat {
 			continue
 		}
 		checked = time.Now()
-		if emit(ws, event{Type: "ping"}) != nil {
+		if b.emit(event{Type: "ping"}) != nil {
+			end(errClosed)
 			return
 		}
 		if err := h.st.TouchRemoteSession(ctx, rs.ID); err != nil {
@@ -269,15 +321,15 @@ func (h *handlers) watch(ctx context.Context, end context.CancelCauseFunc, ws *w
 func (h *handlers) allowed(ctx context.Context, rs store.RemoteSession) bool {
 	active, err := h.st.SessionActive(ctx, rs.SessionID)
 	if err != nil {
-		return true
+		return false
 	}
 	u, err := h.st.GetUser(ctx, deref(rs.UserID))
 	if err != nil {
-		return !errors.Is(err, store.ErrNotFound)
+		return false
 	}
 	app, err := h.st.GetApplication(ctx, deref(rs.AppID))
 	if err != nil {
-		return !errors.Is(err, store.ErrNotFound)
+		return false
 	}
 	return active && u.Status == "active" && app.Status == "active" && slices.Contains(u.AppIDs, app.ID)
 }
@@ -314,8 +366,8 @@ func (b *bridge) input(stdin io.Writer, session *ssh.Session) error {
 	}
 }
 
-func (h *handlers) handshake(ctx context.Context, link *stream, rs store.RemoteSession, t store.RemoteTarget, u store.User, ip string) (*ssh.Client, error) {
-	auth, err := h.authMethods(ctx, t, u, ip)
+func (h *handlers) handshake(ctx context.Context, link *stream, rs store.RemoteSession, t store.RemoteTarget, credential string, u store.User, ip string) (*ssh.Client, error) {
+	auth, err := h.authMethods(ctx, t, credential, u, ip)
 	if err != nil {
 		return nil, err
 	}
@@ -390,7 +442,7 @@ func (h *handlers) hostKeys(ctx context.Context, t store.RemoteTarget) (ssh.Host
 	return checker.CheckHostKey, nil
 }
 
-func (h *handlers) authMethods(ctx context.Context, t store.RemoteTarget, u store.User, ip string) ([]ssh.AuthMethod, error) {
+func (h *handlers) authMethods(ctx context.Context, t store.RemoteTarget, credential string, u store.User, ip string) ([]ssh.AuthMethod, error) {
 	if t.Auth == "certificate" {
 		public, private, err := ed25519.GenerateKey(rand.Reader)
 		if err != nil {
@@ -417,13 +469,6 @@ func (h *handlers) authMethods(ctx context.Context, t store.RemoteTarget, u stor
 			return nil, err
 		}
 		return []ssh.AuthMethod{ssh.PublicKeys(certSigner)}, nil
-	}
-	credential, err := h.st.RemoteCredential(ctx, t.AppID)
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, errors.New("The application has no stored credential for the host. Ask your administrator to add one.")
-	}
-	if err != nil {
-		return nil, err
 	}
 	if t.Auth == "key" {
 		signer, err := ssh.ParsePrivateKey([]byte(credential))
@@ -458,12 +503,18 @@ func newRecorder(cols, rows int, title string) *recorder {
 	r.gz = gzip.NewWriter(&r.buf)
 	header, _ := json.Marshal(map[string]any{"version": 2, "width": cols, "height": rows, "timestamp": r.start.Unix(), "title": title})
 	r.gz.Write(append(header, '\n'))
+	r.size = len(header) + 1
 	return r
 }
 
 func (r *recorder) event(kind, data string) {
 	line, _ := json.Marshal([]any{math.Round(time.Since(r.start).Seconds()*1e6) / 1e6, kind, data})
+	if len(line)+1 > recordingLimit-r.size {
+		r.full = true
+		return
+	}
 	r.gz.Write(append(line, '\n'))
+	r.size += len(line) + 1
 }
 
 func (r *recorder) output(p []byte) {
@@ -486,8 +537,6 @@ func (r *recorder) output(p []byte) {
 	if cut > 0 {
 		r.event("o", string(data[:cut]))
 	}
-	r.size += cut
-	r.full = r.size >= recordingLimit
 }
 
 func (r *recorder) resize(cols, rows int) {

@@ -349,11 +349,13 @@ Halo has a RADIUS server for VPN gateways, firewalls and network devices that si
 
 People open an SSH terminal to a host in a private network from their account portal, without a client or a VPN. Halo never connects to the network itself: `halo-outpost`, a small agent inside it, keeps one connection open to Halo and reaches the host when a session starts. Halo runs the SSH session, so the host's credentials never reach the outpost or the browser.
 
-1. On **Remote access** in the console, choose **Register outpost** and run the command it shows on a machine that reaches your hosts. The `halo-server` image includes `halo-outpost`, or build it with `go build ./cmd/halo-outpost`.
+1. On **Remote access** in the console, choose **Register outpost** and run the command it shows on a machine that reaches your hosts. The outpost requires an HTTPS URL. The `halo-server` image includes `halo-outpost`, or build it with `go build ./cmd/halo-outpost`.
 2. Choose **Add application**, then **Remote access**, and enter the host, its port, its host key from `ssh-keyscan` (or nothing, for hosts with a Halo host certificate) and how Halo signs in: a one-minute certificate from Halo's SSH CA for the person's principals, so nothing is stored, or a password or private key that Halo keeps encrypted.
 3. Assign groups. People in them see the host in their account portal and open the terminal there.
 
 Starting a session runs the checks of any other application sign-in: assignment, access policies with passkey requirements and network zones, sign-in frequency and authentication contexts, and it is in the sign-in log. Each session ends at the application's time limit, when an administrator ends it under **Remote access**, or within a minute of the person being suspended, unassigned or signed out. The session log keeps who connected where, when and how much they transferred, and, when recording is on, the terminal output as an asciicast file, for as long as the sign-in log. RDP and VNC are not available yet, and outposts and browsers must reach the same Halo instance, as [Running several instances](#running-several-instances) explains.
+
+Configuration imports report new password- or key-authenticated remote applications as skipped. Create those applications on the destination and configure their outpost and credential there.
 
 ### Applications that only speak LDAP
 

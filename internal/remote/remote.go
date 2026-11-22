@@ -326,9 +326,16 @@ func (in Settings) Apply(ctx context.Context, st *store.Store, t store.RemoteTar
 }
 
 func parseHostKey(raw string) (ssh.PublicKey, error) {
+	if strings.HasPrefix(strings.TrimSpace(raw), "@") {
+		return nil, httpx.Invalid("Use an unmarked host key. Marked known_hosts entries cannot be used as pins.")
+	}
 	key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(raw))
 	if err != nil {
-		_, _, key, _, _, err = ssh.ParseKnownHosts([]byte(raw))
+		var marker string
+		marker, _, key, _, _, err = ssh.ParseKnownHosts([]byte(raw))
+		if marker != "" {
+			return nil, httpx.Invalid("Use an unmarked host key. Marked known_hosts entries cannot be used as pins.")
+		}
 	}
 	if err != nil {
 		return nil, httpx.Invalid("Paste the host's public key, like the output of ssh-keyscan -t ed25519 db1.internal or the contents of /etc/ssh/ssh_host_ed25519_key.pub.")

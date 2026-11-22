@@ -511,6 +511,13 @@ func (imp *importer) apply(k kind, rows []map[string]any) error {
 			}
 			_, problem, err = imp.dispatch("", k.update(tid, row, item.Fields))
 		default:
+			if k.name == "applications" && str(row["protocol"]) == "remote" {
+				remote, _ := row["remote"].(map[string]any)
+				if auth := str(remote["auth"]); auth == "password" || auth == "key" {
+					imp.report.Skipped = append(imp.report.Skipped, item.Label+" (remote access application: configure its credential and outpost on the destination)")
+					continue
+				}
+			}
 			created, problem, err = imp.dispatch(fid, k.create(row))
 		}
 		if err := imp.add(item, problem, err); err != nil {

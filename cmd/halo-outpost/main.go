@@ -52,8 +52,8 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 	base := strings.TrimRight(*server, "/")
-	if u, err := url.Parse(base); err != nil || u.Scheme != "https" && u.Scheme != "http" || u.Host == "" {
-		return errors.New("pass the address of your Halo server, for example --server https://auth.example.com")
+	if u, err := url.Parse(base); err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return errors.New("pass the HTTPS address of your Halo server, for example --server https://auth.example.com")
 	}
 	raw, err := os.ReadFile(*keyFile)
 	key := strings.TrimSpace(string(raw))
