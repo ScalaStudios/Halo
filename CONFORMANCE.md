@@ -24,6 +24,8 @@ The plans use `client_secret_basic`, with `client_secret_post` in its own module
 
 A follow-up run on 21 November 2026 used the `b7772d5` source with the OAuth client policy changes under development and the v0.2.0 web image. The five non-registration plans matched the baseline. The dynamic registration plan initially failed on client public-key metadata. After the registration fix below, its rerun reproduced the baseline of 21 passed, 7 warnings, 4 review, 6 skipped, and 0 failed modules. The follow-up used the default organization client policy settings.
 
+A subsequent run at 01:40 UTC on 22 November 2026 used the server from `1fb0904` with the shared DPoP proof verifier and the v0.3.0 web image. All six plans reproduced the table above. Of 122 modules, 67 passed, 21 reported known warnings, 20 were marked for review and 14 were skipped. The harness reported zero failed modules.
+
 **Review** is the suite's status for modules that require visual evidence. The scheduled harness uses rendered HTTP transcripts. In a supplemental Chromium run on 21 November 2026, all 20 review modules had screenshots of the expected result. Six showed the sign-in screen for `prompt=login` or `max_age`. Eleven showed request errors on Halo. Three showed the signed-out screen, after confirmation where required. The six sign-in modules were rerun after fixing the sign-in page's handling of fresh authentication requests.
 
 ## Known warnings
@@ -91,3 +93,5 @@ Set `HALO_WEB_IMAGE` to use a web image you already have instead of building `de
 ## Security audit
 
 Halo hasn't had an independent security review of its authentication, session, token and SCIM code. That is left to the maintainers to commission, and its summary and fixes will be published here.
+
+The review scope in [#28](https://github.com/ScalaStudios/Halo/issues/28) covers authentication and recovery (`internal/auth`), session creation and revocation (`internal/httpx`, `internal/store/sessions.go`), authorization and token handling (`internal/oidc`, `internal/dpop`), and SCIM provisioning endpoints (`internal/scim`). The review should record the tested revision, assessment dates, findings and remediation status. The conformance results above can help the reviewer reproduce the protocol setup.
