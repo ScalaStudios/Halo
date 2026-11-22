@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AppWindow, ArrowLeft, UserRoundCog, UsersRound } from "lucide-react";
-import { APP_STATUS, PROTOCOL_LABEL, statusKey } from "@/components/applications/shared";
+import { APP_STATUS, statusKey } from "@/components/applications/shared";
 import { AddMembers, DeleteGroup, EditGroupButton, EditOwners, GroupMembersTable } from "@/components/directory/group-detail";
 import { StatusDot, Tag } from "@/components/ui/badge";
 import { DescriptionList } from "@/components/ui/description-list";
@@ -9,7 +9,9 @@ import { SectionTitle } from "@/components/ui/section-title";
 import { SimpleTable } from "@/components/ui/simple-table";
 import { apiGet } from "@/lib/api/server";
 import { formatDate } from "@/lib/format";
-import { JOIN_POLICY } from "@/lib/labels";
+import { directoryMessages } from "@/lib/i18n/console/directory";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { requestLocale } from "@/lib/i18n/server";
 import type { Application, Group, User } from "@/lib/types";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -20,12 +22,14 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function GroupPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const path = `/groups/${encodeURIComponent(id)}`;
-  const [group, members, applications, users] = await Promise.all([
+  const [group, members, applications, users, locale] = await Promise.all([
     apiGet<Group>(path),
     apiGet<User[]>(`${path}/members`),
     apiGet<Application[]>("/applications"),
     apiGet<User[]>("/users"),
+    requestLocale(),
   ]);
+  const t = directoryMessages[locale];
   const dynamic = group.kind === "dynamic";
   const groupApps = applications.filter((a) => a.groupIds.includes(group.id));
   const active = users.filter((u) => u.status !== "deprovisioned");
@@ -36,7 +40,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
       <div className="flex flex-col gap-6">
         <Link href="/admin/groups" className="inline-flex w-fit items-center gap-2 rounded-sm text-body-sm text-fg-3 transition-colors duration-fast hover:text-fg">
           <ArrowLeft aria-hidden="true" size={16} strokeWidth={1.75} />
-          Groups
+          {frameMessages[locale].nav.items.groups.label}
         </Link>
         <header className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex min-w-0 items-center gap-4">
@@ -48,7 +52,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
               {group.description ? <p className="text-body text-fg-3">{group.description}</p> : null}
               {dynamic ? (
                 <p className="flex flex-wrap items-center gap-2 text-body-sm text-fg-3">
-                  Members follow <Tag>{group.rule}</Tag>
+                  {t.group.membersFollow} <Tag>{group.rule}</Tag>
                 </p>
               ) : null}
             </div>
@@ -58,12 +62,12 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
         <DescriptionList
           className="grid-cols-2 rounded-lg border border-border bg-surface p-6 md:grid-cols-3 xl:grid-cols-6"
           items={[
-            { label: "Membership", value: dynamic ? "Rule-based" : "Assigned" },
-            { label: "Who can join", value: dynamic ? "Follows the rule" : JOIN_POLICY[group.joinPolicy].label },
-            { label: "Members", value: <span className="tnum">{members.length}</span> },
-            { label: "Applications", value: <span className="tnum">{groupApps.length}</span> },
-            { label: "Source", value: group.source },
-            { label: "Created", value: formatDate(group.createdAt) },
+            { label: t.fields.membership, value: t.groupKind[group.kind] },
+            { label: t.group.whoCanJoin, value: dynamic ? t.group.followsRule : t.joinPolicy[group.joinPolicy].label },
+            { label: t.fields.members, value: <span className="tnum">{members.length}</span> },
+            { label: t.fields.applications, value: <span className="tnum">{groupApps.length}</span> },
+            { label: t.fields.source, value: group.source },
+            { label: t.fields.created, value: formatDate(group.createdAt, locale) },
           ]}
         />
       </div>
@@ -71,14 +75,14 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
       {dynamic ? null : (
         <section className="flex flex-col gap-6">
           <SectionTitle
-            title="Owners"
-            description="Owners add and remove members and approve requests to join from their account, without an administrator role."
+            title={t.group.owners}
+            description={t.group.ownersDescription}
             action={<EditOwners group={group} people={active} />}
           />
           {group.owners.length ? (
             <SimpleTable
-              caption="Owners"
-              head={["Name", "Email"]}
+              caption={t.group.owners}
+              head={[t.fields.name, t.fields.email]}
               rows={group.owners.map((owner) => [
                 <Link key="n" href={`/admin/users/${owner.id}`} className="font-medium text-fg hover:underline">
                   {owner.name}
@@ -87,19 +91,15 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
               ])}
             />
           ) : (
-            <EmptyState icon={UserRoundCog} title="No owners" description="Only user administrators can change the members. Add an owner to let the team manage it." />
+            <EmptyState icon={UserRoundCog} title={t.group.noOwners} description={t.group.noOwnersDescription} />
           )}
         </section>
       )}
 
       <section className="flex flex-col gap-6">
         <SectionTitle
-          title={dynamic ? "Matching people" : "Members"}
-          description={
-            dynamic
-              ? "Everyone whose profile matches the rule. Change the rule or a person's title, department or location to change who is included."
-              : "People added by hand or by provisioning. They get the group's applications at their next sign-in."
-          }
+          title={dynamic ? t.group.matchingPeople : t.fields.members}
+          description={dynamic ? t.group.matchingDescription : t.group.membersDescription}
           action={dynamic ? undefined : <AddMembers group={group} people={candidates} />}
         />
         {members.length ? (
@@ -107,14 +107,14 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
         ) : (
           <EmptyState
             icon={UsersRound}
-            title={dynamic ? "Nobody matches the rule" : "No members yet"}
+            title={dynamic ? t.group.nobodyMatchesRule : t.group.noMembers}
             description={
               dynamic ? (
                 <>
-                  People appear here as soon as their profile matches <Tag>{group.rule}</Tag>
+                  {t.group.appearWhenMatching} <Tag>{group.rule}</Tag>
                 </>
               ) : (
-                "Add people to give them this group's applications."
+                t.group.noMembersDescription
               )
             }
           />
@@ -122,19 +122,19 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
       </section>
 
       <section className="flex flex-col gap-6">
-        <SectionTitle title="Applications" description={`Members of ${group.name} can sign in to these. Assign the group from an application's Users & groups tab.`} />
+        <SectionTitle title={t.fields.applications} description={t.group.applicationsDescription(group.name)} />
         {groupApps.length ? (
           <SimpleTable
-            caption="Applications"
-            head={["Application", "Protocol", "Status", "Users"]}
+            caption={t.fields.applications}
+            head={[t.fields.application, t.fields.protocol, t.fields.status, t.fields.users]}
             rows={groupApps.map((app) => [
               <Link key="n" href={`/admin/applications/${app.id}`} className="font-medium text-fg hover:underline">
                 {app.name}
               </Link>,
-              PROTOCOL_LABEL[app.protocol],
+              t.protocols[app.protocol],
               <span key="s" className="inline-flex items-center gap-2">
                 <StatusDot tone={APP_STATUS[statusKey(app)].tone} />
-                {APP_STATUS[statusKey(app)].label}
+                {t.appStatus[statusKey(app)]}
               </span>,
               <span key="u" className="tnum">
                 {app.userCount}
@@ -142,7 +142,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
             ])}
           />
         ) : (
-          <EmptyState icon={AppWindow} title="No applications use this group" description="Assign it from an application's Users & groups tab to give members access." />
+          <EmptyState icon={AppWindow} title={t.group.noApplications} description={t.group.noApplicationsDescription} />
         )}
       </section>
 

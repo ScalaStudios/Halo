@@ -5,40 +5,43 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionTitle } from "@/components/ui/section-title";
 import { apiGet } from "@/lib/api/server";
-import { pluralize } from "@/lib/format";
+import { directoryMessages } from "@/lib/i18n/console/directory";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { requestLocale } from "@/lib/i18n/server";
 import type { LifecycleRule, LifecycleRun } from "@/lib/governance-types";
 import type { Attribute, Group } from "@/lib/types";
 
-export const metadata = { title: "Lifecycle" };
+export async function generateMetadata() {
+  return { title: frameMessages[await requestLocale()].nav.items.lifecycle.label };
+}
 
 export default async function LifecyclePage() {
-  const [rules, runs, groups, attributes] = await Promise.all([
+  const [rules, runs, groups, attributes, locale] = await Promise.all([
     apiGet<LifecycleRule[]>("/lifecycle/rules"),
     apiGet<LifecycleRun[]>("/lifecycle/runs"),
     apiGet<Group[]>("/groups"),
     apiGet<Attribute[]>("/attributes"),
+    requestLocale(),
   ]);
+  const t = directoryMessages[locale].lifecycle;
   const enabled = rules.filter((r) => r.enabled).length;
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        title="Lifecycle"
-        description={`${pluralize(rules.length, "rule")}, ${enabled} enabled. Every minute Halo looks for joiners, movers and leavers, and every hour for dates and inactivity, and runs each matching rule once per change.`}
+        title={frameMessages[locale].nav.items.lifecycle.label}
+        description={t.description(rules.length, enabled)}
       />
       <section className="flex flex-col gap-4">
-        <SectionTitle
-          title="Rules"
-          description="Joiner rules run when someone is created, mover rules when their department, title or location changes, leaver rules when they are suspended or deprovisioned, date rules on, before or after a date attribute, and inactivity rules when someone hasn't signed in for a number of days."
-        />
+        <SectionTitle title={t.rules} description={t.rulesDescription} />
         <RulesTable rules={rules} groups={groups.filter((g) => g.kind === "assigned")} attributes={attributes.filter((a) => a.type === "date")} />
       </section>
       <section className="flex flex-col gap-4">
-        <SectionTitle title="Run history" description="The latest 500 runs, newest first." />
+        <SectionTitle title={t.history} description={t.historyDescription} />
         {runs.length ? (
           <RunsTable runs={runs} />
         ) : (
           <Card>
-            <EmptyState icon={History} title="No runs yet" description="Runs appear here when a change, date or inactivity matches an enabled rule." />
+            <EmptyState icon={History} title={t.emptyTitle} description={t.emptyDescription} />
           </Card>
         )}
       </section>

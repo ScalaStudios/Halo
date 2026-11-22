@@ -1,6 +1,9 @@
 "use client";
 
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
+import { useMessages } from "@/lib/i18n/client";
+import { directoryMessages } from "@/lib/i18n/console/directory";
+import type { Locale } from "@/lib/i18n/locale";
 import type { Attribute, AttributeValue } from "@/lib/types";
 
 export type Drafts = Record<string, string>;
@@ -14,7 +17,7 @@ export function draftsOf(attributes: Attribute[], values: Record<string, Attribu
   ) as Drafts;
 }
 
-export function parseDrafts(attributes: Attribute[], drafts: Drafts) {
+export function parseDrafts(attributes: Attribute[], drafts: Drafts, locale: Locale = "en") {
   const values: Record<string, AttributeValue | null> = {};
   const errors: Record<string, string> = {};
   for (const a of attributes) {
@@ -22,7 +25,7 @@ export function parseDrafts(attributes: Attribute[], drafts: Drafts) {
     if (draft === "") values[a.name] = null;
     else if (a.type === "number") {
       if (Number.isFinite(Number(draft))) values[a.name] = Number(draft);
-      else errors[a.name] = "Enter a number, like 1042.";
+      else errors[a.name] = directoryMessages[locale].attributeFields.number;
     } else if (a.type === "boolean") values[a.name] = draft === "true";
     else if (a.type === "list")
       values[a.name] = draft
@@ -45,16 +48,17 @@ export function AttributeFields({
   errors: Record<string, string>;
   onChange: (drafts: Drafts) => void;
 }) {
+  const t = useMessages(directoryMessages).attributeFields;
   return attributes.map((a) => {
     const set = (value: string) => onChange({ ...drafts, [a.name]: value });
     return (
-      <Field key={a.id} label={a.label} error={errors[a.name]} hint={a.type === "list" ? "One value per line." : undefined}>
+      <Field key={a.id} label={a.label} error={errors[a.name]} hint={a.type === "list" ? t.listHint : undefined}>
         {(props) =>
           a.type === "boolean" ? (
             <Select {...props} value={drafts[a.name]} onChange={(event) => set(event.target.value)}>
-              <option value="">Not set</option>
-              <option value="true">Yes</option>
-              <option value="false">No</option>
+              <option value="">{t.notSet}</option>
+              <option value="true">{t.yes}</option>
+              <option value="false">{t.no}</option>
             </Select>
           ) : a.type === "list" ? (
             <Textarea {...props} value={drafts[a.name]} onChange={(event) => set(event.target.value)} />

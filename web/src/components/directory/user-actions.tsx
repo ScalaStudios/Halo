@@ -11,7 +11,9 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/input";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { api } from "@/lib/api/client";
-import { formatDateTime, formatDuration, pluralize } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
+import { useLocale, useMessages } from "@/lib/i18n/client";
+import { directoryMessages } from "@/lib/i18n/console/directory";
 import type { SetupLink } from "@/lib/mail-types";
 import { EditProfileDialog, type ProfileEdit } from "./edit-profile";
 import { ImpersonateDialog } from "./impersonation";
@@ -31,6 +33,7 @@ export function UserActions({ id, name, suspended, edit, impersonate }: { id: st
   const [impersonating, setImpersonating] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [suspending, setSuspending] = useState(false);
+  const t = useMessages(directoryMessages);
   const user = { id, name };
 
   return (
@@ -43,45 +46,45 @@ export function UserActions({ id, name, suspended, edit, impersonate }: { id: st
           run(
             "revoke",
             () => api<{ revoked: number }>(`/users/${id}/revoke-sessions`, { method: "POST" }),
-            ({ revoked }) => toast({ title: "Sessions revoked", description: `Ended ${pluralize(revoked, "session")}. ${name} must sign in again everywhere.` }),
+            ({ revoked }) => toast({ title: t.sessionsRevoked, description: t.sessionsRevokedHint(revoked, name, 1) }),
           )
         }
       >
         <MonitorX aria-hidden="true" size={16} strokeWidth={1.75} />
-        Revoke sessions
+        {t.revokeSessions}
       </Button>
       <Button size="sm" variant="secondary" onClick={() => setResetting(true)}>
         <RotateCcw aria-hidden="true" size={16} strokeWidth={1.75} />
-        Reset authentication
+        {t.resetAuthentication}
       </Button>
       <Menu>
         <MenuTrigger asChild>
-          <Button size="icon-sm" variant="quiet" aria-label="More actions" loading={pending === "restore"}>
+          <Button size="icon-sm" variant="quiet" aria-label={t.actions.moreActions} loading={pending === "restore"}>
             <MoreHorizontal aria-hidden="true" size={16} strokeWidth={1.75} />
           </Button>
         </MenuTrigger>
         <MenuContent>
           {edit ? (
             <MenuItem icon={UserPen} onSelect={() => setEditing(true)}>
-              Edit profile
+              {t.actions.editProfile}
             </MenuItem>
           ) : null}
           <MenuItem icon={UsersRound} onSelect={() => router.push(`/admin/users/${id}?tab=groups`, { scroll: false })}>
-            Modify groups
+            {t.actions.modifyGroups}
           </MenuItem>
           {impersonate ? (
             <MenuItem icon={VenetianMask} onSelect={() => setImpersonating(true)}>
-              Impersonate
+              {t.actions.impersonate}
             </MenuItem>
           ) : null}
           <MenuItem
             icon={Copy}
             onSelect={() => {
               void navigator.clipboard?.writeText(id);
-              toast({ title: "User ID copied", description: id });
+              toast({ title: t.userIdCopied, description: id });
             }}
           >
-            Copy user ID
+            {t.copyUserId}
           </MenuItem>
           <MenuSeparator />
           {suspended ? (
@@ -91,15 +94,15 @@ export function UserActions({ id, name, suspended, edit, impersonate }: { id: st
                 run(
                   "restore",
                   () => api(`/users/${id}/restore`, { method: "POST" }),
-                  () => toast({ title: `${name} restored`, description: "They can sign in again. Recorded in the audit log." }),
+                  () => toast({ title: t.actions.restored(name), description: t.actions.restoredHint }),
                 )
               }
             >
-              Restore user
+              {t.actions.restoreUser}
             </MenuItem>
           ) : (
             <MenuItem icon={Ban} danger onSelect={() => setSuspending(true)}>
-              Suspend user
+              {t.actions.suspendUser}
             </MenuItem>
           )}
         </MenuContent>
@@ -114,6 +117,8 @@ export function UserActions({ id, name, suspended, edit, impersonate }: { id: st
 
 export function ResetAuthenticationDialog({ user, onClose }: { user: UserRef | null; onClose: () => void }) {
   const { pending, run, errorFor, clearError } = useMutation();
+  const locale = useLocale();
+  const t = directoryMessages[locale];
   const [link, setLink] = useState<SetupLink | null>(null);
 
   function close() {
@@ -127,28 +132,24 @@ export function ResetAuthenticationDialog({ user, onClose }: { user: UserRef | n
       open={user !== null}
       onOpenChange={(next) => (next ? undefined : close())}
       error={errorFor("reset")}
-      title={link ? "New setup link" : `Reset ${user?.name ?? ""}'s authentication?`}
-      description={
-        link
-          ? `${link.emailed ? `We emailed a setup link to ${user?.name}` : `Send this link to ${user?.name}`} so they can enroll a new passkey. It expires ${formatDateTime(link.expiresAt)}.`
-          : "Removes every passkey, security key, authenticator app, password and recovery code, and signs them out everywhere. They enroll again from a new setup link."
-      }
+      title={link ? t.actions.newSetupLink : t.actions.resetTitle(user?.name ?? "")}
+      description={link ? t.actions.linkDescription(user?.name, link.emailed, formatDateTime(link.expiresAt, locale)) : t.actions.resetDescription}
       footer={
         link ? (
           <Button variant="primary" onClick={close}>
-            Done
+            {t.done}
           </Button>
         ) : (
           <>
             <Button variant="secondary" onClick={close}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button
               variant="destructive"
               loading={pending === "reset"}
               onClick={() => user && run("reset", () => api<SetupLink>(`/users/${user.id}/reset-authentication`, { method: "POST" }), setLink, "inline")}
             >
-              Reset authentication
+              {t.resetAuthentication}
             </Button>
           </>
         )
@@ -156,11 +157,8 @@ export function ResetAuthenticationDialog({ user, onClose }: { user: UserRef | n
     >
       {link ? (
         <div className="flex animate-enter flex-col gap-4">
-          <CopyField label="Setup link" value={link.enrollUrl} />
-          <SecretWarning>
-            {link.emailed ? "You can also copy the link and share it yourself." : "Halo didn't email this link, so share it with them directly."} Anyone with it can enroll a
-            passkey on {user?.name}&apos;s account.
-          </SecretWarning>
+          <CopyField label={t.setupLink} value={link.enrollUrl} />
+          <SecretWarning>{t.actions.linkWarning(user?.name, link.emailed)}</SecretWarning>
         </div>
       ) : null}
     </Dialog>
@@ -169,6 +167,7 @@ export function ResetAuthenticationDialog({ user, onClose }: { user: UserRef | n
 
 export function TemporaryPasswordButton({ user, warning }: { user: UserRef; warning?: string }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
+  const t = useMessages(directoryMessages);
   const formId = useId();
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState("");
@@ -184,21 +183,21 @@ export function TemporaryPasswordButton({ user, warning }: { user: UserRef; warn
         }}
       >
         <RectangleEllipsis aria-hidden="true" size={16} strokeWidth={1.75} />
-        Set temporary password
+        {t.actions.setTemporaryPassword}
       </Button>
       <Dialog
         open={open}
         onOpenChange={setOpen}
         error={errorFor("password")}
-        title="Set a temporary password"
-        description={`${user.name} signs in with it once and then chooses their own password. Share it in person or over another channel you trust.`}
+        title={t.actions.temporaryPasswordTitle}
+        description={t.actions.temporaryPasswordDescription(user.name)}
         footer={
           <>
             <Button variant="secondary" onClick={() => setOpen(false)}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button variant="primary" type="submit" form={formId} loading={pending === "password"}>
-              Set temporary password
+              {t.actions.setTemporaryPassword}
             </Button>
           </>
         }
@@ -211,11 +210,11 @@ export function TemporaryPasswordButton({ user, warning }: { user: UserRef; warn
             event.preventDefault();
             void run("password", () => api(`/users/${user.id}/password`, { method: "PUT", body: { password } }), () => {
               setOpen(false);
-              toast({ title: "Temporary password set", description: `${user.name} must choose a new password the next time they sign in.` });
+              toast({ title: t.actions.temporaryPasswordSet, description: t.actions.temporaryPasswordSetHint(user.name) });
             }, "inline");
           }}
         >
-          <Field label="Temporary password" hint="Halo generated a random one. You can replace it with your own of at least 15 characters.">
+          <Field label={t.actions.temporaryPassword} hint={t.actions.temporaryPasswordHint}>
             {(props) => (
               <Input
                 {...props}
@@ -224,7 +223,7 @@ export function TemporaryPasswordButton({ user, warning }: { user: UserRef; warn
                 spellCheck={false}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                trailing={<CopyButton value={password} label="Copy password" className="[&>span]:sr-only" />}
+                trailing={<CopyButton value={password} label={t.actions.copyPassword} className="[&>span]:sr-only" />}
               />
             )}
           </Field>
@@ -239,6 +238,8 @@ type AccessPass = { pass: string; expiresAt: string; uses: number };
 
 export function AccessPassButton({ user }: { user: UserRef }) {
   const { pending, run, errorFor, clearError } = useMutation();
+  const locale = useLocale();
+  const t = directoryMessages[locale];
   const formId = useId();
   const [open, setOpen] = useState(false);
   const [lifetime, setLifetime] = useState(60);
@@ -260,30 +261,26 @@ export function AccessPassButton({ user }: { user: UserRef }) {
         }}
       >
         <TicketCheck aria-hidden="true" size={16} strokeWidth={1.75} />
-        Create access pass
+        {t.actions.createAccessPass}
       </Button>
       <Dialog
         open={open}
         onOpenChange={close}
         error={errorFor("pass")}
-        title={created ? "Temporary access pass" : "Create a temporary access pass"}
-        description={
-          created
-            ? `Give it to ${user.name} in person, or by phone once you've checked who they are. It works ${created.uses === 1 ? "once" : `${created.uses} times`} until ${formatDateTime(created.expiresAt)}.`
-            : `${user.name} enters it on the sign-in page to set up a new passkey. It doesn't sign them in to anything by itself, and it replaces any pass they already have.`
-        }
+        title={created ? t.actions.accessPass : t.actions.createAccessPassTitle}
+        description={created ? t.actions.accessPassCreated(user.name, created.uses, formatDateTime(created.expiresAt, locale)) : t.actions.accessPassDescription(user.name)}
         footer={
           created ? (
             <Button variant="primary" onClick={close}>
-              Done
+              {t.done}
             </Button>
           ) : (
             <>
               <Button variant="secondary" onClick={close}>
-                Cancel
+                {t.cancel}
               </Button>
               <Button variant="primary" type="submit" form={formId} loading={pending === "pass"}>
-                Create pass
+                {t.actions.createPass}
               </Button>
             </>
           )
@@ -291,10 +288,8 @@ export function AccessPassButton({ user }: { user: UserRef }) {
       >
         {created ? (
           <div className="flex animate-enter flex-col gap-4">
-            <CopyField label="Temporary access pass" value={created.pass} />
-            <SecretWarning>
-              Halo shows it only once. Anyone with it can set up a passkey on {user.name}&apos;s account until it expires, or until you remove it from their sign-in methods.
-            </SecretWarning>
+            <CopyField label={t.actions.accessPass} value={created.pass} />
+            <SecretWarning>{t.actions.accessPassWarning(user.name)}</SecretWarning>
           </div>
         ) : (
           <form
@@ -306,23 +301,23 @@ export function AccessPassButton({ user }: { user: UserRef }) {
               void run("pass", () => api<AccessPass>(`/users/${user.id}/access-pass`, { body: { lifetimeMinutes: lifetime, uses } }), setCreated, "inline");
             }}
           >
-            <Field label="Valid for" className="flex-1">
+            <Field label={t.actions.validFor} className="flex-1">
               {(props) => (
                 <Select {...props} value={lifetime} onChange={(event) => setLifetime(Number(event.target.value))}>
                   {[60, 480, 1440, 10080].map((minutes) => (
                     <option key={minutes} value={minutes}>
-                      {formatDuration(minutes * 60)}
+                      {t.actions.duration(minutes)}
                     </option>
                   ))}
                 </Select>
               )}
             </Field>
-            <Field label="Uses" className="flex-1">
+            <Field label={t.actions.uses} className="flex-1">
               {(props) => (
                 <Select {...props} value={uses} onChange={(event) => setUses(Number(event.target.value))}>
                   {[1, 3, 5, 10].map((count) => (
                     <option key={count} value={count}>
-                      {count === 1 ? "Once" : `Up to ${count} times`}
+                      {t.actions.usesOption(count)}
                     </option>
                   ))}
                 </Select>
@@ -337,6 +332,7 @@ export function AccessPassButton({ user }: { user: UserRef }) {
 
 export function SuspendDialog({ users, onClose }: { users: UserRef[]; onClose: () => void }) {
   const { pending, run, errorFor, clearError, toast } = useMutation();
+  const t = useMessages(directoryMessages);
   const single = users.length === 1 ? users[0] : undefined;
 
   function close() {
@@ -349,12 +345,12 @@ export function SuspendDialog({ users, onClose }: { users: UserRef[]; onClose: (
       open={users.length > 0}
       onOpenChange={(next) => (next ? undefined : close())}
       error={errorFor("suspend")}
-      title={single ? `Suspend ${single.name}?` : `Suspend ${pluralize(users.length, "user")}?`}
-      description="Sign-in is blocked immediately and every session is revoked. Group memberships and application assignments are kept, so you can restore access later."
+      title={t.actions.suspendTitle(single?.name, users.length)}
+      description={t.actions.suspendDescription}
       footer={
         <>
           <Button variant="secondary" onClick={close}>
-            Cancel
+            {t.cancel}
           </Button>
           <Button
             variant="destructive"
@@ -365,13 +361,13 @@ export function SuspendDialog({ users, onClose }: { users: UserRef[]; onClose: (
                 () => Promise.all(users.map((u) => api(`/users/${u.id}/suspend`, { method: "POST" }))),
                 () => {
                   onClose();
-                  toast({ title: single ? `${single.name} suspended` : `${pluralize(users.length, "user")} suspended`, description: "Recorded in the audit log." });
+                  toast({ title: t.actions.suspended(single?.name, users.length), description: t.recorded });
                 },
                 "inline",
               )
             }
           >
-            Suspend
+            {t.suspend}
           </Button>
         </>
       }

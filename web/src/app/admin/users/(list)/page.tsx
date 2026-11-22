@@ -3,14 +3,20 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SignUpQueue } from "@/components/directory/sign-up-queue";
 import { UsersTable } from "@/components/directory/users-table";
 import { apiGet } from "@/lib/api/server";
-import { pluralize } from "@/lib/format";
+import { directoryMessages } from "@/lib/i18n/console/directory";
+import { frameMessages } from "@/lib/i18n/console/frame";
+import { requestLocale } from "@/lib/i18n/server";
 import type { SettingsResponse, SignUp } from "@/lib/settings-types";
 import type { Group, User } from "@/lib/types";
 
-export const metadata = { title: "Users" };
+export async function generateMetadata() {
+  return { title: frameMessages[await requestLocale()].nav.items.users.label };
+}
 
 export default async function UsersPage({ searchParams }: { searchParams: Promise<{ view?: string; invite?: string }> }) {
   const { view, invite } = await searchParams;
+  const locale = await requestLocale();
+  const t = directoryMessages[locale];
   const [users, groups, me, signUps, response] = await Promise.all([
     apiGet<User[]>("/users"),
     apiGet<Group[]>("/groups"),
@@ -22,7 +28,7 @@ export default async function UsersPage({ searchParams }: { searchParams: Promis
   const assigned = groups.filter((g) => g.kind === "assigned");
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader title="Users" description={`${pluralize(users.length, "person", "people")}, ${active} active.`} />
+      <PageHeader title={frameMessages[locale].nav.items.users.label} description={t.users.description(users.length, active)} />
       {signUps.length && response ? (
         <SignUpQueue
           signUps={signUps}
