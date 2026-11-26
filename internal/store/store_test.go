@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"halo/internal/id"
 	"halo/internal/store"
@@ -130,5 +131,41 @@ func TestParseUserAgent(t *testing.T) {
 		if got := device + "|" + browser; got != want {
 			t.Errorf("%s: got %s, want %s", ua, got, want)
 		}
+	}
+}
+
+func TestConcurrentSuspendsKeepOneGlobalAdmin(t *testing.T) {
+	st := testdb.New(t)
+	ctx := context.Background()
+	gia, err := st.CreateUser(ctx, store.NewUser{Email: "gia@example.com", Name: "Gia", Status: "active", Roles: []string{"global_admin"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ben, err := st.CreateUser(ctx, store.NewUser{Email: "ben@example.com", Name: "Ben", Status: "active", Roles: []string{"global_admin"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := make(chan error, 1)
+	err = st.Tx(ctx, func(tx *store.Store) error {
+		if err := tx.SetUserStatus(ctx, ben.ID, "suspended"); err != nil {
+			return err
+		}
+		go func() { second <- st.SetUserStatus(ctx, gia.ID, "suspended") }()
+		select {
+		case err := <-second:
+			t.Errorf("a second suspension must wait for the first to commit, got %v", err)
+			second <- err
+		case <-time.After(300 * time.Millisecond):
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := <-second; err != store.ErrLastGlobalAdmin {
+		t.Fatalf("the second suspension must be refused once the first commits: %v", err)
+	}
+	if err := st.SetUserRoles(ctx, gia.ID, nil, nil); err != store.ErrLastGlobalAdmin {
+		t.Fatalf("removing the last standing global administrator role must be refused: %v", err)
 	}
 }

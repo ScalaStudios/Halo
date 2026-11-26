@@ -155,7 +155,7 @@ func TestBackchannelLogoutOnEverySessionEnd(t *testing.T) {
 		}
 	}
 	actor, app := logoutApp(t, st, "https://grafana.example.com/backchannel")
-	other, err := st.CreateApplication(ctx, store.NewApplication{Name: "Wiki", Protocol: "oidc", Type: "web", RedirectURIs: []string{"https://wiki.example.com/callback"}})
+	other, err := st.CreateApplication(ctx, store.NewApplication{Name: "Wiki", Protocol: "oidc", Type: "web", RedirectURIs: []string{"https://wiki.example.com/callback"}, Scopes: []string{"openid", "profile", "email", "groups", "offline_access"}})
 	must(err)
 	settings, err := st.Settings(ctx)
 	must(err)
@@ -230,7 +230,7 @@ func logoutApp(t *testing.T, st *store.Store, uri string) (store.User, store.App
 	if err != nil {
 		t.Fatal(err)
 	}
-	app, err := st.CreateApplication(ctx, store.NewApplication{Name: "Grafana", Protocol: "oidc", Type: "web", RedirectURIs: []string{callback}})
+	app, err := st.CreateApplication(ctx, store.NewApplication{Name: "Grafana", Protocol: "oidc", Type: "web", RedirectURIs: []string{callback}, Scopes: []string{"openid", "profile", "email", "groups", "offline_access"}})
 	if err != nil {
 		t.Fatal(err)
 	}

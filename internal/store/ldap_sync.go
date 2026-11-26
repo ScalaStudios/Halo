@@ -94,6 +94,17 @@ func (s *Store) GetLDAPDirectory(ctx context.Context, directoryID string) (LDAPD
 	return d, notFound(err)
 }
 
+func (s *Store) SetLDAPConfiguredBy(ctx context.Context, directoryID, userID string) error {
+	_, err := s.db.Exec(ctx, `update ldap_directories set configured_by = $2 where id = $1`, directoryID, userID)
+	return err
+}
+
+func (s *Store) LDAPConfiguredBy(ctx context.Context, directoryID string) (*string, error) {
+	var id *string
+	err := s.db.QueryRow(ctx, `select configured_by from ldap_directories where id = $1`, directoryID).Scan(&id)
+	return id, notFound(err)
+}
+
 func (s *Store) CreateLDAPDirectory(ctx context.Context, d LDAPDirectory, password string) (string, error) {
 	directoryID := id.New("ldp")
 	_, err := s.db.Exec(ctx, `insert into ldap_directories (id, name, url, security, ca_certificate, bind_dn, password_sealed, user_base_dn, user_filter, group_base_dn, group_filter, mapping, enabled, interval_minutes)

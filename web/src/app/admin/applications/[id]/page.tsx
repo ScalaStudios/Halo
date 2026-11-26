@@ -70,6 +70,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const ldap = app.protocol === "ldap";
   const remote = app.protocol === "remote";
   const service = app.type === "service";
+  const cli = app.clientId === "halo-cli";
   const hookable = !saml && !bookmark && !forward && !radius && !ldap && !remote && !service && app.clientId !== "halo-cli";
   const roleable = !bookmark && !radius && !ldap && !remote && !service && app.clientId !== "halo-cli";
   const [outposts, remoteSessions, me] =
@@ -255,10 +256,12 @@ export default async function ApplicationPage({ params, searchParams }: { params
         {tab === "permissions" ? (
           <div className="flex flex-col gap-6">
             <SectionTitle title={d.scopes} description={saml ? undefined : d.scopesHint(app.name)} />
-            {!saml ? (
-              <ScopesForm key={`${app.scopes.join()}:${app.requiresConsent}`} app={app} />
-            ) : (
+            {saml ? (
               <EmptyState title={d.samlScopes} description={d.samlScopesHint(app.name)} />
+            ) : cli ? (
+              <EmptyState title={d.cliScopes} description={d.cliScopesHint(app.scopes.join(" "))} />
+            ) : (
+              <ScopesForm key={`${app.scopes.join()}:${app.requiresConsent}`} app={app} />
             )}
           </div>
         ) : null}
@@ -316,9 +319,9 @@ export default async function ApplicationPage({ params, searchParams }: { params
           <div className="flex flex-col gap-6">
             <SectionTitle
               title={d.assignedGroups}
-              description={service ? d.serviceGroups(app.name) : d.groupsHint(app.userCount, app.name, appGroups.length, bookmark)}
+              description={service ? d.serviceGroups(app.name) : cli ? d.cliGroups(app.name) : d.groupsHint(app.userCount, app.name, appGroups.length, bookmark)}
               action={
-                service ? undefined : (
+                service || cli ? undefined : (
                   <AddToGroup name={app.name} appId={app.id} assigned={app.groupIds} groups={groups} bookmark={bookmark} />
                 )
               }
@@ -337,7 +340,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
                   <span key="m" className="tnum">
                     {group.memberCount}
                   </span>,
-                  <RemoveFromGroup key="r" name={app.name} appId={app.id} assigned={app.groupIds} group={group} bookmark={bookmark} />,
+                  cli ? null : <RemoveFromGroup key="r" name={app.name} appId={app.id} assigned={app.groupIds} group={group} bookmark={bookmark} />,
                 ])}
               />
             ) : (
@@ -602,7 +605,8 @@ async function AuthenticationTab({ app, resources }: { app: SamlApplication; res
 
   const service = app.type === "service";
   const publicClient = app.type === "spa" || app.type === "native";
-  const grants = service ? ["client_credentials"] : app.tokenPolicy.refreshTokenTtl > 0 ? ["authorization_code", "refresh_token"] : ["authorization_code"];
+  const flow = app.clientId === "halo-cli" ? "urn:ietf:params:oauth:grant-type:device_code" : "authorization_code";
+  const grants = service ? ["client_credentials"] : app.tokenPolicy.refreshTokenTtl > 0 ? [flow, "refresh_token"] : [flow];
 
   return (
     <AuthenticationForm key={JSON.stringify([app.redirectUris, app.postLogoutUris, app.tokenPolicy])} app={app} resources={resources}>

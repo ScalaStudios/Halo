@@ -170,6 +170,12 @@ func (e *engine) Evaluate(ctx context.Context, in access.Input) (access.Decision
 		return access.Decision{}, err
 	}
 	results, decision := decide(s, a)
+	if in.App != nil {
+		halo := a
+		halo.appID, halo.appName, halo.noKerberos = haloApp, "Halo", false
+		_, d := decide(s, halo)
+		decision.AppOnly = outcome(d, a.method) != "allow" || len(d.Terms) > 0
+	}
 	decision.Risk, decision.EventID = a.risk, id.New("evt")
 	for _, sig := range a.signals {
 		decision.Signals = append(decision.Signals, sig.Type)
@@ -229,7 +235,7 @@ func (e *engine) assess(ctx context.Context, a *attempt, zones []store.NetworkZo
 			add("risky-network", "high", a.ip+" is in the risky network “"+z.Name+"”.")
 		}
 	}
-	failures, err := e.st.RecentFailures(ctx, a.user.ID, a.user.Email, store.MethodKinds, time.Now().Add(-15*time.Minute))
+	failures, err := e.st.RecentMismatches(ctx, a.user.ID, a.ip, time.Now().Add(-15*time.Minute))
 	if err != nil {
 		return err
 	}

@@ -197,6 +197,10 @@ func TestCertificateSignIn(t *testing.T) {
 	refused(http.StatusUnauthorized, "ERR_CERTIFICATE_REJECTED", rfc9440(corporate.issue(t, func(c *x509.Certificate) { c.NotAfter = time.Now().Add(-time.Minute) })))
 	refused(http.StatusUnauthorized, "ERR_CERTIFICATE_REJECTED", rfc9440(corporate.issue(t, func(c *x509.Certificate) { c.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth} })))
 	refused(http.StatusUnauthorized, "ERR_CERTIFICATE_REJECTED", rfc9440(corporate.issue(t, func(c *x509.Certificate) { c.EmailAddresses = []string{"nobody@example.com"} })))
+	if _, err := e.st.CreateUser(ctx, store.NewUser{Email: "root@example.com", Name: "Root", Status: "active", Roles: []string{"global_admin"}}); err != nil {
+		t.Fatal(err)
+	}
+	refused(http.StatusUnauthorized, "ERR_CERTIFICATE_REJECTED", rfc9440(corporate.issue(t, func(c *x509.Certificate) { c.EmailAddresses = []string{"root@example.com"} })))
 	refused(http.StatusUnauthorized, "ERR_CERTIFICATE_REJECTED", rfc9440(corporate.issue(t, func(c *x509.Certificate) { c.EmailAddresses = nil })))
 	refused(http.StatusUnauthorized, "ERR_CERTIFICATE_REJECTED", rfc9440(corporate.issue(t, func(c *x509.Certificate) { c.EmailAddresses = []string{"robot@service.halo.invalid"} })))
 	refused(http.StatusUnauthorized, "ERR_CERTIFICATE_MISSING", rfc9440(stranger.issue(t, nil)), rfc9440(valid))

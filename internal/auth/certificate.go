@@ -93,6 +93,9 @@ func (h *handler) certificateSignIn(w http.ResponseWriter, r *http.Request) erro
 		return err
 	}
 	a.user = &u
+	if err := h.refuseEmailMatch(r, a, u, errCertificateRejected); err != nil {
+		return err
+	}
 	return h.finish(w, r, a, nil, nil)
 }
 

@@ -33,7 +33,7 @@ func (s Settings) ImpersonationRefusal(actor, target User) string {
 		return "Only people can be impersonated, not service accounts."
 	case target.Status != "active":
 		return target.Name + " isn't active, so they can't be impersonated."
-	case len(target.RoleKeys)+len(target.EligibleRoles) > 0 || slices.Contains(s.EmergencyAccessIDs, target.ID):
+	case target.Privileged() || slices.Contains(s.EmergencyAccessIDs, target.ID):
 		return target.Name + " holds or is eligible for an administrator role, or is an emergency access account, so nobody can impersonate them."
 	case len(s.ImpersonationGroups) == 0:
 		return "Impersonation is turned off. A global administrator can choose whose accounts may be impersonated under Security defaults."

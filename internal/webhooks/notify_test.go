@@ -241,7 +241,7 @@ func TestRuleDeliveries(t *testing.T) {
 	if err := json.Unmarshal([]byte(slack.bodies[0]), &slackBody); err != nil || len(slackBody) != 1 {
 		t.Fatalf("slack body: %s", slack.bodies[0])
 	}
-	for _, want := range []string{"*Global admin &lt;granted&gt;*", "A person's administrator roles changed", "Set roles &lt;!channel&gt; &amp; more", "*Target:* Ada", "`role.update`"} {
+	for _, want := range []string{"*Global admin &lt;granted&gt;*", "A person's administrator roles changed", "Set roles &lt;!channel&gt; &amp; more", "*Target:* `Ada`", "`role.update`"} {
 		if !strings.Contains(slackBody["text"], want) {
 			t.Fatalf("slack text lacks %q: %s", want, slackBody["text"])
 		}
@@ -325,5 +325,43 @@ func TestRuleTestSendRefusesPrivateAddresses(t *testing.T) {
 	}
 	if len(rc.bodies) != 0 {
 		t.Fatalf("the guarded client reached a loopback address %d times", len(rc.bodies))
+	}
+}
+
+func TestChatMessagesShowSignInFieldsLiterally(t *testing.T) {
+	email := "[a](https://e.example)\n*Risk:* high"
+	data, _ := json.Marshal(map[string]string{"email": email, "reason": "bad password"})
+	event := store.WebhookEvent{ID: "evt_1", Type: "sign_in.failure", Time: time.Now(), Data: data}
+
+	body, err := render(store.NotificationRule{Name: "Failures", Destination: "slack"}, event, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var slack map[string]string
+	if err := json.Unmarshal(body, &slack); err != nil {
+		t.Fatal(err)
+	}
+	if lines := strings.Split(slack["text"], "\n"); len(lines) != 5 || !strings.Contains(slack["text"], "*Account:* `[a](https://e.example) *Risk:* high`") {
+		t.Fatalf("slack text: %q", slack["text"])
+	}
+
+	body, err = render(store.NotificationRule{Name: "Failures", Destination: "discord"}, event, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var discord struct {
+		Embeds []struct {
+			Fields []struct{ Name, Value string } `json:"fields"`
+		} `json:"embeds"`
+	}
+	if err := json.Unmarshal(body, &discord); err != nil || len(discord.Embeds) != 1 {
+		t.Fatalf("discord body: %s", body)
+	}
+	fields := map[string]string{}
+	for _, f := range discord.Embeds[0].Fields {
+		fields[f.Name] = f.Value
+	}
+	if account := fields["Account"]; strings.Contains(account, "](") || strings.ContainsAny(account, "\r\n") || account != `\[a\]\(https://e.example\) \*Risk:\* high` {
+		t.Fatalf("discord account field: %q", account)
 	}
 }

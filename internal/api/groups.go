@@ -271,8 +271,11 @@ func (h *handlers) updateGroup(w http.ResponseWriter, r *http.Request, actor sto
 		return httpx.JSON(w, http.StatusOK, g)
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
+		var inUse *store.GroupInUseError
 		if err := tx.UpdateGroup(r.Context(), next); errors.Is(err, store.ErrConflict) {
 			return conflict("A group named " + next.Name + " already exists. Pick a different name.")
+		} else if errors.As(err, &inUse) {
+			return conflict(inUse.Error())
 		} else if err != nil {
 			return err
 		}

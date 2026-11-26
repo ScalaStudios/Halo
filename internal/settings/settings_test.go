@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"halo/internal/approval"
 	"halo/internal/auth"
 	"halo/internal/config"
 	"halo/internal/httpx"
@@ -621,5 +622,51 @@ func TestRiskResponseSettings(t *testing.T) {
 	got = decode[settingsResponse](t, e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"riskResponses": nil}), 200))
 	if got.Settings.RiskResponses == nil || len(got.Settings.RiskResponses) != 0 {
 		t.Fatalf("clearing the risk responses: %+v", got.Settings.RiskResponses)
+	}
+}
+
+func TestApprovalSummaryNamesEveryHeldChange(t *testing.T) {
+	e := setup(t)
+	gia := e.person("gia@example.com", "global_admin")
+	e.person("ben@example.com", "global_admin")
+	e.expect(e.call(gia, "PATCH", "/api/v1/settings", map[string]any{"approvalActions": []string{"global-admin"}}), 200)
+
+	rec := e.expect(e.call(gia, "PATCH", "/api/v1/settings", map[string]any{"approvalActions": []string{"global-admin", "user-deletion"}, "featuresOff": []string{"saml"}, "reauthMinutes": 60, "confirmFeatures": true}), 202)
+	held := decode[store.ApprovalRequest](t, rec)
+	if held.Action != "approval-settings" || !strings.Contains(held.Summary, "Features off after this change: SAML identity provider") || !strings.Contains(held.Summary, "Also changes the re-authentication interval") {
+		t.Fatalf("the approver must see every change the request carries: %q", held.Summary)
+	}
+	e.st.ForgetSettings()
+	if s, _ := e.st.Settings(context.Background()); len(s.FeaturesOff) != 0 || len(s.ApprovalActions) != 1 {
+		t.Fatalf("nothing may apply until approved: %+v", s)
+	}
+}
+
+func TestWideningPasswordSignInWaitsForApproval(t *testing.T) {
+	e := setup(t, approval.Register)
+	ctx := context.Background()
+	gia := e.person("gia@example.com", "global_admin")
+	ben := e.person("ben@example.com", "global_admin")
+	sam := e.person("sam@example.com", "security_admin")
+	pilot, err := e.st.CreateGroup(ctx, store.NewGroup{Name: "Pilot", Kind: "assigned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.expect(e.call(sam, "PATCH", "/api/v1/settings", map[string]any{"passwordGroupIds": []string{pilot.ID}}), 200)
+	e.expect(e.call(gia, "PATCH", "/api/v1/settings", map[string]any{"approvalActions": []string{"password-sign-in"}}), 200)
+
+	held := decode[store.ApprovalRequest](t, e.expect(e.call(sam, "PATCH", "/api/v1/settings", map[string]any{"passwordGroupIds": []string{}, "passwordBreachCheck": false}), 202))
+	if held.Action != "password-sign-in" || held.Summary != "Allow password sign-in for everyone with a second factor. Also changes the breached password check" {
+		t.Fatalf("held request: %+v", held)
+	}
+	e.expect(e.call(sam, "PATCH", "/api/v1/settings", map[string]any{"passwordSecondFactor": false}), 202)
+	e.st.ForgetSettings()
+	if s, _ := e.st.Settings(ctx); !slices.Equal(s.PasswordGroupIDs, []string{pilot.ID}) || !s.PasswordSecondFactor || !s.PasswordBreachCheck {
+		t.Fatalf("password sign-in must stay as approved: %+v", s)
+	}
+	e.expect(e.call(ben, "POST", "/api/v1/approvals/"+held.ID+"/approve", nil), 200)
+	e.st.ForgetSettings()
+	if s, _ := e.st.Settings(ctx); len(s.PasswordGroupIDs) != 0 || s.PasswordBreachCheck {
+		t.Fatalf("the approved change must apply: %+v", s)
 	}
 }

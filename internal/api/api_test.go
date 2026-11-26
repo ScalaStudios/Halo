@@ -491,3 +491,65 @@ func TestTemporaryPassword(t *testing.T) {
 		t.Fatalf("audit: %+v", audit[0])
 	}
 }
+
+func TestRoleGrantRevokesSetupCredentials(t *testing.T) {
+	st, h := setup(t)
+	ctx := context.Background()
+	_, uma := person(t, st, "uma@example.com", "user_admin")
+	_, global := person(t, st, "gia@example.com", "global_admin")
+	ada, _ := person(t, st, "ada@example.com")
+	settings, err := st.Settings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.PasswordBreachCheck = false
+	if err := st.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	st.ForgetSettings()
+
+	rec := call(t, h, uma, "POST", "/api/v1/users", map[string]any{"email": "sam@example.com", "name": "Sam"})
+	expect(t, rec, 201)
+	invited := decode[struct {
+		User      store.User `json:"user"`
+		EnrollURL string     `json:"enrollUrl"`
+	}](t, rec)
+	token := strings.TrimPrefix(invited.EnrollURL, "http://localhost:3200/enroll?token=")
+	rec = call(t, h, uma, "POST", "/api/v1/users/"+ada.ID+"/access-pass", map[string]any{})
+	expect(t, rec, 201)
+	pass := decode[struct {
+		Pass string `json:"pass"`
+	}](t, rec).Pass
+	expect(t, call(t, h, uma, "PUT", "/api/v1/users/"+ada.ID+"/password", map[string]any{"password": "temporary passphrase"}), 204)
+
+	expect(t, call(t, h, global, "PUT", "/api/v1/users/"+invited.User.ID+"/roles", map[string]any{"roles": []string{"security_admin"}}), 200)
+	expect(t, call(t, h, global, "PUT", "/api/v1/users/"+ada.ID+"/eligible-roles", map[string]any{"roles": []string{"security_admin"}}), 200)
+
+	if _, _, err := st.PeekEnrollmentToken(ctx, token); err != store.ErrNotFound {
+		t.Fatalf("a user administrator's invitation must stop working once the account holds a role: %v", err)
+	}
+	if matched, err := st.MatchAccessPass(ctx, ada.ID, pass); matched || err != store.ErrNotFound {
+		t.Fatalf("a helpdesk access pass must stop working once the account is eligible for a role: %v %v", matched, err)
+	}
+	if _, err := st.GetPassword(ctx, ada.ID); err != store.ErrNotFound {
+		t.Fatalf("a temporary password must be removed once the account is eligible for a role: %v", err)
+	}
+}
+
+func TestLastStandingGlobalAdminIsKept(t *testing.T) {
+	st, h := setup(t)
+	ctx := context.Background()
+	gia, _ := person(t, st, "gia@example.com", "global_admin")
+	pat, patToken := person(t, st, "pat@example.com")
+	if _, err := st.SetEligibleRoles(ctx, pat.ID, []string{"global_admin"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ActivateRole(ctx, pat.ID, "global_admin", "incident", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	expect(t, call(t, h, patToken, "PUT", "/api/v1/users/"+gia.ID+"/roles", map[string]any{"roles": []string{}}), 422)
+	expect(t, call(t, h, patToken, "POST", "/api/v1/users/"+gia.ID+"/suspend", nil), 422)
+	if after, _ := st.GetUser(ctx, gia.ID); after.Status != "active" || !after.HasRole("global_admin") {
+		t.Fatalf("the only standing global administrator must keep the role and stay active: %+v", after)
+	}
+}

@@ -100,7 +100,7 @@ func TestDateLifecycleRulesFireOncePerDate(t *testing.T) {
 		step string
 	}{
 		{erin, "Did not suspend erin because they are an emergency access account"},
-		{gia, "Did not suspend gia because they are the last active global administrator"},
+		{gia, "Did not suspend gia because they hold or are eligible for an administrator role, so only a global administrator can change their account"},
 	} {
 		u, step := c.u, c.step
 		runs := byPerson[u.ID]

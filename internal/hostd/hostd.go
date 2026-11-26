@@ -2,6 +2,7 @@ package hostd
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strconv"
 )
@@ -41,6 +42,10 @@ func DirectoryMessage(timestamp int64) []byte {
 
 func Principal(uid int) string {
 	return "halo:" + strconv.Itoa(uid)
+}
+
+func ValidHome(home, base string) bool {
+	return PathPattern.MatchString(home) && filepath.Clean(home) == home && filepath.Dir(home) == base
 }
 
 func ValidCommand(command string) bool {

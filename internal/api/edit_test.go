@@ -511,3 +511,48 @@ func TestUpdateApplication(t *testing.T) {
 		t.Fatalf("metadata without an encryption certificate must keep the saved one: %+v", got)
 	}
 }
+
+func TestBuiltInCLIClientIsFrozen(t *testing.T) {
+	st, h := setup(t)
+	ctx := context.Background()
+	_, admin := person(t, st, "abe@example.com", "app_admin")
+	group, err := st.CreateGroup(ctx, store.NewGroup{Name: "Administrators", Kind: "assigned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli, err := st.CreateApplication(ctx, store.NewApplication{Name: "Halo CLI", Protocol: "oidc", Type: "native", ClientID: store.CLIClientID, Scopes: []string{"openid", "profile", "email", "groups", "offline_access"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/v1/applications/" + cli.ID
+	for _, body := range []map[string]any{
+		{"redirectUris": []string{"https://attacker.example/cb"}},
+		{"postLogoutUris": []string{"https://attacker.example/"}},
+		{"scopes": []string{"openid", "profile", "email", "groups", "offline_access", "billing:read"}},
+		{"groupIds": []string{group.ID}},
+	} {
+		expect(t, call(t, h, admin, "PATCH", path, body), 409)
+	}
+	expect(t, call(t, h, admin, "PATCH", path, map[string]any{"tokenPolicy": map[string]any{"exchange": true}}), 422)
+	expect(t, call(t, h, admin, "PUT", path+"/groups", map[string]any{"groupIds": []string{group.ID}}), 409)
+	expect(t, call(t, h, admin, "PATCH", path, map[string]any{"redirectUris": []string{}, "postLogoutUris": []string{}, "scopes": cli.Scopes, "tokenPolicy": map[string]any{"accessTokenTtl": 300}}), 200)
+	got, err := st.GetApplication(ctx, cli.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.RedirectURIs) != 0 || len(got.PostLogoutURIs) != 0 || len(got.GroupIDs) != 0 || got.TokenPolicy.AccessTokenTTL != 300 || got.TokenPolicy.Exchange {
+		t.Fatalf("the built-in CLI client changed: %+v", got)
+	}
+	got.RedirectURIs, got.Scopes = []string{"https://attacker.example/cb"}, []string{"openid"}
+	if err := st.UpdateApplication(ctx, got); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetApplicationGroups(ctx, cli.ID, []string{group.ID}); err != nil {
+		t.Fatal(err)
+	}
+	expect(t, call(t, h, admin, "PATCH", path, map[string]any{"redirectUris": []string{}, "scopes": cli.Scopes}), 200)
+	expect(t, call(t, h, admin, "PUT", path+"/groups", map[string]any{"groupIds": []string{}}), 200)
+	if got, err = st.GetApplication(ctx, cli.ID); err != nil || len(got.RedirectURIs) != 0 || !slices.Equal(got.Scopes, cli.Scopes) || len(got.GroupIDs) != 0 {
+		t.Fatalf("an edited CLI client must be restorable to its built-in settings: %+v %v", got, err)
+	}
+}

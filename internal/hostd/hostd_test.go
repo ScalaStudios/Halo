@@ -29,6 +29,10 @@ var sample = Directory{
 		{Name: "dup", UID: 1000001, GID: 1000001, Home: "/home/dup", Shell: "/bin/bash"},
 		{Name: "local", UID: 1001, GID: 1001, Home: "/home/local", Shell: "/bin/bash"},
 		{Name: "taken", UID: 1000006, GID: 1000006, Home: "/home/taken", Shell: "/bin/bash"},
+		{Name: "unit", UID: 1000007, GID: 1000007, Home: "/etc/systemd/system/x.service.d", Shell: "/bin/bash"},
+		{Name: "dots", UID: 1000008, GID: 1000008, Home: "/home/../etc/x", Shell: "/bin/bash"},
+		{Name: "twin", UID: 1000009, GID: 1000009, Home: "/home/bo", Shell: "/bin/bash"},
+		{Name: "base", UID: 1000010, GID: 1000010, Home: "/home", Shell: "/bin/bash"},
 	},
 	Groups: []Group{
 		{Name: "ops", GID: 2000001, Members: []string{"ada", "bo", "evil", "ghost"}},
@@ -87,7 +91,7 @@ func TestRender(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := render(sample, users, groups)
+	f := render(sample, users, groups, "/home")
 	if want := "ada:*:1000001:1000001:Ada Lovelaceroot:/home/ada:/bin/bash\nbo:*:1000002:1000002:Bo:/home/bo:/bin/zsh\n"; string(f.passwd) != want {
 		t.Fatalf("passwd:\n%s\nwant:\n%s", f.passwd, want)
 	}
@@ -97,7 +101,7 @@ func TestRender(t *testing.T) {
 	if want := "#1000001 ALL=(root) NOPASSWD: ALL\n#1000002 ALL=(root) NOPASSWD: /usr/bin/journalctl, /usr/bin/systemctl restart nginx\n"; string(f.sudoers) != want {
 		t.Fatalf("sudoers:\n%s\nwant:\n%s", f.sudoers, want)
 	}
-	if want := "luna evil x:0:0::/:/bin/sh\nroot2 cy dup local taken sudo ada clash"; strings.Join(f.skipped, " ") != want {
+	if want := "luna evil x:0:0::/:/bin/sh\nroot2 cy dup local taken unit dots twin base sudo ada clash"; strings.Join(f.skipped, " ") != want {
 		t.Fatalf("skipped %q, want %q", strings.Join(f.skipped, " "), want)
 	}
 }

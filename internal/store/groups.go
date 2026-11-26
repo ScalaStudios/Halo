@@ -2,6 +2,9 @@ package store
 
 import (
 	"context"
+	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -39,11 +42,10 @@ func (s *Store) ruleCompiler(ctx context.Context, args ...any) (*rule.Compiler, 
 	var dynamic []rule.Group
 	for rows.Next() {
 		var g rule.Group
-		var name string
-		if err := rows.Scan(&g.ID, &name, &g.Rule); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.Rule); err != nil {
 			return nil, nil, err
 		}
-		c.Groups[strings.ToLower(name)] = g
+		c.Groups[strings.ToLower(g.Name)] = g
 		if g.Rule != nil {
 			dynamic = append(dynamic, g)
 		}
@@ -71,12 +73,87 @@ func (s *Store) dynamicGroups(ctx context.Context, args ...any) (string, []any, 
 	return `with dynamic as (select g.id, g.created_at, u.id as user_id from groups g cross join users u where not u.guest and (` + match + `)) `, c.Args, nil
 }
 
+func (s *Store) ruleUses(ctx context.Context, groupID, name string) ([]GroupUse, error) {
+	rows, err := s.db.Query(ctx, `select id, name, rule from groups where rule is not null and id <> $1 order by lower(name)`, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var uses []GroupUse
+	for rows.Next() {
+		var use GroupUse
+		var src string
+		if err := rows.Scan(&use.ID, &use.Name, &src); err != nil {
+			return nil, err
+		}
+		if e, err := rule.Parse(src); err == nil && e.MemberOf(name) {
+			use.Kind = "rule of group"
+			uses = append(uses, use)
+		}
+	}
+	return uses, rows.Err()
+}
+
+func (s *Store) checkRename(ctx context.Context, groupID, name string) error {
+	var old string
+	if err := s.db.QueryRow(ctx, `select name from groups where id = $1`, groupID).Scan(&old); err != nil {
+		return notFound(err)
+	}
+	if strings.ToLower(old) == strings.ToLower(name) {
+		return nil
+	}
+	uses, err := s.ruleUses(ctx, groupID, old)
+	if err == nil && len(uses) > 0 {
+		err = &GroupInUseError{Group: old, Uses: uses, Rename: true}
+	}
+	return err
+}
+
 func (s *Store) CheckRule(ctx context.Context, groupID, src string) error {
-	c, _, err := s.ruleCompiler(ctx)
+	c, dynamic, err := s.ruleCompiler(ctx)
 	if err == nil {
 		_, err = c.Rule(groupID, src)
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	before := tooLargeRules(c, dynamic)
+	after := slices.Clone(dynamic)
+	if i := slices.IndexFunc(after, func(g rule.Group) bool { return g.ID == groupID }); i >= 0 {
+		after[i].Rule = &src
+	} else {
+		after = append(after, rule.Group{ID: groupID, Rule: &src})
+	}
+	c.Groups = maps.Clone(c.Groups)
+	for name, g := range c.Groups {
+		if g.ID == groupID {
+			g.Rule = &src
+			c.Groups[name] = g
+		}
+	}
+	failed := tooLargeRules(c, after)
+	for _, g := range after {
+		switch {
+		case !failed[g.ID] || before[g.ID]:
+		case g.ID == groupID:
+			return &rule.Error{Pos: 1, Msg: "this rule is too large together with the rules of the other groups. Use fewer conditions and values."}
+		default:
+			return &rule.Error{Pos: 1, Msg: fmt.Sprintf("this rule would make the rule of %q too large, so that group would match nobody. Use fewer conditions and values.", g.Name)}
+		}
+	}
+	return nil
+}
+
+func tooLargeRules(c *rule.Compiler, groups []rule.Group) map[string]bool {
+	c.Args = nil
+	failed := map[string]bool{}
+	for _, g := range groups {
+		if _, err := c.Rule(g.ID, *g.Rule); rule.TooLarge(err) {
+			failed[g.ID] = true
+		}
+		c.Param(g.ID)
+	}
+	return failed
 }
 
 func (s *Store) MatchRule(ctx context.Context, groupID, src string) ([]string, error) {

@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -317,6 +318,7 @@ func TestOutboundProvisioning(t *testing.T) {
 		t.Fatalf("test failure should explain the 401: %s", rec.Body)
 	}
 	expect(t, call(t, h, admin, "PUT", base, map[string]any{"baseUrl": endpoint, "token": "secret-token", "enabled": true}), 200)
+	expect(t, call(t, h, admin, "PUT", base, map[string]any{"baseUrl": "http://127.0.0.1:1/scim/v2", "enabled": false}), 422)
 	expect(t, call(t, h, admin, "PUT", base, map[string]any{"baseUrl": endpoint, "enabled": true}), 200)
 	expect(t, call(t, h, admin, "POST", base+"/test", nil), 200)
 
@@ -564,5 +566,54 @@ func TestOutboundGroupProvisioning(t *testing.T) {
 	audit, err := st.ListAudit(ctx, 1)
 	if err != nil || audit[0].Action != "provisioning.sync" || !strings.Contains(audit[0].Summary, "groups: 0 created, 0 updated, 1 deleted") {
 		t.Fatalf("audit: %+v %v", audit, err)
+	}
+}
+
+func TestOutboundProvisioningIgnoresRedirects(t *testing.T) {
+	st := testdb.New(t)
+	ctx := context.Background()
+	public, _ := url.Parse("http://localhost:3200")
+	secret := make([]byte, 32)
+	_, _ = rand.Read(secret)
+	app, err := server.New(config.Config{Organization: "Test", PublicURL: public, SecretKey: secret, Dev: true}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var redirected atomic.Int64
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { redirected.Add(1) }))
+	defer target.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+	group, err := st.CreateGroup(ctx, store.NewGroup{Name: "Slack users", Kind: "assigned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slack, err := st.CreateApplication(ctx, store.NewApplication{Name: "Slack", Protocol: "saml", Type: "web", GroupIDs: []string{group.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateUser(ctx, store.NewUser{Email: "ada@example.com", Name: "Ada", Status: "active", GroupIDs: []string{group.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	u, err := st.CreateUser(ctx, store.NewUser{Email: "abe@example.com", Name: "Abe", Status: "active", Roles: []string{"app_admin"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, admin, err := st.CreateSession(ctx, store.NewSession{UserID: u.ID, Method: "passkey"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "/api/v1/provisioning/applications/" + slack.ID
+	expect(t, call(t, app.Handler, admin, "PUT", base, map[string]any{"baseUrl": srv.URL + "/scim/v2", "token": "secret-token", "enabled": true}), 200)
+	expect(t, call(t, app.Handler, admin, "POST", base+"/test", nil), 502)
+	rec := call(t, app.Handler, admin, "POST", base+"/sync", nil)
+	var c store.AppProvisioning
+	if err := json.Unmarshal(rec.Body.Bytes(), &c); err != nil || !strings.Contains(c.LastError, "307") {
+		t.Fatalf("sync after a redirect: %d %s", rec.Code, rec.Body)
+	}
+	if n := redirected.Load(); n != 0 {
+		t.Fatalf("the redirect target received %d requests", n)
 	}
 }

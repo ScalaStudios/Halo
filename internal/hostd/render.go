@@ -46,17 +46,17 @@ type files struct {
 	skipped                []string
 }
 
-func render(d Directory, localUsers, localGroups accounts) files {
+func render(d Directory, localUsers, localGroups accounts, homeBase string) files {
 	var f files
 	var passwd, group, sudoers strings.Builder
-	names, ids, accepted := map[string]bool{}, map[int]bool{}, map[string]bool{}
+	names, ids, accepted, homes := map[string]bool{}, map[int]bool{}, map[string]bool{}, map[string]bool{}
 	for _, u := range d.Users {
-		if !NamePattern.MatchString(u.Name) || u.UID < MinID || u.GID != u.UID || !PathPattern.MatchString(u.Home) || !PathPattern.MatchString(u.Shell) ||
-			localUsers.names[u.Name] || localUsers.ids[u.UID] || localGroups.names[u.Name] || localGroups.ids[u.GID] || names[u.Name] || ids[u.UID] {
+		if !NamePattern.MatchString(u.Name) || u.UID < MinID || u.GID != u.UID || !ValidHome(u.Home, homeBase) || !PathPattern.MatchString(u.Shell) ||
+			localUsers.names[u.Name] || localUsers.ids[u.UID] || localGroups.names[u.Name] || localGroups.ids[u.GID] || names[u.Name] || ids[u.UID] || homes[u.Home] {
 			f.skipped = append(f.skipped, u.Name)
 			continue
 		}
-		names[u.Name], ids[u.UID], accepted[u.Name] = true, true, true
+		names[u.Name], ids[u.UID], accepted[u.Name], homes[u.Home] = true, true, true, true
 		fmt.Fprintf(&passwd, "%s:*:%d:%d:%s:%s:%s\n", u.Name, u.UID, u.GID, gecos(u.Gecos), u.Home, u.Shell)
 		fmt.Fprintf(&group, "%s:x:%d:\n", u.Name, u.GID)
 		sudoers.WriteString(sudoLine(u))

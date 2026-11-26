@@ -697,9 +697,9 @@ export const es: typeof en = {
         description:
           "A una persona o a una cuenta de servicio, o permitir que una persona lo active. Se rechaza invitar a alguien o crear una cuenta de servicio con el rol; concédelo después.",
       },
-      "policy-disable": { label: "Detener una política de acceso aplicada", description: "Desactivarla, pasarla a solo informe o eliminarla." },
-      "password-sign-in": { label: "Activar el inicio de sesión con contraseña", description: "Para toda la organización, en Métodos." },
-      "identity-providers": { label: "Cambiar proveedores de identidad", description: "Añadir, editar, activar, desactivar o eliminar uno." },
+      "policy-disable": { label: "Detener una política de acceso aplicada", description: "Desactivarla, pasarla a solo informe, eliminarla o cambiar su efecto o sus condiciones." },
+      "password-sign-in": { label: "Activar el inicio de sesión con contraseña", description: "Para toda la organización, en Métodos, y permitir contraseñas a más personas o quitarles el segundo factor." },
+      "identity-providers": { label: "Cambiar proveedores de identidad", description: "Añadir, editar, activar, desactivar o eliminar uno, y cambiar autoridades de certificación o el inicio de sesión con Windows." },
       impersonation: {
         label: "Ver Halo como otra persona",
         description: "Un administrador del servicio de asistencia ve Halo como una persona durante 30 minutos. Lo inicia cuando se aprueba.",
@@ -811,7 +811,7 @@ export const es: typeof en = {
     caption: "Endpoints de webhook",
     endpoint: "Endpoint",
     lastDelivery: "Última entrega",
-    urlError: "Introduce una URL https://. http:// sin cifrar solo funciona con localhost.",
+    urlError: "Introduce una URL https://. http:// sin cifrar solo funciona con localhost cuando Halo se ejecuta en modo de desarrollo.",
     saved: "Endpoint guardado",
     added: "Endpoint añadido",
     secretDescription: "Verifica el encabezado Halo-Signature de cada solicitud con este secreto de firma.",

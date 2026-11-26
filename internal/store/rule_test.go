@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -94,5 +95,34 @@ func TestRuleGroups(t *testing.T) {
 	}
 	if err := st.CheckRule(ctx, everyone.ID, `user.memberOf("Lunar Labs")`); err != nil {
 		t.Fatalf("no cycle: %v", err)
+	}
+}
+
+func TestOversizedRulesDoNotBreakUserLoads(t *testing.T) {
+	st := testdb.New(t)
+	ctx := context.Background()
+	u, err := st.CreateUser(ctx, store.NewUser{Email: "ada@example.com", Name: "Ada", Department: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	big := `user.department in [` + strings.Repeat(`"x",`, 1998) + `"x"]`
+	for i := range 32 {
+		if _, err := st.CreateGroup(ctx, store.NewGroup{Name: fmt.Sprintf("Big %d", i), Kind: "dynamic", Rule: &big}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	huge := `user.department in [` + strings.Repeat(`"x",`, 70000) + `"x"]`
+	if _, err := st.CreateGroup(ctx, store.NewGroup{Name: "Huge", Kind: "dynamic", Rule: &huge}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CheckRule(ctx, "", huge); err == nil {
+		t.Fatal("a rule with 70,000 values is refused")
+	}
+	got, err := st.GetUser(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.GroupIDs) == 0 {
+		t.Fatal("groups within the limit still match")
 	}
 }

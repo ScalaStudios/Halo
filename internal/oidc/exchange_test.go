@@ -77,7 +77,7 @@ func TestTokenExchange(t *testing.T) {
 	reports, reportsSecret := service("Reports", false)
 	payroll, payrollSecret := service("Payroll", true, ledger.ID)
 	audit, auditSecret := service("Audit", true)
-	spa, err := h.st.CreateApplication(ctx, store.NewApplication{Name: "Dashboard", Protocol: "oidc", Type: "spa", RedirectURIs: []string{"https://dash.example.com/cb"}})
+	spa, err := h.st.CreateApplication(ctx, store.NewApplication{Name: "Dashboard", Protocol: "oidc", Type: "spa", RedirectURIs: []string{"https://dash.example.com/cb"}, Scopes: []string{"openid", "profile", "email", "groups", "offline_access"}})
 	must(err)
 	_, spaSecret, err := h.st.AddClientSecret(ctx, spa.ID, "Test", time.Hour)
 	must(err)

@@ -173,7 +173,7 @@ func (h *handler) admin(fn action) httpx.HandlerFunc {
 		if !actor.Manages(target, "user_admin", "helpdesk_admin") {
 			return httpx.ErrForbidden
 		}
-		if len(target.RoleKeys)+len(target.EligibleRoles) > 0 && !actor.HasRole("global_admin") {
+		if !actor.CanChange(target) {
 			return httpx.Fail(http.StatusForbidden, "ERR_FORBIDDEN", target.Name+" holds or is eligible for an administrator role, so only a global administrator can change their account.")
 		}
 		return fn(w, r, actor, person(target))

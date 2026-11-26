@@ -1,6 +1,7 @@
 package scim
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -332,6 +333,45 @@ func (s *server) createUser(w http.ResponseWriter, r *http.Request, actor store.
 	}
 	var userID string
 	err = s.st.Tx(r.Context(), func(tx *store.Store) error {
+		old, err := tx.ReclaimDeprovisionedSCIMUser(r.Context(), email, st.externalID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		freed, freeErr := tx.FreeDeprovisionedEmail(r.Context(), email, old.ID)
+		if freeErr != nil {
+			return freeErr
+		}
+		for _, f := range freed {
+			if err := record(r, tx, actor, store.AuditEvent{Action: "scim.user.update", Summary: "Released " + email + " from the deprovisioned account so a new person could be provisioned with it", TargetType: "user", TargetID: f.ID, TargetLabel: f.Name}); err != nil {
+				return err
+			}
+		}
+		if err == nil {
+			if err := s.guard(actor, old); err != nil {
+				return err
+			}
+			userID = old.ID
+			if err := tx.UpdateSCIMUser(r.Context(), store.SCIMUser{ID: old.ID, Email: email, Name: name, Title: st.title, Department: st.department, ManagerID: st.managerID, ExternalID: st.externalID}); err != nil {
+				return err
+			}
+			if st.active {
+				full, err := tx.GetUser(r.Context(), old.ID)
+				if err != nil {
+					return err
+				}
+				status = "active"
+				if full.LastSignInAt == nil && len(full.Methods) == 0 {
+					status = "invited"
+				}
+			}
+			if err := tx.SetUserStatus(r.Context(), old.ID, status); err != nil {
+				return err
+			}
+			return record(r, tx, actor, store.AuditEvent{Action: "scim.user.restore", Summary: "Provisioned again through SCIM by " + actor.Name, TargetType: "user", TargetID: old.ID, TargetLabel: name})
+		}
+		if !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
 		u, err := tx.CreateUser(r.Context(), store.NewUser{Email: email, Name: name, Title: st.title, Department: st.department, Status: status, ManagerID: st.managerID, Source: "SCIM · " + actor.Name})
 		if err != nil {
 			return err
@@ -427,7 +467,7 @@ func (s *server) changeUser(w http.ResponseWriter, r *http.Request, actor store.
 			return nil
 		}
 		if !st.active {
-			if err := tx.SetUserStatus(r.Context(), cur.ID, "suspended"); err != nil {
+			if err := disable(r.Context(), tx, cur.ID, name, "suspended"); err != nil {
 				return err
 			}
 			revoked, err := tx.RevokeUserSessions(r.Context(), cur.ID, "")
@@ -470,6 +510,21 @@ func (s *server) guard(actor store.User, u store.SCIMUser) error {
 	return nil
 }
 
+func disable(ctx context.Context, tx *store.Store, userID, name, status string) error {
+	settings, err := tx.CurrentSettings(ctx)
+	if err != nil {
+		return err
+	}
+	if slices.Contains(settings.EmergencyAccessIDs, userID) {
+		return fail(http.StatusConflict, "", name+" is an emergency access account in Halo, so Halo kept their account active. Remove them from the emergency access accounts first.")
+	}
+	err = tx.SetUserStatus(ctx, userID, status)
+	if errors.Is(err, store.ErrLastGlobalAdmin) {
+		return fail(http.StatusConflict, "", name+" is the last active global administrator in Halo, so Halo kept their account active. Make someone else a global administrator first.")
+	}
+	return err
+}
+
 func (s *server) deleteUser(w http.ResponseWriter, r *http.Request, actor store.User) error {
 	u, err := s.st.GetSCIMUser(r.Context(), r.PathValue("id"))
 	if err != nil {
@@ -479,7 +534,7 @@ func (s *server) deleteUser(w http.ResponseWriter, r *http.Request, actor store.
 		return err
 	}
 	err = s.st.Tx(r.Context(), func(tx *store.Store) error {
-		if err := tx.SetUserStatus(r.Context(), u.ID, "deprovisioned"); err != nil {
+		if err := disable(r.Context(), tx, u.ID, u.Name, "deprovisioned"); err != nil {
 			return err
 		}
 		revoked, err := tx.RevokeUserSessions(r.Context(), u.ID, "")
@@ -765,8 +820,11 @@ func (s *server) changeGroup(w http.ResponseWriter, r *http.Request, actor store
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "scim.group.update", Summary: strings.ToUpper(summary[:1]) + summary[1:], TargetType: "group", TargetID: cur.ID, TargetLabel: st.name})
 	})
+	var inUse *store.GroupInUseError
 	if errors.Is(err, store.ErrConflict) {
 		return fail(http.StatusConflict, "uniqueness", "Another group in Halo is already named "+st.name+" or has the same externalId.")
+	} else if errors.As(err, &inUse) {
+		return fail(http.StatusConflict, "mutability", inUse.Error())
 	}
 	if err != nil {
 		return err

@@ -41,6 +41,7 @@ var (
 	errSessionLimit    = httpx.Fail(http.StatusForbidden, "ERR_SESSION_LIMIT", "You're already signed in on as many devices as your organization allows. Sign out on a device you no longer use, or ask your administrator to end one of your sessions, then try again.")
 	errTermsExpired    = httpx.Fail(http.StatusNotFound, "ERR_TERMS_EXPIRED", "This step expired or was already used. Sign in again to read and accept the terms.")
 	errPassMismatch    = httpx.Fail(http.StatusUnauthorized, "ERR_CODE_MISMATCH", "That temporary access pass didn't match, expired or was already used. Check it, or ask your administrator for a new one.")
+	mismatches         = []*httpx.Error{errPasskeyRejected, errCodeMismatch, errRecoveryInvalid, errPassMismatch, errPasswordMismatch, errEmailCodeMismatch}
 )
 
 const notAssignedReason = "User is not assigned to this application."
@@ -172,6 +173,7 @@ type attempt struct {
 	risk         string
 	challenge    string
 	hook         webhooks.Verdict
+	mismatch     bool
 }
 
 func (a attempt) event(r *http.Request, result, reason string) store.SignInEvent {
@@ -180,7 +182,7 @@ func (a attempt) event(r *http.Request, result, reason string) store.SignInEvent
 }
 
 func (a attempt) eventFrom(ip, device, result, reason string) store.SignInEvent {
-	e := store.SignInEvent{ID: a.eventID, Result: result, Method: a.method, Email: a.email, IP: ip, Device: device, Risk: a.risk, Reason: cmp.Or(reason, a.hook.Log), Challenge: a.challenge, Hook: a.hook.Decision}
+	e := store.SignInEvent{ID: a.eventID, Result: result, Method: a.method, Email: a.email, IP: ip, Device: device, Risk: a.risk, Reason: cmp.Or(reason, a.hook.Log), Challenge: a.challenge, Hook: a.hook.Decision, Mismatch: a.mismatch}
 	if a.user != nil {
 		e.UserID, e.Email = &a.user.ID, a.user.Email
 	}
@@ -191,6 +193,7 @@ func (a attempt) eventFrom(ip, device, result, reason string) store.SignInEvent 
 }
 
 func (h *handler) reject(r *http.Request, a attempt, reason string, e *httpx.Error) error {
+	a.mismatch = slices.Contains(mismatches, e)
 	if err := h.fail(r.Context(), a, a.event(r, "failure", reason)); err != nil {
 		return err
 	}
@@ -346,7 +349,7 @@ func (h *handler) finish(w http.ResponseWriter, r *http.Request, a attempt, curr
 			if err := tx.MakeRoomForSession(ctx, u, false, replacing); err != nil {
 				return err
 			}
-			created, t, err := tx.CreateSession(ctx, store.NewSession{UserID: u.ID, Method: a.method, SecondFactor: a.secondFactor, IP: httpx.ClientIP(r), UserAgent: r.UserAgent(), DeviceHash: device})
+			created, t, err := tx.CreateSession(ctx, store.NewSession{UserID: u.ID, Method: a.method, SecondFactor: a.secondFactor, IP: httpx.ClientIP(r), UserAgent: r.UserAgent(), DeviceHash: device, AppOnly: decision.AppOnly})
 			if err != nil {
 				return err
 			}

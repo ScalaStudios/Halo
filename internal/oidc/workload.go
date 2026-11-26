@@ -30,7 +30,6 @@ const (
 )
 
 var (
-	workloadClient     = &http.Client{Timeout: 10 * time.Second}
 	workloadAlgorithms = []jose.SignatureAlgorithm{jose.RS256, jose.RS384, jose.RS512, jose.PS256, jose.PS384, jose.PS512, jose.ES256, jose.ES384, jose.ES512}
 	issuerKeyLifetime  = time.Hour
 	issuerKeyRefetch   = time.Minute
@@ -180,14 +179,14 @@ func (h *workloads) verify(ctx context.Context, issuer string, tok *jwt.JSONWebT
 
 func (h *workloads) keys(ctx context.Context, issuer string, stale bool) ([]jose.JSONWebKey, error) {
 	return h.issuers.get(ctx, issuer, stale, func(ctx context.Context) ([]jose.JSONWebKey, error) {
-		discovery, err := oidcclient.Discover(ctx, issuer, workloadClient)
+		discovery, err := oidcclient.Discover(ctx, issuer, httpx.OutboundClient(h.dev))
 		if err != nil {
 			return nil, err
 		}
 		if !httpx.ValidIssuer(discovery.JwksURI, h.dev) {
 			return nil, fmt.Errorf("jwks_uri %q is not an https URL", discovery.JwksURI)
 		}
-		return fetchKeySet(ctx, workloadClient, discovery.JwksURI)
+		return fetchKeySet(ctx, httpx.OutboundClient(h.dev), discovery.JwksURI)
 	})
 }
 

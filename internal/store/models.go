@@ -166,6 +166,7 @@ type Session struct {
 	Client       string     `json:"client,omitempty"`
 
 	ImpersonationID string `json:"impersonationId,omitempty"`
+	AppOnly         bool   `json:"-"`
 
 	ReauthenticatedAt *time.Time `json:"-"`
 }
@@ -185,6 +186,7 @@ type SignInEvent struct {
 	Reason    string    `json:"reason,omitempty"`
 	Challenge string    `json:"challenge,omitempty"`
 	Hook      string    `json:"hook,omitempty"`
+	Mismatch  bool      `json:"-"`
 
 	ImpersonatorID *string `json:"impersonatorId,omitempty"`
 }

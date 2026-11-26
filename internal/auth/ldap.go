@@ -8,7 +8,6 @@ import (
 
 	"halo/internal/access"
 	"halo/internal/httpx"
-	"halo/internal/metrics"
 	"halo/internal/secret"
 	"halo/internal/store"
 )
@@ -37,13 +36,20 @@ func PasswordBind(ctx context.Context, d httpx.Deps, app store.Application, emai
 	if err != nil {
 		return "", err
 	}
-	failures, err := h.st.RecentFailures(ctx, u.ID, email, guessedMethods, lockoutStart(settings))
+	release, locked, err := h.lockedOut(ctx, attempt{email: email, user: user}, settings)
 	if err != nil {
 		return "", err
 	}
-	if failures >= settings.LockoutThreshold {
-		metrics.Lockouts.Inc("account")
-		return refuse("Too many failed attempts.")
+	if locked {
+		return refuse(lockedOutReason)
+	}
+	defer release()
+	sprayed, err := h.sprayed(ctx, ip, settings)
+	if err != nil {
+		return "", err
+	}
+	if sprayed {
+		return refuse(sprayedReason)
 	}
 	enabled, err := h.st.MethodEnabled(ctx, "password")
 	if err != nil {
@@ -62,6 +68,7 @@ func PasswordBind(ctx context.Context, d httpx.Deps, app store.Application, emai
 	case stored.Hash == "":
 		return refuse("The account has no password.")
 	case !matched:
+		event.Mismatch = true
 		return refuse("The password did not match.")
 	case !settings.PasswordAllowed(u):
 		return refuse("Sign-in with passwords is limited to groups this account is not in.")

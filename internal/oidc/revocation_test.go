@@ -114,4 +114,10 @@ func TestRevokedAccessTokensReachAPIs(t *testing.T) {
 	if _, err := h.st.GetActiveOIDCToken(ctx, unbound.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("ending every session must also revoke tokens no session holds: %v", err)
 	}
+
+	access, _, _ = signIn()
+	must(h.st.DeleteApplication(ctx, h.app.ID))
+	if !listed(access) || !announced(access) {
+		t.Errorf("deleting the application must publish its access tokens as revoked: %v %v", listed(access), announced(access))
+	}
 }

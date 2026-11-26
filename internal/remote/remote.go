@@ -273,6 +273,7 @@ func (in Settings) Apply(ctx context.Context, st *store.Store, t store.RemoteTar
 			*f.field = strings.TrimSpace(*f.value)
 		}
 	}
+	t.Host = strings.ToLower(t.Host)
 	for _, f := range []struct {
 		value *int
 		field *int

@@ -153,6 +153,7 @@ function DetailsForm({
 export function AuthenticationForm({ app, resources, children }: { app: Application; resources: ApiResource[]; children: ReactNode }) {
   const service = app.type === "service";
   const publicClient = app.type === "spa" || app.type === "native";
+  const browserless = service || app.clientId === "halo-cli";
   const policy = app.tokenPolicy;
   const [redirects, setRedirects] = useState(app.redirectUris);
   const [postLogout, setPostLogout] = useState(app.postLogoutUris);
@@ -180,9 +181,9 @@ export function AuthenticationForm({ app, resources, children }: { app: Applicat
       access: wholeNumber(access, locale),
       id: service ? undefined : wholeNumber(idToken, locale),
       refresh: service ? undefined : wholeNumber(refresh, locale),
-      redirects: !service && app.protocol === "oidc" && clean(redirects).length === 0 ? e.redirectsRequired : undefined,
-      redirect: service ? [] : check(redirects),
-      postLogout: service ? [] : check(postLogout),
+      redirects: !browserless && app.protocol === "oidc" && clean(redirects).length === 0 ? e.redirectsRequired : undefined,
+      redirect: browserless ? [] : check(redirects),
+      postLogout: browserless ? [] : check(postLogout),
     };
     setErrors(next);
     if (next.access || next.id || next.refresh || next.redirects || [...next.redirect, ...next.postLogout].some(Boolean)) return;
@@ -194,7 +195,7 @@ export function AuthenticationForm({ app, resources, children }: { app: Applicat
       () =>
         api(`/applications/${app.id}`, {
           method: "PATCH",
-          body: service ? { tokenPolicy } : { tokenPolicy, redirectUris: clean(redirects), postLogoutUris: clean(postLogout) },
+          body: browserless ? { tokenPolicy } : { tokenPolicy, redirectUris: clean(redirects), postLogoutUris: clean(postLogout) },
         }),
       () => toast({ title: e.authenticationSaved, description: e.nextToken(app.name) }),
       "inline",
@@ -287,8 +288,8 @@ export function AuthenticationForm({ app, resources, children }: { app: Applicat
         </CardBody>
       </Card>
       <Card className="xl:col-span-2">
-        <CardHeader title={e.redirects} description={service ? e.redirectsService : e.redirectsHint} />
-        {service ? null : (
+        <CardHeader title={e.redirects} description={service ? e.redirectsService : browserless ? e.redirectsCli : e.redirectsHint} />
+        {browserless ? null : (
           <CardBody className="grid grid-cols-1 gap-8 md:grid-cols-2">
             <UriList
               legend={e.redirectUris}

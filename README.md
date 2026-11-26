@@ -456,6 +456,7 @@ Self-hosted Halo runs on your own infrastructure and needs no external service. 
 - **Back up two things.** The database, and `HALO_SECRET_KEY`, which encrypts signing keys and other stored secrets. A backup cannot be restored without the key that was in use when it was taken.
 - **One server or several.** A single Halo server is enough for most organizations. To keep sign-in working through restarts, upgrades and host failures, run several, as [Running several instances](#running-several-instances) describes.
 - **Email is optional.** Without an SMTP server, administrators pass invite and reset links on themselves. With one, Halo emails them, and people can sign in with magic links.
+- **Calls to private addresses.** Webhooks, hooks, upstream identity providers and workload identity issuers must be on public addresses: Halo refuses private, loopback and link-local addresses there and follows no redirects. To reach services on your own network, such as an internal Keycloak, list their address ranges in `HALO_OUTBOUND_ALLOW`, for example `10.20.0.0/16,192.168.5.10/32`.
 - **Kubernetes.** A Helm chart in [`deploy/helm/halo`](deploy/helm/halo) deploys the server and the web interface, with an optional PostgreSQL, and reads `HALO_SECRET_KEY` and the database URL from an existing Secret. [Its README](deploy/helm/halo/README.md) covers installation and upgrades.
 
 ### Running several instances

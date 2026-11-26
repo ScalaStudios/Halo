@@ -87,6 +87,17 @@ func (s *Store) DeleteAuthRequest(ctx context.Context, requestID string) error {
 	return err
 }
 
+func (s *Store) ConsumeAuthRequest(ctx context.Context, requestID string) error {
+	tag, err := s.db.Exec(ctx, `delete from oidc_auth_requests where id = $1 and expires_at > now()`, requestID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) CompleteAuthRequest(ctx context.Context, requestID, userID, sessionID string, amr []string, at time.Time, acr string) error {
 	tag, err := s.db.Exec(ctx, `update oidc_auth_requests set user_id = $2, session_id = $3, amr = $4, auth_time = $5, acr = $6, done = true where id = $1 and expires_at > now() and not done`,
 		requestID, userID, sessionID, amr, at, acr)

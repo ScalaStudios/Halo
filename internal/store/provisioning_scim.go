@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"slices"
 	"time"
 
@@ -37,9 +39,11 @@ type SCIMGroup struct {
 	Members    []SCIMMember
 }
 
-const scimUserQuery = `select u.id, u.email, u.name, u.title, u.department, u.status, u.manager_id, m.name, u.external_id,
+const scimUserSelect = `select u.id, u.email, u.name, u.title, u.department, u.status, u.manager_id, m.name, u.external_id,
 	exists (select 1 from user_roles r where r.user_id = u.id) or exists (select 1 from role_eligibilities e where e.user_id = u.id), u.created_at, u.updated_at
-	from users u left join users m on m.id = u.manager_id where u.kind = 'person' and u.status <> 'deprovisioned'`
+	from users u left join users m on m.id = u.manager_id where u.kind = 'person'`
+
+const scimUserQuery = scimUserSelect + ` and u.status <> 'deprovisioned'`
 
 var SCIMUserFilter = filter.Schema{
 	Prefixes: map[string]string{"urn:ietf:params:scim:schemas:core:2.0:user:": "", "urn:ietf:params:scim:schemas:extension:enterprise:2.0:user:": "enterprise:"},
@@ -124,6 +128,29 @@ func (s *Store) SCIMUsers(ctx context.Context, filter string, args []any, offset
 func (s *Store) GetSCIMUser(ctx context.Context, userID string) (SCIMUser, error) {
 	u, err := scanSCIMUser(s.db.QueryRow(ctx, scimUserQuery+` and u.id = $1`, userID))
 	return u, notFound(err)
+}
+
+func (s *Store) ReclaimDeprovisionedSCIMUser(ctx context.Context, email string, externalID *string) (SCIMUser, error) {
+	u, err := SCIMUser{}, ErrNotFound
+	if externalID != nil {
+		u, err = scanSCIMUser(s.db.QueryRow(ctx, scimUserSelect+` and u.status = 'deprovisioned' and u.external_id = $1 limit 1`, *externalID))
+		err = notFound(err)
+	}
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return u, err
+	}
+	return u, err
+}
+
+func (s *Store) FreeDeprovisionedEmail(ctx context.Context, email, keepID string) ([]User, error) {
+	rows, err := s.db.Query(ctx, `update users set email = id || '@deprovisioned.invalid' where kind = 'person' and status = 'deprovisioned' and lower(email) = lower($1) and id <> $2 returning id, name`, email, keepID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (User, error) {
+		var u User
+		return u, row.Scan(&u.ID, &u.Name)
+	})
 }
 
 func (s *Store) UpdateSCIMUser(ctx context.Context, u SCIMUser) error {
@@ -220,6 +247,9 @@ func (s *Store) scimMembers(ctx context.Context, groups []SCIMGroup) error {
 }
 
 func (s *Store) UpdateSCIMGroup(ctx context.Context, groupID, name string, externalID *string) error {
+	if err := s.checkRename(ctx, groupID, name); err != nil {
+		return err
+	}
 	tag, err := s.db.Exec(ctx, `update groups set name = $2, external_id = $3 where id = $1 and kind = 'assigned'`, groupID, name, externalID)
 	if err != nil {
 		return conflict(err)

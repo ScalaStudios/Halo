@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"halo/internal/approval"
 	"halo/internal/httpx"
 	"halo/internal/store"
 )
@@ -105,6 +106,9 @@ func (h *handler) createCertificateAuthority(w http.ResponseWriter, r *http.Requ
 		}
 		bundle = append(bundle, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Raw})...)
 	}
+	if held, err := h.gate.Hold(w, r, actor, approval.Change{Action: "identity-providers", Summary: "Trust the certificate authority " + name, TargetType: "certificate_authority", TargetLabel: name}); held || err != nil {
+		return err
+	}
 	ctx := r.Context()
 	var ca store.CertificateAuthority
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
@@ -127,6 +131,9 @@ func (h *handler) createCertificateAuthority(w http.ResponseWriter, r *http.Requ
 func (h *handler) deleteCertificateAuthority(w http.ResponseWriter, r *http.Request) error {
 	actor, err := httpx.RequireRole(r, "security_admin")
 	if err != nil {
+		return err
+	}
+	if held, err := h.gate.Hold(w, r, actor, approval.Change{Action: "identity-providers", Summary: "Stop trusting a certificate authority", TargetType: "certificate_authority", TargetID: r.PathValue("id"), TargetLabel: "Certificate authority"}); held || err != nil {
 		return err
 	}
 	ctx := r.Context()

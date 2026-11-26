@@ -3,6 +3,7 @@ package hostd
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -33,6 +34,7 @@ type Config struct {
 	Sudoers  string
 	Etc      string
 	Visudo   string
+	HomeBase string
 	Interval time.Duration
 }
 
@@ -108,7 +110,7 @@ func (c Config) Apply(ctx context.Context, d Directory) error {
 	if err != nil {
 		return err
 	}
-	f := render(d, localUsers, localGroups)
+	f := render(d, localUsers, localGroups, cmp.Or(c.HomeBase, "/home"))
 	if len(f.skipped) > 0 {
 		slog.Warn("skipped entries that are invalid or clash with local accounts", "names", strings.Join(f.skipped, ", "))
 	}

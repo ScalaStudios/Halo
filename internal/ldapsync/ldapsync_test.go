@@ -158,6 +158,24 @@ func TestDirectorySync(t *testing.T) {
 	if strings.Contains(call(t, h, auditor, "GET", "/api/v1/ldap-directories", nil).Body.String(), f.password) {
 		t.Fatal("the bind password must never be returned")
 	}
+	kept := map[string]any{}
+	for k, v := range valid {
+		kept[k] = v
+	}
+	kept["password"] = ""
+	for _, change := range []map[string]any{{"url": "ldap://attacker.example.com", "security": "none"}, {"caCertificate": ""}} {
+		moved := map[string]any{}
+		for k, v := range kept {
+			moved[k] = v
+		}
+		for k, v := range change {
+			moved[k] = v
+		}
+		if rec := call(t, h, admin, "PUT", "/api/v1/ldap-directories/"+d.ID, moved); rec.Code != 422 || !strings.Contains(rec.Body.String(), "password again") {
+			t.Fatalf("%v without the password: want 422, got %d: %s", change, rec.Code, rec.Body)
+		}
+	}
+	decode[store.LDAPDirectory](t, call(t, h, admin, "PUT", "/api/v1/ldap-directories/"+d.ID, kept), 200)
 
 	preview := syncNow(t, h, admin, d.ID, true)
 	if !preview.DryRun || preview.Result != "succeeded" || preview.Counts.Created != 3 || preview.Counts.GroupsCreated != 1 || preview.Counts.MembersAdded != 2 {
@@ -291,9 +309,24 @@ func TestDirectorySync(t *testing.T) {
 	alan, _ = st.GetUser(ctx, alan.ID)
 	grace, _ = st.GetUser(ctx, grace.ID)
 	if guarded.Counts.Suspended != 0 || alan.Status != "active" || grace.Status != "invited" ||
-		!slices.ContainsFunc(guarded.Skipped, func(s string) bool { return strings.Contains(s, "last active global administrator") }) ||
+		!slices.ContainsFunc(guarded.Skipped, func(s string) bool { return strings.Contains(s, "Didn't suspend Alan Turing because") }) ||
 		!slices.ContainsFunc(guarded.Skipped, func(s string) bool { return strings.Contains(s, "emergency access account") }) {
 		t.Fatalf("guards: %+v alan %s grace %s", guarded, alan.Status, grace.Status)
+	}
+	_, global := person(t, st, "gia@example.com", "global_admin")
+	byGlobal := syncNow(t, h, global, d.ID, false)
+	if alan, _ = st.GetUser(ctx, alan.ID); byGlobal.Counts.Suspended != 1 || alan.Status != "suspended" {
+		t.Fatalf("a sync a global administrator starts may suspend another administrator: %+v alan %s", byGlobal, alan.Status)
+	}
+
+	rule := `user.memberOf("Engineering")`
+	if _, err := st.CreateGroup(ctx, store.NewGroup{Name: "Builders", Kind: "dynamic", Rule: &rule}); err != nil {
+		t.Fatal(err)
+	}
+	f.set(personEntry("alan", binary, "alan@example.com", "Alan Turing", "Researcher", "512"), groupEntry("Platform", "guid-eng", "alan"))
+	renamed := syncNow(t, h, global, d.ID, false)
+	if renamed.Result == "failed" || renamed.Counts.GroupsRenamed != 0 || !slices.ContainsFunc(renamed.Skipped, func(s string) bool { return strings.Contains(s, "Didn't rename Engineering to Platform") }) {
+		t.Fatalf("a rename a rule depends on must be skipped, not fail the sync: %+v", renamed)
 	}
 
 	for _, entries := range [][]fakeEntry{{personEntry("nobody", "guid-nobody", "nobody@example.com", "Nobody", "Temp", "514")}, nil} {
@@ -304,7 +337,7 @@ func TestDirectorySync(t *testing.T) {
 		}
 	}
 	history := decode[[]store.LDAPSync](t, call(t, h, auditor, "GET", "/api/v1/ldap-directories/"+d.ID+"/syncs", nil), 200)
-	if len(history) != 8 || history[0].Result != "failed" || history[len(history)-1].Counts.Created != 3 {
+	if len(history) != 10 || history[0].Result != "failed" || history[len(history)-1].Counts.Created != 3 {
 		t.Fatalf("history: %+v", history)
 	}
 	events, err := st.ListAudit(ctx, 200)
@@ -440,5 +473,67 @@ func TestDirectoryRetriesRestoreAfterIdentityCheck(t *testing.T) {
 	}
 	if out := syncNow(t, h, admin, dir.ID, false); out.Counts.Restored != 1 {
 		t.Fatalf("restore after identity check: %+v", out)
+	}
+}
+
+func TestDisabledEntryIsSuspendedWhateverItsEmail(t *testing.T) {
+	st, h := setup(t)
+	ctx := context.Background()
+	_, admin := person(t, st, "uma@example.com", "user_admin")
+	if _, err := st.CreateAttribute(ctx, store.Attribute{Name: "employeeNumber", Label: "Employee number", Type: "string"}); err != nil {
+		t.Fatal(err)
+	}
+	f := serveLDAP(t, "ldaps")
+	dir := decode[store.LDAPDirectory](t, call(t, h, admin, "POST", "/api/v1/ldap-directories", directoryInput(f, "ldaps")), 201)
+	f.set(personEntry("ada", "guid-ada", "ada@example.com", "Ada Lovelace", "Engineer", "512"), personEntry("bob", "guid-bob", "bob@example.com", "Bob", "Engineer", "512"))
+	if first := syncNow(t, h, admin, dir.ID, false); first.Counts.Created != 2 {
+		t.Fatalf("first sync: %+v", first)
+	}
+	f.set(personEntry("ada", "guid-ada", "", "Ada Lovelace", "Engineer", "514"),
+		personEntry("bob2", "guid-bob2", "bob@example.com", "Bob", "Engineer", "512"), personEntry("bob", "guid-bob", "bob@example.com", "Bob", "Engineer", "514"))
+	out := syncNow(t, h, admin, dir.ID, false)
+	ada, _ := st.GetUserByEmail(ctx, "ada@example.com")
+	bob, _ := st.GetUserByEmail(ctx, "bob@example.com")
+	if out.Counts.Suspended != 2 || ada.Status != "suspended" || bob.Status != "suspended" {
+		t.Fatalf("disabled entries must be suspended even when their email can't be used: %+v ada %s bob %s", out.Counts, ada.Status, bob.Status)
+	}
+}
+
+func TestScheduledSyncActsWithTheAuthorityOfWhoConfiguredIt(t *testing.T) {
+	st, h := setup(t)
+	ctx := context.Background()
+	_, userAdmin := person(t, st, "uma@example.com", "user_admin")
+	_, global := person(t, st, "gia@example.com", "global_admin")
+	if _, err := st.CreateAttribute(ctx, store.Attribute{Name: "employeeNumber", Label: "Employee number", Type: "string"}); err != nil {
+		t.Fatal(err)
+	}
+	f := serveLDAP(t, "ldaps")
+	f.set(personEntry("ada", "guid-ada", "ada@example.com", "Ada Lovelace", "Engineer", "512"))
+	dir := decode[store.LDAPDirectory](t, call(t, h, userAdmin, "POST", "/api/v1/ldap-directories", directoryInput(f, "ldaps")), 201)
+	syncNow(t, h, userAdmin, dir.ID, false)
+	ada, _ := st.GetUserByEmail(ctx, "ada@example.com")
+	if err := st.SetUserRoles(ctx, ada.ID, []string{"global_admin"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	f.set(personEntry("ada", "guid-ada", "ada@example.com", "Ada Lovelace", "Engineer", "514"))
+	scheduled := func() string {
+		d, err := st.GetLDAPDirectory(ctx, dir.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := (&handlers{st: st}).sync(ctx, d, nil, false); err != nil {
+			t.Fatal(err)
+		}
+		ada, _ = st.GetUser(ctx, ada.ID)
+		return ada.Status
+	}
+	if status := scheduled(); status == "suspended" {
+		t.Fatal("a scheduled sync a user administrator configured must not suspend an administrator")
+	}
+	in := directoryInput(f, "ldaps")
+	delete(in, "password")
+	decode[store.LDAPDirectory](t, call(t, h, global, "PUT", "/api/v1/ldap-directories/"+dir.ID, in), 200)
+	if status := scheduled(); status != "suspended" {
+		t.Fatalf("a scheduled sync a global administrator configured must suspend an administrator who left: %s", status)
 	}
 }

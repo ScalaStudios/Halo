@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -31,6 +32,7 @@ type Config struct {
 	WrappedKey     string
 	Dev            bool
 	NoCustomCSS    bool
+	OutboundAllow  []netip.Prefix
 }
 
 type SMTP struct {
@@ -133,6 +135,14 @@ func Load() (Config, error) {
 
 	cfg.Dev = os.Getenv("HALO_DEV") == "1"
 	cfg.NoCustomCSS = os.Getenv("HALO_DISABLE_CUSTOM_CSS") == "1"
+	for _, item := range strings.FieldsFunc(os.Getenv("HALO_OUTBOUND_ALLOW"), func(r rune) bool { return r == ',' || r == ' ' }) {
+		prefix, err := netip.ParsePrefix(item)
+		if err != nil {
+			problems = append(problems, "HALO_OUTBOUND_ALLOW must list address ranges separated by commas, for example 10.20.0.0/16,192.168.5.10/32; "+item+" is not one")
+			continue
+		}
+		cfg.OutboundAllow = append(cfg.OutboundAllow, prefix.Masked())
+	}
 
 	cfg.SMTP = SMTP{
 		Host:     os.Getenv("HALO_SMTP_HOST"),

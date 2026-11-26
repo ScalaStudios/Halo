@@ -40,6 +40,13 @@ var columns = map[string]string{
 
 const attributeList = "status, department, location, title, source, email, emailDomain, name, kind, manager or memberOf"
 
+const (
+	maxLength = 10000
+	maxDepth  = 50
+	maxNodes  = 2000
+	maxArgs   = 60000
+)
+
 type token struct {
 	kind byte
 	text string
@@ -82,11 +89,15 @@ func lex(src string) ([]token, error) {
 }
 
 type parser struct {
-	toks []token
-	i    int
+	toks  []token
+	i     int
+	depth int
 }
 
 func Parse(src string) (*Expr, error) {
+	if len(src) > maxLength {
+		return nil, &Error{1, fmt.Sprintf("this rule is too long. Keep it under %d characters.", maxLength)}
+	}
 	toks, err := lex(src)
 	if err != nil {
 		return nil, err
@@ -100,6 +111,13 @@ func Parse(src string) (*Expr, error) {
 		return nil, p.fail(t, "and, or, or the end of the rule")
 	}
 	return e, nil
+}
+
+func (e *Expr) MemberOf(name string) bool {
+	if e == nil {
+		return false
+	}
+	return e.Op == "memberOf" && strings.ToLower(e.Values[0]) == strings.ToLower(name) || e.Left.MemberOf(name) || e.Right.MemberOf(name)
 }
 
 func (p *parser) next() token {
@@ -154,11 +172,23 @@ func (p *parser) binary(op string, operand func() (*Expr, error)) (*Expr, error)
 	return left, err
 }
 
+func (p *parser) nest(t token) error {
+	if p.depth++; p.depth > maxDepth {
+		return &Error{t.pos, fmt.Sprintf("this rule nests too deeply. Use at most %d levels of parentheses and not.", maxDepth)}
+	}
+	return nil
+}
+
 func (p *parser) unary() (*Expr, error) {
+	t := p.toks[p.i]
 	if !p.accept("not") {
 		return p.primary()
 	}
+	if err := p.nest(t); err != nil {
+		return nil, err
+	}
 	x, err := p.unary()
+	p.depth--
 	return &Expr{Op: "not", Left: x}, err
 }
 
@@ -166,7 +196,11 @@ func (p *parser) primary() (*Expr, error) {
 	t := p.next()
 	switch {
 	case t.kind == 'p' && t.text == "(":
+		if err := p.nest(t); err != nil {
+			return nil, err
+		}
 		e, err := p.or()
+		p.depth--
 		if err == nil && !p.accept(")") {
 			err = p.fail(p.toks[p.i], fmt.Sprintf(") to close the parenthesis at position %d", t.pos))
 		}
@@ -231,6 +265,7 @@ func (p *parser) str() (string, error) {
 
 type Group struct {
 	ID   string
+	Name string
 	Rule *string
 }
 
@@ -238,9 +273,20 @@ type Compiler struct {
 	Groups map[string]Group
 	Args   []any
 	stack  []string
+	nodes  int
 }
 
-var errLoop = errors.New("loop")
+var (
+	errLoop     = errors.New("loop")
+	errTooLarge = errors.New("too large")
+)
+
+const tooLarge = "this rule is too large. Use fewer conditions and values, or fewer user.memberOf groups that have rules of their own."
+
+func TooLarge(err error) bool {
+	var e *Error
+	return errors.As(err, &e) && e.Msg == tooLarge
+}
 
 func (c *Compiler) Param(v string) string {
 	c.Args = append(c.Args, v)
@@ -253,8 +299,14 @@ func (c *Compiler) Rule(groupID, src string) (string, error) {
 		return "", err
 	}
 	n := len(c.Args)
-	c.stack = []string{groupID}
+	c.stack, c.nodes = []string{groupID}, 0
 	s, err := c.sql(e)
+	if err == nil && len(c.Args) > maxArgs {
+		err = errTooLarge
+	}
+	if errors.Is(err, errTooLarge) {
+		err = &Error{1, tooLarge}
+	}
 	if err != nil {
 		c.Args = c.Args[:n]
 	}
@@ -262,6 +314,9 @@ func (c *Compiler) Rule(groupID, src string) (string, error) {
 }
 
 func (c *Compiler) sql(e *Expr) (string, error) {
+	if c.nodes += 1 + len(e.Values); c.nodes > maxNodes {
+		return "", errTooLarge
+	}
 	switch e.Op {
 	case "true":
 		return "true", nil
@@ -324,7 +379,7 @@ func (c *Compiler) memberOf(e *Expr) (string, error) {
 			}
 		}
 	}
-	if len(c.stack) > 1 {
+	if len(c.stack) > 1 || errors.Is(err, errTooLarge) {
 		return "", err
 	}
 	if errors.Is(err, errLoop) {

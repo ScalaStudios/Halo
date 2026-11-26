@@ -286,10 +286,13 @@ func (h *handlers) updatePolicy(w http.ResponseWriter, r *http.Request, actor st
 	if err != nil {
 		return err
 	}
-	p.ID = old.ID
+	p.ID, p.Conditions = old.ID, p.Conditions.Normalized()
 	change := policyChange(old, map[bool]string{true: "Switch the policy to report-only", false: "Turn off the policy"}[p.Enabled])
 	if enforced(p) {
-		change.Action = ""
+		change.Summary = changes(old, p)
+		if old.Effect == p.Effect && reflect.DeepEqual(old.TermsID, p.TermsID) && reflect.DeepEqual(old.ContextID, p.ContextID) && reflect.DeepEqual(old.Conditions, p.Conditions) {
+			change.Action = ""
+		}
 	}
 	if held, err := h.gate.Hold(w, r, actor, change); held || err != nil {
 		return err
@@ -550,6 +553,9 @@ func (h *handlers) saveZone(w http.ResponseWriter, r *http.Request, actor store.
 		if err != nil {
 			return err
 		}
+		if err := RefuseLockout(r, tx, actor); err != nil {
+			return err
+		}
 		return record(r, tx, actor, store.AuditEvent{Action: action, Summary: summary, TargetType: "network_zone", TargetID: saved.ID, TargetLabel: saved.Name})
 	})
 	if err != nil {
@@ -735,6 +741,11 @@ func (h *handlers) setMethod(w http.ResponseWriter, r *http.Request, actor store
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 		if err := tx.SetMethodEnabled(r.Context(), method, in.Enabled); err != nil {
 			return err
+		}
+		if !in.Enabled {
+			if err := RefuseLockout(r, tx, actor); err != nil {
+				return err
+			}
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "method.update", Summary: summary, TargetType: "method", TargetID: method, TargetLabel: capitalize(methodPlurals[method])})
 	})

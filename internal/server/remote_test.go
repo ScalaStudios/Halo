@@ -595,7 +595,7 @@ func TestRemoteTrustsHostsWithAHaloHostCertificate(t *testing.T) {
 	var host struct {
 		Host store.SSHHost `json:"host"`
 	}
-	decodeInto(t, r.expect(r.admin, "POST", "/api/v1/ssh/hosts", map[string]any{"hostnames": []string{"127.0.0.1"}}, http.StatusCreated, ""), &host)
+	decodeInto(t, r.expect(r.admin, "POST", "/api/v1/ssh/hosts", map[string]any{"hostnames": []string{"localhost"}}, http.StatusCreated, ""), &host)
 	var issued struct {
 		Certificate string `json:"certificate"`
 	}
@@ -609,7 +609,7 @@ func TestRemoteTrustsHostsWithAHaloHostCertificate(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.host = startSSHHost(t, r.ca, "", hostKey, certSigner)
-	app := r.app(map[string]any{"auth": "certificate", "hostKey": ""})
+	app := r.app(map[string]any{"auth": "certificate", "hostKey": "", "host": "LocalHost"})
 	_, token := r.member("ana@example.com", "passkey")
 	ws, err := r.connect(token, r.start(token, app.ID).ID, remoteOrigin)
 	if err != nil {

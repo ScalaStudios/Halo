@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"slices"
 	"testing"
 	"time"
@@ -43,6 +44,10 @@ func TestRotateSecretKey(t *testing.T) {
 	must(st.CreateSSHAuthority(ctx, false, []byte("ssh-seed"), "ssh-ed25519 AAAA", ""))
 	must(st.CreateSSHAuthority(ctx, true, []byte("host-seed"), "ssh-ed25519 BBBB", ""))
 	must(st.ReplaceRecoveryCodes(ctx, u.ID, [][]byte{st.RecoveryCodeHash("abcd")}))
+	pass, err := st.CreateAccessPass(ctx, u.ID, "", 1, time.Now().Add(time.Hour))
+	must(err)
+	_, err = st.CreateMagicLink(ctx, u.ID, "", "123456", time.Now().Add(time.Hour))
+	must(err)
 	approvalID, err := st.CreateApprovalRequest(ctx, store.ApprovalRequest{Action: "global-admin", Summary: "Set roles", TargetType: "user", TargetLabel: "Ada", Method: "PUT", Path: "/api/v1/users/x/roles", Body: []byte("approval-body"), State: "null", Requester: store.NamedRef{ID: u.ID}, ExpiresAt: time.Now().Add(time.Hour)})
 	must(err)
 	must(st.SetBotProtectionSecret(ctx, "bot-secret"))
@@ -87,6 +92,15 @@ func TestRotateSecretKey(t *testing.T) {
 	}
 	if !slices.Equal(rotation.RecoveryCodeUsers, []string{"ada@example.com"}) {
 		t.Fatalf("recovery code users: %v", rotation.RecoveryCodeUsers)
+	}
+	if !slices.Equal(rotation.AccessPassUsers, []string{"ada@example.com"}) {
+		t.Fatalf("access pass users: %v", rotation.AccessPassUsers)
+	}
+	if _, err := st.MatchAccessPass(ctx, u.ID, pass); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("access pass must be removed by rotation: %v", err)
+	}
+	if _, err := st.UseEmailCode(ctx, u.ID, "123456", 5); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("email code must be cleared by rotation: %v", err)
 	}
 	if _, err := st.ListSigningKeys(ctx); err == nil {
 		t.Fatal("the old key must no longer open signing keys")

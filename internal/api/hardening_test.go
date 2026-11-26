@@ -252,3 +252,50 @@ func TestEmailedLinksAreRecorded(t *testing.T) {
 		t.Fatal("an invitation that was not delivered must not be recorded as emailed")
 	}
 }
+
+func TestGroupReferencedByARuleKeepsItsName(t *testing.T) {
+	st, h := setup(t)
+	ctx := context.Background()
+	_, token := person(t, st, "uma@example.com", "user_admin")
+	a, err := st.CreateGroup(ctx, store.NewGroup{Name: "Contractors", Kind: "assigned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := `user.memberOf("contractors") and user.department == "Eng"`
+	if _, err := st.CreateGroup(ctx, store.NewGroup{Name: "Eng contractors", Kind: "dynamic", Rule: &rule}); err != nil {
+		t.Fatal(err)
+	}
+	rec := call(t, h, token, "PATCH", "/api/v1/groups/"+a.ID, map[string]any{"name": "External staff"})
+	expect(t, rec, 409)
+	if !strings.Contains(rec.Body.String(), "the rule of group Eng contractors") {
+		t.Fatalf("conflict must name the dependent group: %s", rec.Body)
+	}
+	expect(t, call(t, h, token, "PATCH", "/api/v1/groups/"+a.ID, map[string]any{"name": "CONTRACTORS"}), 200)
+	rec = call(t, h, token, "DELETE", "/api/v1/groups/"+a.ID, nil)
+	expect(t, rec, 409)
+	if !strings.Contains(rec.Body.String(), "the rule of group Eng contractors") {
+		t.Fatalf("conflict must name the dependent group: %s", rec.Body)
+	}
+}
+
+func TestRuleChangeCannotOverflowADependentRule(t *testing.T) {
+	st, h := setup(t)
+	ctx := context.Background()
+	_, token := person(t, st, "uma@example.com", "user_admin")
+	small := `user.department == "x"`
+	a, err := st.CreateGroup(ctx, store.NewGroup{Name: "Base", Kind: "dynamic", Rule: &small})
+	if err != nil {
+		t.Fatal(err)
+	}
+	twice := `user.memberOf("Base") or user.memberOf("Base")`
+	if _, err := st.CreateGroup(ctx, store.NewGroup{Name: "Twice", Kind: "dynamic", Rule: &twice}); err != nil {
+		t.Fatal(err)
+	}
+	big := `user.department in [` + strings.Repeat(`"x",`, 1499) + `"x"]`
+	rec := call(t, h, token, "PATCH", "/api/v1/groups/"+a.ID, map[string]any{"rule": big})
+	expect(t, rec, 422)
+	if !strings.Contains(rec.Body.String(), `the rule of \"Twice\" too large`) {
+		t.Fatalf("refusal must name the dependent group: %s", rec.Body)
+	}
+	expect(t, call(t, h, token, "PATCH", "/api/v1/groups/"+a.ID, map[string]any{"rule": `user.department in [` + strings.Repeat(`"x",`, 99) + `"x"]`}), 200)
+}

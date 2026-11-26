@@ -33,6 +33,7 @@ type Decision struct {
 	Terms    []store.Terms
 	Contexts []store.AuthContext
 	Signals  []string
+	AppOnly  bool
 }
 
 func (d Decision) StepUp(requested []store.AuthContext, sess store.Session) (string, *store.AuthContext) {

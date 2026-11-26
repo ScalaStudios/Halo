@@ -20,6 +20,8 @@ var (
 	riskLevels   = []string{"none", "low", "medium", "high"}
 	destinations = map[string]string{"webhook": "a webhook", "slack": "Slack", "discord": "Discord"}
 	slackEscape  = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+	lineBreaks   = strings.NewReplacer("\r", " ", "\n", " ", "\u2028", " ", "\u2029", " ")
+	discordMarks = strings.NewReplacer(`\`, `\\`, "*", `\*`, "_", `\_`, "~", `\~`, "`", "\\`", "|", `\|`, ">", `\>`, "[", `\[`, "]", `\]`, "(", `\(`, ")", `\)`)
 )
 
 type ruleInput struct {
@@ -148,7 +150,7 @@ func render(rule store.NotificationRule, e store.WebhookEvent, count int) ([]byt
 		text = append(text, catalog[i].Description)
 	}
 	if detail := cmp.Or(d.Summary, d.Message); detail != "" {
-		text = append(text, clip(detail, 1500))
+		text = append(text, clip(lineBreaks.Replace(detail), 1500))
 	}
 	if count > 1 {
 		unit := "minutes"
@@ -168,18 +170,18 @@ func render(rule store.NotificationRule, e store.WebhookEvent, count int) ([]byt
 			lines = append(lines, slackEscape.Replace(t))
 		}
 		for _, f := range fields {
-			lines = append(lines, "*"+f[0]+":* "+slackEscape.Replace(clip(f[1], 256)))
+			lines = append(lines, "*"+f[0]+":* `"+strings.ReplaceAll(slackEscape.Replace(lineBreaks.Replace(clip(f[1], 256))), "`", "'")+"`")
 		}
 		lines = append(lines, "`"+e.Type+"` · "+e.Time.Format("2 Jan 2006 15:04:05 UTC"))
 		return json.Marshal(map[string]string{"text": strings.Join(lines, "\n")})
 	}
 	embedFields := []map[string]any{}
 	for _, f := range fields {
-		embedFields = append(embedFields, map[string]any{"name": f[0], "value": clip(f[1], 256), "inline": true})
+		embedFields = append(embedFields, map[string]any{"name": f[0], "value": discordMarks.Replace(lineBreaks.Replace(clip(f[1], 256))), "inline": true})
 	}
 	return json.Marshal(map[string]any{
 		"allowed_mentions": map[string][]string{"parse": {}},
-		"embeds": []map[string]any{{"title": clip(rule.Name, 256), "description": clip(strings.Join(text, "\n"), 2048), "color": 0xE5484D,
+		"embeds": []map[string]any{{"title": clip(rule.Name, 256), "description": clip(discordMarks.Replace(strings.Join(text, "\n")), 2048), "color": 0xE5484D,
 			"timestamp": e.Time.Format(time.RFC3339), "footer": map[string]string{"text": e.Type}, "fields": embedFields}},
 	})
 }

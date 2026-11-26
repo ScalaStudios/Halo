@@ -160,7 +160,12 @@ func (s *storage) CreateAccessToken(ctx context.Context, req op.TokenRequest) (s
 		return "", time.Time{}, err
 	}
 	if access.SubjectID == nil {
-		return access.ID, access.ExpiresAt, issued(req, s.st.CreateOIDCTokens(ctx, access))
+		return access.ID, access.ExpiresAt, issued(req, s.st.Tx(ctx, func(tx *store.Store) error {
+			if err := consume(ctx, tx, req); err != nil {
+				return err
+			}
+			return tx.CreateOIDCTokens(ctx, access)
+		}))
 	}
 	u, err := s.st.GetUser(ctx, *access.UserID)
 	if err != nil {
@@ -177,6 +182,18 @@ func (s *storage) CreateAccessToken(ctx context.Context, req op.TokenRequest) (s
 		}
 		return tx.RecordAudit(ctx, event)
 	}))
+}
+
+func consume(ctx context.Context, tx *store.Store, req op.TokenRequest) error {
+	code, ok := req.(*authRequest)
+	if !ok {
+		return nil
+	}
+	err := tx.ConsumeAuthRequest(ctx, code.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return oidc.ErrInvalidGrant().WithDescription("The authorization code was already used or has expired.")
+	}
+	return err
 }
 
 func issued(req op.TokenRequest, err error) error {
@@ -214,6 +231,9 @@ func (s *storage) CreateAccessAndRefreshTokens(ctx context.Context, req op.Token
 	refresh.ExpiresAt = time.Now().Add(seconds(app.TokenPolicy.RefreshTokenTTL))
 	access.RefreshID = &refresh.ID
 	err = s.st.Tx(ctx, func(tx *store.Store) error {
+		if err := consume(ctx, tx, req); err != nil {
+			return err
+		}
 		if refreshing {
 			refresh.Scopes = prev.Scopes
 			if err := tx.RotateOIDCToken(ctx, prev.ID); errors.Is(err, store.ErrNotFound) {

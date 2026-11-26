@@ -194,6 +194,9 @@ func (h *handlers) create(w http.ResponseWriter, r *http.Request, actor store.Us
 		if d.ID, err = tx.CreateLDAPDirectory(r.Context(), d, in.Password); err != nil {
 			return h.taken(err, d.Name)
 		}
+		if err := tx.SetLDAPConfiguredBy(r.Context(), d.ID, actor.ID); err != nil {
+			return err
+		}
 		return record(r, tx, actor, store.AuditEvent{Action: "ldap_directory.create", Summary: "Added LDAP directory " + d.URL, TargetType: "ldap_directory", TargetID: d.ID, TargetLabel: d.Name})
 	})
 	if err != nil {
@@ -223,11 +226,15 @@ func (h *handlers) update(w http.ResponseWriter, r *http.Request, actor store.Us
 	if err != nil {
 		return err
 	}
+	moved := old.URL != d.URL || old.Security != d.Security || old.CACertificate != d.CACertificate
+	if moved && in.Password == "" {
+		return httpx.Invalid("Enter the bind account's password again. Halo sends the saved password only to the server and connection it was entered for.")
+	}
 	parts := []string{}
 	if old.Name != d.Name {
 		parts = append(parts, "renamed from “"+old.Name+"”")
 	}
-	if old.URL != d.URL || old.Security != d.Security || old.CACertificate != d.CACertificate {
+	if moved {
 		parts = append(parts, "changed the connection")
 	}
 	if old.BindDN != d.BindDN || in.Password != "" {
@@ -247,6 +254,9 @@ func (h *handlers) update(w http.ResponseWriter, r *http.Request, actor store.Us
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 		if err := tx.UpdateLDAPDirectory(r.Context(), d, in.Password); err != nil {
 			return h.taken(err, d.Name)
+		}
+		if err := tx.SetLDAPConfiguredBy(r.Context(), d.ID, actor.ID); err != nil {
+			return err
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "ldap_directory.update", Summary: summary, TargetType: "ldap_directory", TargetID: d.ID, TargetLabel: d.Name})
 	})

@@ -109,10 +109,14 @@ var sensitiveRoutes = []string{
 
 var ownMethodRoutes = []string{
 	"POST /api/v1/me/passkeys/begin",
+	"POST /api/v1/me/passkeys/finish",
 	"POST /api/v1/me/totp/begin",
+	"POST /api/v1/me/totp/confirm",
 	"POST /api/v1/me/recovery-codes",
 	"DELETE /api/v1/me/methods/{id}",
+	"DELETE /api/v1/me/identities/{id}",
 	"PUT /api/v1/me/security-emails",
+	"PUT /api/v1/me/password",
 }
 
 type App struct {

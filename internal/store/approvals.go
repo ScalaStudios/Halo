@@ -14,7 +14,7 @@ var ApprovalActions = map[string]string{
 	"global-admin":       "granting the global administrator role",
 	"policy-disable":     "stopping an enforced access policy",
 	"password-sign-in":   "turning on password sign-in",
-	"identity-providers": "changing identity providers",
+	"identity-providers": "changing identity providers, certificate authorities or Windows sign-in",
 	"impersonation":      "impersonating someone",
 	"user-deletion":      "deleting a person permanently",
 }
@@ -41,13 +41,15 @@ type ApprovalRequest struct {
 }
 
 var approvalTargetLocks = map[string]struct{ tables, row string }{
-	"user":              {"user_roles, role_eligibilities, role_activations", "users"},
-	"service_account":   {"user_roles", "users"},
-	"policy":            {"access_policies", ""},
-	"identity_provider": {"identity_providers", ""},
-	"method":            {"sign_in_method_settings", ""},
-	"settings":          {"settings", ""},
-	"configuration":     {"settings, user_attributes, groups, group_owners, group_members, terms, applications, app_groups, app_exchange_sources, access_policies, access_packages, access_package_groups, access_package_approvers, access_package_stages", ""},
+	"user":                  {"user_roles, role_eligibilities, role_activations", "users"},
+	"service_account":       {"user_roles", "users"},
+	"policy":                {"access_policies", ""},
+	"identity_provider":     {"identity_providers", ""},
+	"certificate_authority": {"certificate_authorities", ""},
+	"kerberos":              {"kerberos_source", ""},
+	"method":                {"sign_in_method_settings", ""},
+	"settings":              {"settings", ""},
+	"configuration":         {"settings, user_attributes, groups, group_owners, group_members, terms, applications, app_groups, app_exchange_sources, access_policies, access_packages, access_package_groups, access_package_approvers, access_package_stages", ""},
 }
 
 func (s *Store) LockApprovalTarget(ctx context.Context, targetType, targetID string) error {

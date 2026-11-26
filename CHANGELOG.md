@@ -4,6 +4,35 @@ All notable changes to Halo are recorded in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Halo follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Security
+
+- A token of the Halo CLI can no longer add or remove sign-in methods or change a password; those need a browser session, and changing a password needs a recent strong sign-in when the person has one. Application administrators can no longer change the built-in CLI client's redirect addresses, scopes or groups, and the client no longer accepts the authorization code flow.
+- Sign-in lockout is reserved before a code or password is checked, so parallel guesses no longer get past the limit of five. Refused attempts no longer extend the lockout, LDAP binds count toward the per-address limit, and the risk signal counts only wrong secrets from the same address.
+- Only a global administrator changes administrator accounts, on every path: limited administrators, LDAP sync, lifecycle rules, SCIM and the last-global-administrator guard, which is now locked. Setup links, access passes and temporary passwords stop working when an account is given an administrator role. Certificates, identity providers and Kerberos no longer make the first sign-in for administrator and emergency accounts.
+- Access policies for Halo apply to sessions created through an application sign-in. Editing an enforced policy and widening password sign-in now wait for approval when approval is on, and approvers see every field of a settings change, including features it turns off.
+- Webhooks, upstream identity providers, workload identity issuers and outbound SCIM follow no redirects. Webhooks, upstream identity providers and workload identity issuers on private addresses are refused unless their range is listed in `HALO_OUTBOUND_ALLOW`. Changing the address of an LDAP directory, SCIM target, identity verification provider or log export no longer sends the saved password, token, key or headers to the new address.
+- Group rules have size and depth limits, Linux home directories must sit in `/home`, and replacing a host's SSH key revokes the old one.
+
+### Fixed
+
+- Authorization codes are redeemed once, authorization requests keep only the application's scopes, and deleting an application revokes its tokens.
+- LDAP sync suspends people disabled in the directory even when their email is missing or duplicated, skips a group rename that another group's rule depends on, and a scheduled sync acts with the authority of whoever last saved the directory settings.
+- Renaming or deleting a group another group's rule uses is refused instead of emptying that rule. Remote access host names are compared without case.
+- SCIM can provision a deprovisioned person again when the identity provider's `externalId` matches; another person with the same email gets a new account.
+- `halo bootstrap` can issue a new setup link while the first administrator has not enrolled, and key rotation removes access passes and pending email codes.
+- Identity provider links are removed when the issuer or SAML entity ID changes, permanent deletion no longer rewrites unrelated audit records, webhook delivery logs are purged after 30 days, and one slow webhook endpoint no longer delays the others.
+
+### Upgrade
+
+- Existing applications get `profile`, `email` and `offline_access` added to their scopes, so they keep receiving the claims and refresh tokens they received before. New applications get only the scopes you configure.
+- Webhook receivers, upstream identity providers and workload identity issuers on private addresses need their address ranges in `HALO_OUTBOUND_ALLOW`. In the Helm chart, set it under `server.env`.
+- After changing the address of an LDAP directory, SCIM target or identity verification provider, enter its password, token or key again. Log export drops its saved headers when its endpoint changes.
+- `halo-hostd` skips accounts whose home directory is not directly in `/home`, and the server refuses such home directories. Change them before upgrading the hosts.
+- Administrator and emergency access accounts can no longer make their first sign-in by certificate, identity provider or Kerberos. Accounts already linked keep working.
+- Five or more simultaneous sign-ins to one account are refused while they are in progress.
+
 ## 0.6.0
 
 ### Added

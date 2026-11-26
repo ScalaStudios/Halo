@@ -675,9 +675,9 @@ export const en = {
         description:
           "To a person or a service account, or making a person eligible to activate it. Inviting someone or creating a service account with the role is refused; grant it afterwards.",
       },
-      "policy-disable": { label: "Stopping an enforced access policy", description: "Turning it off, switching it to report-only or deleting it." },
-      "password-sign-in": { label: "Turning on password sign-in", description: "For the whole organization, under Methods." },
-      "identity-providers": { label: "Changing identity providers", description: "Adding, editing, turning on or off, or deleting one." },
+      "policy-disable": { label: "Stopping an enforced access policy", description: "Turning it off, switching it to report-only, deleting it or changing its effect or conditions." },
+      "password-sign-in": { label: "Turning on password sign-in", description: "For the whole organization, under Methods, and letting more people use passwords or dropping their second factor." },
+      "identity-providers": { label: "Changing identity providers", description: "Adding, editing, turning on or off, or deleting one, and changing certificate authorities or Windows sign-in." },
       impersonation: { label: "Impersonating someone", description: "A helpdesk administrator seeing Halo as a person for 30 minutes. They start it once approved." },
       "user-deletion": {
         label: "Deleting a person permanently",
@@ -785,7 +785,7 @@ export const en = {
     caption: "Webhook endpoints",
     endpoint: "Endpoint",
     lastDelivery: "Last delivery",
-    urlError: "Enter an https:// URL. Plain http:// works only for localhost.",
+    urlError: "Enter an https:// URL. Plain http:// works only for localhost while Halo runs in development mode.",
     saved: "Endpoint saved",
     added: "Endpoint added",
     secretDescription: "Verify the Halo-Signature header of every request with this signing secret.",

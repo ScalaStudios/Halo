@@ -169,7 +169,7 @@ export function LogExportForm({ data, canEdit }: { data: LogExportResponse; canE
           {protocol === "otlp-http" ? (
             <Field
               label={t.headers}
-              hint={saved?.headersSet ? t.headersKeep : t.headersHint}
+              hint={saved?.headersSet && protocol === saved.protocol && endpoint.trim() === saved.endpoint ? t.headersKeep : t.headersHint}
             >
               {(props) => <Textarea {...props} mono rows={3} spellCheck={false} disabled={!editable} value={headers} onChange={(event) => setHeaders(event.target.value)} />}
             </Field>

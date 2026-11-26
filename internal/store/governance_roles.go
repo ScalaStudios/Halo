@@ -26,6 +26,10 @@ type ExpiredActivation struct {
 func (s *Store) SetEligibleRoles(ctx context.Context, userID string, roles []string, scopes map[string][]string) ([]string, error) {
 	var ended []string
 	err := s.Tx(ctx, func(tx *Store) error {
+		privileged, err := tx.privileged(ctx, userID)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.db.Exec(ctx, `delete from role_eligibilities where user_id = $1 and role <> all($2)`, userID, roles); err != nil {
 			return err
 		}
@@ -39,8 +43,10 @@ func (s *Store) SetEligibleRoles(ctx context.Context, userID string, roles []str
 		if err != nil {
 			return err
 		}
-		ended, err = pgx.CollectRows(rows, pgx.RowTo[string])
-		return err
+		if ended, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil || privileged || len(roles) == 0 {
+			return err
+		}
+		return tx.revokeSetupCredentials(ctx, userID)
 	})
 	return ended, err
 }

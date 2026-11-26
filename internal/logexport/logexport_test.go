@@ -347,6 +347,15 @@ func TestConsole(t *testing.T) {
 	if strings.Contains(string(raw), "hidden-token") || !strings.Contains(string(raw), `{"field":"headersSecret","redacted":true}`) {
 		t.Fatalf("audit changes: %s", raw)
 	}
+	if rec := call(t, mux, security, "PUT", "/api/v1/log-export", input{Protocol: "otlp-http", Endpoint: "https://otel.example.com/v1/logs"}); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"headersSet":true`) {
+		t.Fatalf("same endpoint without headers: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := call(t, mux, security, "PUT", "/api/v1/log-export", input{Protocol: "otlp-http", Endpoint: "https://collector.attacker.example/v1/logs"}); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"headersSet":false`) {
+		t.Fatalf("new endpoint without headers: %d %s", rec.Code, rec.Body.String())
+	}
+	if saved, err := st.GetLogExport(ctx); err != nil || saved.HeadersSealed != nil {
+		t.Fatalf("the headers must be dropped with the old endpoint: %+v %v", saved, err)
+	}
 
 	udp, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {

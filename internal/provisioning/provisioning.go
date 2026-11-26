@@ -30,7 +30,7 @@ type handlers struct {
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
-	h := &handlers{st: d.Store, client: &http.Client{Timeout: 15 * time.Second}, issuer: d.Config.Issuer()}
+	h := &handlers{st: d.Store, client: &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, issuer: d.Config.Issuer()}
 	if d.Jobs != nil {
 		d.Jobs.Every("push assigned people and groups to applications over SCIM", 2*time.Minute, h.syncDue)
 	}
@@ -112,8 +112,8 @@ func (h *handlers) configure(w http.ResponseWriter, r *http.Request, actor store
 	if err != nil || u.Host == "" || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && !loopback) {
 		return httpx.Invalid(fmt.Sprintf("%q is not a valid SCIM base URL. Use the https:// address from %s's SCIM settings, such as https://app.example.com/scim/v2, without a query string.", in.BaseURL, app.Name))
 	}
-	_, err = h.st.GetAppProvisioning(r.Context(), app.ID)
-	configured := err == nil
+	existing, err := h.st.GetAppProvisioning(r.Context(), app.ID)
+	configured := err == nil && existing.BaseURL == base
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return err
 	}

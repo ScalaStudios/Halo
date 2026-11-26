@@ -12,12 +12,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"halo/internal/cli"
 	"halo/internal/config"
 	"halo/internal/db"
+	"halo/internal/httpx"
 	"halo/internal/kms"
 	"halo/internal/secret"
 	"halo/internal/server"
@@ -92,6 +94,7 @@ func withStore(ctx context.Context, fn func(context.Context, config.Config, *sto
 	if err != nil {
 		return err
 	}
+	httpx.AllowOutbound(cfg.OutboundAllow)
 	keys := kms.FromConfig(cfg.KMS)
 	if cfg.WrappedKey != "" {
 		if cfg.SecretKey, err = keys.SecretKey(ctx, cfg.WrappedKey); err != nil {
@@ -200,30 +203,55 @@ func bootstrap(ctx context.Context, args []string) error {
 		return errors.New("bootstrap needs --email and --name, for example: halo bootstrap --email you@example.com --name \"Sam Lee\"")
 	}
 	return withStore(ctx, func(ctx context.Context, cfg config.Config, st *store.Store) error {
-		users, err := st.ListUsers(ctx)
+		user, token, expires, err := bootstrapAdmin(ctx, st, *email, *name)
 		if err != nil {
 			return err
 		}
-		for _, u := range users {
-			if u.HasRole("global_admin") {
-				return fmt.Errorf("%s is already a global administrator; invite more people from the console instead", u.Email)
-			}
-		}
-		user, err := st.CreateUser(ctx, store.NewUser{Email: *email, Name: *name, Status: "invited", Roles: []string{"global_admin"}})
-		if err != nil {
-			return err
-		}
-		token, expires, err := st.CreateEnrollmentToken(ctx, user.ID, "invite", nil)
-		if err != nil {
-			return err
-		}
-		if err := st.RecordAudit(ctx, store.AuditEvent{Action: "user.bootstrap", Summary: "Created the first global administrator", TargetType: "user", TargetID: user.ID, TargetLabel: user.Name}); err != nil {
-			return err
-		}
-		fmt.Printf("Created %s <%s> as global administrator.\n\nOpen this link to set up a passkey. It works once and expires %s:\n\n  %s%s\n\n",
+		fmt.Printf("%s <%s> is the first global administrator.\n\nOpen this link to set up a passkey. It works once and expires %s:\n\n  %s%s\n\n",
 			user.Name, user.Email, expires.Format("2 January 2006 15:04 MST"), cfg.Issuer(), store.EnrollPath(token))
 		return nil
 	})
+}
+
+func bootstrapAdmin(ctx context.Context, st *store.Store, email, name string) (store.User, string, time.Time, error) {
+	users, err := st.ListUsers(ctx)
+	if err != nil {
+		return store.User{}, "", time.Time{}, err
+	}
+	var pending []store.User
+	for _, u := range users {
+		if !u.HasRole("global_admin") {
+			continue
+		}
+		if u.Status != "invited" || len(u.Methods) > 0 {
+			return store.User{}, "", time.Time{}, fmt.Errorf("%s is already a global administrator; invite more people from the console instead", u.Email)
+		}
+		pending = append(pending, u)
+	}
+	var user store.User
+	for _, u := range pending {
+		if !strings.EqualFold(u.Email, strings.TrimSpace(email)) {
+			return store.User{}, "", time.Time{}, fmt.Errorf("%s is the first global administrator but has not set up a passkey yet. Run halo bootstrap --email %s --name %q to print a new setup link", u.Email, u.Email, u.Name)
+		}
+		user = u
+	}
+	var token string
+	var expires time.Time
+	err = st.Tx(ctx, func(tx *store.Store) error {
+		var err error
+		summary := "Issued a new setup link for the first global administrator"
+		if user.ID == "" {
+			summary = "Created the first global administrator"
+			if user, err = tx.CreateUser(ctx, store.NewUser{Email: email, Name: name, Status: "invited", Roles: []string{"global_admin"}}); err != nil {
+				return err
+			}
+		}
+		if token, expires, err = tx.CreateEnrollmentToken(ctx, user.ID, "invite", nil); err != nil {
+			return err
+		}
+		return tx.RecordAudit(ctx, store.AuditEvent{Action: "user.bootstrap", Summary: summary, TargetType: "user", TargetID: user.ID, TargetLabel: user.Name})
+	})
+	return user, token, expires, err
 }
 
 func devSession(ctx context.Context, args []string) error {
@@ -281,6 +309,13 @@ func newSecretKey(ctx context.Context, cfg config.Config, keys *kms.Keys) ([]byt
 	return next, nil
 }
 
+func people(n int) string {
+	if n == 1 {
+		return "1 person"
+	}
+	return fmt.Sprintf("%d people", n)
+}
+
 func rotateSecretKey(ctx context.Context) error {
 	return withStore(ctx, func(ctx context.Context, cfg config.Config, st *store.Store) error {
 		next, err := newSecretKey(ctx, cfg, st.Keys)
@@ -306,16 +341,19 @@ func rotateSecretKey(ctx context.Context) error {
 		for _, c := range rotation.Resealed {
 			fmt.Printf("  %-40s %d\n", c.Name, c.Rows)
 		}
-		fmt.Println("\nRecovery codes are stored as HMACs keyed from HALO_SECRET_KEY, so they cannot be re-derived.")
-		if len(rotation.RecoveryCodeUsers) == 0 {
-			fmt.Println("Nobody had recovery codes, so nothing else needs regenerating.")
-		} else {
-			people := fmt.Sprintf("%d people", len(rotation.RecoveryCodeUsers))
-			if len(rotation.RecoveryCodeUsers) == 1 {
-				people = "1 person"
-			}
-			fmt.Printf("Halo removed the recovery codes of %s. Ask them to generate new ones on their account's Security page:\n", people)
+		fmt.Println("\nRecovery codes and temporary access passes are stored as HMACs keyed from HALO_SECRET_KEY, so they cannot be re-derived.")
+		if len(rotation.RecoveryCodeUsers) == 0 && len(rotation.AccessPassUsers) == 0 {
+			fmt.Println("Nobody had recovery codes or temporary access passes, so nothing else needs regenerating.")
+		}
+		if len(rotation.RecoveryCodeUsers) > 0 {
+			fmt.Printf("Halo removed the recovery codes of %s. Ask them to generate new ones on their account's Security page:\n", people(len(rotation.RecoveryCodeUsers)))
 			for _, email := range rotation.RecoveryCodeUsers {
+				fmt.Println("  " + email)
+			}
+		}
+		if len(rotation.AccessPassUsers) > 0 {
+			fmt.Printf("Halo removed the temporary access passes of %s. Create new passes for them from the console:\n", people(len(rotation.AccessPassUsers)))
+			for _, email := range rotation.AccessPassUsers {
 				fmt.Println("  " + email)
 			}
 		}

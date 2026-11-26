@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"slices"
 	"syscall"
 	"time"
 )
@@ -12,10 +13,20 @@ import (
 var (
 	sharedSpace = netip.MustParsePrefix("100.64.0.0/10")
 	errPrivate  = errors.New("the address is private, loopback or link-local, and Halo only calls public addresses here")
+	guarded     = GuardedClient()
+	development = DialerClient(&net.Dialer{Timeout: 10 * time.Second})
+	allowed     []netip.Prefix
 )
+
+func AllowOutbound(prefixes []netip.Prefix) {
+	allowed = prefixes
+}
 
 func PublicAddress(ip netip.Addr) bool {
 	ip = ip.Unmap()
+	if slices.ContainsFunc(allowed, func(p netip.Prefix) bool { return p.Contains(ip) }) {
+		return true
+	}
 	return ip.IsGlobalUnicast() && !ip.IsPrivate() && !sharedSpace.Contains(ip)
 }
 
@@ -31,6 +42,13 @@ func GuardedDialer() *net.Dialer {
 
 func GuardedClient() *http.Client {
 	return DialerClient(GuardedDialer())
+}
+
+func OutboundClient(dev bool) *http.Client {
+	if dev {
+		return development
+	}
+	return guarded
 }
 
 func DialerClient(dialer *net.Dialer) *http.Client {

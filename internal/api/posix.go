@@ -36,8 +36,8 @@ func (h *handlers) setPOSIX(w http.ResponseWriter, r *http.Request, actor store.
 		return httpx.Invalid("Use up to 32 lowercase letters, digits, _ . or - for the user name, starting with a letter or _.")
 	case !hostd.PathPattern.MatchString(next.LoginShell) || next.LoginShell == "/":
 		return httpx.Invalid("Set the login shell to an absolute path, such as /bin/bash.")
-	case !hostd.PathPattern.MatchString(next.HomeDirectory) || next.HomeDirectory == "/":
-		return httpx.Invalid("Set the home directory to an absolute path, such as /home/" + next.Username + ".")
+	case !hostd.ValidHome(next.HomeDirectory, "/home"):
+		return httpx.Invalid("Set the home directory to a folder directly in /home, such as /home/" + next.Username + ".")
 	}
 	if next == *target.POSIX {
 		return httpx.JSON(w, http.StatusOK, target)
@@ -48,6 +48,8 @@ func (h *handlers) setPOSIX(w http.ResponseWriter, r *http.Request, actor store.
 			return conflict("Another person or group already uses the Linux name " + next.Username + ". Choose a different one.")
 		case errors.Is(err, store.ErrPOSIXName):
 			return httpx.Invalid(next.Username + " is reserved for a system account. Choose a different user name.")
+		case errors.Is(err, store.ErrPOSIXHome):
+			return conflict("Another person already uses the home directory " + next.HomeDirectory + ". Choose a different one.")
 		case err != nil:
 			return err
 		}
