@@ -2,8 +2,8 @@ apiVersion: v2
 name: halo
 description: Halo identity server and web interface
 type: application
-version: 0.4.0
-appVersion: "0.6.0"
+version: 0.5.0
+appVersion: "0.7.0"
 home: https://halo.scala.gg
 sources:
   - https://github.com/ScalaStudios/Halo

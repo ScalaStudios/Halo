@@ -18,7 +18,7 @@ services:
     networks: [halo]
 
   halo-server:
-    image: ghcr.io/scalastudios/halo-server:0.6.0
+    image: ghcr.io/scalastudios/halo-server:0.7.0
     restart: unless-stopped
     env_file: .env
     environment:
@@ -31,7 +31,7 @@ services:
     networks: [halo]
 
   halo-web:
-    image: ghcr.io/scalastudios/halo-web:0.6.0
+    image: ghcr.io/scalastudios/halo-web:0.7.0
     restart: unless-stopped
     environment:
       HALO_API_URL: http://halo-server:8080
