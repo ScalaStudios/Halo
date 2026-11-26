@@ -254,3 +254,37 @@ func TestPermanentDeletionGuards(t *testing.T) {
 		t.Errorf("a name must only be replaced where it is a whole word, got %v", n)
 	}
 }
+
+func TestPermanentDeletionKeepsUnrelatedAudit(t *testing.T) {
+	e := impersonationSetup(t)
+	ctx := context.Background()
+	st := e.st
+	ada, adaToken := e.person("ada@example.com", false, "global_admin")
+	group, err := st.CreateGroup(ctx, store.NewGroup{Name: "Support", Kind: "assigned"})
+	must(t, err)
+	must(t, st.RecordAudit(ctx, store.AuditEvent{ActorID: &ada.ID, Action: "group.update", Summary: "Updated the group Support", TargetType: "group", TargetID: group.ID, TargetLabel: group.Name,
+		Changes: store.Diff(map[string]any{"name": "Helpdesk"}, map[string]any{"name": "Support"})}))
+	app, err := st.CreateApplication(ctx, store.NewApplication{Name: "Wiki", Protocol: "oidc", Type: "web", RedirectURIs: []string{"https://wiki.example.com/cb"}})
+	must(t, err)
+	must(t, st.RecordAudit(ctx, store.AuditEvent{ActorID: &ada.ID, Action: "application.update", Summary: "Updated the application", TargetType: "application", TargetID: app.ID, TargetLabel: app.Name,
+		Changes: store.Diff(map[string]any{"enabled": false, "field": "old"}, map[string]any{"enabled": true, "field": "new"})}))
+	for _, name := range []string{"Support", "True", "field"} {
+		u, err := st.CreateUser(ctx, store.NewUser{Email: strings.ToLower(name) + "@example.com", Name: name, Status: "active"})
+		must(t, err)
+		expect(t, e.call(adaToken, "DELETE", "/api/v1/users/"+u.ID, nil), 200)
+	}
+	if row := rowsOf(t, st, `select summary, target_label, changes::text as diff from audit_events where target_id = $1`, group.ID)[0]; row["summary"] != "Updated the group Support" || row["targetLabel"] != "Support" || !strings.Contains(row["diff"].(string), `"Support"`) {
+		t.Errorf("the group's audit entry changed: %v", row)
+	}
+	var changes []store.Change
+	raw, err := json.Marshal(rowsOf(t, st, `select changes from audit_events where target_id = $1 and action = 'application.update'`, app.ID)[0]["changes"])
+	must(t, err)
+	must(t, json.Unmarshal(raw, &changes))
+	got := map[string]string{}
+	for _, c := range changes {
+		got[c.Field] = string(c.Before) + ">" + string(c.After)
+	}
+	if got["enabled"] != "false>true" || got["field"] != `"old">"new"` {
+		t.Errorf("the application diff changed: %v", got)
+	}
+}

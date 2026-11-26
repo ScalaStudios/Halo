@@ -208,7 +208,7 @@ func (a *Auth) Resolve(next http.Handler) http.Handler {
 		cookie, err := r.Cookie(SessionCookie)
 		if err == nil && cookie.Value != "" {
 			sess, err := a.Store.SessionByToken(r.Context(), cookie.Value)
-			if err == nil {
+			if err == nil && (!sess.AppOnly || appOnlyAllows(r.URL.Path)) {
 				user, err := a.Store.GetUser(r.Context(), sess.UserID)
 				if err == nil && user.Status != "suspended" && user.Status != "deprovisioned" && a.Store.ImpersonationValid(r.Context(), sess, user) {
 					ctx := context.WithValue(r.Context(), userKey, user)
@@ -351,6 +351,10 @@ func (a *Auth) RecentSignIn(mux *http.ServeMux, sensitive, ownMethods []string) 
 			*route = pattern
 		}
 		u, _ := CurrentUser(r)
+		if _, browser := CurrentSession(r); slices.Contains(ownMethods, pattern) && !browser {
+			Handle(func(http.ResponseWriter, *http.Request) error { return ErrUnauthenticated })(w, r)
+			return
+		}
 		if slices.Contains(sensitive, pattern) || slices.Contains(ownMethods, pattern) && u.CanReauthenticate() {
 			if err := RequireRecentSignIn(r, a.Store); err != nil {
 				Handle(func(http.ResponseWriter, *http.Request) error { return err })(w, r)

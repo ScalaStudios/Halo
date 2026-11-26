@@ -252,6 +252,30 @@ func TestUserLifecycle(t *testing.T) {
 			t.Fatalf("missing audit action %s in %v", action, actions)
 		}
 	}
+
+	rec, body = e.call("POST", "/scim/v2/Users", map[string]any{"userName": "ada.lovelace@example.com", "displayName": "Ada Lovelace", "externalId": "00u1ada"})
+	e.expect(rec, 201)
+	if body["id"] != id || body["active"] != true {
+		t.Fatalf("re-provisioning must bring back the deprovisioned person: %v", body)
+	}
+	rec, body = e.call("GET", "/scim/v2/Users?filter="+url.QueryEscape(`userName eq "ada.lovelace@example.com"`), nil)
+	e.expect(rec, 200)
+	if resources, _ := body["Resources"].([]any); body["totalResults"] != float64(1) || len(resources) != 1 || resources[0].(map[string]any)["id"] != id {
+		t.Fatalf("re-provisioned person must be listed: %s", rec.Body)
+	}
+	rec, _ = e.call("DELETE", "/scim/v2/Users/"+id, nil)
+	e.expect(rec, 204)
+	rec, body = e.call("POST", "/scim/v2/Users", map[string]any{"userName": "ada.lovelace@example.com", "displayName": "Another Ada", "externalId": "00u2ada"})
+	e.expect(rec, 201)
+	if body["id"] == id {
+		t.Fatalf("a different person with the same email must get a new account, not the deprovisioned one: %v", body)
+	}
+	if old, _ := e.st.GetUser(ctx, id); old.Status != "deprovisioned" || old.Email == "ada.lovelace@example.com" {
+		t.Fatalf("the deprovisioned account must keep its status and give up the email: %s %s", old.Status, old.Email)
+	}
+	if audit, _ := e.st.ListAudit(ctx, 100); !slices.ContainsFunc(audit, func(a store.AuditEvent) bool { return a.TargetID == id && strings.HasPrefix(a.Summary, "Released ") }) {
+		t.Fatal("releasing the email must be audited")
+	}
 }
 
 func TestGroups(t *testing.T) {
@@ -699,5 +723,34 @@ func TestSCIMRestoresVerifiedInvitation(t *testing.T) {
 	e.expect(rec, 200)
 	if body["active"] != true {
 		t.Fatalf("restored account: %s", rec.Body)
+	}
+}
+
+func TestSCIMKeepsLastGlobalAdminAndEmergencyAccounts(t *testing.T) {
+	e := setup(t, "global_admin")
+	ctx := context.Background()
+	gia := e.person("gia@example.com", "global_admin")
+	e.session(gia.ID)
+	erin := e.person("erin@example.com")
+	settings, err := e.st.CurrentSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.EmergencyAccessIDs = []string{erin.ID}
+	if err := e.st.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	suspend := map[string]any{"Operations": []map[string]any{{"op": "replace", "path": "active", "value": false}}}
+	for _, u := range []store.User{gia, erin} {
+		rec, body := e.call("PATCH", "/scim/v2/Users/"+u.ID, suspend)
+		e.expectError(rec, body, 409, "")
+		rec, body = e.call("DELETE", "/scim/v2/Users/"+u.ID, nil)
+		e.expectError(rec, body, 409, "")
+		if after, _ := e.st.GetUser(ctx, u.ID); after.Status != "active" {
+			t.Fatalf("%s must stay active: %s", u.Email, after.Status)
+		}
+	}
+	if sessions, err := e.st.ListSessions(ctx, gia.ID); err != nil || len(sessions) != 1 {
+		t.Fatalf("the last global administrator must keep their sessions: %v %v", sessions, err)
 	}
 }

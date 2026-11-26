@@ -37,8 +37,8 @@ func (h *handler) passwordAllowed(r *http.Request, u store.User) (bool, store.Se
 }
 
 const (
-	lockedOutReason      = "Too many failed attempts."
-	sprayedReason        = "Too many failed passwords from this IP address."
+	lockedOutReason      = store.LockedOutReason
+	sprayedReason        = store.SprayedReason
 	noSecondFactorReason = "The password was correct, but the account has no authenticator app for the second factor."
 )
 
@@ -113,9 +113,11 @@ func (h *handler) passwordSignIn(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := h.lockout(r, a, settings, "passwords"); err != nil {
+	release, err := h.lockout(r, a, settings, "passwords")
+	if err != nil {
 		return err
 	}
+	defer release()
 	if sprayed, err := h.sprayed(ctx, httpx.ClientIP(r), settings); err != nil {
 		return err
 	} else if sprayed {

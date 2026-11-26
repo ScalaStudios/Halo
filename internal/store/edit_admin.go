@@ -57,6 +57,9 @@ func (s *Store) ManagementChainIncludes(ctx context.Context, fromID, userID stri
 }
 
 func (s *Store) UpdateGroup(ctx context.Context, g Group) error {
+	if err := s.checkRename(ctx, g.ID, g.Name); err != nil {
+		return err
+	}
 	tag, err := s.db.Exec(ctx, `update groups set name = $2, description = $3, rule = $4, join_policy = $5 where id = $1`, g.ID, g.Name, g.Description, g.Rule, g.JoinPolicy)
 	if err != nil {
 		return conflict(err)
@@ -103,8 +106,9 @@ func (s *Store) GroupUses(ctx context.Context, groupID string) ([]GroupUse, erro
 }
 
 type GroupInUseError struct {
-	Group string
-	Uses  []GroupUse
+	Group  string
+	Uses   []GroupUse
+	Rename bool
 }
 
 func (e *GroupInUseError) Error() string {
@@ -113,7 +117,9 @@ func (e *GroupInUseError) Error() string {
 		names[i] = "the " + u.Kind + " " + u.Name
 	}
 	next := "Remove the group from each of them, then delete it."
-	if slices.ContainsFunc(e.Uses, func(u GroupUse) bool { return u.Kind == "access review" }) {
+	if e.Rename {
+		next = "Change those rules so they no longer use user.memberOf(\"" + e.Group + "\"), then rename it."
+	} else if slices.ContainsFunc(e.Uses, func(u GroupUse) bool { return u.Kind == "access review" }) {
 		next = "Remove the group from each of them and complete its open access reviews, then delete it."
 	}
 	return e.Group + " is still used by " + strings.Join(names, ", ") + ". " + next
@@ -128,6 +134,11 @@ func (s *Store) DeleteGroup(ctx context.Context, groupID string) error {
 	if err != nil {
 		return err
 	}
+	ruleUses, err := s.ruleUses(ctx, groupID, name)
+	if err != nil {
+		return err
+	}
+	uses = append(uses, ruleUses...)
 	if len(uses) > 0 {
 		return &GroupInUseError{Group: name, Uses: uses}
 	}

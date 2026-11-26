@@ -3,6 +3,8 @@ package store_test
 import (
 	"context"
 	"encoding/json"
+	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -71,5 +73,57 @@ func TestPruneLogs(t *testing.T) {
 	}
 	if signIns, audit := count(); signIns != 3 || len(audit) != 4 {
 		t.Fatalf("pruning runs once a day: %d sign-ins, %d audit events", signIns, len(audit))
+	}
+}
+
+func TestPurgeRemovesOldWebhookDeliveries(t *testing.T) {
+	st := testdb.New(t)
+	ctx := context.Background()
+	endpointID, _, err := st.CreateWebhook(ctx, store.NewWebhook{URL: "https://hooks.example.com", Events: []string{"*"}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ruleID, _, err := st.CreateNotificationRule(ctx, store.NewNotificationRule{Name: "Rule", Destination: "slack", URL: "https://hooks.slack.com/x", Host: "hooks.slack.com", Events: []string{"*"}, Threshold: 1, WindowMinutes: 10, QuietMinutes: 15, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue := func(n int, rule bool, status string, days int) string {
+		t.Helper()
+		e := store.WebhookEvent{ID: "evt_" + strconv.Itoa(n), Type: "user.invite", Time: time.Now(), Data: json.RawMessage(`{}`)}
+		var deliveryID string
+		var err error
+		if rule {
+			deliveryID, err = st.QueueNotification(ctx, ruleID, e, []byte(`{}`), time.Now())
+		} else {
+			deliveryID, err = st.QueueWebhookDelivery(ctx, endpointID, e, time.Now())
+		}
+		if err == nil {
+			err = st.Exec(ctx, `update webhook_deliveries set status = $2, created_at = now() - make_interval(days => $3) where id = $1`, deliveryID, status, days)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return deliveryID
+	}
+	queue(1, false, "delivered", 31)
+	queue(2, true, "failed", 31)
+	keep := []string{queue(3, false, "pending", 31), queue(4, false, "delivered", 5), queue(5, true, "delivered", 5)}
+	if err := st.Purge(ctx); err != nil {
+		t.Fatal(err)
+	}
+	left := []string{}
+	for _, owner := range []string{endpointID, ruleID} {
+		deliveries, err := st.ListWebhookDeliveries(ctx, owner, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range deliveries {
+			left = append(left, d.ID)
+		}
+	}
+	slices.Sort(left)
+	slices.Sort(keep)
+	if !slices.Equal(left, keep) {
+		t.Fatalf("deliveries left %v, want %v", left, keep)
 	}
 }

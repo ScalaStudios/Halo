@@ -17,9 +17,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"halo/internal/config"
 	"halo/internal/httpx"
 	"halo/internal/metrics"
 	"halo/internal/store"
@@ -51,7 +53,7 @@ func setup(t *testing.T) (*store.Store, *handler, http.Handler) {
 	public, _ := url.Parse("http://localhost:3200")
 	authn := &httpx.Auth{Store: st, Public: public, Dev: true}
 	mux := http.NewServeMux()
-	if err := Register(mux, httpx.Deps{Store: st, Auth: authn}); err != nil {
+	if err := Register(mux, httpx.Deps{Config: config.Config{Dev: true}, Store: st, Auth: authn}); err != nil {
 		t.Fatal(err)
 	}
 	return st, &handler{st: st, client: http.DefaultClient, guarded: http.DefaultClient}, authn.Resolve(authn.SameOrigin(mux))
@@ -290,5 +292,89 @@ func TestEveryEmittedEventIsDescribed(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEndpointsRefusePrivateAddressesOutsideDevelopment(t *testing.T) {
+	st := testdb.New(t)
+	public, _ := url.Parse("http://localhost:3200")
+	authn := &httpx.Auth{Store: st, Public: public, Dev: true}
+	mux := http.NewServeMux()
+	if err := Register(mux, httpx.Deps{Store: st, Auth: authn}); err != nil {
+		t.Fatal(err)
+	}
+	h := authn.Resolve(authn.SameOrigin(mux))
+	security := person(t, st, "sam@example.com", "security_admin")
+	for _, target := range []string{"https://10.0.0.8/x", "http://127.0.0.1:1/x", "https://localhost/x"} {
+		if rec := call(t, h, security, "POST", "/api/v1/webhooks", map[string]any{"url": target, "events": []string{"*"}}); rec.Code != 422 {
+			t.Fatalf("%s accepted: %d %s", target, rec.Code, rec.Body.String())
+		}
+	}
+	rc := &receiver{}
+	srv := httptest.NewServer(rc)
+	defer srv.Close()
+	endpointID, _, err := st.CreateWebhook(context.Background(), store.NewWebhook{URL: srv.URL, Events: []string{"*"}, Enabled: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := call(t, h, security, "POST", "/api/v1/webhooks/"+endpointID+"/test", nil)
+	var delivery store.WebhookDelivery
+	if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &delivery) != nil || delivery.Status != "pending" || !strings.Contains(delivery.Error, "private, loopback or link-local") {
+		t.Fatalf("loopback delivery: %d %s", rec.Code, rec.Body.String())
+	}
+	if len(rc.bodies) != 0 {
+		t.Fatalf("the loopback endpoint received %d requests", len(rc.bodies))
+	}
+}
+
+func TestUnresponsiveEndpointDoesNotDelayOthers(t *testing.T) {
+	st, _, _ := setup(t)
+	ctx := context.Background()
+	release := make(chan struct{})
+	var calls atomic.Int64
+	stuck := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer stuck.Close()
+	defer close(release)
+	rc := &receiver{}
+	healthy := httptest.NewServer(rc)
+	defer healthy.Close()
+	stuckID, _, err := st.CreateWebhook(ctx, store.NewWebhook{URL: stuck.URL, Events: []string{"*"}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	healthyID, _, err := st.CreateWebhook(ctx, store.NewWebhook{URL: healthy.URL, Events: []string{"*"}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	for i := range 20 {
+		if _, err := st.QueueWebhookDelivery(ctx, stuckID, store.WebhookEvent{ID: "evt_" + strconv.Itoa(i), Type: "user.invite", Time: now, Data: json.RawMessage(`{}`)}, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := st.QueueWebhookDelivery(ctx, healthyID, store.WebhookEvent{ID: "evt_healthy", Type: "user.invite", Time: now, Data: json.RawMessage(`{}`)}, now); err != nil {
+		t.Fatal(err)
+	}
+	timeout := 300 * time.Millisecond
+	h := &handler{st: st, client: &http.Client{Timeout: timeout}, guarded: http.DefaultClient}
+	started := time.Now()
+	if err := h.run(ctx, now.Add(settle+time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed > 2*timeout {
+		t.Fatalf("the run took %s", elapsed)
+	}
+	deliveries, _ := st.ListWebhookDeliveries(ctx, healthyID, 10)
+	if len(deliveries) != 1 || deliveries[0].Status != "delivered" {
+		t.Fatalf("healthy endpoint: %+v", deliveries)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("the unresponsive endpoint was called %d times in one run", n)
 	}
 }

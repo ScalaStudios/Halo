@@ -974,7 +974,7 @@ export function IdentityProofingForm({
   const [attempted, setAttempted] = useState(false);
   const { identityChecks: t, common } = useMessages(settingsMessages);
   const generic = provider === "generic";
-  const newProvider = provider !== settings.identityProofingProvider || !keySet;
+  const newProvider = provider !== settings.identityProofingProvider || !keySet || (generic && endpoint.trim() !== settings.identityProofingEndpoint);
   const errors = {
     name: generic && (!name.trim() || name.trim().length > 60) ? t.nameError : undefined,
     endpoint: generic && !/^https:\/\/[^\s/@]+/.test(endpoint.trim()) ? t.endpointError : undefined,

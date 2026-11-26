@@ -139,6 +139,19 @@ func TestScopeFollowsRuleBasedGroups(t *testing.T) {
 	expect(t, call(t, h, hana, "POST", "/api/v1/users", map[string]any{"email": "x@example.com", "name": "X", "department": "Support"}), 403)
 	expect(t, call(t, h, uma, "POST", "/api/v1/users", map[string]any{"email": "y@example.com", "name": "Y", "department": "Sales"}), 403)
 	expect(t, call(t, h, uma, "POST", "/api/v1/users", map[string]any{"email": "x@example.com", "name": "X", "department": "Support"}), 201)
+
+	leads := `user.title == "Lead"`
+	finance, _ := st.CreateGroup(ctx, store.NewGroup{Name: "Finance leads", Kind: "dynamic", Rule: &leads})
+	expect(t, call(t, h, uma, "POST", "/api/v1/users", map[string]any{"email": "z@example.com", "name": "Z", "department": "Support", "title": "Lead"}), 403)
+	if _, err := st.GetUserByEmail(ctx, "z@example.com"); err != store.ErrNotFound {
+		t.Fatalf("a refused invitation must not create the person: %v", err)
+	}
+	expect(t, call(t, h, hana, "PATCH", "/api/v1/users/"+in.ID, map[string]any{"title": "Analyst"}), 200)
+	before, _ := st.GetUser(ctx, in.ID)
+	expect(t, call(t, h, hana, "PATCH", "/api/v1/users/"+in.ID, map[string]any{"title": "Lead"}), 403)
+	if after, _ := st.GetUser(ctx, in.ID); slices.Contains(after.GroupIDs, finance.ID) || !slices.Equal(after.GroupIDs, before.GroupIDs) {
+		t.Fatalf("a limited administrator must not move someone into a rule-based group outside their scope: %v", after.GroupIDs)
+	}
 }
 
 func TestScopedRolesCannotEscalate(t *testing.T) {

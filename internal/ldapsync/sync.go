@@ -141,17 +141,19 @@ func (h *handlers) sync(ctx context.Context, d store.LDAPDirectory, actorID *str
 }
 
 type syncer struct {
-	ctx       context.Context
-	tx        *store.Store
-	dir       store.LDAPDirectory
-	actorID   *string
-	rep       *report
-	emergency []string
-	attrs     []store.Attribute
-	users     map[string]store.User
-	emails    map[string]string
-	byDN      map[string]string
-	mine      map[string]bool
+	ctx        context.Context
+	tx         *store.Store
+	dir        store.LDAPDirectory
+	actorID    *string
+	actor      store.User
+	configurer store.User
+	rep        *report
+	emergency  []string
+	attrs      []store.Attribute
+	users      map[string]store.User
+	emails     map[string]string
+	byDN       map[string]string
+	mine       map[string]bool
 }
 
 type match struct {
@@ -164,6 +166,14 @@ func (s *syncer) skip(message string) {
 	if len(s.rep.Skipped) < 100 {
 		s.rep.Skipped = append(s.rep.Skipped, message)
 	}
+}
+
+func (s *syncer) protected(u store.User, action string) bool {
+	if s.actor.CanChange(u) || s.configurer.CanChange(u) {
+		return false
+	}
+	s.skip("Didn't " + action + " " + u.Name + " because they hold or are eligible for an administrator role in Halo, so only a sync a global administrator started or last configured can change their account")
+	return true
 }
 
 func (s *syncer) note(action, target, targetType, targetID, summary string) error {
@@ -236,6 +246,20 @@ func (s *syncer) run(people, groups []*ldap.Entry) error {
 	for _, u := range users {
 		s.users[u.ID] = u
 	}
+	if s.actorID != nil {
+		if s.actor, err = tx.GetUser(ctx, *s.actorID); err != nil {
+			return err
+		}
+	}
+	configuredBy, err := tx.LDAPConfiguredBy(ctx, s.dir.ID)
+	if err != nil {
+		return err
+	}
+	if configuredBy != nil {
+		if s.configurer, err = tx.GetUser(ctx, *configuredBy); err != nil {
+			return err
+		}
+	}
 	emails := make([]string, len(people))
 	for i, e := range people {
 		emails[i] = value(e, m.Email)
@@ -268,12 +292,20 @@ func (s *syncer) run(people, groups []*ldap.Entry) error {
 			s.byDN[normalize(e.DN)] = link.UserID
 		}
 		key := strings.ToLower(email)
+		problem := ""
 		switch {
 		case !validEmail(email):
-			s.skip(e.DN + " has no valid email address in " + m.Email)
-			continue
+			problem = e.DN + " has no valid email address in " + m.Email
 		case taken[key]:
-			s.skip(e.DN + " has the email address " + email + ", which another entry in the directory also has")
+			problem = e.DN + " has the email address " + email + ", which another entry in the directory also has"
+		}
+		if problem != "" {
+			s.skip(problem)
+			if u, exists := s.users[link.UserID]; ok && exists {
+				if err := s.status(e, link, u); err != nil {
+					return err
+				}
+			}
 			continue
 		}
 		taken[key] = true
@@ -367,7 +399,7 @@ func (s *syncer) update(mt match) error {
 			changed = append(changed, f.label)
 		}
 	}
-	if next.Email != u.Email && len(u.RoleKeys)+len(u.EligibleRoles) > 0 {
+	if next.Email != u.Email && u.Privileged() {
 		s.skip("Didn't change the email address of " + u.Name + " to " + next.Email + " because they hold or are eligible for an administrator role in Halo")
 		next.Email = u.Email
 		changed = slices.DeleteFunc(changed, func(f string) bool { return f == "email" })
@@ -375,6 +407,9 @@ func (s *syncer) update(mt match) error {
 	attributes, labels := s.attributes(e, u)
 	if owner, ok := s.emails[strings.ToLower(next.Email)]; ok && owner != u.ID {
 		s.skip("Didn't update " + u.Name + " because their new email address " + next.Email + " belongs to someone else in Halo")
+		return s.status(e, mt.link, u)
+	}
+	if (len(changed) > 0 || len(labels) > 0) && s.protected(u, "update") {
 		return s.status(e, mt.link, u)
 	}
 	if len(changed) > 0 {
@@ -487,6 +522,9 @@ func (s *syncer) status(e *ldap.Entry, link store.LDAPPerson, u store.User) erro
 	if u.Status != "suspended" {
 		return s.tx.SaveLDAPPerson(s.ctx, s.dir.ID, link)
 	}
+	if s.protected(u, "restore") {
+		return nil
+	}
 	status := "active"
 	if u.LastSignInAt == nil && len(u.Methods) == 0 {
 		status = "invited"
@@ -511,6 +549,9 @@ func (s *syncer) suspend(u store.User, link store.LDAPPerson, reason string) err
 	}
 	if slices.Contains(s.emergency, u.ID) {
 		s.skip("Didn't suspend " + u.Name + " (" + reason + ") because they are an emergency access account")
+		return nil
+	}
+	if s.protected(u, "suspend") {
 		return nil
 	}
 	last, err := s.tx.IsLastActiveGlobalAdmin(s.ctx, u.ID)
@@ -594,7 +635,13 @@ func (s *syncer) groups(entries []*ldap.Entry) error {
 			old := g.Name
 			g.Name = name
 			if err := tx.UpdateGroup(ctx, g); err != nil {
-				return err
+				var inUse *store.GroupInUseError
+				if !errors.As(err, &inUse) {
+					return err
+				}
+				g.Name = old
+				s.skip("Didn't rename " + old + " to " + name + ": " + err.Error())
+				break
 			}
 			delete(names, strings.ToLower(old))
 			names[strings.ToLower(name)] = g.ID

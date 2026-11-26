@@ -2,6 +2,7 @@ package rule
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -108,5 +109,39 @@ func TestMemberOf(t *testing.T) {
 		if len(c.Args) != n {
 			t.Errorf("%s: failed compile left %d parameters behind", tc.src, len(c.Args)-n)
 		}
+	}
+}
+
+func TestRuleLimits(t *testing.T) {
+	for _, src := range []string{
+		strings.Repeat("(", 100000),
+		strings.Repeat("(", maxDepth+1) + "true" + strings.Repeat(")", maxDepth+1),
+		strings.Repeat("not ", maxDepth+1) + "true",
+	} {
+		var e *Error
+		if _, err := Parse(src); !errors.As(err, &e) {
+			t.Errorf("%.20s: got %v, want *Error", src, err)
+		}
+	}
+	if _, err := Parse(strings.Repeat("(", maxDepth) + "true" + strings.Repeat(")", maxDepth)); err != nil {
+		t.Fatal(err)
+	}
+	values := strings.Repeat(`"x", `, 70000) + `"x"`
+	c := &Compiler{}
+	if _, err := c.Rule("grp_a", `user.department in [`+values+`]`); err == nil || len(c.Args) != 0 {
+		t.Fatalf("a rule with 70,000 values: err %v, %d parameters", err, len(c.Args))
+	}
+	small := strings.Repeat(`"x", `, 300) + `"x"`
+	c = &Compiler{Groups: map[string]Group{}}
+	or := `user.department in [` + small + `]`
+	for i := range 5 {
+		name := fmt.Sprintf("g%d", i)
+		rule := or
+		c.Groups[name] = Group{ID: "grp_" + name, Rule: &rule}
+		or = strings.Repeat(`user.memberOf("`+name+`") or `, 9) + `user.memberOf("` + name + `")`
+	}
+	var e *Error
+	if _, err := c.Rule("grp_new", or); !errors.As(err, &e) || !strings.Contains(e.Msg, "too large") || len(c.Args) != 0 {
+		t.Fatalf("nested memberOf expansion: %v, %d parameters", err, len(c.Args))
 	}
 }

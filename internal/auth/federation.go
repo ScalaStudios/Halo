@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/zitadel/oidc/v3/pkg/client/rp"
 	"github.com/zitadel/oidc/v3/pkg/oidc"
@@ -40,8 +39,6 @@ var (
 	errFederationDomain    = httpx.Fail(http.StatusForbidden, "ERR_FEDERATION_DOMAIN", "Your email domain is not allowed with this identity provider. Use your work account, or ask your administrator to allow your domain.")
 	errFederationNoAccount = httpx.Fail(http.StatusForbidden, "ERR_FEDERATION_NO_ACCOUNT", "No Halo account matches that account. Ask your administrator to invite you, then sign in again.")
 )
-
-var federationClient = &http.Client{Timeout: 10 * time.Second}
 
 type federatedProfile struct {
 	subject, email, name string
@@ -255,6 +252,9 @@ func (h *handler) federatedUser(r *http.Request, p store.IdentityProvider, profi
 	u, err := h.st.GetUserByEmail(ctx, profile.email)
 	if err == nil && u.Kind != "service" {
 		a.user = &u
+		if err := h.refuseEmailMatch(r, *a, u, errFederationNoAccount); err != nil {
+			return nil, err
+		}
 		return func(tx *store.Store) error {
 			if err := use(tx); err != nil {
 				return err
@@ -271,6 +271,14 @@ func (h *handler) federatedUser(r *http.Request, p store.IdentityProvider, profi
 	created, err := h.provision(r, p, profile)
 	a.user = &created
 	return nil, err
+}
+
+func (h *handler) refuseEmailMatch(r *http.Request, a attempt, u store.User, e *httpx.Error) error {
+	settings, err := h.st.Settings(r.Context())
+	if err != nil || !u.Privileged() && !slices.Contains(settings.EmergencyAccessIDs, u.ID) {
+		return err
+	}
+	return h.reject(r, a, u.Name+" holds or is eligible for an administrator role or is an emergency access account, so Halo doesn't sign them in by matching an email address.", e)
 }
 
 func (h *handler) provision(r *http.Request, p store.IdentityProvider, profile federatedProfile) (store.User, error) {
@@ -309,7 +317,7 @@ func (h *handler) relyingParty(ctx context.Context, p store.IdentityProvider, op
 		clientSecret = string(plain)
 	}
 	callback := h.cfg.Issuer() + FederationCallbackPath
-	opts = append(opts, rp.WithHTTPClient(federationClient))
+	opts = append(opts, rp.WithHTTPClient(httpx.OutboundClient(h.cfg.Dev)))
 	if p.Kind == "github" {
 		endpoint := oauth2.Endpoint{AuthURL: p.Issuer + "/login/oauth/authorize", TokenURL: p.Issuer + "/login/oauth/access_token"}
 		return rp.NewRelyingPartyOAuth(&oauth2.Config{ClientID: p.ClientID, ClientSecret: clientSecret, RedirectURL: callback, Scopes: p.Scopes, Endpoint: endpoint}, opts...)
@@ -327,7 +335,7 @@ func (h *handler) exchange(ctx context.Context, p store.IdentityProvider, code s
 		return federatedProfile{}, err
 	}
 	if p.Kind == "github" {
-		return githubProfile(ctx, p.Issuer, tokens.AccessToken)
+		return githubProfile(ctx, httpx.OutboundClient(h.cfg.Dev), p.Issuer, tokens.AccessToken)
 	}
 	c := tokens.IDTokenClaims
 	return federatedProfile{
@@ -339,7 +347,7 @@ func (h *handler) exchange(ctx context.Context, p store.IdentityProvider, code s
 	}, nil
 }
 
-func githubProfile(ctx context.Context, base, token string) (federatedProfile, error) {
+func githubProfile(ctx context.Context, client *http.Client, base, token string) (federatedProfile, error) {
 	api := base + "/api/v3"
 	if base == "https://github.com" {
 		api = "https://api.github.com"
@@ -361,7 +369,7 @@ func githubProfile(ctx context.Context, base, token string) (federatedProfile, e
 		}
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Accept", "application/vnd.github+json")
-		res, err := federationClient.Do(req)
+		res, err := client.Do(req)
 		if err != nil {
 			return federatedProfile{}, err
 		}

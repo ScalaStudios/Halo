@@ -59,7 +59,7 @@ func newHarness(t *testing.T, policy access.Engine) *harness {
 	if h.user, err = st.CreateUser(ctx, store.NewUser{Email: "ada@example.com", Name: "Ada Lovelace", Status: "active", GroupIDs: []string{h.group.ID}}); err != nil {
 		t.Fatal(err)
 	}
-	if h.app, err = st.CreateApplication(ctx, store.NewApplication{Name: "Grafana", Protocol: "oidc", Type: "web", RedirectURIs: []string{callback}, PostLogoutURIs: []string{loggedOut}, GroupIDs: []string{h.group.ID}}); err != nil {
+	if h.app, err = st.CreateApplication(ctx, store.NewApplication{Name: "Grafana", Protocol: "oidc", Type: "web", RedirectURIs: []string{callback}, PostLogoutURIs: []string{loggedOut}, GroupIDs: []string{h.group.ID}, Scopes: []string{"openid", "profile", "email", "groups", "offline_access"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, h.secret, err = st.AddClientSecret(ctx, h.app.ID, "Test", time.Hour); err != nil {
@@ -267,7 +267,7 @@ func TestPromptNone(t *testing.T) {
 func TestSignInFrequency(t *testing.T) {
 	h := newHarness(t, nil)
 	ctx := context.Background()
-	wiki, err := h.st.CreateApplication(ctx, store.NewApplication{Name: "Wiki", Protocol: "oidc", Type: "web", RedirectURIs: []string{callback}, GroupIDs: []string{h.group.ID}})
+	wiki, err := h.st.CreateApplication(ctx, store.NewApplication{Name: "Wiki", Protocol: "oidc", Type: "web", RedirectURIs: []string{callback}, GroupIDs: []string{h.group.ID}, Scopes: []string{"openid", "profile", "email", "groups", "offline_access"}})
 	if err != nil {
 		t.Fatal(err)
 	}

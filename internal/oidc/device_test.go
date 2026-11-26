@@ -358,7 +358,7 @@ func TestAPIResources(t *testing.T) {
 	h.must(err)
 	h.must(h.st.AddGroupMember(ctx, group.ID, h.user.ID))
 	const redirect = "https://invoices.example.com/callback"
-	web, err := h.st.CreateApplication(ctx, store.NewApplication{Name: "Invoices", Protocol: "oidc", Type: "web", RedirectURIs: []string{redirect}, GroupIDs: []string{group.ID}})
+	web, err := h.st.CreateApplication(ctx, store.NewApplication{Name: "Invoices", Protocol: "oidc", Type: "web", RedirectURIs: []string{redirect}, GroupIDs: []string{group.ID}, Scopes: []string{"openid", "profile", "email", "groups", "offline_access"}})
 	h.must(err)
 	_, webSecret, err := h.st.AddClientSecret(ctx, web.ID, "Test", time.Hour)
 	h.must(err)
@@ -485,5 +485,28 @@ func TestAPIResources(t *testing.T) {
 	after := h.send(http.MethodPost, "/oauth2/token", url.Values{"grant_type": {"client_credentials"}, "scope": {"billing:read jobs:run"}}, basic(worker.ClientID, workerSecret))
 	if claims := verify(after.body["access_token"].(string)); !slices.Equal(claims.Audience, []string{worker.ClientID}) || claims.Claims["scope"] != "jobs:run" {
 		t.Fatalf("after deleting the API: %+v", claims)
+	}
+}
+
+func TestCLIClientRefusesAuthorizationCode(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx := context.Background()
+	cli, err := h.st.GetApplicationByClientID(ctx, halooidc.CLIClientID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli.RedirectURIs = []string{callback}
+	if err := h.st.UpdateApplication(ctx, cli); err != nil {
+		t.Fatal(err)
+	}
+	_, session := h.session(h.user, "passkey")
+	q := url.Values{"client_id": {halooidc.CLIClientID}, "redirect_uri": {callback}, "response_type": {"code"}, "scope": {"openid offline_access"}, "state": {"st-1"},
+		"code_challenge": {oidc.NewSHACodeChallenge(pkceSecret)}, "code_challenge_method": {"S256"}}
+	status, location := h.get("/oauth2/authorize?"+q.Encode(), session)
+	if location != nil && location.Path == "/oauth2/authorize/callback" {
+		status, location = h.get(location.String(), session)
+	}
+	if status != http.StatusFound || location.Query().Get("code") != "" || location.Query().Get("error") != "unauthorized_client" {
+		t.Fatalf("the CLI client must not take authorization requests: %d %v", status, location)
 	}
 }

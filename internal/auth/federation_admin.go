@@ -93,6 +93,9 @@ func (h *handler) saveProvider(w http.ResponseWriter, r *http.Request, existing 
 		fields := providerFields(existing, p, strings.TrimSpace(in.ClientSecret) != "")
 		action, summary = "identity_provider.update", "Changed the identity provider's "+fields
 		change.Summary = "Change the identity provider's " + fields
+		if existing.Issuer != p.Issuer {
+			summary += " and removed the accounts linked under the old issuer"
+		}
 	}
 	if held, err := h.gate.Hold(w, r, actor, change); held || err != nil {
 		return err

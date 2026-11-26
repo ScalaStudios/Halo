@@ -123,6 +123,9 @@ func (h *handler) kerberosSignIn(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		a.user = &u
+		if err := h.refuseEmailMatch(r, a, u, errKerberosRejected); err != nil {
+			return err
+		}
 		link = func(tx *store.Store) error {
 			if err := tx.LinkKerberosPrincipal(ctx, p.String(), u.ID); err != nil {
 				return err
@@ -136,9 +139,11 @@ func (h *handler) kerberosSignIn(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err := h.lockout(r, a, settings, "passwords or codes"); err != nil {
+	release, err := h.lockout(r, a, settings, "passwords or codes")
+	if err != nil {
 		return err
 	}
+	defer release()
 	return h.finish(w, r, a, nil, link)
 }
 

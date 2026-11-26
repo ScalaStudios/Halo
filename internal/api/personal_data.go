@@ -78,11 +78,8 @@ func (h *handlers) deleteUser(w http.ResponseWriter, r *http.Request, actor stor
 		if provisioned > 0 {
 			return conflict("Halo still keeps " + plural(provisioned, "account") + " for " + u.Name + " in other applications through provisioning. Suspend them and sync provisioning so those accounts are deactivated, then delete them.")
 		}
-		if !u.HasRole("global_admin") {
-			return nil
-		}
-		others, err := st.GlobalAdminEmails(ctx, u.ID)
-		if err == nil && len(others) == 0 {
+		last, err := st.IsLastActiveGlobalAdmin(ctx, u.ID)
+		if err == nil && last {
 			err = httpx.Invalid(u.Name + " is the only active global administrator. Grant the role to another person first, so the organization always keeps one.")
 		}
 		return err

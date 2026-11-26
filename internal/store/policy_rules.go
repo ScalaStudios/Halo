@@ -28,7 +28,7 @@ type PolicyConditions struct {
 	Methods         []string `json:"methods"`
 }
 
-func (c PolicyConditions) normalized() PolicyConditions {
+func (c PolicyConditions) Normalized() PolicyConditions {
 	for _, list := range []*[]string{&c.GroupIDs, &c.UserIDs, &c.ExcludeGroupIDs, &c.ExcludeUserIDs, &c.AppIDs, &c.ZoneIDs, &c.Risk, &c.Methods} {
 		clean := []string{}
 		for _, v := range *list {
@@ -108,7 +108,7 @@ func (s *Store) CreateAccessPolicy(ctx context.Context, p AccessPolicy) (AccessP
 	p.ID = id.New("pol")
 	_, err := s.db.Exec(ctx, `insert into access_policies (id, name, description, priority, enabled, mode, effect, terms_id, context_id, conditions)
 		values ($1, $2, $3, (select coalesce(max(priority), 0) + 1 from access_policies), $4, $5, $6, $7, $8, $9)`,
-		p.ID, strings.TrimSpace(p.Name), p.Description, p.Enabled, p.Mode, p.Effect, p.TermsID, p.ContextID, p.Conditions.normalized())
+		p.ID, strings.TrimSpace(p.Name), p.Description, p.Enabled, p.Mode, p.Effect, p.TermsID, p.ContextID, p.Conditions.Normalized())
 	if err != nil {
 		return AccessPolicy{}, conflict(err)
 	}
@@ -117,7 +117,7 @@ func (s *Store) CreateAccessPolicy(ctx context.Context, p AccessPolicy) (AccessP
 
 func (s *Store) UpdateAccessPolicy(ctx context.Context, p AccessPolicy) (AccessPolicy, error) {
 	tag, err := s.db.Exec(ctx, `update access_policies set name = $2, description = $3, enabled = $4, mode = $5, effect = $6, terms_id = $7, context_id = $8, conditions = $9, updated_at = now() where id = $1`,
-		p.ID, strings.TrimSpace(p.Name), p.Description, p.Enabled, p.Mode, p.Effect, p.TermsID, p.ContextID, p.Conditions.normalized())
+		p.ID, strings.TrimSpace(p.Name), p.Description, p.Enabled, p.Mode, p.Effect, p.TermsID, p.ContextID, p.Conditions.Normalized())
 	if err != nil {
 		return AccessPolicy{}, conflict(err)
 	}

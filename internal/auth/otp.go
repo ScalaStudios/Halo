@@ -59,9 +59,11 @@ func (h *handler) codeSignIn(w http.ResponseWriter, r *http.Request, method stri
 	if err != nil {
 		return err
 	}
-	if err := h.lockout(r, a, settings, "codes"); err != nil {
+	release, err := h.lockout(r, a, settings, "codes")
+	if err != nil {
 		return err
 	}
+	defer release()
 	if err := h.challenge(r, &a, in.Challenge, settings, false); err != nil {
 		return err
 	}
@@ -91,24 +93,28 @@ func (h *handler) codeSignIn(w http.ResponseWriter, r *http.Request, method stri
 	return h.finish(w, r, a, nil, extra)
 }
 
-func (h *handler) lockout(r *http.Request, a attempt, settings store.Settings, guesses string) error {
-	if locked, err := h.lockedOut(r.Context(), a, settings); err != nil || !locked {
-		return err
+func (h *handler) lockout(r *http.Request, a attempt, settings store.Settings, guesses string) (func(), error) {
+	release, locked, err := h.lockedOut(r.Context(), a, settings)
+	if err != nil || !locked {
+		return release, err
 	}
-	return h.reject(r, a, lockedOutReason, tooManyAttempts(guesses, settings))
+	return nil, h.reject(r, a, lockedOutReason, tooManyAttempts(guesses, settings))
 }
 
-func (h *handler) lockedOut(ctx context.Context, a attempt, settings store.Settings) (bool, error) {
+func (h *handler) lockedOut(ctx context.Context, a attempt, settings store.Settings) (func(), bool, error) {
 	userID := ""
 	if a.user != nil {
 		userID = a.user.ID
 	}
-	failures, err := h.st.RecentFailures(ctx, userID, a.email, guessedMethods, lockoutStart(settings))
-	if err != nil || failures < settings.LockoutThreshold {
-		return false, err
+	reservation, err := h.st.ReserveAttempt(ctx, userID, a.email, guessedMethods, lockoutStart(settings), settings.LockoutThreshold)
+	if err != nil {
+		return nil, false, err
 	}
-	metrics.Lockouts.Inc("account")
-	return true, nil
+	if reservation == "" {
+		metrics.Lockouts.Inc("account")
+		return nil, true, nil
+	}
+	return func() { h.st.ReleaseAttempt(ctx, reservation) }, false, nil
 }
 
 func lockoutStart(settings store.Settings) time.Time {

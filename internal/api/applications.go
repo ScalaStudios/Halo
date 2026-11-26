@@ -29,6 +29,8 @@ const (
 
 var errBookmarkURL = httpx.Invalid("Enter the URL the bookmark opens, for example https://status.example.com.")
 
+var errBuiltInCLI = httpx.Fail(http.StatusConflict, "ERR_BUILT_IN", "The Halo CLI is built in. It signs people in with the device flow only, so its redirect URIs, post-logout URIs, scopes and groups can't be changed.")
+
 var setupGuides = []string{"grafana", "forgejo", "aether", "generic-oidc", "kubernetes", "generic-saml", "aws-iam-identity-center", "slack"}
 
 func (h *handlers) application(r *http.Request) (store.Application, error) {
@@ -717,6 +719,9 @@ func (h *handlers) setApplicationGroups(w http.ResponseWriter, r *http.Request, 
 }
 
 func (h *handlers) groupsChange(r *http.Request, actor store.User, app store.Application, ids []string) (func(*store.Store) error, error) {
+	if app.ClientID == oidc.CLIClientID && len(ids) > 0 {
+		return nil, errBuiltInCLI
+	}
 	groups, err := h.groupsByID(r.Context(), ids)
 	if err != nil {
 		return nil, err
@@ -872,10 +877,11 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		}
 	}
 	for _, f := range []struct {
-		label string
-		value *[]string
-		field *[]string
-	}{{"redirect URIs", in.RedirectURIs, &next.RedirectURIs}, {"post-logout URIs", in.PostLogoutURIs, &next.PostLogoutURIs}, {"scopes", in.Scopes, &next.Scopes}} {
+		label   string
+		value   *[]string
+		field   *[]string
+		builtIn []string
+	}{{"redirect URIs", in.RedirectURIs, &next.RedirectURIs, nil}, {"post-logout URIs", in.PostLogoutURIs, &next.PostLogoutURIs, nil}, {"scopes", in.Scopes, &next.Scopes, oidc.CLIScopes}} {
 		if f.value == nil {
 			continue
 		}
@@ -886,6 +892,9 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 			}
 		}
 		if !slices.Equal(clean, *f.field) {
+			if app.ClientID == oidc.CLIClientID && !slices.Equal(clean, f.builtIn) {
+				return errBuiltInCLI
+			}
 			*f.field = clean
 			changed = append(changed, f.label)
 		}
@@ -1023,7 +1032,7 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	if err := checkHomepage(next.Homepage); err != nil {
 		return err
 	}
-	if slices.Contains(changed, "redirect URIs") || slices.Contains(changed, "post-logout URIs") {
+	if (slices.Contains(changed, "redirect URIs") || slices.Contains(changed, "post-logout URIs")) && app.ClientID != oidc.CLIClientID {
 		if err := checkRedirects(app.Protocol, app.Type, next.RedirectURIs, next.PostLogoutURIs); err != nil {
 			return err
 		}

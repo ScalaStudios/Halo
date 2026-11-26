@@ -55,6 +55,14 @@ func (u User) Manages(target User, roles ...string) bool {
 	return ok && (groups == nil || slices.ContainsFunc(target.GroupIDs, func(g string) bool { return slices.Contains(groups, g) }))
 }
 
+func (u User) Privileged() bool {
+	return len(u.RoleKeys)+len(u.EligibleRoles) > 0
+}
+
+func (u User) CanChange(target User) bool {
+	return !target.Privileged() || u.HasRole("global_admin")
+}
+
 func (u User) Expired() bool {
 	return u.Guest && u.ExpiresAt != nil && !u.ExpiresAt.After(time.Now())
 }
@@ -217,6 +225,12 @@ func (s *Store) SetUserStatus(ctx context.Context, userID, status string) error 
 		if err := tx.db.QueryRow(ctx, `select status, awaiting_activation from users where id = $1 for no key update`, userID).Scan(&previous, &awaitingActivation); err != nil {
 			return notFound(err)
 		}
+		disabled := func(status string) bool { return status == "suspended" || status == "deprovisioned" }
+		if disabled(status) && !disabled(previous) {
+			if err := tx.keepGlobalAdmin(ctx, userID); err != nil {
+				return err
+			}
+		}
 		awaitingActivation = awaitingActivation || previous == "invited" || status == "invited"
 		if status == "active" && awaitingActivation {
 			if err := tx.checkInvitationProof(ctx, userID); err != nil {
@@ -227,7 +241,6 @@ func (s *Store) SetUserStatus(ctx context.Context, userID, status string) error 
 		if _, err := tx.db.Exec(ctx, `update users set status = $2, awaiting_activation = $3, updated_at = now() where id = $1`, userID, status, awaitingActivation); err != nil {
 			return err
 		}
-		disabled := func(status string) bool { return status == "suspended" || status == "deprovisioned" }
 		switch {
 		case disabled(status) && !disabled(previous):
 			return tx.signal(ctx, accountDisabled, nil, signalUser, userID)
@@ -262,8 +275,42 @@ func (s *Store) TouchSignIn(ctx context.Context, userID string, at time.Time) er
 	})
 }
 
+func (s *Store) keepGlobalAdmin(ctx context.Context, userID string) error {
+	last, err := s.IsLastActiveGlobalAdmin(ctx, userID)
+	if err == nil && last {
+		err = ErrLastGlobalAdmin
+	}
+	return err
+}
+
+func (s *Store) privileged(ctx context.Context, userID string) (bool, error) {
+	var privileged bool
+	err := s.db.QueryRow(ctx, `select exists (select 1 from user_roles where user_id = $1) or exists (select 1 from role_eligibilities where user_id = $1)`, userID).Scan(&privileged)
+	return privileged, err
+}
+
+func (s *Store) revokeSetupCredentials(ctx context.Context, userID string) error {
+	if _, err := s.db.Exec(ctx, `update enrollment_tokens set used_at = now() where user_id = $1 and used_at is null`, userID); err != nil {
+		return err
+	}
+	if err := s.deleteAccessPass(ctx, userID); err != nil {
+		return err
+	}
+	_, err := s.deleteCredentials(ctx, "passwords", "revoke", `user_id = $1 and must_change`, userID)
+	return err
+}
+
 func (s *Store) SetUserRoles(ctx context.Context, userID string, roles []string, scopes map[string][]string) error {
 	return s.Tx(ctx, func(tx *Store) error {
+		if !slices.Contains(roles, "global_admin") {
+			if err := tx.keepGlobalAdmin(ctx, userID); err != nil {
+				return err
+			}
+		}
+		privileged, err := tx.privileged(ctx, userID)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.db.Exec(ctx, `delete from user_roles where user_id = $1`, userID); err != nil {
 			return err
 		}
@@ -275,7 +322,10 @@ func (s *Store) SetUserRoles(ctx context.Context, userID string, roles []string,
 				return err
 			}
 		}
-		return nil
+		if privileged || len(roles) == 0 {
+			return nil
+		}
+		return tx.revokeSetupCredentials(ctx, userID)
 	})
 }
 

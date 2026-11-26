@@ -217,6 +217,38 @@ func TestLockoutGuard(t *testing.T) {
 	}
 }
 
+func TestLockoutGuardCoversMethodsAndZones(t *testing.T) {
+	st, h := server(t)
+	_, token := admin(t, st, "sec@example.com", "security_admin")
+	admin(t, st, "gia@example.com", "global_admin")
+	expect(t, call(t, h, token, "POST", "/api/v1/policies", body("Passkeys everywhere", "enforce", access.RequirePhishingResistant, everyone)), 201)
+	expect(t, call(t, h, token, "PUT", "/api/v1/methods/security-key", map[string]any{"enabled": false}), 204)
+	passkeysOff := call(t, h, token, "PUT", "/api/v1/methods/passkey", map[string]any{"enabled": false})
+	expect(t, passkeysOff, 409)
+	if !strings.Contains(passkeysOff.Body.String(), "ERR_LOCKOUT") {
+		t.Fatalf("turning off the last phishing-resistant method under a passkey policy must be refused: %s", passkeysOff.Body)
+	}
+	methods, _ := st.ListMethodSettings(context.Background())
+	if !slices.ContainsFunc(methods, func(m store.MethodSetting) bool { return m.Method == "passkey" && m.Enabled }) {
+		t.Fatalf("a refused method change must not be saved: %+v", methods)
+	}
+
+	st, h = server(t)
+	_, token = admin(t, st, "sec@example.com", "security_admin")
+	rec := call(t, h, token, "POST", "/api/v1/network-zones", map[string]any{"name": "Office", "kind": "trusted", "cidrs": []string{"192.0.2.0/24"}})
+	expect(t, rec, 201)
+	office := decode[store.NetworkZone](t, rec)
+	expect(t, call(t, h, token, "POST", "/api/v1/policies", body("Office only", "enforce", access.Block, store.PolicyConditions{AllUsers: true, AllApps: true, Network: "not-in", ZoneIDs: []string{office.ID}})), 201)
+	moved := call(t, h, token, "PUT", "/api/v1/network-zones/"+office.ID, map[string]any{"name": "Office", "kind": "trusted", "cidrs": []string{"198.51.100.0/24"}})
+	expect(t, moved, 409)
+	if !strings.Contains(moved.Body.String(), "ERR_LOCKOUT") {
+		t.Fatalf("moving the only allowed network away from every administrator must be refused: %s", moved.Body)
+	}
+	if z, _ := st.ListNetworkZones(context.Background()); !slices.Equal(z[0].CIDRs, []string{"192.0.2.0/24"}) {
+		t.Fatalf("a refused zone change must not be saved: %+v", z)
+	}
+}
+
 func TestLockoutGuardReadsTheActorsDeviceCompliance(t *testing.T) {
 	st, h := server(t)
 	ctx := context.Background()
@@ -520,6 +552,55 @@ func TestAuthSignInThroughEngine(t *testing.T) {
 	if err != nil || !slices.ContainsFunc(hooks, func(e store.WebhookEvent) bool { return e.Type == "emergency_access.sign_in" }) {
 		t.Fatalf("an emergency sign-in must reach webhooks and notification rules: %+v %v", hooks, err)
 	}
+}
+
+func TestHaloPolicyAppliesToSessionsFromApplicationSignIns(t *testing.T) {
+	st := testdb.New(t)
+	ctx := context.Background()
+	public, _ := url.Parse("http://localhost:3200")
+	authn := &httpx.Auth{Store: st, Public: public, Dev: true}
+	mux := http.NewServeMux()
+	if err := auth.Register(mux, httpx.Deps{Config: config.Config{PublicURL: public, Dev: true}, Store: st, Auth: authn, Policy: policy.NewEngine(st), Mailer: &outbox{}}); err != nil {
+		t.Fatal(err)
+	}
+	mux.HandleFunc("GET /oauth2/authorize/callback", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := httpx.CurrentUser(r); !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	})
+	h := authn.Resolve(mux)
+
+	admins, staff := group(t, st, "Admins"), group(t, st, "Staff")
+	ada := totpUser(t, st, "ada@example.com", admins.ID)
+	fred := totpUser(t, st, "fred@example.com", staff.ID)
+	rule(t, st, "Admins need passkeys for Halo", "enforce", access.RequirePhishingResistant, store.PolicyConditions{GroupIDs: []string{admins.ID}, AppIDs: []string{"halo"}})
+	app, err := st.CreateApplication(ctx, store.NewApplication{Name: "Grafana", Protocol: "oidc", Type: "web", RedirectURIs: []string{"https://grafana.example.com/cb"}, GroupIDs: []string{admins.ID, staff.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	signIn := func(email, secret, request string) string {
+		t.Helper()
+		if _, err := st.CreateAuthRequest(ctx, store.AuthRequest{ID: request, ClientID: app.ClientID, RedirectURI: app.RedirectURIs[0], Scopes: []string{"openid"}, ResponseType: "code"}); err != nil {
+			t.Fatal(err)
+		}
+		code, _ := totp.GenerateCode(secret, time.Now())
+		rec := call(t, h, "", "POST", "/api/v1/auth/totp", map[string]string{"email": email, "code": code, "authRequest": request})
+		expect(t, rec, 200)
+		for _, c := range rec.Result().Cookies() {
+			if c.Name == httpx.SessionCookie && c.Value != "" {
+				return c.Value
+			}
+		}
+		t.Fatalf("no session cookie for %s: %s", email, rec.Body)
+		return ""
+	}
+
+	adaSession := signIn("ada@example.com", ada, "are_ada")
+	expect(t, call(t, h, adaSession, "GET", "/oauth2/authorize/callback?id=are_ada", nil), 200)
+	expect(t, call(t, h, adaSession, "GET", "/api/v1/me", nil), 401)
+	fredSession := signIn("fred@example.com", fred, "are_fred")
+	expect(t, call(t, h, fredSession, "GET", "/api/v1/me", nil), 200)
 }
 
 type outbox struct{ sent []mail.Message }

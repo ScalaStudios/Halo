@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -191,6 +192,17 @@ func TestFederatedOIDC(t *testing.T) {
 	fake.claims = map[string]any{"sub": "acme-1", "email": "ada@personal.test", "email_verified": false}
 	if location := e.federate(client(), p.ID, "next=https%3A%2F%2Fevil.test"); location != "/account" {
 		t.Fatalf("existing link: %s", location)
+	}
+
+	if _, err := e.st.CreateUser(ctx, store.NewUser{Email: "root@example.com", Name: "Root", Status: "active", Roles: []string{"global_admin"}}); err != nil {
+		t.Fatal(err)
+	}
+	fake.claims = map[string]any{"sub": "acme-9", "email": "root@example.com", "email_verified": true}
+	if location := e.federate(client(), p.ID, ""); location != "/sign-in?error=ERR_FEDERATION_NO_ACCOUNT" {
+		t.Fatalf("an administrator must not be matched by email: %s", location)
+	}
+	if _, err := e.st.FindFederatedIdentity(ctx, p.ID, "acme-9"); err != store.ErrNotFound {
+		t.Fatalf("no link may be made to an administrator: %v", err)
 	}
 
 	fake.claims = map[string]any{"sub": "acme-2", "email": "eve@evil.test", "email_verified": true}
@@ -645,5 +657,30 @@ func TestFederatedMapping(t *testing.T) {
 	grace, err := e.st.GetUserByEmail(ctx, "grace@example.com")
 	if err != nil || grace.Title != "Admiral" || !slices.Equal(grace.GroupIDs, []string{eng.ID}) {
 		t.Fatalf("new account mapped on first sign-in: %+v %v", grace, err)
+	}
+}
+
+func TestFederationDoesNotFollowProviderRedirects(t *testing.T) {
+	e := newFederationEnv(t)
+	var redirected atomic.Int64
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { redirected.Add(1) }))
+	t.Cleanup(target.Close)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.URL.Path, http.StatusFound)
+	}))
+	t.Cleanup(upstream.Close)
+	p := e.provider(store.IdentityProvider{Kind: "oidc", Name: "Acme SSO", Issuer: upstream.URL})
+	c := client()
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	res, err := c.Get(e.srv.URL + "/api/v1/auth/federated/" + p.ID + "/start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusFound || !strings.Contains(res.Header.Get("Location"), "ERR_PROVIDER_UNREACHABLE") {
+		t.Fatalf("start with a redirected discovery: %d %s", res.StatusCode, res.Header.Get("Location"))
+	}
+	if n := redirected.Load(); n != 0 {
+		t.Fatalf("the redirect target received %d requests", n)
 	}
 }

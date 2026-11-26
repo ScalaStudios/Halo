@@ -11,7 +11,10 @@ import (
 	"halo/internal/id"
 )
 
-var ErrPOSIXName = errors.New("reserved or invalid posix name")
+var (
+	ErrPOSIXName = errors.New("reserved or invalid posix name")
+	ErrPOSIXHome = errors.New("home directory in use")
+)
 
 type POSIXAccount struct {
 	Username      string `json:"username"`
@@ -55,6 +58,13 @@ func (s *Store) SavePOSIXSettings(ctx context.Context, p POSIXSettings) error {
 }
 
 func (s *Store) SetPOSIXAccount(ctx context.Context, userID string, a POSIXAccount) error {
+	var taken bool
+	if err := s.db.QueryRow(ctx, `select exists (select 1 from posix_ids where home_directory = $2 and user_id <> $1)`, userID, a.HomeDirectory).Scan(&taken); err != nil {
+		return err
+	}
+	if taken {
+		return ErrPOSIXHome
+	}
 	tag, err := s.db.Exec(ctx, `update posix_ids set name = $2, login_shell = $3, home_directory = $4, updated_at = now() where user_id = $1`, userID, a.Username, a.LoginShell, a.HomeDirectory)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23514" {

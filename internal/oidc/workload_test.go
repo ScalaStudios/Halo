@@ -376,3 +376,27 @@ func TestWorkloadTokensShareTheCredentialRateLimit(t *testing.T) {
 		t.Fatalf("a fresh exchange must not reset the credential's rate limit: %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestWorkloadIssuerRedirectsAreNotFollowed(t *testing.T) {
+	e := newWorkloadEnv(t)
+	var redirected atomic.Int64
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { redirected.Add(1) }))
+	t.Cleanup(target.Close)
+	issuer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.URL.Path, http.StatusFound)
+	}))
+	t.Cleanup(issuer.Close)
+	e.addCredential(issuer.URL)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	status, body := e.exchange(e.account.ID, sign(t, jose.RS256, key, "one", map[string]any{"iss": issuer.URL, "sub": workloadSubject, "aud": "http://localhost:3200", "iat": now.Unix(), "exp": now.Add(5 * time.Minute).Unix(), "jti": "run-1", "repository_owner": "acme"}))
+	if status != http.StatusInternalServerError || body["error"] != "server_error" {
+		t.Fatalf("accepted a token after a redirected discovery: %d %v", status, body)
+	}
+	if n := redirected.Load(); n != 0 {
+		t.Fatalf("the redirect target received %d requests", n)
+	}
+}

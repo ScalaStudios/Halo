@@ -196,8 +196,32 @@ func (s *Store) ConsumeSSHHostToken(ctx context.Context, token string) (SSHHost,
 }
 
 func (s *Store) CertifySSHHost(ctx context.Context, hostID, publicKey, fingerprint, keyType string, serial uint64, validBefore time.Time) error {
+	var replaced bool
+	if err := s.db.QueryRow(ctx, `select exists (select 1 from ssh_host_revoked_keys where public_key = $1)`, publicKey).Scan(&replaced); err != nil {
+		return err
+	}
+	if replaced {
+		return ErrConflict
+	}
+	if _, err := s.db.Exec(ctx, `insert into ssh_host_revoked_keys (public_key, host_id) select public_key, id from ssh_hosts where id = $1 and public_key <> $2 on conflict do nothing`, hostID, publicKey); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(ctx, `update ssh_hosts set public_key = $2, fingerprint = $3, key_type = $4, serial = $5, valid_before = $6 where id = $1`, hostID, publicKey, fingerprint, keyType, serial, validBefore)
 	return conflict(err)
+}
+
+type RevokedHostKey struct {
+	PublicKey string
+	RevokedAt time.Time
+}
+
+func (s *Store) ListRevokedSSHHostKeys(ctx context.Context) ([]RevokedHostKey, error) {
+	rows, err := s.db.Query(ctx, `select public_key, revoked_at from ssh_host_revoked_keys
+		union all select public_key, revoked_at from ssh_hosts where revoked_at is not null and public_key is not null order by 2`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[RevokedHostKey])
 }
 
 func (s *Store) RevokeSSHHost(ctx context.Context, hostID string) (SSHHost, error) {

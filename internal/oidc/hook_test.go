@@ -42,7 +42,7 @@ func TestTokenHook(t *testing.T) {
 	user, err := st.CreateUser(ctx, store.NewUser{Email: "ada@example.com", Name: "Ada Lovelace", Status: "active", GroupIDs: []string{group.ID}})
 	must(err)
 	const redirect = "https://grafana.example.com/login/generic_oauth"
-	app, err := st.CreateApplication(ctx, store.NewApplication{Name: "Grafana", Protocol: "oidc", Type: "web", RedirectURIs: []string{redirect}, GroupIDs: []string{group.ID}})
+	app, err := st.CreateApplication(ctx, store.NewApplication{Name: "Grafana", Protocol: "oidc", Type: "web", RedirectURIs: []string{redirect}, GroupIDs: []string{group.ID}, Scopes: []string{"openid", "profile", "email", "groups", "offline_access"}})
 	must(err)
 	_, secret, err := st.AddClientSecret(ctx, app.ID, "Test", time.Hour)
 	must(err)

@@ -202,7 +202,10 @@ func (s *Store) ClaimLifecycleOccurrence(ctx context.Context, ruleID, userID, oc
 
 func (s *Store) IsLastActiveGlobalAdmin(ctx context.Context, userID string) (bool, error) {
 	var last bool
-	err := s.db.QueryRow(ctx, `select exists (select 1 from user_roles where user_id = $1 and role = 'global_admin')
-		and not exists (select 1 from user_roles r join users u on u.id = r.user_id where r.role = 'global_admin' and u.status = 'active' and u.id <> $1)`, userID).Scan(&last)
+	if _, err := s.db.Exec(ctx, `select pg_advisory_xact_lock(hashtextextended('halo:global-admin', 0))`); err != nil {
+		return false, err
+	}
+	err := s.db.QueryRow(ctx, `select exists (select 1 from user_roles r join users u on u.id = r.user_id where r.user_id = $1 and r.role = 'global_admin' and u.kind = 'person')
+		and not exists (select 1 from user_roles r join users u on u.id = r.user_id where r.role = 'global_admin' and u.status = 'active' and u.kind = 'person' and u.id <> $1)`, userID).Scan(&last)
 	return last, err
 }

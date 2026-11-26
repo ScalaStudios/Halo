@@ -37,6 +37,14 @@ func TestIdentityProofingSettings(t *testing.T) {
 	if key, _, _ := e.st.ProofingSecrets(ctx); key != "sk_live_123" {
 		t.Fatalf("saving without a key must keep the stored one: %q", key)
 	}
+	generic := map[string]any{"identityProofingProvider": "generic", "identityProofingName": "Acme", "identityProofingEndpoint": "https://verify.example.com/sessions"}
+	e.expect(e.call(security, "PATCH", "/api/v1/settings", map[string]any{"identityProofingProvider": "generic", "identityProofingName": "Acme", "identityProofingEndpoint": "https://verify.example.com/sessions", "identityProofingApiKey": "generic-key"}), 200)
+	e.expect(e.call(security, "PATCH", "/api/v1/settings", generic), 200)
+	generic["identityProofingEndpoint"] = "https://verify.attacker.example/sessions"
+	e.expect(e.call(security, "PATCH", "/api/v1/settings", generic), 422)
+	if key, _, _ := e.st.ProofingSecrets(ctx); key != "generic-key" {
+		t.Fatalf("a refused change must keep the stored key: %q", key)
+	}
 	audit, _ := e.st.ListAudit(ctx, 10)
 	for _, a := range audit {
 		for _, c := range a.Changes {

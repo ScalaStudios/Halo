@@ -128,8 +128,7 @@ func (s *storage) ClientCredentialsTokenRequest(ctx context.Context, clientID st
 	if err != nil {
 		return nil, err
 	}
-	scopes = slices.DeleteFunc(scopes, func(scope string) bool { return !slices.Contains(app.Scopes, scope) && !isGranted(granted, scope) })
-	if scopes, err = withResources(ctx, granted, scopes); err != nil {
+	if scopes, err = withResources(ctx, granted, allowedScopes(app, granted, scopes)); err != nil {
 		return nil, err
 	}
 	audience, _ := audience(granted, clientID, scopes)
@@ -140,6 +139,9 @@ func (s *storage) CreateAuthRequest(ctx context.Context, req *oidc.AuthRequest, 
 	app, err := s.app(ctx, req.ClientID)
 	if err != nil {
 		return nil, err
+	}
+	if app.ClientID == CLIClientID {
+		return nil, oidc.ErrUnauthorizedClient().WithDescription("The Halo CLI signs in with the device flow only.")
 	}
 	if err := checkPKCE(app, req); err != nil {
 		return nil, err
@@ -192,7 +194,7 @@ func (s *storage) CreateAuthRequest(ctx context.Context, req *oidc.AuthRequest, 
 	if err != nil {
 		return nil, err
 	}
-	if a.Scopes, err = withResources(ctx, granted, a.Scopes); err != nil {
+	if a.Scopes, err = withResources(ctx, granted, allowedScopes(app, granted, a.Scopes)); err != nil {
 		return nil, err
 	}
 	if slices.Contains(req.Prompt, oidc.PromptNone) {

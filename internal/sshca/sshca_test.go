@@ -324,4 +324,28 @@ func TestCertificates(t *testing.T) {
 			t.Fatalf("ssh-keygen -Q for the %s certificate: %v %s", name, err, out)
 		}
 	}
+
+	checkKRL := func(want map[string]bool) {
+		t.Helper()
+		rec := call("GET", "/api/v1/ssh/revoked-hosts.krl", "", nil)
+		expect(rec, 200)
+		must(os.WriteFile(filepath.Join(dir, "hosts.krl"), rec.Body.Bytes(), 0o600))
+		for name, revoked := range want {
+			out, _ := exec.Command(keygen, "-Q", "-f", filepath.Join(dir, "hosts.krl"), filepath.Join(dir, name)).CombinedOutput()
+			if strings.Contains(string(out), "REVOKED") != revoked {
+				t.Fatalf("ssh-keygen -Q for %s: %s", name, out)
+			}
+		}
+	}
+	rec = call("POST", "/api/v1/ssh/hosts/"+db.Host.ID+"/enrollment-token", security.ID, nil)
+	expect(rec, 200)
+	var rekey registration
+	must(json.Unmarshal(rec.Body.Bytes(), &rekey))
+	dbKey2 := newSigner()
+	replacement := hostCert(call("POST", "/api/v1/ssh/hosts/enroll", "", map[string]string{"token": rekey.Token, "publicKey": pubLine(dbKey2)}))
+	must(os.WriteFile(filepath.Join(dir, "replacement"), ssh.MarshalAuthorizedKey(replacement), 0o600))
+	checkKRL(map[string]bool{"valid": true, "replacement": false})
+	expect(call("POST", "/api/v1/ssh/hosts/"+db.Host.ID+"/certificate", security.ID, map[string]string{"publicKey": pubLine(dbKey)}), 409)
+	expect(call("POST", "/api/v1/ssh/hosts/"+db.Host.ID+"/revoke", security.ID, nil), 200)
+	checkKRL(map[string]bool{"valid": true, "replacement": true, "revoked": true})
 }

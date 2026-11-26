@@ -26,6 +26,8 @@ var (
 	errDeviceReauth    = httpx.Fail(http.StatusUnauthorized, "ERR_REAUTH_REQUIRED", "This application asks you to sign in again before you approve it.")
 )
 
+var CLIScopes = []string{"openid", "profile", "email", "groups", "offline_access"}
+
 func ensureCLI(ctx context.Context, st *store.Store) error {
 	_, err := st.GetApplicationByClientID(ctx, CLIClientID)
 	if !errors.Is(err, store.ErrNotFound) {
@@ -37,7 +39,7 @@ func ensureCLI(ctx context.Context, st *store.Store) error {
 		Protocol:    "oidc",
 		Type:        "native",
 		ClientID:    CLIClientID,
-		Scopes:      []string{"openid", "profile", "email", "groups", "offline_access"},
+		Scopes:      CLIScopes,
 	})
 	if errors.Is(err, store.ErrConflict) {
 		return nil
@@ -61,7 +63,7 @@ func (s *storage) StoreDeviceAuthorization(ctx context.Context, clientID, device
 	if err != nil {
 		return err
 	}
-	if scopes, err = withResources(ctx, granted, scopes); err != nil {
+	if scopes, err = withResources(ctx, granted, allowedScopes(app, granted, scopes)); err != nil {
 		return err
 	}
 	d := store.DeviceAuthorization{UserCode: userCode, ClientID: clientID, Scopes: scopes, ExpiresAt: expires}

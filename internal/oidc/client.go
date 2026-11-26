@@ -57,12 +57,12 @@ func (c client) AuthMethod() oidc.AuthMethod {
 }
 
 func (c client) GrantTypes() []oidc.GrantType {
+	if c.app.ClientID == CLIClientID {
+		return []oidc.GrantType{oidc.GrantTypeDeviceCode, oidc.GrantTypeRefreshToken}
+	}
 	grants := []oidc.GrantType{oidc.GrantTypeCode, oidc.GrantTypeRefreshToken}
 	if c.app.Type == "service" {
 		grants = append(grants, oidc.GrantTypeClientCredentials)
-	}
-	if c.app.ClientID == CLIClientID {
-		grants = append(grants, oidc.GrantTypeDeviceCode)
 	}
 	return grants
 }

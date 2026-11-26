@@ -166,14 +166,14 @@ func (s *Store) SetApplicationStatus(ctx context.Context, appID, status string, 
 }
 
 func (s *Store) DeleteApplication(ctx context.Context, appID string) error {
-	tag, err := s.db.Exec(ctx, `delete from applications where id = $1`, appID)
-	if err != nil {
+	return s.Tx(ctx, func(tx *Store) error {
+		var clientID string
+		if err := tx.db.QueryRow(ctx, `delete from applications where id = $1 returning client_id`, appID).Scan(&clientID); err != nil {
+			return notFound(err)
+		}
+		_, err := tx.db.Exec(ctx, `update oidc_tokens set revoked_at = now(), rotated = false where client_id = $1 and `+revocable, clientID)
 		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
+	})
 }
 
 func (s *Store) SetApplicationGroups(ctx context.Context, appID string, groupIDs []string) error {

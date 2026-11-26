@@ -204,7 +204,7 @@ func TestPushedAuthorizationRequests(t *testing.T) {
 		t.Fatalf("expired request_uri: %d %q", r.status, r.location)
 	}
 
-	spa, err := h.st.CreateApplication(ctx, store.NewApplication{Name: "Dashboard", Protocol: "oidc", Type: "spa", RedirectURIs: []string{callback}, GroupIDs: []string{h.group.ID}})
+	spa, err := h.st.CreateApplication(ctx, store.NewApplication{Name: "Dashboard", Protocol: "oidc", Type: "spa", RedirectURIs: []string{callback}, GroupIDs: []string{h.group.ID}, Scopes: []string{"openid", "profile", "email", "groups", "offline_access"}})
 	if err != nil {
 		t.Fatal(err)
 	}

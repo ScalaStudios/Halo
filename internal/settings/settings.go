@@ -436,20 +436,57 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 		return h.respond(w, r)
 	}
 	change := approval.Change{TargetType: "settings", TargetLabel: "Approval settings", State: state}
+	summaries, covered := []string{}, []string{}
 	if !slices.Equal(before.ApprovalActions, next.ApprovalActions) || !slices.Equal(before.EmergencyAccessIDs, next.EmergencyAccessIDs) {
-		if change.Summary, err = h.approvalSummary(ctx, actor, before, next); err != nil {
+		summary, err := h.approvalSummary(ctx, actor, before, next)
+		if err != nil {
 			return err
 		}
+		summaries, covered = append(summaries, summary), append(covered, "changes that need approval", "emergency access accounts")
 		change.Action = "approval-settings"
-	} else if !slices.Equal(before.FeaturesOff, next.FeaturesOff) {
+	}
+	if !slices.Equal(before.FeaturesOff, next.FeaturesOff) {
 		names := []string{}
 		for _, id := range next.FeaturesOff {
 			names = append(names, features.Name(id))
 		}
-		change.Action, change.TargetLabel, change.Summary = "features", "Features", "Turn every feature on"
+		summary := "Turn every feature on"
 		if len(names) > 0 {
-			change.Summary = "Features off after this change: " + strings.Join(names, ", ")
+			summary = "Features off after this change: " + strings.Join(names, ", ")
 		}
+		summaries, covered = append(summaries, summary), append(covered, "features turned off")
+		if change.Action == "" {
+			change.Action, change.TargetLabel = "features", "Features"
+		}
+	}
+	widened := len(before.PasswordGroupIDs) > 0 && (len(next.PasswordGroupIDs) == 0 || slices.ContainsFunc(next.PasswordGroupIDs, func(id string) bool { return !slices.Contains(before.PasswordGroupIDs, id) }))
+	if widened || before.PasswordSecondFactor && !next.PasswordSecondFactor {
+		scope := "everyone"
+		if len(next.PasswordGroupIDs) > 0 {
+			names := []string{}
+			for _, id := range next.PasswordGroupIDs {
+				g, err := h.st.GetGroup(ctx, id)
+				if errors.Is(err, store.ErrNotFound) {
+					continue
+				}
+				if err != nil {
+					return err
+				}
+				names = append(names, g.Name)
+			}
+			scope = "members of " + strings.Join(names, ", ")
+		}
+		summary := "Allow password sign-in for " + scope + map[bool]string{true: " with", false: " without"}[next.PasswordSecondFactor] + " a second factor"
+		summaries, covered = append(summaries, summary), append(covered, "groups that can use passwords", "second factor for passwords")
+		if change.Action == "" {
+			change.Action, change.TargetLabel = "password-sign-in", "Password sign-in"
+		}
+	}
+	if change.Action != "" {
+		if others := slices.DeleteFunc(slices.Clone(changed), func(label string) bool { return slices.Contains(covered, label) }); len(others) > 0 {
+			summaries = append(summaries, "Also changes the "+strings.Join(others, ", "))
+		}
+		change.Summary = strings.Join(summaries, ". ")
 	}
 	if held, err := h.gate.Hold(w, r, actor, change); held || err != nil {
 		return err
@@ -508,7 +545,7 @@ func (h *handler) checkProofing(ctx context.Context, before, next store.Settings
 		return httpx.Invalid("Enter a Stripe secret key or restricted key, which starts with sk_ or rk_.")
 	case stripe && hook != "" && !strings.HasPrefix(hook, "whsec_"):
 		return httpx.Invalid("Enter the signing secret of the Stripe webhook endpoint, which starts with whsec_.")
-	case next.IdentityProofingProvider != "" && next.IdentityProofingProvider != before.IdentityProofingProvider && key == "":
+	case next.IdentityProofingProvider != "" && (next.IdentityProofingProvider != before.IdentityProofingProvider || next.IdentityProofingEndpoint != before.IdentityProofingEndpoint) && key == "":
 		return httpx.Invalid("Enter the API key from your identity verification provider to connect it.")
 	}
 	if !slices.Equal(before.IdentityProofingGroupIDs, next.IdentityProofingGroupIDs) {

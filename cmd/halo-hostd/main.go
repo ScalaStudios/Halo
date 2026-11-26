@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -48,6 +49,7 @@ func run(command string, args []string) error {
 	sudoers := flags.String("sudoers", "/etc/sudoers.d/halo", "sudoers file for the sudo rules")
 	etc := flags.String("etc", "/etc", "directory with the local passwd and group files, whose accounts Halo never overrides")
 	visudo := flags.String("visudo", "/usr/sbin/visudo", "visudo binary that validates the sudo rules")
+	homeBase := flags.String("home-base", "/home", "directory that holds the home directories of Halo accounts; accounts with a home elsewhere are skipped")
 	interval := flags.Duration("interval", 5*time.Minute, "time between refreshes")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -74,7 +76,7 @@ func run(command string, args []string) error {
 	if err != nil {
 		return fmt.Errorf("%s is not an unencrypted OpenSSH private key. Pass the enrolled host key, for example --key /etc/ssh/ssh_host_ed25519_key", *keyPath)
 	}
-	c := hostd.Config{Server: *server, Signer: signer, Client: &http.Client{Timeout: 30 * time.Second}, StateDir: *state, NSSDir: *nss, Sudoers: *sudoers, Etc: *etc, Visudo: *visudo, Interval: *interval}
+	c := hostd.Config{Server: *server, Signer: signer, Client: &http.Client{Timeout: 30 * time.Second}, StateDir: *state, NSSDir: *nss, Sudoers: *sudoers, Etc: *etc, Visudo: *visudo, HomeBase: filepath.Clean(*homeBase), Interval: *interval}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if command == "refresh" {

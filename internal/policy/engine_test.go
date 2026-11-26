@@ -352,9 +352,23 @@ func TestRiskSignals(t *testing.T) {
 		t.Fatalf("new network signals: %v", d.Signals)
 	}
 
+	eve := member(t, st, "eve@example.com")
+	for range 5 {
+		if err := st.RecordSignIn(ctx, store.SignInEvent{UserID: &eve.ID, Email: eve.Email, Result: "failure", Method: "totp", IP: "203.0.113.9", Reason: "The code did not match.", Mismatch: true}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.RecordSignIn(ctx, store.SignInEvent{UserID: &eve.ID, Email: eve.Email, Result: "failure", Method: "passkey", IP: "198.51.100.7", Reason: "User is not assigned to this application."}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d = evaluate(t, eng, eve, "passkey", "198.51.100.7", "")
+	if events := riskEvents(t, st, eve.ID); d.Risk == "high" || slices.Contains(d.Signals, "failed-sign-ins") || len(events) != 0 {
+		t.Fatalf("other addresses and refusals count as failed sign-ins: %s %v %+v", d.Risk, d.Signals, events)
+	}
+
 	bea := member(t, st, "bea@example.com")
 	for range 5 {
-		if err := st.RecordSignIn(ctx, store.SignInEvent{UserID: &bea.ID, Email: bea.Email, Result: "failure", Method: "passkey", Reason: "The passkey signature could not be verified."}); err != nil {
+		if err := st.RecordSignIn(ctx, store.SignInEvent{UserID: &bea.ID, Email: bea.Email, Result: "failure", Method: "passkey", IP: "198.51.100.7", Reason: "The passkey signature could not be verified.", Mismatch: true}); err != nil {
 			t.Fatal(err)
 		}
 	}

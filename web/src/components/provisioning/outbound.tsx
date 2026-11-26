@@ -142,6 +142,7 @@ function ConfigureDialog({ app, groups, onClose }: { app: OutboundApp | null; gr
   const [enabled, setEnabled] = useState(app?.config?.enabled ?? true);
   const [groupIds, setGroupIds] = useState<string[]>(app?.config?.groupIds ?? []);
   const [errors, setErrors] = useState<{ baseUrl?: string; token?: string }>({});
+  const keepsToken = configured && baseUrl.trim().replace(/\/+$/, "") === app?.config?.baseUrl;
   const { pending, run, errorFor, toast } = useMutation();
   const common = useMessages(provisioningMessages);
   const t = common.outbound;
@@ -150,7 +151,7 @@ function ConfigureDialog({ app, groups, onClose }: { app: OutboundApp | null; gr
     if (!app) return;
     const next = {
       baseUrl: /^https?:\/\/\S+$/.test(baseUrl.trim()) ? undefined : t.baseUrlError,
-      token: configured || token.trim() ? undefined : t.tokenError(app.name),
+      token: keepsToken || token.trim() ? undefined : t.tokenError(app.name),
     };
     setErrors(next);
     if (next.baseUrl || next.token) return;
@@ -201,7 +202,7 @@ function ConfigureDialog({ app, groups, onClose }: { app: OutboundApp | null; gr
         <Field
           label={t.token}
           error={errors.token}
-          hint={configured ? t.keepToken : t.tokenHint}
+          hint={keepsToken ? t.keepToken : t.tokenHint}
         >
           {(props) => <Input {...props} mono type="password" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} />}
         </Field>

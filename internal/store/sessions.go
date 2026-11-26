@@ -30,6 +30,7 @@ type NewSession struct {
 	Location     string
 	UserAgent    string
 	DeviceHash   []byte
+	AppOnly      bool
 }
 
 func (s *Store) CreateSession(ctx context.Context, in NewSession) (Session, string, error) {
@@ -46,25 +47,26 @@ func (s *Store) CreateSession(ctx context.Context, in NewSession) (Session, stri
 		Location:     in.Location,
 		Method:       in.Method,
 		SecondFactor: in.SecondFactor,
+		AppOnly:      in.AppOnly,
 		CreatedAt:    now,
 		LastActiveAt: now,
 		ExpiresAt:    now.Add(settings.SessionLifetime()),
 	}
 	sess.Device, sess.OS, sess.Browser = ParseUserAgent(in.UserAgent)
-	_, err = s.db.Exec(ctx, `insert into sessions (id, token_hash, user_id, method, second_factor, ip, location, user_agent, created_at, last_active_at, expires_at, device_hash) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11)`,
-		sess.ID, secret.Hash(token), in.UserID, in.Method, in.SecondFactor, in.IP, in.Location, in.UserAgent, now, sess.ExpiresAt, in.DeviceHash)
+	_, err = s.db.Exec(ctx, `insert into sessions (id, token_hash, user_id, method, second_factor, ip, location, user_agent, created_at, last_active_at, expires_at, device_hash, app_only) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11, $12)`,
+		sess.ID, secret.Hash(token), in.UserID, in.Method, in.SecondFactor, in.IP, in.Location, in.UserAgent, now, sess.ExpiresAt, in.DeviceHash, in.AppOnly)
 	if err != nil {
 		return Session{}, "", err
 	}
 	return sess, token, nil
 }
 
-const sessionColumns = `id, user_id, method, second_factor, ip, location, user_agent, created_at, last_active_at, expires_at, revoked_at, coalesce(client_id, ''), coalesce(impersonation_id, ''), reauthenticated_at`
+const sessionColumns = `id, user_id, method, second_factor, ip, location, user_agent, created_at, last_active_at, expires_at, revoked_at, coalesce(client_id, ''), coalesce(impersonation_id, ''), reauthenticated_at, app_only`
 
 func scanSession(row rowScanner) (Session, error) {
 	var sess Session
 	var ua string
-	err := row.Scan(&sess.ID, &sess.UserID, &sess.Method, &sess.SecondFactor, &sess.IP, &sess.Location, &ua, &sess.CreatedAt, &sess.LastActiveAt, &sess.ExpiresAt, &sess.RevokedAt, &sess.Client, &sess.ImpersonationID, &sess.ReauthenticatedAt)
+	err := row.Scan(&sess.ID, &sess.UserID, &sess.Method, &sess.SecondFactor, &sess.IP, &sess.Location, &ua, &sess.CreatedAt, &sess.LastActiveAt, &sess.ExpiresAt, &sess.RevokedAt, &sess.Client, &sess.ImpersonationID, &sess.ReauthenticatedAt, &sess.AppOnly)
 	sess.Device, sess.OS, sess.Browser = ParseUserAgent(ua)
 	return sess, err
 }

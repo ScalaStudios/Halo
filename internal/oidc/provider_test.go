@@ -3,6 +3,7 @@ package oidc_test
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -49,7 +51,7 @@ func TestAuthorizationCodeFlow(t *testing.T) {
 	must(st.SetImageUpdated(ctx, store.Avatars, user.ID, &avatarAt))
 	must(st.MarkEmailVerified(ctx, user.ID))
 	const redirect = "https://grafana.example.com/login/generic_oauth"
-	web, err := st.CreateApplication(ctx, store.NewApplication{Name: "Grafana", Protocol: "oidc", Type: "web", RedirectURIs: []string{redirect}, GroupIDs: []string{group.ID}})
+	web, err := st.CreateApplication(ctx, store.NewApplication{Name: "Grafana", Protocol: "oidc", Type: "web", RedirectURIs: []string{redirect}, GroupIDs: []string{group.ID}, Scopes: []string{"openid", "profile", "email", "groups", "offline_access"}})
 	must(err)
 	_, secret, err := st.AddClientSecret(ctx, web.ID, "Test", time.Hour)
 	must(err)
@@ -214,7 +216,7 @@ func TestAuthorizationCodeFlow(t *testing.T) {
 	if r := authorize(web.ClientID, "https://evil.example.com/callback", true); r.status != http.StatusBadRequest || r.location != "" {
 		t.Fatalf("unregistered redirect uri: %d %q", r.status, r.location)
 	}
-	disabled, err := st.CreateApplication(ctx, store.NewApplication{Name: "Wiki", Protocol: "oidc", Type: "web", RedirectURIs: []string{"https://wiki.example.com/cb"}, GroupIDs: []string{group.ID}})
+	disabled, err := st.CreateApplication(ctx, store.NewApplication{Name: "Wiki", Protocol: "oidc", Type: "web", RedirectURIs: []string{"https://wiki.example.com/cb"}, GroupIDs: []string{group.ID}, Scopes: []string{"openid", "profile", "email", "groups", "offline_access"}})
 	must(err)
 	must(st.SetApplicationStatus(ctx, disabled.ID, "disabled", false))
 	if r := authorize(disabled.ClientID, "https://wiki.example.com/cb", true); r.status != http.StatusBadRequest || r.location != "" {
@@ -225,7 +227,7 @@ func TestAuthorizationCodeFlow(t *testing.T) {
 	if r := authorize(bookmark.ClientID, "https://intranet.example.com/cb", true); r.status != http.StatusBadRequest || r.location != "" {
 		t.Fatalf("bookmark used as an OpenID Connect client: %d %q", r.status, r.location)
 	}
-	spa, err := st.CreateApplication(ctx, store.NewApplication{Name: "Dashboard", Protocol: "oidc", Type: "spa", RedirectURIs: []string{"https://dash.example.com/cb"}, GroupIDs: []string{group.ID}})
+	spa, err := st.CreateApplication(ctx, store.NewApplication{Name: "Dashboard", Protocol: "oidc", Type: "spa", RedirectURIs: []string{"https://dash.example.com/cb"}, GroupIDs: []string{group.ID}, Scopes: []string{"openid", "profile", "email", "groups", "offline_access"}})
 	must(err)
 	if r := authorize(spa.ClientID, "https://dash.example.com/cb", false); r.status != http.StatusFound || !strings.Contains(r.location, "error=invalid_request") {
 		t.Fatalf("public client without pkce: %d %q", r.status, r.location)
@@ -249,4 +251,71 @@ func TestAuthorizationCodeFlow(t *testing.T) {
 	if r := send(http.MethodPost, "/oauth2/introspect", url.Values{"token": {jwt}}, basic(service.ClientID, serviceSecret)); r.body["active"] != true || r.body["sub"] != service.ClientID {
 		t.Fatalf("service token introspection: %v", r.body)
 	}
+}
+
+func TestAuthorizationCodeRedeemedOnce(t *testing.T) {
+	h := newHarness(t, nil)
+	_, session := h.session(h.user, "passkey")
+	for _, scope := range []string{"openid", "openid offline_access"} {
+		code := h.silent(session, url.Values{"scope": {scope}}).Query().Get("code")
+		form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {callback}, "code_verifier": {pkceSecret}}
+		statuses := make(chan result, 10)
+		var wg sync.WaitGroup
+		for range cap(statuses) {
+			wg.Go(func() { statuses <- h.post("/oauth2/token", form, h.app.ClientID, h.secret) })
+		}
+		wg.Wait()
+		close(statuses)
+		redeemed := 0
+		for r := range statuses {
+			if r.status == http.StatusOK {
+				redeemed++
+			} else if r.body["error"] != "invalid_grant" {
+				t.Errorf("%s: a replayed code must fail with invalid_grant: %d %v", scope, r.status, r.body)
+			}
+		}
+		if redeemed != 1 {
+			t.Errorf("%s: %d parallel redemptions of one code succeeded, want exactly 1", scope, redeemed)
+		}
+	}
+}
+
+func TestAuthorizationKeepsOnlyApplicationScopes(t *testing.T) {
+	h := newHarness(t, nil)
+	h.app.Scopes = []string{"openid"}
+	if err := h.st.UpdateApplication(context.Background(), h.app); err != nil {
+		t.Fatal(err)
+	}
+	_, session := h.session(h.user, "passkey")
+	code := h.silent(session, url.Values{"scope": {"openid email profile offline_access"}}).Query().Get("code")
+	r := h.post("/oauth2/token", url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {callback}, "code_verifier": {pkceSecret}}, h.app.ClientID, h.secret)
+	idToken, _ := r.body["id_token"].(string)
+	if r.status != http.StatusOK || idToken == "" {
+		t.Fatalf("token: %d %v", r.status, r.body)
+	}
+	if r.body["refresh_token"] != nil || r.body["scope"] != "openid" {
+		t.Errorf("scopes the application does not have must be dropped: %v", r.body)
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(oidcPayload(t, idToken), &claims); err != nil {
+		t.Fatal(err)
+	}
+	for _, claim := range []string{"email", "name", "picture"} {
+		if claims[claim] != nil {
+			t.Errorf("the ID token must not carry %s: %v", claim, claims)
+		}
+	}
+}
+
+func oidcPayload(t *testing.T, token string) []byte {
+	t.Helper()
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		t.Fatalf("not a JWT: %q", token)
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return payload
 }

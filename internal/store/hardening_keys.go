@@ -180,6 +180,7 @@ type ResealedColumn struct {
 type KeyRotation struct {
 	Resealed          []ResealedColumn
 	RecoveryCodeUsers []string
+	AccessPassUsers   []string
 }
 
 func (s *Store) RotateSecretKey(ctx context.Context, next *secret.Sealer) (KeyRotation, error) {
@@ -210,7 +211,18 @@ func (s *Store) RotateSecretKey(ctx context.Context, next *secret.Sealer) (KeyRo
 		if err != nil {
 			return err
 		}
-		out.RecoveryCodeUsers, err = pgx.CollectRows(rows, pgx.RowTo[string])
+		if out.RecoveryCodeUsers, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+			return err
+		}
+		rows, err = tx.db.Query(ctx, `with removed as (delete from access_passes returning user_id)
+			select u.email from users u where u.id in (select user_id from removed) order by lower(u.email)`)
+		if err != nil {
+			return err
+		}
+		if out.AccessPassUsers, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+			return err
+		}
+		_, err = tx.db.Exec(ctx, `update magic_links set code_hash = null where code_hash is not null`)
 		return err
 	})
 	return out, err

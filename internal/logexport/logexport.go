@@ -165,6 +165,8 @@ func save(ctx context.Context, tx *store.Store, actorID *string, ip string, x st
 	next := old
 	if headers != nil {
 		next = strings.TrimSpace(*headers)
+	} else if before.Protocol != x.Protocol || before.Endpoint != x.Endpoint {
+		next = ""
 	}
 	if x.Protocol != "otlp-http" {
 		next = ""

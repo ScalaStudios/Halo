@@ -99,7 +99,8 @@ func (s *Store) SaveIdentityProvider(ctx context.Context, p IdentityProvider, cl
 		}
 		return s.GetIdentityProvider(ctx, p.ID)
 	}
-	tag, err := s.db.Exec(ctx, `update identity_providers set name = $2, issuer = $3, client_id = $4, client_secret_sealed = coalesce($5, client_secret_sealed), scopes = $6, enabled = $7,
+	tag, err := s.db.Exec(ctx, `with unlinked as (delete from federated_identities f using identity_providers p where p.id = $1 and f.provider_id = p.id and p.issuer is distinct from $3)
+		update identity_providers set name = $2, issuer = $3, client_id = $4, client_secret_sealed = coalesce($5, client_secret_sealed), scopes = $6, enabled = $7,
 		show_on_sign_in = $8, route_by_domain = $9, allowed_domains = $10, jit = $11, jit_group_ids = $12, mapping = $13, saml_metadata = $14, email_attribute = $15, updated_at = now() where id = $1`,
 		p.ID, p.Name, p.Issuer, p.ClientID, sealed, p.Scopes, p.Enabled, p.ShowOnSignIn, p.RouteByDomain, p.AllowedDomains, p.JIT, p.JITGroupIDs, p.Mapping, p.SAMLMetadata, p.EmailAttribute)
 	if err != nil {

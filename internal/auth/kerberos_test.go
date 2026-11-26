@@ -335,6 +335,10 @@ func TestKerberosSignIn(t *testing.T) {
 	skewed.ctime = time.Now().Add(-10 * time.Minute)
 	expectRejected("skewed clock", e.negotiate(skewed.token(t), map[string]any{}), "ERR_KERBEROS_REJECTED", "more than 5 minutes")
 	expectRejected("unmapped principal", e.negotiate(valid("nobody").token(t), map[string]any{}), "ERR_KERBEROS_REJECTED", "No person's email address is nobody@example.com")
+	if _, err := st.CreateUser(ctx, store.NewUser{Email: "root@example.com", Name: "Root", Status: "active", Roles: []string{"global_admin"}}); err != nil {
+		t.Fatal(err)
+	}
+	expectRejected("administrator matched by email", e.negotiate(valid("root").token(t), map[string]any{}), "ERR_KERBEROS_REJECTED", "Root holds or is eligible for an administrator role")
 	foreign := valid("ada")
 	foreign.realm = "PARTNER.EXAMPLE.NET"
 	expectRejected("unmapped realm", e.negotiate(foreign.token(t), map[string]any{}), "ERR_KERBEROS_REJECTED", "PARTNER.EXAMPLE.NET isn't one of the realms")

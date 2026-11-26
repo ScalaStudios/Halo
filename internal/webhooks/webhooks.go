@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"halo/internal/httpx"
@@ -40,10 +41,11 @@ type handler struct {
 	st      *store.Store
 	client  *http.Client
 	guarded *http.Client
+	dev     bool
 }
 
 func Register(mux *http.ServeMux, d httpx.Deps) error {
-	h := &handler{st: d.Store, client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: noRedirect}, guarded: httpx.GuardedClient()}
+	h := &handler{st: d.Store, client: httpx.OutboundClient(d.Config.Dev), guarded: httpx.OutboundClient(false), dev: d.Config.Dev}
 	if d.Jobs != nil {
 		d.Jobs.Every("deliver webhooks", 10*time.Second, func(ctx context.Context) error { return h.run(ctx, time.Now()) })
 	}
@@ -75,8 +77,6 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	route("GET /api/v1/applications/{id}/logout-deliveries", readers, h.logoutDeliveries)
 	return nil
 }
-
-func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
 func sign(secret []byte, at time.Time, body []byte) string {
 	t := strconv.FormatInt(at.Unix(), 10)
@@ -125,39 +125,57 @@ func (h *handler) run(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return err
 	}
+	groups := map[string][]store.WebhookDelivery{}
 	for _, d := range due {
-		if err := h.attempt(ctx, d, now); err != nil {
-			return err
-		}
+		groups[d.EndpointID+d.RuleID] = append(groups[d.EndpointID+d.RuleID], d)
 	}
-	return nil
+	slots, errs := make(chan struct{}, 8), make(chan error, len(groups))
+	var wg sync.WaitGroup
+	for _, group := range groups {
+		wg.Go(func() {
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			for _, d := range group {
+				delivered, err := h.attempt(ctx, d, now)
+				if err != nil {
+					errs <- err
+				}
+				if err != nil || !delivered {
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
+	close(errs)
+	return <-errs
 }
 
-func (h *handler) attempt(ctx context.Context, d store.WebhookDelivery, now time.Time) error {
+func (h *handler) attempt(ctx context.Context, d store.WebhookDelivery, now time.Time) (bool, error) {
 	client, target, sealed := h.client, "", []byte(nil)
 	if d.RuleID != "" {
 		rule, err := h.st.GetNotificationRule(ctx, d.RuleID)
 		if err != nil {
-			return err
+			return false, err
 		}
 		plain, err := h.st.Sealer.Open(rule.URLSealed)
 		if err != nil {
-			return err
+			return false, err
 		}
 		client, target, sealed = h.guarded, string(plain), rule.SecretSealed
 	} else {
 		endpoint, err := h.st.GetWebhook(ctx, d.EndpointID)
 		if err != nil {
-			return err
+			return false, err
 		}
 		target, sealed = endpoint.URL, endpoint.Sealed
 	}
 	secret, err := h.st.Sealer.Open(sealed)
 	if err != nil {
-		return err
+		return false, err
 	}
 	code, message := send(ctx, client, target, secret, []byte(d.Body))
-	return Record(ctx, h.st, d, code, message, now)
+	return code >= 200 && code <= 299, Record(ctx, h.st, d, code, message, now)
 }
 
 func Record(ctx context.Context, st *store.Store, d store.WebhookDelivery, code int, message string, now time.Time) error {
@@ -216,11 +234,16 @@ func withoutURL(err error) string {
 	return err.Error()
 }
 
-func (in input) validate() (store.NewWebhook, error) {
+func (in input) validate(dev bool) (store.NewWebhook, error) {
 	w := store.NewWebhook{URL: strings.TrimSpace(in.URL), Description: strings.TrimSpace(in.Description), Enabled: in.Enabled == nil || *in.Enabled}
+	if !dev {
+		if _, err := PublicURL(w.URL, "webhook endpoint", "Webhooks only send to"); err != nil {
+			return w, err
+		}
+	}
 	u, err := url.Parse(w.URL)
 	if err != nil || u.Host == "" || u.User != nil || !(u.Scheme == "https" || u.Scheme == "http" && local(u.Hostname())) {
-		return w, httpx.Invalid("Enter an https:// URL. Plain http:// is allowed only for localhost while you test.")
+		return w, httpx.Invalid("Enter an https:// URL. Plain http:// is allowed only for localhost while Halo runs in development mode.")
 	}
 	if len(w.URL) > 2048 || len(w.Description) > 200 {
 		return w, httpx.Invalid("Keep the URL under 2,048 characters and the description under 200.")
@@ -301,7 +324,7 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request, actor store.Use
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
-	fields, err := in.validate()
+	fields, err := in.validate(h.dev)
 	if err != nil {
 		return err
 	}
@@ -330,7 +353,7 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request, actor store.Use
 	if err := httpx.Decode(r, &in); err != nil {
 		return err
 	}
-	fields, err := in.validate()
+	fields, err := in.validate(h.dev)
 	if err != nil {
 		return err
 	}
@@ -396,7 +419,7 @@ func (h *handler) deliverNow(w http.ResponseWriter, r *http.Request, deliveryID 
 	if err != nil {
 		return err
 	}
-	if err := h.attempt(ctx, delivery, now); err != nil {
+	if _, err := h.attempt(ctx, delivery, now); err != nil {
 		return err
 	}
 	if delivery, err = h.st.GetWebhookDelivery(ctx, deliveryID); err != nil {

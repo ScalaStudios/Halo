@@ -11,6 +11,7 @@ import (
 	"github.com/jcmturner/gokrb5/v8/keytab"
 	"github.com/jcmturner/gokrb5/v8/types"
 
+	"halo/internal/approval"
 	"halo/internal/httpx"
 	"halo/internal/store"
 )
@@ -154,6 +155,9 @@ func (h *handler) saveKerberos(w http.ResponseWriter, r *http.Request) error {
 	if in.Keytab != "" && current.Keytab != nil {
 		summary += " and uploaded a new keytab"
 	}
+	if held, err := h.gate.Hold(w, r, actor, approval.Change{Action: "identity-providers", Summary: summary, TargetType: "kerberos", TargetID: "kerberos", TargetLabel: "Windows sign-in", State: current}); held || err != nil {
+		return err
+	}
 	err = h.st.Tx(ctx, func(tx *store.Store) error {
 		if err := tx.SaveKerberosSource(ctx, next); err != nil {
 			return err
@@ -173,6 +177,9 @@ func (h *handler) saveKerberos(w http.ResponseWriter, r *http.Request) error {
 func (h *handler) deleteKerberos(w http.ResponseWriter, r *http.Request) error {
 	actor, err := httpx.RequireRole(r, "security_admin")
 	if err != nil {
+		return err
+	}
+	if held, err := h.gate.Hold(w, r, actor, approval.Change{Action: "identity-providers", Summary: "Remove Windows sign-in and its keytab", TargetType: "kerberos", TargetID: "kerberos", TargetLabel: "Windows sign-in"}); held || err != nil {
 		return err
 	}
 	ctx := r.Context()

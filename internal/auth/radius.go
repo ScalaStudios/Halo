@@ -58,9 +58,11 @@ func (x *RADIUS) SignIn(ctx context.Context, in RADIUSRequest) (RADIUSReply, err
 	if err != nil {
 		return RADIUSReply{}, err
 	}
-	if locked, err := h.lockedOut(ctx, a, settings); err != nil || locked {
+	release, locked, err := h.lockedOut(ctx, a, settings)
+	if err != nil || locked {
 		return RADIUSReply{}, x.reject(ctx, a, in, lockedOutReason, err)
 	}
+	defer release()
 	if sprayed, err := h.sprayed(ctx, in.IP, settings); err != nil || sprayed {
 		return RADIUSReply{}, x.reject(ctx, a, in, sprayedReason, err)
 	}
@@ -69,6 +71,7 @@ func (x *RADIUS) SignIn(ctx context.Context, in RADIUSRequest) (RADIUSReply, err
 	}
 	stored, reason, err := h.checkPassword(ctx, a, in.Password, settings)
 	if err != nil || reason != "" {
+		a.mismatch = true
 		return RADIUSReply{}, x.reject(ctx, a, in, reason, err)
 	}
 	if stored.MustChange {
@@ -95,6 +98,7 @@ func (x *RADIUS) code(ctx context.Context, a attempt, in RADIUSRequest, settings
 	}
 	reason, err := x.h.useTOTP(ctx, a.user.ID, in.Password)
 	if err != nil || reason != "" {
+		a.mismatch = true
 		return RADIUSReply{}, x.reject(ctx, a, in, reason, err)
 	}
 	a.secondFactor = true

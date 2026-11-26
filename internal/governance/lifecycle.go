@@ -427,6 +427,14 @@ func applyRule(ctx context.Context, tx *store.Store, rule store.LifecycleRule, u
 	failed := func(step string) {
 		steps, ok = append(steps, step), false
 	}
+	protected := func(action string) (bool, error) {
+		full, err := tx.GetUser(ctx, u.ID)
+		if err != nil || !full.Privileged() {
+			return false, err
+		}
+		failed("Did not " + action + " " + u.Name + " because they hold or are eligible for an administrator role, so only a global administrator can change their account")
+		return true, nil
+	}
 	for _, a := range rule.Actions {
 		switch a.Type {
 		case "add-to-group", "remove-from-group":
@@ -465,6 +473,13 @@ func applyRule(ctx context.Context, tx *store.Store, rule store.LifecycleRule, u
 			}
 			steps = append(steps, "Removed from "+g.Name)
 		case "revoke-sessions":
+			skip, err := protected("end the sessions of")
+			if err != nil {
+				return nil, false, err
+			}
+			if skip {
+				continue
+			}
 			n, err := tx.RevokeUserSessions(ctx, u.ID, "")
 			if err != nil {
 				return nil, false, err
@@ -479,12 +494,11 @@ func applyRule(ctx context.Context, tx *store.Store, rule store.LifecycleRule, u
 				failed("Did not suspend " + u.Name + " because they are an emergency access account")
 				continue
 			}
-			last, err := tx.IsLastActiveGlobalAdmin(ctx, u.ID)
+			skip, err := protected("suspend")
 			if err != nil {
 				return nil, false, err
 			}
-			if last {
-				failed("Did not suspend " + u.Name + " because they are the last active global administrator")
+			if skip {
 				continue
 			}
 			if err := tx.SetUserStatus(ctx, u.ID, "suspended"); err != nil {

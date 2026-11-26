@@ -93,9 +93,11 @@ func (h *handler) reauthenticate(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		if err := h.lockout(r, a, settings, "codes"); err != nil {
+		release, err := h.lockout(r, a, settings, "codes")
+		if err != nil {
 			return err
 		}
+		defer release()
 		reason, err := h.useTOTP(ctx, u.ID, in.Code)
 		if err != nil {
 			return err

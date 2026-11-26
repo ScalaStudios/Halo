@@ -63,7 +63,7 @@ func (h *handlers) emailLink(r *http.Request, token string, m halomail.Message) 
 }
 
 func guardAdmin(actor, target store.User) error {
-	if len(target.RoleKeys)+len(target.EligibleRoles) > 0 && !actor.HasRole("global_admin") {
+	if !actor.CanChange(target) {
 		return httpx.Fail(http.StatusForbidden, "ERR_FORBIDDEN", target.Name+" holds or is eligible for an administrator role, so only a global administrator can change their account.")
 	}
 	return nil
@@ -256,11 +256,23 @@ func (h *handlers) invite(r *http.Request, tx *store.Store, actor store.User, in
 	if !inScope(r, user.GroupIDs...) {
 		return user, "", time.Time{}, httpx.Fail(http.StatusForbidden, "ERR_OUT_OF_SCOPE", user.Name+" wouldn't be in any group you manage. Add them to one of your groups, or ask an administrator whose role covers them.")
 	}
+	if err := joinsOutOfScope(r, nil, user); err != nil {
+		return user, "", time.Time{}, err
+	}
 	token, expires, err := tx.CreateEnrollmentToken(r.Context(), user.ID, "invite", &actor.ID)
 	if err != nil {
 		return user, "", time.Time{}, err
 	}
 	return user, token, expires, record(r, tx, actor, store.AuditEvent{Action: "user.invite", Summary: cmp.Or(summary, "Invited "+user.Name+" <"+user.Email+">"), TargetType: "user", TargetID: user.ID, TargetLabel: user.Name})
+}
+
+func joinsOutOfScope(r *http.Request, before []string, after store.User) error {
+	for _, groupID := range after.GroupIDs {
+		if !slices.Contains(before, groupID) && !inScope(r, groupID) {
+			return httpx.Fail(http.StatusForbidden, "ERR_OUT_OF_SCOPE", "This would put "+after.Name+" in a rule-based group outside the groups you manage. Change the profile so they stay in your groups, or ask an administrator whose role covers them.")
+		}
+	}
+	return nil
 }
 
 func (h *handlers) suspendUser(w http.ResponseWriter, r *http.Request, actor store.User) error {
@@ -281,19 +293,11 @@ func (h *handlers) suspend(r *http.Request, actor store.User, userID string) err
 	if err := guardAdmin(actor, target); err != nil {
 		return err
 	}
-	if target.HasRole("global_admin") && target.Status == "active" {
-		users, err := h.st.ListUsers(r.Context())
-		if err != nil {
-			return err
-		}
-		if !slices.ContainsFunc(users, func(u store.User) bool {
-			return u.ID != target.ID && u.Status == "active" && u.HasRole("global_admin")
-		}) {
-			return httpx.Invalid(target.Name + " is the last active global administrator. Make someone else a global administrator before suspending them.")
-		}
-	}
 	return h.st.Tx(r.Context(), func(tx *store.Store) error {
 		if err := tx.SetUserStatus(r.Context(), target.ID, "suspended"); err != nil {
+			if errors.Is(err, store.ErrLastGlobalAdmin) {
+				return httpx.Invalid(target.Name + " is the last active global administrator. Make someone else a global administrator before suspending them.")
+			}
 			return err
 		}
 		revoked, err := tx.RevokeUserSessions(r.Context(), target.ID, "")
@@ -558,6 +562,9 @@ func (h *handlers) setRoles(w http.ResponseWriter, r *http.Request, actor store.
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 		if err := tx.SetUserRoles(r.Context(), target.ID, roles, scopes); err != nil {
+			if errors.Is(err, store.ErrLastGlobalAdmin) {
+				return httpx.Invalid(target.Name + " is the last active global administrator. Make someone else a global administrator before removing their role.")
+			}
 			return err
 		}
 		slices.Sort(roles)
@@ -827,6 +834,13 @@ func (h *handlers) updateUser(w http.ResponseWriter, r *http.Request, actor stor
 			if err := tx.SetUserAttributes(r.Context(), target.ID, attributes); err != nil {
 				return err
 			}
+		}
+		updated, err := tx.GetUser(r.Context(), target.ID)
+		if err != nil {
+			return err
+		}
+		if err := joinsOutOfScope(r, target.GroupIDs, updated); err != nil {
+			return err
 		}
 		return record(r, tx, actor, store.AuditEvent{Action: "user.update", Summary: "Updated " + strings.Join(changed, ", "), TargetType: "user", TargetID: target.ID, TargetLabel: next.Name, Changes: store.Diff(target, next)})
 	})

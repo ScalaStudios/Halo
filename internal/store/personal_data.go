@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/jackc/pgx/v5"
 
@@ -49,35 +50,42 @@ func (s *Store) ActiveProvisionedAccounts(ctx context.Context, userID string) (i
 
 func (s *Store) ErasePerson(ctx context.Context, u User) (string, error) {
 	pseudonym := id.New("deleted")
-	terms := []string{regexp.QuoteMeta(u.ID), `(?:(?<=\\u003c)|(?<![[:alnum:]_.%+-]))` + regexp.QuoteMeta(u.Email) + `(?![[:alnum:]_-]|\.[[:alnum:]])`}
+	strict := regexp.QuoteMeta(u.ID) + `|(?:(?<=\\u003c)|(?<![[:alnum:]_.%+-]))` + anyCase(regexp.QuoteMeta(u.Email)) + `(?![[:alnum:]_-]|\.[[:alnum:]])`
+	name := strict
 	if u.Name != "" && !json.Valid([]byte(u.Name)) {
-		terms = append(terms, `(?<![[:alnum:]_])`+regexp.QuoteMeta(u.Name)+`(?![[:alnum:]_])`)
+		name = `(?<![[:alnum:]_])` + regexp.QuoteMeta(u.Name) + `(?![[:alnum:]_])`
 	}
-	mention := strings.Join(terms, "|")
-	args := pgx.NamedArgs{"id": u.ID, "mention": mention, "pseudonym": pseudonym, "email": u.Email}
+	mention := strict + "|" + name
+	args := pgx.NamedArgs{"id": u.ID, "strict": strict, "name": name, "mention": mention, "pseudonym": pseudonym, "email": u.Email}
 	for _, sql := range []string{
 		`update audit_events set actor_id = case when actor_id = @id then @pseudonym else actor_id end,
 			target_id = case when target_id = @id then @pseudonym else target_id end,
-			target_label = case when target_id = @id then @pseudonym else regexp_replace(target_label, @mention, @pseudonym, 'gi') end,
-			summary = regexp_replace(summary, @mention, @pseudonym, 'gi'),
+			target_label = case when target_id = @id then @pseudonym when target_type in ('user', 'sign_up', 'risk_event') then regexp_replace(target_label, @mention, @pseudonym, 'g')
+				else regexp_replace(target_label, @strict, @pseudonym, 'g') end,
+			summary = regexp_replace(summary, case when target_type not in ('user', 'sign_up', 'risk_event') and target_label ~ @name then @strict else @mention end, @pseudonym, 'g'),
 			changes = case when target_id = @id then (select coalesce(jsonb_agg(jsonb_build_object('field', c->'field', 'redacted', true)), '[]') from jsonb_array_elements(changes) c)
-				else regexp_replace(changes::text, @mention, @pseudonym, 'gi')::jsonb end
-			where actor_id = @id or target_id = @id or target_label ~* @mention or summary ~* @mention or changes::text ~* @mention`,
+				when target_type not in ('user', 'sign_up', 'risk_event') and target_label ~ @name then regexp_replace(changes::text, @strict, @pseudonym, 'g')::jsonb
+				else (select coalesce(jsonb_agg(coalesce((select jsonb_object_agg(k, case when k = 'field' then v else case jsonb_typeof(v)
+					when 'string' then to_jsonb(regexp_replace(v #>> '{}', @name, @pseudonym, 'g'))
+					when 'array' then coalesce((select jsonb_agg(case when jsonb_typeof(x) = 'string' then to_jsonb(regexp_replace(x #>> '{}', @name, @pseudonym, 'g')) else x end order by n) from jsonb_array_elements(v) with ordinality a(x, n)), v)
+					else v end end) from jsonb_each(c) e(k, v)), c) order by i), '[]')
+					from jsonb_array_elements(regexp_replace(changes::text, @strict, @pseudonym, 'g')::jsonb) with ordinality t(c, i)) end
+			where actor_id = @id or target_id = @id or target_label ~ @mention or summary ~ @mention or changes::text ~ @mention`,
 		`update sign_in_events set email = case when user_id = @id or lower(email) = lower(@email) then @pseudonym else email end,
 			impersonator_id = case when impersonator_id = @id then @pseudonym else impersonator_id end,
-			reason = regexp_replace(reason, @mention, @pseudonym, 'gi')
-			where user_id = @id or lower(email) = lower(@email) or impersonator_id = @id or reason ~* @mention`,
+			reason = regexp_replace(reason, @mention, @pseudonym, 'g')
+			where user_id = @id or lower(email) = lower(@email) or impersonator_id = @id or reason ~ @mention`,
 		`update approval_requests set target_id = case when target_id = @id then '' else target_id end,
-			target_label = case when target_id = @id then @pseudonym else regexp_replace(target_label, @mention, @pseudonym, 'gi') end,
-			state = case when target_id = @id then '' else regexp_replace(state, @mention, @pseudonym, 'gi') end,
-			path = replace(path, @id, @pseudonym), summary = regexp_replace(summary, @mention, @pseudonym, 'gi')
-			where target_id = @id or strpos(path, @id) > 0 or target_label ~* @mention or state ~* @mention or summary ~* @mention`,
-		`update webhook_deliveries set body = regexp_replace(body, @mention, @pseudonym, 'gi') where body ~* @mention and (app_id is null or status <> 'pending')`,
+			target_label = case when target_id = @id then @pseudonym else regexp_replace(target_label, @mention, @pseudonym, 'g') end,
+			state = case when target_id = @id then '' else regexp_replace(state, @mention, @pseudonym, 'g') end,
+			path = replace(path, @id, @pseudonym), summary = regexp_replace(summary, @mention, @pseudonym, 'g')
+			where target_id = @id or strpos(path, @id) > 0 or target_label ~ @mention or state ~ @mention or summary ~ @mention`,
+		`update webhook_deliveries set body = regexp_replace(body, @mention, @pseudonym, 'g') where body ~ @mention and (app_id is null or status <> 'pending')`,
 		`update ssh_certificates set key_id = replace(key_id, @id, @pseudonym) where user_id = @id`,
 		`update access_policies set conditions = conditions || jsonb_build_object('userIds', coalesce(conditions->'userIds', '[]') - @id::text, 'excludeUserIds', coalesce(conditions->'excludeUserIds', '[]') - @id::text)
 			where conditions->'userIds' ? @id::text or conditions->'excludeUserIds' ? @id::text`,
 		`delete from sign_ups where user_id = @id or lower(email) = lower(@email)`,
-		`delete from mail_outbox where lower(recipient) = lower(@email) or subject ~* @mention`,
+		`delete from mail_outbox where lower(recipient) = lower(@email) or subject ~ @mention`,
 		`delete from rate_limit_windows where subject = lower(@email)`,
 		`delete from oidc_auth_requests where lower(login_hint) = lower(@email)`,
 		`delete from risk_events where user_id = @id`,
@@ -94,4 +102,16 @@ func (s *Store) ErasePerson(ctx context.Context, u User) (string, error) {
 	}
 	_, err := s.db.Exec(ctx, `delete from users where id = $1`, u.ID)
 	return pseudonym, err
+}
+
+func anyCase(pattern string) string {
+	var b strings.Builder
+	for _, r := range pattern {
+		if upper, lower := unicode.ToUpper(r), unicode.ToLower(r); upper != lower {
+			b.WriteString("[" + string(lower) + string(upper) + "]")
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }

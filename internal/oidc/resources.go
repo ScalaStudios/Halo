@@ -42,6 +42,12 @@ func isGranted(granted []store.GrantedResource, scope string) bool {
 	return slices.ContainsFunc(granted, func(g store.GrantedResource) bool { return slices.Contains(g.Scopes, scope) })
 }
 
+func allowedScopes(app store.Application, granted []store.GrantedResource, scopes []string) []string {
+	return slices.DeleteFunc(slices.Clone(scopes), func(scope string) bool {
+		return !slices.Contains(app.Scopes, scope) && !isGranted(granted, scope) && !(scope == oidc.ScopeOpenID && app.Protocol == "oidc")
+	})
+}
+
 func withResources(ctx context.Context, granted []store.GrantedResource, scopes []string) ([]string, error) {
 	r, _ := ctx.Value(requestKey{}).(*http.Request)
 	if r == nil {

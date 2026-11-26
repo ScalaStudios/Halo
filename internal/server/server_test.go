@@ -82,7 +82,7 @@ func (e *env) call(credential, method, path string, body any) *httptest.Response
 	}
 	req := httptest.NewRequest(method, path, reader)
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
-	if strings.HasPrefix(credential, "hlk_") {
+	if strings.HasPrefix(credential, "hlk_") || strings.HasPrefix(credential, "eyJ") {
 		req.Header.Set("Authorization", "Bearer "+credential)
 	} else if credential != "" {
 		req.AddCookie(&http.Cookie{Name: httpx.SessionCookie, Value: credential})
@@ -106,6 +106,45 @@ func (e *env) reauthenticate(credential, seed string, at time.Time) {
 	e.expect(credential, "POST", "/api/v1/me/reauthenticate/begin", nil, http.StatusOK, "")
 	code, _ := totp.GenerateCode(seed, at)
 	e.expect(credential, "POST", "/api/v1/me/reauthenticate", map[string]string{"code": code}, http.StatusNoContent, "")
+}
+
+func (e *env) cliToken(session string) string {
+	e.t.Helper()
+	post := func(path string, form url.Values) map[string]any {
+		e.t.Helper()
+		req := httptest.NewRequest("POST", path, strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		var body map[string]any
+		_ = json.NewDecoder(rec.Body).Decode(&body)
+		if rec.Code != http.StatusOK {
+			e.t.Fatalf("%s: %d %v", path, rec.Code, body)
+		}
+		return body
+	}
+	device := post("/oauth2/device_authorization", url.Values{"client_id": {"halo-cli"}, "scope": {"openid offline_access"}})
+	e.expect(session, "POST", "/api/v1/device/"+device["user_code"].(string)+"/approve", nil, http.StatusOK, "")
+	tokens := post("/oauth2/token", url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:device_code"}, "device_code": {device["device_code"].(string)}, "client_id": {"halo-cli"}})
+	return tokens["access_token"].(string)
+}
+
+func TestCLITokenCannotManageSignInMethods(t *testing.T) {
+	e := setup(t)
+	_, session, _ := e.person("ada@example.com", "magic-link", false)
+	cli := e.cliToken(session)
+	e.expect(cli, "GET", "/api/v1/me/applications", nil, http.StatusOK, "")
+	e.expect(cli, "GET", "/api/v1/me/sessions", nil, http.StatusOK, "")
+	param := regexp.MustCompile(`\{[^}]+\}`)
+	for _, route := range ownMethodRoutes {
+		method, path, _ := strings.Cut(route, " ")
+		e.expect(cli, method, param.ReplaceAllString(path, "x"), map[string]string{"password": "correct horse battery staple"}, http.StatusUnauthorized, "ERR_UNAUTHENTICATED")
+	}
+	for _, route := range []string{"POST /api/v1/me/totp/begin", "POST /api/v1/me/recovery-codes", "POST /api/v1/me/passkeys/begin", "PUT /api/v1/me/password"} {
+		if !slices.Contains(ownMethodRoutes, route) {
+			t.Errorf("%s must need a browser session", route)
+		}
+	}
 }
 
 func TestEverySensitiveRouteAsksForRecentSignIn(t *testing.T) {
@@ -141,8 +180,14 @@ func TestRecentSignIn(t *testing.T) {
 		t.Fatalf("begin: %s", begun.Body)
 	}
 	e.expect(stale, "POST", "/api/v1/me/reauthenticate", map[string]string{"code": "000000"}, http.StatusUnauthorized, "ERR_CODE_MISMATCH")
+	if err := e.st.SetMethodEnabled(ctx, "password", true); err != nil {
+		t.Fatal(err)
+	}
+	password := map[string]string{"password": "a long passphrase nobody guesses 7341"}
+	e.expect(stale, "PUT", "/api/v1/me/password", password, http.StatusUnauthorized, "ERR_REAUTH_REQUIRED")
 	e.reauthenticate(stale, seed, time.Now())
 	e.expect(stale, "POST", "/api/v1/signing-keys/rotate", nil, http.StatusOK, "")
+	e.expect(stale, "PUT", "/api/v1/me/password", password, http.StatusNoContent, "")
 	e.expect(stale, "POST", "/api/v1/users", map[string]any{"email": "sam@example.com", "name": "Sam", "roles": []string{"auditor"}}, http.StatusCreated, "")
 
 	events, err := e.st.ListAudit(ctx, 100)

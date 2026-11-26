@@ -729,22 +729,19 @@ func (h *handlers) certifyHost(w http.ResponseWriter, r *http.Request, actor *st
 }
 
 func (h *handlers) revokedHosts(w http.ResponseWriter, r *http.Request) error {
-	hosts, err := h.st.ListSSHHosts(r.Context())
+	revoked, err := h.st.ListRevokedSSHHostKeys(r.Context())
 	if err != nil {
 		return err
 	}
 	var keys []byte
 	var version int64
-	for _, host := range hosts {
-		if host.RevokedAt == nil || host.PublicKey == nil {
-			continue
-		}
-		key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(*host.PublicKey))
+	for _, k := range revoked {
+		key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(k.PublicKey))
 		if err != nil {
 			return err
 		}
 		keys = append(keys, ssh.Marshal(struct{ Key []byte }{key.Marshal()})...)
-		version = max(version, host.RevokedAt.Unix())
+		version = max(version, k.RevokedAt.Unix())
 	}
 	krl := ssh.Marshal(struct {
 		Magic                     uint64

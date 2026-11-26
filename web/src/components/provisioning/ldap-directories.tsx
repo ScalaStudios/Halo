@@ -310,12 +310,14 @@ function DirectoryDialog({ directory, attributes, onClose }: { directory: LDAPDi
     onChange: (event: { target: { value: string } }) => setForm({ ...form, [key]: event.target.value }),
   });
 
+  const keepsPassword = directory && form.url.trim() === directory.url && form.security === directory.security && form.caCertificate.trim() === directory.caCertificate;
+
   function save() {
     const next = {
       name: form.name.trim() ? undefined : t.ldap.nameError,
       url: /^ldaps?:\/\/\S+$/.test(form.url.trim()) ? undefined : t.ldap.urlError,
       bindDn: form.bindDn.trim() ? undefined : t.ldap.bindDnError,
-      password: directory || form.password ? undefined : t.ldap.passwordError,
+      password: keepsPassword || form.password ? undefined : t.ldap.passwordError,
       userBaseDn: form.userBaseDn.trim() ? undefined : t.ldap.userBaseDnError,
     };
     setErrors(next);
@@ -392,7 +394,7 @@ function DirectoryDialog({ directory, attributes, onClose }: { directory: LDAPDi
             <Field label={t.ldap.bindDn} error={errors.bindDn}>
               {(props) => <Input {...props} mono autoComplete="off" spellCheck={false} placeholder="CN=halo-sync,OU=Service Accounts,DC=example,DC=com" {...text("bindDn")} />}
             </Field>
-            <Field label={t.ldap.bindPassword} error={errors.password} hint={directory ? t.ldap.keepPassword : t.ldap.passwordHint}>
+            <Field label={t.ldap.bindPassword} error={errors.password} hint={keepsPassword ? t.ldap.keepPassword : t.ldap.passwordHint}>
               {(props) => <PasswordInput {...props} autoComplete="new-password" {...text("password")} />}
             </Field>
           </div>

@@ -3,8 +3,15 @@ package approval_test
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -433,5 +440,75 @@ func TestApprovedProviderSecretMakesTheOtherPendingSecretStale(t *testing.T) {
 	e.expect(e.call(ben, "POST", "/api/v1/approvals/"+off.ID+"/approve", nil), 200)
 	if p, err := e.st.GetAccessPolicy(ctx, policy.ID); err != nil || p.Enabled {
 		t.Fatalf("the approved policy change must apply: %+v %v", p, err)
+	}
+}
+
+func TestCertificateAndKerberosChangesWaitForApproval(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	_, sec := e.person("sec@example.com", "security_admin")
+	_, ben := e.person("ben@example.com", "global_admin")
+	_, gia := e.person("gia@example.com", "global_admin")
+	e.expect(e.call(gia, "PATCH", "/api/v1/settings", map[string]any{"approvalActions": []string{"identity-providers"}}), 200)
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Corporate"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+
+	held := decode[store.ApprovalRequest](t, e.expect(e.call(sec, "POST", "/api/v1/certificate-authorities", map[string]any{"name": "Corporate", "mapping": "email", "certificates": bundle}), 202))
+	if cas, _ := e.st.ListCertificateAuthorities(ctx); len(cas) != 0 {
+		t.Fatalf("a held certificate authority must not be trusted yet: %+v", cas)
+	}
+	e.expect(e.call(ben, "POST", "/api/v1/approvals/"+held.ID+"/approve", nil), 200)
+	cas, _ := e.st.ListCertificateAuthorities(ctx)
+	if len(cas) != 1 {
+		t.Fatalf("the approved certificate authority must be trusted: %+v", cas)
+	}
+	held = decode[store.ApprovalRequest](t, e.expect(e.call(sec, "DELETE", "/api/v1/certificate-authorities/"+cas[0].ID, nil), 202))
+	e.expect(e.call(ben, "POST", "/api/v1/approvals/"+held.ID+"/approve", nil), 200)
+	if cas, _ := e.st.ListCertificateAuthorities(ctx); len(cas) != 0 {
+		t.Fatalf("the approved removal must apply: %+v", cas)
+	}
+
+	if err := e.st.SaveKerberosSource(ctx, store.KerberosSource{ServicePrincipal: "HTTP/halo.example.com@EXAMPLE.COM", Realms: []store.KerberosRealm{{Realm: "EXAMPLE.COM", Domain: "example.com"}}, ZoneIDs: []string{}, Keytab: []byte("keytab")}); err != nil {
+		t.Fatal(err)
+	}
+	held = decode[store.ApprovalRequest](t, e.expect(e.call(sec, "DELETE", "/api/v1/kerberos", nil), 202))
+	e.expect(e.call(ben, "POST", "/api/v1/approvals/"+held.ID+"/approve", nil), 200)
+	if _, err := e.st.KerberosSource(ctx); err != store.ErrNotFound {
+		t.Fatalf("the approved Windows sign-in removal must apply: %v", err)
+	}
+}
+
+func TestNeutralisingAnEnforcedPolicyWaitsForApproval(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	_, gia := e.person("gia@example.com", "global_admin")
+	_, ben := e.person("ben@example.com", "global_admin")
+	_, sam := e.person("sam@example.com", "security_admin")
+	policyBody := func(name, effect string) map[string]any {
+		return map[string]any{"name": name, "enabled": true, "mode": "enforce", "effect": effect, "conditions": map[string]any{"allUsers": true, "allApps": true}}
+	}
+	created := decode[store.AccessPolicy](t, e.expect(e.call(gia, "POST", "/api/v1/policies", policyBody("Passkeys everywhere", "require-phishing-resistant")), 201))
+	e.expect(e.call(gia, "PATCH", "/api/v1/settings", map[string]any{"approvalActions": []string{"policy-disable"}}), 200)
+
+	held := decode[store.ApprovalRequest](t, e.expect(e.call(sam, "PUT", "/api/v1/policies/"+created.ID, policyBody("Passkeys everywhere", "allow")), 202))
+	if held.Action != "policy-disable" || !strings.Contains(held.Summary, "effect") {
+		t.Fatalf("held request: %+v", held)
+	}
+	if p, _ := e.st.GetAccessPolicy(ctx, created.ID); p.Effect != "require-phishing-resistant" {
+		t.Fatalf("the policy must stay as it was until approved: %+v", p)
+	}
+	narrowed := policyBody("Passkeys everywhere", "require-phishing-resistant")
+	narrowed["conditions"] = map[string]any{"allUsers": true, "excludeUserIds": []string{}, "allApps": true, "methods": []string{"totp"}}
+	e.expect(e.call(sam, "PUT", "/api/v1/policies/"+created.ID, narrowed), 202)
+	e.expect(e.call(sam, "PUT", "/api/v1/policies/"+created.ID, map[string]any{"name": "Passkeys for everyone", "enabled": true, "mode": "enforce", "effect": "require-phishing-resistant", "conditions": map[string]any{"allUsers": true, "allApps": true, "groupIds": []string{}}}), 200)
+	stale := e.expect(e.call(ben, "POST", "/api/v1/approvals/"+held.ID+"/approve", nil), 409)
+	if !strings.Contains(stale.Body.String(), "changed after") {
+		t.Fatalf("stale approval: %s", stale.Body)
 	}
 }
