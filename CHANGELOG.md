@@ -4,7 +4,7 @@ All notable changes to Halo are recorded in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Halo follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.7.0
 
 ### Security
 
@@ -32,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `halo-hostd` skips accounts whose home directory is not directly in `/home`, and the server refuses such home directories. Change them before upgrading the hosts.
 - Administrator and emergency access accounts can no longer make their first sign-in by certificate, identity provider or Kerberos. Accounts already linked keep working.
 - Five or more simultaneous sign-ins to one account are refused while they are in progress.
+
+[Compare v0.6.0 with v0.7.0](https://github.com/ScalaStudios/Halo/compare/v0.6.0...v0.7.0)
 
 ## 0.6.0
 
