@@ -681,7 +681,7 @@ func (h *handlers) deleteApplication(w http.ResponseWriter, r *http.Request, act
 	if err != nil {
 		return err
 	}
-	if store.BuiltInClient(app.ClientID) {
+	if app.BuiltIn() {
 		return httpx.Fail(http.StatusConflict, "ERR_BUILT_IN", app.Name+" is built in, so it can't be deleted. Disable it to stop people signing in with it.")
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
@@ -721,7 +721,7 @@ func (h *handlers) setApplicationGroups(w http.ResponseWriter, r *http.Request, 
 }
 
 func (h *handlers) groupsChange(r *http.Request, actor store.User, app store.Application, ids []string) (func(*store.Store) error, error) {
-	if store.BuiltInClient(app.ClientID) && len(ids) > 0 {
+	if app.BuiltIn() && len(ids) > 0 {
 		return nil, errBuiltIn(app)
 	}
 	groups, err := h.groupsByID(r.Context(), ids)
@@ -901,7 +901,7 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 			}
 		}
 		if !slices.Equal(clean, *f.field) {
-			if store.BuiltInClient(app.ClientID) && !slices.Equal(clean, f.builtIn) {
+			if app.BuiltIn() && !slices.Equal(clean, f.builtIn) {
 				return errBuiltIn(app)
 			}
 			*f.field = clean
@@ -1041,7 +1041,7 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	if err := checkHomepage(next.Homepage); err != nil {
 		return err
 	}
-	if (slices.Contains(changed, "redirect URIs") || slices.Contains(changed, "post-logout URIs")) && !store.BuiltInClient(app.ClientID) {
+	if (slices.Contains(changed, "redirect URIs") || slices.Contains(changed, "post-logout URIs")) && !app.BuiltIn() {
 		if err := checkRedirects(app.Protocol, app.Type, next.RedirectURIs, next.PostLogoutURIs); err != nil {
 			return err
 		}

@@ -74,7 +74,7 @@ func (c client) GrantTypes() []oidc.GrantType {
 }
 
 func (c client) AccessTokenType() op.AccessTokenType {
-	if c.app.Type == "service" || store.BuiltInClient(c.app.ClientID) || len(c.granted) > 0 {
+	if c.app.Type == "service" || c.app.BuiltIn() || len(c.granted) > 0 {
 		return op.AccessTokenTypeJWT
 	}
 	return op.AccessTokenTypeBearer

@@ -153,8 +153,9 @@ function DetailsForm({
 export function AuthenticationForm({ app, resources, children }: { app: Application; resources: ApiResource[]; children: ReactNode }) {
   const service = app.type === "service";
   const publicClient = app.type === "spa" || app.type === "native";
-  const mobile = app.clientId === "halo-mobile";
-  const fixedRedirects = service || mobile || app.clientId === "halo-cli";
+  const native = app.protocol === "oidc" && app.type === "native";
+  const mobile = native && app.clientId === "halo-mobile";
+  const fixedRedirects = service || mobile || (native && app.clientId === "halo-cli");
   const policy = app.tokenPolicy;
   const [redirects, setRedirects] = useState(app.redirectUris);
   const [postLogout, setPostLogout] = useState(app.postLogoutUris);

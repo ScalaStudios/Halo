@@ -176,7 +176,7 @@ func PublicURL(raw, name, caller string) (*url.URL, error) {
 }
 
 func hookable(app store.Application) error {
-	if app.Protocol != "oidc" && app.Protocol != "oauth" || app.Type == "service" || store.BuiltInClient(app.ClientID) {
+	if app.Protocol != "oidc" && app.Protocol != "oauth" || app.Type == "service" || app.BuiltIn() {
 		return httpx.Invalid("Hooks run when a person signs in to an OpenID Connect application. Service applications, SAML applications, bookmarks and Halo's built-in apps can't have one.")
 	}
 	return nil

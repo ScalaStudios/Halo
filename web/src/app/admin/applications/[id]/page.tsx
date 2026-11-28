@@ -70,7 +70,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const ldap = app.protocol === "ldap";
   const remote = app.protocol === "remote";
   const service = app.type === "service";
-  const builtIn = app.clientId === "halo-cli" || app.clientId === "halo-mobile";
+  const builtIn = (app.clientId === "halo-cli" || app.clientId === "halo-mobile") && app.protocol === "oidc" && app.type === "native";
   const hookable = !saml && !bookmark && !forward && !radius && !ldap && !remote && !service && !builtIn;
   const roleable = !bookmark && !radius && !ldap && !remote && !service && !builtIn;
   const [outposts, remoteSessions, me] =

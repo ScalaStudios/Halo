@@ -12,7 +12,9 @@ import (
 
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 
+	halooidc "halo/internal/oidc"
 	"halo/internal/store"
+	"halo/internal/testdb"
 )
 
 func mobileAuthorization() url.Values {
@@ -237,5 +239,25 @@ func TestMobileRefusesEndedSessions(t *testing.T) {
 	}
 	if slices.ContainsFunc(sessions, func(s store.Session) bool { return s.Client == store.MobileClientID }) {
 		t.Fatalf("no mobile session may be left behind: %+v", sessions)
+	}
+}
+
+func TestMobileBuiltInCollision(t *testing.T) {
+	st := testdb.New(t)
+	ctx := context.Background()
+	saml, err := st.CreateApplication(ctx, store.NewApplication{Name: "Legacy SP", Protocol: "saml", Type: "web", ClientID: store.MobileClientID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := halooidc.EnsureBuiltIns(ctx, st); err != nil {
+		t.Fatalf("a colliding application must not stop Halo: %v", err)
+	}
+	got, err := st.GetApplicationByClientID(ctx, store.MobileClientID)
+	if err != nil || got.ID != saml.ID || got.BuiltIn() {
+		t.Fatalf("the SAML application keeps its ID and is not treated as built-in: %v %+v", err, got)
+	}
+	cli, err := st.GetApplicationByClientID(ctx, store.CLIClientID)
+	if err != nil || !cli.BuiltIn() {
+		t.Fatalf("the CLI is still provisioned: %v %+v", err, cli)
 	}
 }

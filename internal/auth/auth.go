@@ -414,7 +414,7 @@ func policyReason(d access.Decision) string {
 }
 
 func assigned(u store.User, app store.Application) bool {
-	return app.Status == "active" && (store.BuiltInClient(app.ClientID) || slices.ContainsFunc(app.GroupIDs, func(g string) bool { return slices.Contains(u.GroupIDs, g) }))
+	return app.Status == "active" && (app.BuiltIn() || slices.ContainsFunc(app.GroupIDs, func(g string) bool { return slices.Contains(u.GroupIDs, g) }))
 }
 
 func (h *handler) emergencySignIn(ctx context.Context, tx *store.Store, r *http.Request, u store.User) (bool, error) {
