@@ -14,11 +14,12 @@ export const es: typeof en = {
     activity: "Actividad",
   },
   sessions: {
-    intro: "Consulta los navegadores, dispositivos y sesiones de Halo CLI de tu cuenta. Si no reconoces una sesión, ciérrala y revisa tu seguridad.",
+    intro: "Consulta los navegadores, dispositivos y sesiones de Halo CLI y Halo Mobile de tu cuenta. Si no reconoces una sesión, ciérrala y revisa tu seguridad.",
     failed: "No se pudo completar la acción",
     connectionFailed: "Halo no pudo conectarse al servidor. Vuelve a intentarlo.",
     ended: "Sesión cerrada",
     cliEnded: (device: string) => `Para volver a usar Halo CLI en ${device}, ejecuta halo login.`,
+    mobileEnded: (device: string) => `Para volver a usar Halo Mobile en ${device}, inicia sesión de nuevo.`,
     browserEnded: (device: string, browser: string) => `Para volver a usar ${device} · ${browser}, inicia sesión de nuevo.`,
     othersEnded: "Se cerraron las otras sesiones",
     othersEndedDetail: (count: number) => `Se cerraron ${pluralize(count, "sesión", "sesiones")}. Solo queda abierta la sesión de este navegador.`,

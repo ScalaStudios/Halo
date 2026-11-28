@@ -5,12 +5,11 @@ import (
 	"slices"
 
 	"halo/internal/httpx"
-	"halo/internal/oidc"
 	"halo/internal/store"
 )
 
 func clientPolicies(ctx context.Context, tx *store.Store, protocol, appType, clientID string) ([]store.ClientPolicy, error) {
-	if protocol != "oidc" && protocol != "oauth" || clientID == oidc.CLIClientID {
+	if protocol != "oidc" && protocol != "oauth" || store.BuiltInClient(clientID) {
 		return nil, nil
 	}
 	if err := tx.LockApprovalTarget(ctx, "settings", ""); err != nil {

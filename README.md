@@ -246,7 +246,7 @@ Halo supports OpenID Connect, OAuth 2.0, SAML 2.0, SCIM 2.0, WebAuthn, and other
 
 ### Organization-wide OAuth client policies
 
-A global administrator can set `clientPolicies` through `PATCH /api/v1/settings`. An `all` rule applies to OAuth and OIDC applications. A `web`, `spa`, `native`, or `service` rule adds requirements for that type. The built-in Halo CLI keeps its own settings. This example requires signed client assertions, pushed requests, PKCE, and DPoP for web applications and caps their configured access token lifetime at ten minutes.
+A global administrator can set `clientPolicies` through `PATCH /api/v1/settings`. An `all` rule applies to OAuth and OIDC applications. A `web`, `spa`, `native`, or `service` rule adds requirements for that type. The built-in Halo CLI and Halo Mobile clients keep their own settings. This example requires signed client assertions, pushed requests, PKCE, and DPoP for web applications and caps their configured access token lifetime at ten minutes.
 
 ```json
 {

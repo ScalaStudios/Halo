@@ -20,7 +20,6 @@ type client struct {
 }
 
 func (c client) GetID() string                        { return c.app.ClientID }
-func (c client) RedirectURIs() []string               { return c.app.RedirectURIs }
 func (c client) PostLogoutRedirectURIs() []string     { return c.app.PostLogoutURIs }
 func (c client) IDTokenLifetime() time.Duration       { return seconds(c.app.TokenPolicy.IDTokenTTL) }
 func (c client) DevMode() bool                        { return c.dev }
@@ -30,6 +29,13 @@ func (c client) public() bool                         { return c.app.Type == "sp
 
 func (c client) RestrictAdditionalIdTokenScopes() func([]string) []string     { return keepScopes }
 func (c client) RestrictAdditionalAccessTokenScopes() func([]string) []string { return keepScopes }
+
+func (c client) RedirectURIs() []string {
+	if c.app.ClientID == store.MobileClientID {
+		return []string{store.MobileRedirectURI}
+	}
+	return c.app.RedirectURIs
+}
 
 func (c client) ResponseTypes() []oidc.ResponseType {
 	return []oidc.ResponseType{oidc.ResponseTypeCode}
@@ -68,7 +74,7 @@ func (c client) GrantTypes() []oidc.GrantType {
 }
 
 func (c client) AccessTokenType() op.AccessTokenType {
-	if c.app.Type == "service" || c.app.ClientID == CLIClientID || len(c.granted) > 0 {
+	if c.app.Type == "service" || c.app.BuiltIn() || len(c.granted) > 0 {
 		return op.AccessTokenTypeJWT
 	}
 	return op.AccessTokenTypeBearer

@@ -12,7 +12,7 @@ import (
 	"halo/internal/store"
 )
 
-var errAccessToken = errors.New("the access token is not a valid, active Halo CLI token")
+var errAccessToken = errors.New("the access token is not a valid, active Halo CLI or Halo Mobile token")
 
 func AccessTokenResolver(st *store.Store) httpx.AccessTokenResolver {
 	s := &storage{st: st}
@@ -21,7 +21,7 @@ func AccessTokenResolver(st *store.Store) httpx.AccessTokenResolver {
 		if err != nil {
 			return store.User{}, err
 		}
-		if t.ClientID != CLIClientID || t.UserID == nil || *t.UserID != subject {
+		if !store.BuiltInClient(t.ClientID) || t.UserID == nil || *t.UserID != subject {
 			return store.User{}, errAccessToken
 		}
 		return st.GetUser(ctx, subject)

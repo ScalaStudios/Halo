@@ -285,7 +285,7 @@ func (s *storage) activeUser(ctx context.Context, userID string, app store.Appli
 }
 
 func assigned(u store.User, app store.Application) bool {
-	return app.ClientID == CLIClientID || slices.Contains(u.AppIDs, app.ID)
+	return app.BuiltIn() || slices.Contains(u.AppIDs, app.ID)
 }
 
 func (s *storage) userinfo(ctx context.Context, info *oidc.UserInfo, u store.User, scopes []string, clientID string) error {

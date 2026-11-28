@@ -154,18 +154,65 @@ func (s *storage) deviceSession(ctx context.Context, app store.Application) (*st
 	return &sessionID, err
 }
 
+func (s *storage) mobileSession(ctx context.Context, tx *store.Store, app store.Application, code *authRequest, tokens ...*store.OIDCToken) error {
+	u, err := tx.GetUser(ctx, code.GetSubject())
+	if err != nil {
+		return err
+	}
+	if err := tx.MakeRoomForSession(ctx, u, true, ""); err != nil {
+		return err
+	}
+	ip, userAgent := "", ""
+	if r, ok := ctx.Value(requestKey{}).(*http.Request); ok {
+		ip, userAgent = httpx.ClientIP(r), r.UserAgent()
+	}
+	sessionID, err := tx.CreateClientSession(ctx, deref(code.SessionID), app.ClientID, ip, userAgent, time.Now().Add(seconds(max(app.TokenPolicy.RefreshTokenTTL, app.TokenPolicy.AccessTokenTTL))))
+	if err != nil {
+		return err
+	}
+	for _, t := range tokens {
+		t.SessionID = &sessionID
+	}
+	return nil
+}
+
+func (s *storage) mobileRefusal(ctx context.Context, app store.Application, req op.TokenRequest, err error) error {
+	if code, ok := req.(*authRequest); !ok || code.ClientID != store.MobileClientID {
+		return err
+	}
+	if errors.Is(err, store.ErrSessionLimit) {
+		u, uerr := s.st.GetUser(ctx, req.GetSubject())
+		if uerr != nil {
+			return uerr
+		}
+		event := store.SignInEvent{Result: "failure", Method: "token", UserID: &u.ID, Email: u.Email, AppID: &app.ID, Reason: store.SessionLimitReason}
+		if r, ok := ctx.Value(requestKey{}).(*http.Request); ok {
+			_, os, browser := store.ParseUserAgent(r.UserAgent())
+			event.IP, event.Device = httpx.ClientIP(r), browser+" · "+os
+		}
+		if rerr := s.st.RecordSignIn(ctx, event); rerr != nil {
+			return rerr
+		}
+		return oidc.ErrAccessDenied().WithDescription("You're already signed in to Halo Mobile on as many devices as your organization allows. Sign out of Halo Mobile on a device you no longer use, or ask your administrator to end one of your sessions, then sign in again.")
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		return oidc.ErrAccessDenied().WithDescription("This sign-in has ended, or your organization's access policy doesn't let it use Halo itself. Sign in to Halo Mobile again.")
+	}
+	return err
+}
+
 func (s *storage) CreateAccessToken(ctx context.Context, req op.TokenRequest) (string, time.Time, error) {
 	access, app, err := s.grant(ctx, req)
 	if err != nil {
 		return "", time.Time{}, err
 	}
 	if access.SubjectID == nil {
-		return access.ID, access.ExpiresAt, issued(req, s.st.Tx(ctx, func(tx *store.Store) error {
-			if err := consume(ctx, tx, req); err != nil {
+		return access.ID, access.ExpiresAt, issued(req, s.mobileRefusal(ctx, app, req, s.st.Tx(ctx, func(tx *store.Store) error {
+			if err := s.consume(ctx, tx, req, app, &access); err != nil {
 				return err
 			}
 			return tx.CreateOIDCTokens(ctx, access)
-		}))
+		})))
 	}
 	u, err := s.st.GetUser(ctx, *access.UserID)
 	if err != nil {
@@ -184,12 +231,22 @@ func (s *storage) CreateAccessToken(ctx context.Context, req op.TokenRequest) (s
 	}))
 }
 
-func consume(ctx context.Context, tx *store.Store, req op.TokenRequest) error {
+func (s *storage) consume(ctx context.Context, tx *store.Store, req op.TokenRequest, app store.Application, tokens ...*store.OIDCToken) error {
 	code, ok := req.(*authRequest)
 	if !ok {
 		return nil
 	}
-	err := tx.ConsumeAuthRequest(ctx, code.ID)
+	if err := consumeCode(ctx, tx, code.ID); err != nil {
+		return err
+	}
+	if code.ClientID != store.MobileClientID {
+		return nil
+	}
+	return s.mobileSession(ctx, tx, app, code, tokens...)
+}
+
+func consumeCode(ctx context.Context, tx *store.Store, requestID string) error {
+	err := tx.ConsumeAuthRequest(ctx, requestID)
 	if errors.Is(err, store.ErrNotFound) {
 		return oidc.ErrInvalidGrant().WithDescription("The authorization code was already used or has expired.")
 	}
@@ -230,8 +287,8 @@ func (s *storage) CreateAccessAndRefreshTokens(ctx context.Context, req op.Token
 	refresh.ID, refresh.Kind, refresh.RefreshHash = id.New("rtk"), "refresh", secret.Hash(value)
 	refresh.ExpiresAt = time.Now().Add(seconds(app.TokenPolicy.RefreshTokenTTL))
 	access.RefreshID = &refresh.ID
-	err = s.st.Tx(ctx, func(tx *store.Store) error {
-		if err := consume(ctx, tx, req); err != nil {
+	err = s.mobileRefusal(ctx, app, req, s.st.Tx(ctx, func(tx *store.Store) error {
+		if err := s.consume(ctx, tx, req, app, &refresh, &access); err != nil {
 			return err
 		}
 		if refreshing {
@@ -244,7 +301,7 @@ func (s *storage) CreateAccessAndRefreshTokens(ctx context.Context, req op.Token
 			}
 		}
 		return tx.CreateOIDCTokens(ctx, refresh, access)
-	})
+	}))
 	if err = issued(req, err); err != nil {
 		return "", "", time.Time{}, err
 	}

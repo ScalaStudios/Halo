@@ -44,6 +44,14 @@ func (s *Store) CreateDeviceSession(ctx context.Context, deviceCodeHash []byte, 
 	return sessionID, notFound(err)
 }
 
+func (s *Store) CreateClientSession(ctx context.Context, browserSessionID, clientID, ip, userAgent string, expires time.Time) (string, error) {
+	sessionID := id.New("ses")
+	err := s.db.QueryRow(ctx, `insert into sessions (id, token_hash, user_id, method, second_factor, ip, user_agent, client_id, expires_at)
+		select $1, $2, user_id, method, second_factor, $4, $5, $6, $7 from sessions where id = $3 and not app_only and revoked_at is null and expires_at > now()
+		returning id`, sessionID, secret.Hash(secret.Token(32)), browserSessionID, ip, userAgent, clientID, expires).Scan(&sessionID)
+	return sessionID, notFound(err)
+}
+
 func (s *Store) TouchClientSession(ctx context.Context, sessionID string, expires time.Time) error {
 	_, err := s.db.Exec(ctx, `update sessions set last_active_at = now(), expires_at = greatest(expires_at, $2) where id = $1 and client_id is not null and revoked_at is null`, sessionID, expires)
 	return err

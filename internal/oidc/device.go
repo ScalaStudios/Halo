@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -28,23 +29,39 @@ var (
 
 var CLIScopes = []string{"openid", "profile", "email", "groups", "offline_access"}
 
-func ensureCLI(ctx context.Context, st *store.Store) error {
-	_, err := st.GetApplicationByClientID(ctx, CLIClientID)
-	if !errors.Is(err, store.ErrNotFound) {
-		return err
-	}
-	_, err = st.CreateApplication(ctx, store.NewApplication{
+func ensureBuiltIns(ctx context.Context, st *store.Store) error {
+	for _, app := range []store.NewApplication{{
 		Name:        "Halo CLI",
 		Description: "Built in. Signs people in to the halo command-line tool with the device flow. Every active user can use it, so group assignment does not apply.",
 		Protocol:    "oidc",
 		Type:        "native",
 		ClientID:    CLIClientID,
 		Scopes:      CLIScopes,
-	})
-	if errors.Is(err, store.ErrConflict) {
-		return nil
+	}, {
+		Name:            "Halo Mobile",
+		Description:     "Built in. Signs people in to the Halo apps for iOS and Android with the authorization code flow and PKCE. Every active user can use it, so group assignment does not apply.",
+		Protocol:        "oidc",
+		Type:            "native",
+		ClientID:        store.MobileClientID,
+		RedirectURIs:    []string{store.MobileRedirectURI},
+		Scopes:          CLIScopes,
+		RefreshTokenTTL: 30 * 24 * 3600,
+	}} {
+		existing, err := st.GetApplicationByClientID(ctx, app.ClientID)
+		if errors.Is(err, store.ErrNotFound) {
+			existing, err = st.CreateApplication(ctx, app)
+			if errors.Is(err, store.ErrConflict) {
+				existing, err = st.GetApplicationByClientID(ctx, app.ClientID)
+			}
+		}
+		if err != nil {
+			return err
+		}
+		if existing.Protocol != "oidc" || existing.Type != "native" {
+			slog.ErrorContext(ctx, "built-in application not provisioned: another application uses its client ID", "builtIn", app.Name, "clientId", app.ClientID, "application", existing.Name, "applicationId", existing.ID)
+		}
 	}
-	return err
+	return nil
 }
 
 func (s *storage) StoreDeviceAuthorization(ctx context.Context, clientID, deviceCode, userCode string, expires time.Time, scopes []string) error {

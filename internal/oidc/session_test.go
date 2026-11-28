@@ -71,7 +71,7 @@ func newHarness(t *testing.T, policy access.Engine) *harness {
 	issuer, _ := url.Parse(h.srv.URL)
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)
-	authn := &httpx.Auth{Store: st, Public: issuer, Dev: true}
+	authn := &httpx.Auth{Store: st, Public: issuer, Dev: true, AccessTokens: halooidc.AccessTokenResolver(st)}
 	deps := httpx.Deps{Config: config.Config{PublicURL: issuer, SecretKey: key, Dev: true}, Store: st, Auth: authn, Policy: policy}
 	provider, err := halooidc.New(deps)
 	if err != nil {

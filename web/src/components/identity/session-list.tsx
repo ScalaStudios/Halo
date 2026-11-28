@@ -40,7 +40,7 @@ export function SessionList({ sessions, userId, locale }: { sessions: Session[];
       setItems((current) => current.filter((s) => s.id !== session.id));
       toast({
         title: copy.ended,
-        description: session.client ? copy.cliEnded(session.device) : copy.browserEnded(session.device, session.browser),
+        description: session.client === "halo-mobile" ? copy.mobileEnded(session.device) : session.client ? copy.cliEnded(session.device) : copy.browserEnded(session.device, session.browser),
       });
     } catch (error) {
       fail(error);
@@ -81,7 +81,7 @@ export function SessionList({ sessions, userId, locale }: { sessions: Session[];
               </span>
               {session.client ? (
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <p className="text-body-sm font-semibold text-fg">Halo CLI</p>
+                  <p className="text-body-sm font-semibold text-fg">{session.client === "halo-mobile" ? "Halo Mobile" : "Halo CLI"}</p>
                   <p className="text-body-sm text-fg-3">
                     {session.device} · <span className="font-mono text-code-sm">{session.ip}</span>
                   </p>

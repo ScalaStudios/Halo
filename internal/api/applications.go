@@ -29,7 +29,9 @@ const (
 
 var errBookmarkURL = httpx.Invalid("Enter the URL the bookmark opens, for example https://status.example.com.")
 
-var errBuiltInCLI = httpx.Fail(http.StatusConflict, "ERR_BUILT_IN", "The Halo CLI is built in. It signs people in with the device flow only, so its redirect URIs, post-logout URIs, scopes and groups can't be changed.")
+func errBuiltIn(app store.Application) error {
+	return httpx.Fail(http.StatusConflict, "ERR_BUILT_IN", app.Name+" is built in, so its redirect URIs, post-logout URIs, scopes and groups can't be changed.")
+}
 
 var setupGuides = []string{"grafana", "forgejo", "aether", "generic-oidc", "kubernetes", "generic-saml", "aws-iam-identity-center", "slack"}
 
@@ -679,8 +681,8 @@ func (h *handlers) deleteApplication(w http.ResponseWriter, r *http.Request, act
 	if err != nil {
 		return err
 	}
-	if app.ClientID == oidc.CLIClientID {
-		return httpx.Fail(http.StatusConflict, "ERR_BUILT_IN", "The Halo CLI is built in, so it can't be deleted. Disable it to stop people signing in from the command line.")
+	if app.BuiltIn() {
+		return httpx.Fail(http.StatusConflict, "ERR_BUILT_IN", app.Name+" is built in, so it can't be deleted. Disable it to stop people signing in with it.")
 	}
 	err = h.st.Tx(r.Context(), func(tx *store.Store) error {
 		if err := tx.DeleteApplication(r.Context(), app.ID); err != nil {
@@ -719,8 +721,8 @@ func (h *handlers) setApplicationGroups(w http.ResponseWriter, r *http.Request, 
 }
 
 func (h *handlers) groupsChange(r *http.Request, actor store.User, app store.Application, ids []string) (func(*store.Store) error, error) {
-	if app.ClientID == oidc.CLIClientID && len(ids) > 0 {
-		return nil, errBuiltInCLI
+	if app.BuiltIn() && len(ids) > 0 {
+		return nil, errBuiltIn(app)
 	}
 	groups, err := h.groupsByID(r.Context(), ids)
 	if err != nil {
@@ -844,6 +846,9 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	if (in.RequirePAR != nil || in.RequirePKCE != nil || in.RequireDPoP != nil) && (app.Protocol != "oidc" && app.Protocol != "oauth" || app.ClientID == oidc.CLIClientID) {
 		return httpx.Invalid(app.Name + " does not take OAuth authorization requests from its own client, so it can't require pushed requests, PKCE or DPoP.")
 	}
+	if (in.RequirePAR != nil || in.RequirePKCE != nil || in.RequireDPoP != nil) && app.ClientID == store.MobileClientID {
+		return httpx.Invalid(app.Name + " is built in. It always uses PKCE and never pushed requests or DPoP, so these can't be changed.")
+	}
 	if app.Type == "service" && (in.RequirePAR != nil || in.RequirePKCE != nil) {
 		return httpx.Invalid(app.Name + " is a service application. It gets tokens with client credentials, never through an authorization request, so it can't require pushed requests or PKCE.")
 	}
@@ -866,6 +871,10 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		return httpx.Invalid(app.Name + " is a service application. Nobody signs in to it, so it has no sign-in frequency.")
 	}
 	next, changed := app, []string{}
+	var fixedRedirects []string
+	if app.ClientID == store.MobileClientID {
+		fixedRedirects = []string{store.MobileRedirectURI}
+	}
 	for _, f := range []struct {
 		label string
 		value *string
@@ -881,7 +890,7 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 		value   *[]string
 		field   *[]string
 		builtIn []string
-	}{{"redirect URIs", in.RedirectURIs, &next.RedirectURIs, nil}, {"post-logout URIs", in.PostLogoutURIs, &next.PostLogoutURIs, nil}, {"scopes", in.Scopes, &next.Scopes, oidc.CLIScopes}} {
+	}{{"redirect URIs", in.RedirectURIs, &next.RedirectURIs, fixedRedirects}, {"post-logout URIs", in.PostLogoutURIs, &next.PostLogoutURIs, nil}, {"scopes", in.Scopes, &next.Scopes, oidc.CLIScopes}} {
 		if f.value == nil {
 			continue
 		}
@@ -892,8 +901,8 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 			}
 		}
 		if !slices.Equal(clean, *f.field) {
-			if app.ClientID == oidc.CLIClientID && !slices.Equal(clean, f.builtIn) {
-				return errBuiltInCLI
+			if app.BuiltIn() && !slices.Equal(clean, f.builtIn) {
+				return errBuiltIn(app)
 			}
 			*f.field = clean
 			changed = append(changed, f.label)
@@ -1032,7 +1041,7 @@ func (h *handlers) updateApplication(w http.ResponseWriter, r *http.Request, act
 	if err := checkHomepage(next.Homepage); err != nil {
 		return err
 	}
-	if (slices.Contains(changed, "redirect URIs") || slices.Contains(changed, "post-logout URIs")) && app.ClientID != oidc.CLIClientID {
+	if (slices.Contains(changed, "redirect URIs") || slices.Contains(changed, "post-logout URIs")) && !app.BuiltIn() {
 		if err := checkRedirects(app.Protocol, app.Type, next.RedirectURIs, next.PostLogoutURIs); err != nil {
 			return err
 		}

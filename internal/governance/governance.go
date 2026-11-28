@@ -75,6 +75,8 @@ func Register(mux *http.ServeMux, d httpx.Deps) error {
 	handle("POST /api/v1/me/access-requests/{id}/cancel", nil, h.cancelRequest)
 	handle("GET /api/v1/me/access-grants", nil, h.myGrants)
 	handle("GET /api/v1/me/approvals", nil, h.myApprovals)
+	handle("POST /api/v1/me/approvals/{id}/approve", nil, h.approveRequest)
+	handle("POST /api/v1/me/approvals/{id}/deny", nil, h.denyRequest)
 	handle("GET /api/v1/me/direct-reports", nil, h.myReports)
 	handle("GET /api/v1/me/reviews", nil, h.myReviews)
 	handle("POST /api/v1/me/role-activations", nil, h.activateRole)

@@ -4,6 +4,13 @@ All notable changes to Halo are recorded in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Halo follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- A built-in Halo Mobile client signs people in to the Halo apps for iOS and Android with the authorization code flow and PKCE, and its tokens reach the self-service API under `/api/v1/me/` like the CLI's. Its refresh tokens last 30 days from the last refresh, so an unused phone signs in again after a month. Every active user can use it without a group assignment. It returns only to `gg.scala.halo:/oauth/callback`, and like the CLI it can't be deleted or have its redirect address, scopes or groups changed. Each phone gets its own session, listed and ended with the CLI's, and counted when the CLI session limit is on. `GET /api/v1/auth/methods` reports `mobileSignIn`, which is true while the client is enabled.
+- CLI and Halo Mobile access tokens can read `GET /api/v1/me`, and approvers can approve or deny access requests at `POST /api/v1/me/approvals/{id}/approve` and `/deny`.
+
 ## 0.7.0
 
 ### Security
