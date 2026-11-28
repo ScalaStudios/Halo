@@ -145,7 +145,7 @@ func evaluate(s state, now time.Time) []Check {
 	var unassigned []string
 	appHref := "/admin/applications"
 	for _, a := range s.apps {
-		if a.Status == "active" && a.Type != "service" && a.Protocol != "bookmark" && a.ClientID != store.CLIClientID && len(a.GroupIDs) == 0 {
+		if a.Status == "active" && a.Type != "service" && a.Protocol != "bookmark" && !store.BuiltInClient(a.ClientID) && len(a.GroupIDs) == 0 {
 			unassigned = append(unassigned, a.Name)
 			appHref = "/admin/applications/" + a.ID
 		}

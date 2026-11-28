@@ -42,8 +42,8 @@ func (h *handlers) roleApplication(r *http.Request) (store.Application, error) {
 		return app, httpx.Invalid(app.Name + " reads groups over LDAP, so it has no application roles. Assign groups to it instead.")
 	case app.Type == "service":
 		return app, httpx.Invalid(app.Name + " is a service application. Nobody signs in to it, so it has no roles to assign.")
-	case app.ClientID == store.CLIClientID:
-		return app, httpx.Invalid("The Halo CLI uses Halo's administrator roles, so it has no application roles.")
+	case store.BuiltInClient(app.ClientID):
+		return app, httpx.Invalid(app.Name + " is built in and uses Halo's administrator roles, so it has no application roles.")
 	}
 	return app, nil
 }

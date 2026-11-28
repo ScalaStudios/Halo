@@ -226,7 +226,7 @@ func (a *Auth) Resolve(next http.Handler) http.Handler {
 				}
 			}
 		}
-		if _, signedIn := CurrentUser(r); !signedIn && a.AccessTokens != nil && strings.HasPrefix(r.URL.Path, "/api/v1/me/") {
+		if _, signedIn := CurrentUser(r); !signedIn && a.AccessTokens != nil && (strings.HasPrefix(r.URL.Path, "/api/v1/me/") || r.Method == http.MethodGet && r.URL.Path == "/api/v1/me") {
 			if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok && token != "" && !strings.HasPrefix(token, "hlk_") {
 				if user, err := a.AccessTokens(r.Context(), token); err == nil && user.Status == "active" {
 					r = r.WithContext(context.WithValue(r.Context(), userKey, user))

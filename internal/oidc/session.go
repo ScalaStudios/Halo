@@ -46,7 +46,7 @@ func (s *storage) silent(ctx context.Context, a *store.AuthRequest, app store.Ap
 		}
 		return e
 	}
-	if !slices.Contains(u.AppIDs, app.ID) {
+	if !assigned(u, app) {
 		return fail("User is not assigned to this application.", oidc.ErrInteractionRequired().WithDescription("The user is not assigned to this application."))
 	}
 	decision, err := s.policy.Evaluate(ctx, access.Input{User: u, App: &app, Method: sess.Method, IP: event.IP, UserAgent: r.UserAgent(), DeviceToken: httpx.DeviceToken(r), Session: &sess})

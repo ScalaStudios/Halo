@@ -11,7 +11,15 @@ import (
 	"halo/internal/secret"
 )
 
-const CLIClientID = "halo-cli"
+const (
+	CLIClientID       = "halo-cli"
+	MobileClientID    = "halo-mobile"
+	MobileRedirectURI = "gg.scala.halo:/oauth/callback"
+)
+
+func BuiltInClient(clientID string) bool {
+	return clientID == CLIClientID || clientID == MobileClientID
+}
 
 const appColumns = `id, name, description, protocol, app_type, status, client_id, homepage, redirect_uris, post_logout_uris, scopes, access_token_ttl, refresh_token_ttl, id_token_ttl, id_token_alg, refresh_rotation, token_exchange,
 	array(select x.resource_id from app_exchange_sources x where x.app_id = applications.id order by x.resource_id), setup_guide, owner_id, created_at, logo_updated_at, registration_hash, awaiting_approval, max_auth_age, requires_consent, claim_mappings, backchannel_logout_uri, backchannel_logout_session_required, require_par, require_pkce, require_dpop, kerberos_sign_in, token_endpoint_auth_method, jwks, jwks_uri, fapi2_profile`
@@ -89,6 +97,7 @@ type NewApplication struct {
 	RegistrationHash []byte
 	AwaitingApproval bool
 	IDTokenAlg       string
+	RefreshTokenTTL  int
 }
 
 func (s *Store) CreateApplication(ctx context.Context, in NewApplication) (Application, error) {
@@ -116,6 +125,9 @@ func (s *Store) CreateApplication(ctx context.Context, in NewApplication) (Appli
 	if err != nil {
 		return Application{}, err
 	}
+	if in.RefreshTokenTTL == 0 {
+		in.RefreshTokenTTL = settings.RefreshTokenHours * 3600
+	}
 	status := "active"
 	if in.AwaitingApproval {
 		status = "disabled"
@@ -123,7 +135,7 @@ func (s *Store) CreateApplication(ctx context.Context, in NewApplication) (Appli
 	err = s.Tx(ctx, func(tx *Store) error {
 		_, err := tx.db.Exec(ctx, `insert into applications (id, name, description, protocol, app_type, client_id, homepage, redirect_uris, post_logout_uris, scopes, setup_guide, owner_id, access_token_ttl, id_token_ttl, refresh_token_ttl, registration_hash, awaiting_approval, status, id_token_alg, requires_consent) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
 			appID, strings.TrimSpace(in.Name), in.Description, in.Protocol, in.Type, clientID, in.Homepage, in.RedirectURIs, in.PostLogoutURIs, in.Scopes, in.SetupGuide, in.OwnerID,
-			settings.AccessTokenMinutes*60, settings.IDTokenMinutes*60, settings.RefreshTokenHours*3600, in.RegistrationHash, in.AwaitingApproval, status, in.IDTokenAlg, in.RegistrationHash != nil)
+			settings.AccessTokenMinutes*60, settings.IDTokenMinutes*60, in.RefreshTokenTTL, in.RegistrationHash, in.AwaitingApproval, status, in.IDTokenAlg, in.RegistrationHash != nil)
 		if err != nil {
 			return conflict(err)
 		}

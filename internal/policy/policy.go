@@ -650,7 +650,11 @@ func (h *handlers) enabledMethods(w http.ResponseWriter, r *http.Request) error 
 	if org.BotProtection != "" {
 		challenge = map[string]string{"provider": org.BotProtection, "siteKey": org.BotProtectionSiteKey}
 	}
-	return httpx.JSON(w, http.StatusOK, map[string]any{"methods": enabled, "emailSignIn": org.EmailSignIn, "challenge": challenge, "signUp": org.SignUp != "off"})
+	mobile, err := h.st.GetApplicationByClientID(r.Context(), store.MobileClientID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	return httpx.JSON(w, http.StatusOK, map[string]any{"methods": enabled, "emailSignIn": org.EmailSignIn, "challenge": challenge, "signUp": org.SignUp != "off", "mobileSignIn": err == nil && mobile.Status == "active"})
 }
 
 func (h *handlers) listMethods(w http.ResponseWriter, r *http.Request, _ store.User) error {

@@ -102,9 +102,13 @@ func (s *storage) grant(ctx context.Context, req op.TokenRequest) (store.OIDCTok
 			return t, app, err
 		}
 	}
-	switch req.(type) {
+	switch r := req.(type) {
 	case *op.DeviceAuthorizationState:
 		t.SessionID, err = s.deviceSession(ctx, app)
+	case *authRequest:
+		if app.ClientID == store.MobileClientID {
+			t.SessionID, err = s.mobileSession(ctx, app, person, r)
+		}
 	case *refreshRequest:
 		if t.SessionID != nil {
 			err = s.st.TouchClientSession(ctx, *t.SessionID, time.Now().Add(seconds(app.TokenPolicy.RefreshTokenTTL)))
@@ -154,6 +158,38 @@ func (s *storage) deviceSession(ctx context.Context, app store.Application) (*st
 	return &sessionID, err
 }
 
+func (s *storage) mobileSession(ctx context.Context, app store.Application, u store.User, code *authRequest) (*string, error) {
+	event := store.SignInEvent{Result: "failure", Method: "token", UserID: &u.ID, Email: u.Email, AppID: &app.ID, Reason: store.SessionLimitReason}
+	ip, userAgent := "", ""
+	if r, ok := ctx.Value(requestKey{}).(*http.Request); ok {
+		ip, userAgent = httpx.ClientIP(r), r.UserAgent()
+		_, os, browser := store.ParseUserAgent(userAgent)
+		event.IP, event.Device = ip, browser+" · "+os
+	}
+	var sessionID string
+	err := s.st.Tx(ctx, func(tx *store.Store) error {
+		if err := consumeCode(ctx, tx, code.ID); err != nil {
+			return err
+		}
+		if err := tx.MakeRoomForSession(ctx, u, true, ""); err != nil {
+			return err
+		}
+		var err error
+		sessionID, err = tx.CreateClientSession(ctx, deref(code.SessionID), app.ClientID, ip, userAgent, time.Now().Add(seconds(max(app.TokenPolicy.RefreshTokenTTL, app.TokenPolicy.AccessTokenTTL))))
+		return err
+	})
+	if errors.Is(err, store.ErrSessionLimit) {
+		if err := s.st.RecordSignIn(ctx, event); err != nil {
+			return nil, err
+		}
+		return nil, oidc.ErrAccessDenied().WithDescription("You're already signed in to Halo Mobile on as many devices as your organization allows. Sign out of Halo Mobile on a device you no longer use, or ask your administrator to end one of your sessions, then sign in again.")
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, oidc.ErrAccessDenied().WithDescription("Your organization's access policy doesn't let this sign-in use Halo itself, so Halo Mobile can't use it.")
+	}
+	return &sessionID, err
+}
+
 func (s *storage) CreateAccessToken(ctx context.Context, req op.TokenRequest) (string, time.Time, error) {
 	access, app, err := s.grant(ctx, req)
 	if err != nil {
@@ -186,10 +222,14 @@ func (s *storage) CreateAccessToken(ctx context.Context, req op.TokenRequest) (s
 
 func consume(ctx context.Context, tx *store.Store, req op.TokenRequest) error {
 	code, ok := req.(*authRequest)
-	if !ok {
+	if !ok || code.ClientID == store.MobileClientID {
 		return nil
 	}
-	err := tx.ConsumeAuthRequest(ctx, code.ID)
+	return consumeCode(ctx, tx, code.ID)
+}
+
+func consumeCode(ctx context.Context, tx *store.Store, requestID string) error {
+	err := tx.ConsumeAuthRequest(ctx, requestID)
 	if errors.Is(err, store.ErrNotFound) {
 		return oidc.ErrInvalidGrant().WithDescription("The authorization code was already used or has expired.")
 	}

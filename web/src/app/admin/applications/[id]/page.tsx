@@ -70,15 +70,15 @@ export default async function ApplicationPage({ params, searchParams }: { params
   const ldap = app.protocol === "ldap";
   const remote = app.protocol === "remote";
   const service = app.type === "service";
-  const cli = app.clientId === "halo-cli";
-  const hookable = !saml && !bookmark && !forward && !radius && !ldap && !remote && !service && app.clientId !== "halo-cli";
-  const roleable = !bookmark && !radius && !ldap && !remote && !service && app.clientId !== "halo-cli";
+  const builtIn = app.clientId === "halo-cli" || app.clientId === "halo-mobile";
+  const hookable = !saml && !bookmark && !forward && !radius && !ldap && !remote && !service && !builtIn;
+  const roleable = !bookmark && !radius && !ldap && !remote && !service && !builtIn;
   const [outposts, remoteSessions, me] =
     remote && !org.featuresOff.includes("remote-access")
       ? await Promise.all([apiGet<Outpost[]>("/outposts"), apiGet<RemoteSession[]>(`/remote-sessions?app=${encodeURIComponent(id)}`), apiGet<User>("/me")])
       : [[], [], null];
-  const modelled = (app.protocol === "oidc" || app.protocol === "oauth") && (app.type === "web" || service) && app.clientId !== "halo-cli";
-  const constrainable = (app.protocol === "oidc" || app.protocol === "oauth") && app.clientId !== "halo-cli";
+  const modelled = (app.protocol === "oidc" || app.protocol === "oauth") && (app.type === "web" || service) && !builtIn;
+  const constrainable = (app.protocol === "oidc" || app.protocol === "oauth") && !builtIn;
   const windows = !bookmark && !radius && !ldap && !remote && !service && !org.featuresOff.includes("kerberos");
   const owner = users.find((u) => u.id === app.owner);
   const appGroups = groups.filter((g) => app.groupIds.includes(g.id));
@@ -258,8 +258,8 @@ export default async function ApplicationPage({ params, searchParams }: { params
             <SectionTitle title={d.scopes} description={saml ? undefined : d.scopesHint(app.name)} />
             {saml ? (
               <EmptyState title={d.samlScopes} description={d.samlScopesHint(app.name)} />
-            ) : cli ? (
-              <EmptyState title={d.cliScopes} description={d.cliScopesHint(app.scopes.join(" "))} />
+            ) : builtIn ? (
+              <EmptyState title={d.builtInScopes} description={d.builtInScopesHint(app.name, app.scopes.join(" "))} />
             ) : (
               <ScopesForm key={`${app.scopes.join()}:${app.requiresConsent}`} app={app} />
             )}
@@ -319,9 +319,9 @@ export default async function ApplicationPage({ params, searchParams }: { params
           <div className="flex flex-col gap-6">
             <SectionTitle
               title={d.assignedGroups}
-              description={service ? d.serviceGroups(app.name) : cli ? d.cliGroups(app.name) : d.groupsHint(app.userCount, app.name, appGroups.length, bookmark)}
+              description={service ? d.serviceGroups(app.name) : builtIn ? d.cliGroups(app.name) : d.groupsHint(app.userCount, app.name, appGroups.length, bookmark)}
               action={
-                service || cli ? undefined : (
+                service || builtIn ? undefined : (
                   <AddToGroup name={app.name} appId={app.id} assigned={app.groupIds} groups={groups} bookmark={bookmark} />
                 )
               }
@@ -340,7 +340,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
                   <span key="m" className="tnum">
                     {group.memberCount}
                   </span>,
-                  cli ? null : <RemoveFromGroup key="r" name={app.name} appId={app.id} assigned={app.groupIds} group={group} bookmark={bookmark} />,
+                  builtIn ? null : <RemoveFromGroup key="r" name={app.name} appId={app.id} assigned={app.groupIds} group={group} bookmark={bookmark} />,
                 ])}
               />
             ) : (

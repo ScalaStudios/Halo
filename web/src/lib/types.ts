@@ -236,7 +236,7 @@ export type Session = {
   createdAt: string;
   lastActiveAt: string;
   current?: boolean;
-  client?: "halo-cli";
+  client?: "halo-cli" | "halo-mobile";
   impersonationId?: string;
 };
 

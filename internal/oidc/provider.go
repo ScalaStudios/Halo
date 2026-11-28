@@ -76,7 +76,7 @@ func New(d httpx.Deps) (http.Handler, error) {
 	if policy == nil {
 		policy = access.AllowAll{}
 	}
-	if err := ensureCLI(context.Background(), d.Store); err != nil {
+	if err := ensureBuiltIns(context.Background(), d.Store); err != nil {
 		return nil, err
 	}
 	st := &storage{st: d.Store, dev: d.Config.Dev, policy: policy, issuer: d.Config.Issuer()}

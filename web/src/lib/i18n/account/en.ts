@@ -13,11 +13,12 @@ export const en = {
     activity: "Activity",
   },
   sessions: {
-    intro: "Browsers, devices and Halo CLI sign-ins on your Halo account. If you don't recognise one, sign it out and review your security.",
+    intro: "Browsers, devices, Halo CLI and Halo Mobile sign-ins on your Halo account. If you don't recognise one, sign it out and review your security.",
     failed: "That didn't work",
     connectionFailed: "Halo could not reach the server. Try again.",
     ended: "Session signed out",
     cliEnded: (device: string) => `Halo CLI on ${device} must run halo login again.`,
+    mobileEnded: (device: string) => `Halo Mobile on ${device} must sign in again.`,
     browserEnded: (device: string, browser: string) => `${device} · ${browser} must sign in again.`,
     othersEnded: "Signed out of other sessions",
     othersEndedDetail: (count: number) => `${count} other ${count === 1 ? "session was" : "sessions were"} signed out. Only this browser is still signed in.`,

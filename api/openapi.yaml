@@ -8,7 +8,7 @@ info:
   description: |
     The JSON API behind the Halo console and account portal. Anything the web interface does, a script can do with the same requests.
 
-    **Authentication.** Send either the `halo_session` cookie of a signed-in person, or an API key of a service account as `Authorization: Bearer hlk_…`. API keys work only when they have the `api` scope, act with the roles of their service account, and are ignored on the personal routes under `/me` and on the sign-in routes under `/auth`. A workload with a federated credential on a service account trades a token from its own identity provider for an API key that expires after an hour at `POST /oauth2/token`. The personal routes under `/me/` (with a trailing segment, not `/me` itself) also accept an access token that `halo login` obtained for the built-in Halo CLI application.
+    **Authentication.** Send either the `halo_session` cookie of a signed-in person, or an API key of a service account as `Authorization: Bearer hlk_…`. API keys work only when they have the `api` scope, act with the roles of their service account, and are ignored on the personal routes under `/me` and on the sign-in routes under `/auth`. A workload with a federated credential on a service account trades a token from its own identity provider for an API key that expires after an hour at `POST /oauth2/token`. The personal routes under `/me/` (with a trailing segment, not `/me` itself) also accept an access token that `halo login` obtained for the built-in Halo CLI application, or that the Halo apps for iOS and Android obtained for the built-in Halo Mobile application.
 
     **Re-authentication.** Sensitive operations need a recent strong sign-in when a person calls them with a session: a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, within the last `reauthMinutes` (10 by default). Otherwise they answer `401` with `ERR_REAUTH_REQUIRED`; confirm with `/me/reauthenticate/begin` and `/me/reauthenticate`, then send the same request again. A person with no passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE` instead. API keys are not affected, and an approved change applies without asking the requester again. The sensitive operations are the ones whose `401` response lists `ERR_REAUTH_REQUIRED`: granting or activating administrator roles, creating service accounts and API keys, rotating signing keys, SAML certificates and client secrets, changing access policies, authentication contexts, sign-in methods and organization settings, resetting or changing another person's sign-in methods, extending a guest's access or changing their sponsor, changing identity providers, exporting the configuration and approving a held change. Adding or removing your own passkey, security key or authenticator app, creating recovery codes, and choosing your security emails, need it too once you have a passkey, security key or authenticator app.
     **Re-authentication.** Sensitive operations need a recent strong sign-in when a person calls them with a session: a sign-in with a passkey, security key or recovery code, or a confirmation through `/me/reauthenticate`, within the last `reauthMinutes` (10 by default). Otherwise they answer `401` with `ERR_REAUTH_REQUIRED`; confirm with `/me/reauthenticate/begin` and `/me/reauthenticate`, then send the same request again. A person with no passkey, security key or authenticator app gets `403` with `ERR_REAUTH_UNAVAILABLE` instead. API keys are not affected, and an approved change applies without asking the requester again. The sensitive operations are the ones whose `401` response lists `ERR_REAUTH_REQUIRED`: granting or activating administrator roles, creating service accounts, API keys and federated credentials, removing federated credentials, rotating signing keys, SAML certificates and client secrets, changing access policies, authentication contexts, sign-in methods and organization settings, resetting or changing another person's sign-in methods, changing identity providers, exporting the configuration and approving a held change. Adding or removing your own passkey, security key or authenticator app, creating recovery codes, and choosing your security emails, need it too once you have a passkey, security key or authenticator app.
@@ -695,9 +695,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [methods, emailSignIn, challenge, signUp]
+                required: [methods, emailSignIn, challenge, signUp, mobileSignIn]
                 properties:
                   signUp: {type: boolean, description: 'Whether people can create an account at `/auth/sign-up`.'}
+                  mobileSignIn: {type: boolean, description: 'Whether the built-in Halo Mobile application is enabled, so the Halo apps for iOS and Android can sign in with client ID `halo-mobile`. Servers before 0.8.0 leave it out.'}
                   methods:
                     type: array
                     items: {$ref: '#/components/schemas/MethodKind'}
@@ -3977,9 +3978,9 @@ paths:
                   items: {$ref: '#/components/schemas/ClaimMapping'}
                 backchannelLogoutUri: {type: string, description: 'An https:// URL on a public address, or an empty string to stop sending logout tokens. Not for SAML applications, bookmarks or service applications.'}
                 backchannelLogoutSessionRequired: {type: boolean, description: Not for SAML applications, bookmarks or service applications.}
-                requirePar: {type: boolean, description: 'Only for OpenID Connect and OAuth applications other than the Halo CLI, and not for service applications.'}
-                requirePkce: {type: boolean, description: 'Only for OpenID Connect and OAuth applications other than the Halo CLI, and not for service applications.'}
-                requireDpop: {type: boolean, description: Only for OpenID Connect and OAuth applications other than the Halo CLI.}
+                requirePar: {type: boolean, description: 'Only for OpenID Connect and OAuth applications other than the Halo CLI and Halo Mobile, and not for service applications.'}
+                requirePkce: {type: boolean, description: 'Only for OpenID Connect and OAuth applications other than the Halo CLI and Halo Mobile, and not for service applications.'}
+                requireDpop: {type: boolean, description: Only for OpenID Connect and OAuth applications other than the Halo CLI and Halo Mobile.}
                 kerberosSignIn: {type: boolean, description: 'Not for bookmarks, RADIUS, LDAP or service applications.'}
                 tokenEndpointAuthMethod: {type: string, enum: [client_secret_basic, private_key_jwt], description: 'Only for web and service applications. `private_key_jwt` needs `jwks` or `jwksUri`, not both. Recorded as `application.update` with a diff.'}
                 jwks: {type: [object, 'null'], description: 'A JSON Web Key Set of 1 to 20 public signing keys: RSA of 2048 bits or more, EC on P-256, P-384 or P-521, or Ed25519. `null` removes it.'}
@@ -4003,7 +4004,7 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409':
-          description: '`ERR_BUILT_IN`: the Halo CLI application cannot be deleted; disable it instead.'
+          description: '`ERR_BUILT_IN`: the Halo CLI and Halo Mobile applications cannot be deleted; disable them instead.'
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Error'}
@@ -4572,7 +4573,7 @@ paths:
       operationId: setApplicationHook
       summary: Add or change an application's sign-in hook
       description: |
-        Roles: application administrator, with a recent sign-in. Only OpenID Connect applications that people sign in to can have a hook; service applications, SAML applications, bookmarks and the Halo CLI can't.
+        Roles: application administrator, with a recent sign-in. Only OpenID Connect applications that people sign in to can have a hook; service applications, SAML applications, bookmarks, the Halo CLI and Halo Mobile can't.
 
         Halo calls the hook when a person finishes signing in to the application (`type` is `sign_in`) and before every ID or access token it issues to them, including refreshes and token exchanges (`type` is `token`, with `grantType`). It sends `POST` with `{"type", "time", "user": {"id", "email", "name"}, "application": {"id", "clientId", "name"}, "scopes", "grantType"}` and a `Halo-Signature: t=<unix time>,v1=<hex HMAC-SHA256 of "<t>.<body>">` header made with the signing secret, the same scheme as webhooks.
 
@@ -8225,7 +8226,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: An access token that `halo login` obtained for the built-in Halo CLI application. Accepted only on routes under `/me/`.
+      description: An access token that `halo login` obtained for the built-in Halo CLI application, or that a Halo app for iOS or Android obtained for the built-in Halo Mobile application. Accepted only on routes under `/me/`.
     applicationClient:
       type: http
       scheme: basic
@@ -9734,7 +9735,7 @@ components:
         createdAt: {type: string, format: date-time}
         lastActiveAt: {type: string, format: date-time}
         current: {type: boolean, description: Present and true for the session making the request.}
-        client: {type: string, enum: [halo-cli], description: 'Present for sessions that `halo login` started through the device flow. Ending such a session, or all of a person''s sessions, also revokes its access and refresh tokens.'}
+        client: {type: string, enum: [halo-cli, halo-mobile], description: 'Present for sessions that `halo login` started through the device flow, or that a sign-in to Halo Mobile started. Ending such a session, or all of a person''s sessions, also revokes its access and refresh tokens.'}
         impersonationId: {type: string, description: Present when an administrator holds this session through an impersonation. It does not count toward the session limit.}
     SignInEvent:
       type: object

@@ -90,6 +90,30 @@ func body(name, mode, effect string, c store.PolicyConditions) map[string]any {
 	return map[string]any{"name": name, "description": "", "enabled": true, "mode": mode, "effect": effect, "conditions": c}
 }
 
+func TestMobileSignInAdvertised(t *testing.T) {
+	st, h := server(t)
+	ctx := context.Background()
+	mobile := func() bool {
+		return decode[struct{ MobileSignIn bool }](t, call(t, h, "", "GET", "/api/v1/auth/methods", nil)).MobileSignIn
+	}
+	if mobile() {
+		t.Fatal("mobile sign-in without the built-in app")
+	}
+	app, err := st.CreateApplication(ctx, store.NewApplication{Name: "Halo Mobile", Protocol: "oidc", Type: "native", ClientID: store.MobileClientID, RedirectURIs: []string{store.MobileRedirectURI}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !mobile() {
+		t.Fatal("mobile sign-in with the built-in app")
+	}
+	if err := st.SetApplicationStatus(ctx, app.ID, "disabled", false); err != nil {
+		t.Fatal(err)
+	}
+	if mobile() {
+		t.Fatal("mobile sign-in with the built-in app disabled")
+	}
+}
+
 func TestRoleEnforcement(t *testing.T) {
 	st, h := server(t)
 	_, auditor := admin(t, st, "audrey@example.com", "auditor")
