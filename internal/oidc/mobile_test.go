@@ -218,3 +218,24 @@ func TestMobileRefusesAppOnlySessions(t *testing.T) {
 		t.Fatalf("a session Halo's own policy keeps out of Halo must not reach the self-service API through the app: %d %v", r.status, r.body)
 	}
 }
+
+func TestMobileRefusesEndedSessions(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx := context.Background()
+	sess, session := h.session(h.user, "passkey")
+	code := h.mobileCode(session)
+	if err := h.st.RevokeSession(ctx, sess.ID, h.user.ID); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := h.do(http.MethodPost, "/oauth2/token", url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {store.MobileRedirectURI}, "code_verifier": {pkceSecret}, "client_id": {store.MobileClientID}})
+	if r.status != http.StatusBadRequest || r.body["error"] != "access_denied" {
+		t.Fatalf("a code from an ended session must not start a mobile session: %d %v", r.status, r.body)
+	}
+	sessions, err := h.st.ListSessions(ctx, h.user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.ContainsFunc(sessions, func(s store.Session) bool { return s.Client == store.MobileClientID }) {
+		t.Fatalf("no mobile session may be left behind: %+v", sessions)
+	}
+}

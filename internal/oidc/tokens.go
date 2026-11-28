@@ -102,13 +102,9 @@ func (s *storage) grant(ctx context.Context, req op.TokenRequest) (store.OIDCTok
 			return t, app, err
 		}
 	}
-	switch r := req.(type) {
+	switch req.(type) {
 	case *op.DeviceAuthorizationState:
 		t.SessionID, err = s.deviceSession(ctx, app)
-	case *authRequest:
-		if app.ClientID == store.MobileClientID {
-			t.SessionID, err = s.mobileSession(ctx, app, person, r)
-		}
 	case *refreshRequest:
 		if t.SessionID != nil {
 			err = s.st.TouchClientSession(ctx, *t.SessionID, time.Now().Add(seconds(app.TokenPolicy.RefreshTokenTTL)))
@@ -158,36 +154,51 @@ func (s *storage) deviceSession(ctx context.Context, app store.Application) (*st
 	return &sessionID, err
 }
 
-func (s *storage) mobileSession(ctx context.Context, app store.Application, u store.User, code *authRequest) (*string, error) {
-	event := store.SignInEvent{Result: "failure", Method: "token", UserID: &u.ID, Email: u.Email, AppID: &app.ID, Reason: store.SessionLimitReason}
+func (s *storage) mobileSession(ctx context.Context, tx *store.Store, app store.Application, code *authRequest, tokens ...*store.OIDCToken) error {
+	u, err := tx.GetUser(ctx, code.GetSubject())
+	if err != nil {
+		return err
+	}
+	if err := tx.MakeRoomForSession(ctx, u, true, ""); err != nil {
+		return err
+	}
 	ip, userAgent := "", ""
 	if r, ok := ctx.Value(requestKey{}).(*http.Request); ok {
 		ip, userAgent = httpx.ClientIP(r), r.UserAgent()
-		_, os, browser := store.ParseUserAgent(userAgent)
-		event.IP, event.Device = ip, browser+" · "+os
 	}
-	var sessionID string
-	err := s.st.Tx(ctx, func(tx *store.Store) error {
-		if err := consumeCode(ctx, tx, code.ID); err != nil {
-			return err
-		}
-		if err := tx.MakeRoomForSession(ctx, u, true, ""); err != nil {
-			return err
-		}
-		var err error
-		sessionID, err = tx.CreateClientSession(ctx, deref(code.SessionID), app.ClientID, ip, userAgent, time.Now().Add(seconds(max(app.TokenPolicy.RefreshTokenTTL, app.TokenPolicy.AccessTokenTTL))))
+	sessionID, err := tx.CreateClientSession(ctx, deref(code.SessionID), app.ClientID, ip, userAgent, time.Now().Add(seconds(max(app.TokenPolicy.RefreshTokenTTL, app.TokenPolicy.AccessTokenTTL))))
+	if err != nil {
 		return err
-	})
+	}
+	for _, t := range tokens {
+		t.SessionID = &sessionID
+	}
+	return nil
+}
+
+func (s *storage) mobileRefusal(ctx context.Context, app store.Application, req op.TokenRequest, err error) error {
+	if code, ok := req.(*authRequest); !ok || code.ClientID != store.MobileClientID {
+		return err
+	}
 	if errors.Is(err, store.ErrSessionLimit) {
-		if err := s.st.RecordSignIn(ctx, event); err != nil {
-			return nil, err
+		u, uerr := s.st.GetUser(ctx, req.GetSubject())
+		if uerr != nil {
+			return uerr
 		}
-		return nil, oidc.ErrAccessDenied().WithDescription("You're already signed in to Halo Mobile on as many devices as your organization allows. Sign out of Halo Mobile on a device you no longer use, or ask your administrator to end one of your sessions, then sign in again.")
+		event := store.SignInEvent{Result: "failure", Method: "token", UserID: &u.ID, Email: u.Email, AppID: &app.ID, Reason: store.SessionLimitReason}
+		if r, ok := ctx.Value(requestKey{}).(*http.Request); ok {
+			_, os, browser := store.ParseUserAgent(r.UserAgent())
+			event.IP, event.Device = httpx.ClientIP(r), browser+" · "+os
+		}
+		if rerr := s.st.RecordSignIn(ctx, event); rerr != nil {
+			return rerr
+		}
+		return oidc.ErrAccessDenied().WithDescription("You're already signed in to Halo Mobile on as many devices as your organization allows. Sign out of Halo Mobile on a device you no longer use, or ask your administrator to end one of your sessions, then sign in again.")
 	}
 	if errors.Is(err, store.ErrNotFound) {
-		return nil, oidc.ErrAccessDenied().WithDescription("Your organization's access policy doesn't let this sign-in use Halo itself, so Halo Mobile can't use it.")
+		return oidc.ErrAccessDenied().WithDescription("This sign-in has ended, or your organization's access policy doesn't let it use Halo itself. Sign in to Halo Mobile again.")
 	}
-	return &sessionID, err
+	return err
 }
 
 func (s *storage) CreateAccessToken(ctx context.Context, req op.TokenRequest) (string, time.Time, error) {
@@ -196,12 +207,12 @@ func (s *storage) CreateAccessToken(ctx context.Context, req op.TokenRequest) (s
 		return "", time.Time{}, err
 	}
 	if access.SubjectID == nil {
-		return access.ID, access.ExpiresAt, issued(req, s.st.Tx(ctx, func(tx *store.Store) error {
-			if err := consume(ctx, tx, req); err != nil {
+		return access.ID, access.ExpiresAt, issued(req, s.mobileRefusal(ctx, app, req, s.st.Tx(ctx, func(tx *store.Store) error {
+			if err := s.consume(ctx, tx, req, app, &access); err != nil {
 				return err
 			}
 			return tx.CreateOIDCTokens(ctx, access)
-		}))
+		})))
 	}
 	u, err := s.st.GetUser(ctx, *access.UserID)
 	if err != nil {
@@ -220,12 +231,18 @@ func (s *storage) CreateAccessToken(ctx context.Context, req op.TokenRequest) (s
 	}))
 }
 
-func consume(ctx context.Context, tx *store.Store, req op.TokenRequest) error {
+func (s *storage) consume(ctx context.Context, tx *store.Store, req op.TokenRequest, app store.Application, tokens ...*store.OIDCToken) error {
 	code, ok := req.(*authRequest)
-	if !ok || code.ClientID == store.MobileClientID {
+	if !ok {
 		return nil
 	}
-	return consumeCode(ctx, tx, code.ID)
+	if err := consumeCode(ctx, tx, code.ID); err != nil {
+		return err
+	}
+	if code.ClientID != store.MobileClientID {
+		return nil
+	}
+	return s.mobileSession(ctx, tx, app, code, tokens...)
 }
 
 func consumeCode(ctx context.Context, tx *store.Store, requestID string) error {
@@ -270,8 +287,8 @@ func (s *storage) CreateAccessAndRefreshTokens(ctx context.Context, req op.Token
 	refresh.ID, refresh.Kind, refresh.RefreshHash = id.New("rtk"), "refresh", secret.Hash(value)
 	refresh.ExpiresAt = time.Now().Add(seconds(app.TokenPolicy.RefreshTokenTTL))
 	access.RefreshID = &refresh.ID
-	err = s.st.Tx(ctx, func(tx *store.Store) error {
-		if err := consume(ctx, tx, req); err != nil {
+	err = s.mobileRefusal(ctx, app, req, s.st.Tx(ctx, func(tx *store.Store) error {
+		if err := s.consume(ctx, tx, req, app, &refresh, &access); err != nil {
 			return err
 		}
 		if refreshing {
@@ -284,7 +301,7 @@ func (s *storage) CreateAccessAndRefreshTokens(ctx context.Context, req op.Token
 			}
 		}
 		return tx.CreateOIDCTokens(ctx, refresh, access)
-	})
+	}))
 	if err = issued(req, err); err != nil {
 		return "", "", time.Time{}, err
 	}

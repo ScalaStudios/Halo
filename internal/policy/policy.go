@@ -654,7 +654,7 @@ func (h *handlers) enabledMethods(w http.ResponseWriter, r *http.Request) error 
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
-	return httpx.JSON(w, http.StatusOK, map[string]any{"methods": enabled, "emailSignIn": org.EmailSignIn, "challenge": challenge, "signUp": org.SignUp != "off", "mobileSignIn": err == nil && mobile.Status == "active"})
+	return httpx.JSON(w, http.StatusOK, map[string]any{"methods": enabled, "emailSignIn": org.EmailSignIn, "challenge": challenge, "signUp": org.SignUp != "off", "mobileSignIn": err == nil && mobile.Status == "active" && mobile.Protocol == "oidc" && mobile.Type == "native"})
 }
 
 func (h *handlers) listMethods(w http.ResponseWriter, r *http.Request, _ store.User) error {

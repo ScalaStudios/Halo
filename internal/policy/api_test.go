@@ -94,7 +94,9 @@ func TestMobileSignInAdvertised(t *testing.T) {
 	st, h := server(t)
 	ctx := context.Background()
 	mobile := func() bool {
-		return decode[struct{ MobileSignIn bool }](t, call(t, h, "", "GET", "/api/v1/auth/methods", nil)).MobileSignIn
+		rec := call(t, h, "", "GET", "/api/v1/auth/methods", nil)
+		expect(t, rec, http.StatusOK)
+		return decode[struct{ MobileSignIn bool }](t, rec).MobileSignIn
 	}
 	if mobile() {
 		t.Fatal("mobile sign-in without the built-in app")

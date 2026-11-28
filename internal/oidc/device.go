@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -46,12 +47,18 @@ func ensureBuiltIns(ctx context.Context, st *store.Store) error {
 		Scopes:          CLIScopes,
 		RefreshTokenTTL: 30 * 24 * 3600,
 	}} {
-		_, err := st.GetApplicationByClientID(ctx, app.ClientID)
+		existing, err := st.GetApplicationByClientID(ctx, app.ClientID)
 		if errors.Is(err, store.ErrNotFound) {
-			_, err = st.CreateApplication(ctx, app)
+			existing, err = st.CreateApplication(ctx, app)
+			if errors.Is(err, store.ErrConflict) {
+				existing, err = st.GetApplicationByClientID(ctx, app.ClientID)
+			}
 		}
-		if err != nil && !errors.Is(err, store.ErrConflict) {
+		if err != nil {
 			return err
+		}
+		if existing.Protocol != "oidc" || existing.Type != "native" {
+			slog.ErrorContext(ctx, "built-in application not provisioned: another application uses its client ID", "builtIn", app.Name, "clientId", app.ClientID, "application", existing.Name, "applicationId", existing.ID)
 		}
 	}
 	return nil

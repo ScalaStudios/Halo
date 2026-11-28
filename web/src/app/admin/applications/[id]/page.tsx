@@ -347,7 +347,7 @@ export default async function ApplicationPage({ params, searchParams }: { params
               <EmptyState
                 icon={UsersRound}
                 title={d.noGroups}
-                description={service ? d.noGroupsService : bookmark ? d.noGroupsBookmark(app.name) : d.noGroupsDefault(app.name)}
+                description={service ? d.noGroupsService : bookmark ? d.noGroupsBookmark(app.name) : builtIn ? d.cliGroups(app.name) : d.noGroupsDefault(app.name)}
               />
             )}
           </div>
