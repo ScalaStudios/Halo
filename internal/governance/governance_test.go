@@ -202,9 +202,10 @@ func TestApprovalGrantsOnlyMissingMembershipsAndExpiryRemovesThem(t *testing.T) 
 
 	oncall := e.pkg(admin, map[string]any{"name": "On-call", "groupIds": []string{prod.ID}, "requireJustification": false})
 	first := e.request(requesterToken, map[string]any{"packageId": pkg.ID, "durationDays": 2, "justification": "Incident follow-up"})
-	expect(t, e.call(approverToken, "POST", "/api/v1/access-requests/"+first.ID+"/approve", nil), 200)
+	expect(t, e.call(approverToken, "POST", "/api/v1/me/approvals/"+first.ID+"/approve", nil), 200)
 	second := e.request(requesterToken, map[string]any{"packageId": oncall.ID})
-	expect(t, e.call(admin, "POST", "/api/v1/access-requests/"+second.ID+"/approve", nil), 403)
+	expect(t, e.call(admin, "POST", "/api/v1/me/approvals/"+second.ID+"/approve", nil), 403)
+	expect(t, e.call(admin, "POST", "/api/v1/me/approvals/"+second.ID+"/deny", nil), 403)
 	expect(t, e.call(globalAdmin, "POST", "/api/v1/access-requests/"+second.ID+"/approve", nil), 200)
 	if grants := decode[[]store.AccessRequest](t, e.call(requesterToken, "GET", "/api/v1/me/access-grants", nil)); len(grants) != 2 {
 		t.Fatalf("active grants: %d", len(grants))

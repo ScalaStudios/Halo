@@ -2623,6 +2623,42 @@ paths:
                 type: array
                 items: {$ref: '#/components/schemas/AccessRequest'}
         '401': {$ref: '#/components/responses/Unauthenticated'}
+  /me/approvals/{id}/approve:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Account, Access requests]
+      operationId: approveMyApproval
+      summary: Approve the current stage of a request you can decide
+      description: 'The same as `POST /access-requests/{id}/approve`, under `/me/` so the Halo CLI and Halo Mobile access tokens can call it.'
+      security: *personal
+      requestBody: {$ref: '#/components/requestBodies/DecisionNote'}
+      responses:
+        '200': {$ref: '#/components/responses/AccessRequestResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/DecisionForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
+  /me/approvals/{id}/deny:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [Account, Access requests]
+      operationId: denyMyApproval
+      summary: Deny a request you can decide
+      description: 'The same as `POST /access-requests/{id}/deny`, under `/me/` so the Halo CLI and Halo Mobile access tokens can call it.'
+      security: *personal
+      requestBody: {$ref: '#/components/requestBodies/DecisionNote'}
+      responses:
+        '200': {$ref: '#/components/responses/AccessRequestResponse'}
+        '400': {$ref: '#/components/responses/BadJSON'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/DecisionForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Invalid'}
   /me/role-activations:
     post:
       tags: [Account, Users]
